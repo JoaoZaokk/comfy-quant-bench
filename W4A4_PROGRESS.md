@@ -1856,6 +1856,12 @@ Entao "o graph apaga o overhead" e falso; "o graph apaga 83% dele nesta stack" e
 capturam e reproduzem com saida correta. Isso importa para o projeto irmao, que abandonou o tier
 W4A8 por quebrar a captura: o que quebrou la nao pode ser o kernel, porque aqui ele captura.
 
+> **ERRADO, corrigido em 2026-08-19 (parte 12).** Isto foi medido em M pequeno e escrito como se
+> valesse para todo M. `w4a8_int8_linear` **recusa a captura** acima de M x K ~ 21,8 milhoes de
+> elementos de ativacao - em K=3840, a partir de M=5680. O w4a4 captura em todos os M testados.
+> A frase "o que quebrou la nao pode ser o kernel" nao se sustenta: em batch de prefill o kernel
+> quebra aqui tambem. Ver parte 12.
+
 Ressalvas: captura de **um op** com tensores estaticos, nao de um modelo inteiro com batch
 dinamico; e Windows/WDDM. Prova que o op e capture-safe, nao que a integracao de outro projeto o
 seja.
@@ -1966,3 +1972,97 @@ intervalo. Abaixo de M~512 vale ler "empate", nao o rotulo.
 Os erros relativos sao identicos ate a 4a casa em todas as cinco execucoes (w4a4 0,2231, w4a4/a8
 0,1574, w4a8 0,0737 em M=5856) - determinismo confirmado; a variacao e toda de tempo, nenhuma de
 numerica.
+
+
+## 2026-08-19, parte 12 - o W4A8 recusa CUDA graph acima de um tamanho, e o "83%" nao tinha instrumento
+
+Continuacao da parte 11, mesma pergunta aplicada aos outros benches: se um numero de disparo unico
+podia estar 40% errado, quais outros numeros deste repo estao?
+
+### 0. O "83% do overhead sai com graph" nao tinha instrumento
+
+Nenhum arquivo em `tools/` media captura de CUDA graph. O numero saiu de um script solto que nao
+existe mais - e ja tinha viajado para o projeto irmao, que decide arquitetura em cima disso. Numero
+sem instrumento nao pode ser reconferido quando a stack muda por baixo.
+
+Agora tem: `tools/graph_capture_probe.py`. Captura, **compara a saida do replay com a do eager**
+(um graph que reproduz lixo marcaria o melhor tempo da tabela), e repete 3 passadas com min-max.
+
+### 1. Quanto o graph tira, medido
+
+RTX 3090, peso [3840, 3840], 3 passadas de 300 iteracoes, placa ociosa e travada:
+
+| M | caminho | eager us | replay us | tirado | % do wall |
+|---|---|---|---|---|---|
+| 1 | bf16 | 63,8 | 51,1 | 12,7 | 20,0% |
+| 1 | **w4a4** | **124,8** | **40,4** | **84,4** | **67,6%** |
+| 1 | w4a8 | 132,4 | 70,6 | 61,8 | 46,7% |
+| 128 | w4a4 | 110,4 | 35,6 | 74,9 | 67,8% |
+| 5856 | w4a4 | 597,5 | 560,5 | 37,0 | 6,2% |
+| 5856 | bf16 | 2546,8 | 2522,2 | 24,6 | 1,0% |
+
+O numero que interessa nao e a % do wall, e **o que sobra**. Contra os ~35 us de GPU que o
+`w4a4_breakdown` mede em M=1, um replay de 40,4 us deixa **~5-6 us de host por chamada**. O mesmo
+piso aparece nos tres caminhos (bf16 51,1 contra 44,3 de GPU; w4a8 70,6 contra 62,8). **O piso do
+replay nesta maquina e ~6 us, seja qual for o kernel.**
+
+Isso **nao** reproduz o "83%, ~11 us sobrando" que este log afirmava. Pelo instrumento de hoje sao
+~93% do host e ~5,6 us sobrando. Nao da para reconciliar os dois: o instrumento antigo nao existe
+mais. Fica o de hoje, que da para rodar de novo.
+
+### 2. O achado grande: `w4a8_int8_linear` recusa captura acima de um tamanho
+
+```
+M=5856 w4a8  capture failed: AcceleratorError: CUDA error: operation failed due to a
+             previous error during capture   (cudaErrorStreamCaptureInvalidated)
+```
+
+Nao e contaminacao das capturas anteriores: processo limpo, op sozinho, M=5856 - falha igual.
+
+**Nao e M, e M x K.** Bissecado, um processo por ponto:
+
+| K | ultimo M que captura | primeiro M que falha | M x K no limite |
+|---|---|---|---|
+| 3840 | 5664 | 5680 | 21.749.760 -> 21.811.200 |
+| 2560 | 8400 | 8600 | 21.504.000 -> 22.016.000 |
+| 1024 | 20800 | 21600 | 21.299.200 -> 22.118.400 |
+
+Tres K, um deles nao proporcional aos outros dois, e o limiar cai sempre na mesma faixa de
+**M x K entre 21,75 e 21,81 milhoes de elementos de ativacao**. N nao entra: foi 3840 em todos.
+
+O `w4a4` captura em todos os M testados, ate 5856 (M x K = 22,5 milhoes, acima do limite do w4a8).
+O bf16 tambem. **E especifico do tier W4A8.**
+
+**Nao e troca de algoritmo visivel de fora.** O tempo eager e liso atravessando o limiar - 1182 us
+em M=5600, 1192 em 5664, 1154 em 5680 (o que falha), todos dentro do min-max um do outro. E o
+dispatch em Python e identico: instrumentei os quatro pontos de entrada `_C.*` e nos dois lados do
+limiar so `w4a8_codebook_linear_chunked` e chamado, retornando `True`. **A causa esta dentro do
+`.pyd` e nao foi determinada daqui.**
+
+### 3. O que isso significa para os dois projetos
+
+**Aqui:** com M=5856, um layer W4A8 so passa da captura se K < 21,78e6 / 5856 = **3719**. Layers com
+K=3840 nao capturam; com K=2560, capturam. Se algum dia se tentar CUDA graph no Z-Image, o
+checkpoint misto tem layers dos dois tipos e vai quebrar em alguns e nao em outros.
+
+**No projeto irmao:** eles abandonaram o tier W4A8 por quebrar a captura no model runner do vLLM, e
+este log dizia que "o que quebrou la nao pode ser o kernel, porque aqui ele captura". **Isso estava
+errado** - estava medido em M pequeno e escrito como se valesse para todo M. Em decode (M=1..8) o
+kernel captura; em prefill com batch grande, M x K passa de 21,8 milhoes com folga e o kernel
+recusa aqui tambem. A conclusao deles pode estar certa. **Vale mandar o limiar para la.**
+
+### 4. Corrigido junto
+
+- `w4a4_breakdown.py` ainda tinha o proprio teste de ocupacao inline, e ele falhava **aberto**:
+  NVML indisponivel imprimia aviso e perfilava assim mesmo. Era o unico que faltava migrar para o
+  `_bench_guard`, que falha fechado. Migrado.
+- O mesmo arquivo agora repete a passada de wall 3 vezes e imprime o min-max. Os rabos sao longos
+  em M pequeno: `[112-252]` us em M=8, `[108-190]` em M=128. Uma passada so podia cair em qualquer
+  ponto disso - foi assim que o "host 161 us" aconteceu.
+- Host por chamada, remedido com 3 passadas: **w4a4 em M=1 gasta 81,4 us de host contra 34,8 us de
+  GPU** (wall 116,2, spread [116-116]). O bf16 gasta 17,1. A penalidade de M pequeno do w4a4 e
+  dispatch, nao aritmetica - o kernel dele e *mais rapido* que o do bf16 em M=1.
+- Uma captura que falha **envenena o contexto CUDA**: toda chamada seguinte no mesmo processo
+  levanta o mesmo erro cascateado. Uma varredura de 5600,5664,5680,5700,5856 morreu dentro da linha
+  do 5700. O probe agora para na primeira falha e diz por que, em vez de imprimir cascata como se
+  fosse medida.

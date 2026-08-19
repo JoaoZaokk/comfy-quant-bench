@@ -183,6 +183,7 @@ tools/calibrate_activations.py ativacoes reais capturadas durante amostragem
 tools/quant_mixed.py           4 ou 8 bits por camada, medido contra o kernel
 tools/m_crossover.py           onde o int4 passa a ganhar do 16-bit (M ~ 128-256; --repeats/--reverse)
 tools/w4a4_breakdown.py        kernel a kernel, e a divisao host/GPU de uma chamada
+tools/graph_capture_probe.py   CUDA graph: captura? replay bate com eager? quanto de host sai?
 tools/attn_dtype_ab.py         fp16 vs bf16 nos backends de attention
 tools/gpu_lock.py              exclusao mutua com a sessao irma
 tools/_bench_guard.py          lock + ocupacao NVML, falhando fechado
@@ -208,6 +209,12 @@ secao 6 lista o que foi consertado sem GPU. Nao consertado de proposito:
    executando. Medir o que acontece de fato destrava um PR de duas linhas.
 2. `tensor/convrot_w4a4.py:237` — quem transpõe? Monkeypatch contador num forward real.
 3. `cuda/__init__.py:2213` e `:2261` — achar shape que o CUTLASS recusa, provar o fallback eager.
+   **Parcial 2026-08-19:** instrumentei os quatro `_C.*` do caminho W4A8 e em M=5600 e 5700 so
+   `w4a8_codebook_linear_chunked` e chamado, retornando `True` — o fallback eager nao foi
+   alcancado por esse lado. Falta achar shape que faca `used` voltar `False`.
+8. **Novo, e o mais acionavel da lista:** achar a causa da recusa de captura do W4A8 acima de
+   M x K ~ 21,8e6 (parte 12). Esta dentro do `.pyd`; daqui so deu para caracterizar. Se o
+   comfy-kitchen tiver fonte disponivel, e um bug reportavel com repro exato em tres linhas.
 4. LoRA sobre modelo quantizado (`ops.py:1377`) — hipotese, hoje so aviso no preflight.
 5. A mutacao do `.T` em `recover_weight`.
 6. Escala BF16 do nunchaku contra o quantizador real.

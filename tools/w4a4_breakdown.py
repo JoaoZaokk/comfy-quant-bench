@@ -17,6 +17,7 @@ is a much more useful sentence than "int4 loses in decode".
 
 from __future__ import annotations
 
+import statistics
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -31,9 +32,15 @@ from torch.profiler import ProfilerActivity, profile  # noqa: E402
 
 import comfy.quant_ops  # noqa: E402,F401
 from comfy_kitchen import registry as R  # noqa: E402
-from gpu_lock import GpuLock, GpuLockBusy  # noqa: E402
+from _bench_guard import BenchGuard  # noqa: E402
 
 REPEATS = 30
+# How many times the whole wall pass is repeated. `host us` is a difference of two separately
+# measured quantities, so it inherits both their errors, and it is the number from this file that
+# has already been quoted elsewhere. Three passes, and the spread is printed rather than hidden:
+# m_crossover was measured on 2026-08-19 to swing 1.4x between consecutive single-shot runs on an
+# idle card, and nothing about that is specific to that file.
+WALL_PASSES = 3
 
 
 def kernel_table(fn, label: str) -> None:
@@ -121,22 +128,29 @@ def overhead_table(paths: dict, batches) -> None:
     # Every wall measurement first, across all M and all paths, before the profiler is attached
     # even once. Interleaving them contaminated the later rows: profiling path A inflated the wall
     # figure for path B in the same process.
-    walls = {}
-    for m, make in batches:
-        x = make()
-        for label, call in paths.items():
-            walls[(m, label)] = wall_us(call(x), 300 if m <= 512 else 30)
-        del x
-        torch.cuda.empty_cache()
+    walls = defaultdict(list)
+    for _ in range(WALL_PASSES):
+        for m, make in batches:
+            x = make()
+            for label, call in paths.items():
+                walls[(m, label)].append(wall_us(call(x), 300 if m <= 512 else 30))
+            del x
+            torch.cuda.empty_cache()
 
-    print(f"\n{'M':>7}{'path':>10}{'wall us':>10}{'gpu us':>10}{'host us':>10}{'host %':>9}")
+    print(f"\n{'M':>7}{'path':>10}{'wall us':>10}{'gpu us':>10}{'host us':>10}{'host %':>9}"
+          f"{'wall min-max':>18}")
     for m, make in batches:
         x = make()
         for label, call in paths.items():
-            w = walls[(m, label)]
+            passes = walls[(m, label)]
+            w = statistics.median(passes)
             d = device_us(call(x), 50 if m <= 512 else 15)
+            # The spread shown is the wall pass's, not the host figure's: `gpu us` comes from a
+            # single profiled pass, so a host number cannot be given an honest interval here. It
+            # is a floor on the uncertainty, not the whole of it.
+            span = f"[{min(passes):.0f}-{max(passes):.0f}]" if len(passes) > 1 else ""
             print(f"{m:>7}{label:>10}{w:>10.1f}{d:>10.1f}{w - d:>10.1f}"
-                  f"{(w - d) / w * 100:>8.1f}%")
+                  f"{(w - d) / w * 100:>8.1f}%{span:>18}")
         del x
         torch.cuda.empty_cache()
 
@@ -145,17 +159,11 @@ def main() -> int:
     if not torch.cuda.is_available():
         print("needs CUDA")
         return 1
-    try:
-        import pynvml
-        pynvml.nvmlInit()
-        resident = pynvml.nvmlDeviceGetMemoryInfo(
-            pynvml.nvmlDeviceGetHandleByIndex(0)).used / 2 ** 30
-        pynvml.nvmlShutdown()
-        if resident > 2.0:
-            print(f"{resident:.2f} GiB resident on this GPU; refusing to profile a contended card")
-            return 1
-    except Exception as exc:
-        print(f"NVML unavailable ({exc!r}); continuing, but only run this on an idle card")
+    # The occupancy check used to live here, inline, and it failed **open**: NVML unavailable
+    # printed a warning and profiled anyway. That is the wrong default on a machine where a
+    # sibling project holds most of the card, and it is the reason `_bench_guard` exists. This
+    # file kept its private copy after the others were migrated; the guard in `__main__` is now
+    # the only one, and it refuses when occupancy cannot be read at all.
 
     q_w4a4 = R.get_implementation("quantize_convrot_w4a4_weight")
     lin_w4a4 = R.get_implementation("convrot_w4a4_linear")
@@ -214,9 +222,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    try:
-        with GpuLock("w4a4_breakdown"):
-            raise SystemExit(main())
-    except GpuLockBusy as exc:
-        print(exc)
-        raise SystemExit(1) from None
+    with BenchGuard("w4a4_breakdown") as _guard:
+        if _guard.refused:
+            print(_guard.refused)
+            raise SystemExit(1)
+        raise SystemExit(main())
