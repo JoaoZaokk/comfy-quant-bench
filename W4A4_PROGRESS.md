@@ -2684,3 +2684,44 @@ uma investigacao.
 
 Barato. O que custa e o disco: LTX 2.5 (39 GiB BF16 x2) ficou de fora por nao caber na placa sem
 offload, e o Z-Image recuperado de SVDQ por precisar de mais 11,5 GiB num disco a 98%.
+
+
+## 2026-08-19, parte 23 - o perfil sobrevive a uma volta destrutiva pelo int4
+
+Quarto ponto do Z-Image, e o mais informativo dos quatro: `beyond-reality-recovered-bf16` e o
+`beyond-reality-zimage-v2` depois de passar por SVDQuant int4 rank-32 e voltar para BF16 pelo
+`tools/svdq_to_bf16.py`. Nao e um finetune - e o mesmo modelo com os pesos danificados.
+
+**Quanto os pesos mudaram**, medido em cinco camadas contra o original:
+
+```
+layers.0.attention.qkv        0,0923      layers.29.feed_forward.w3     0,1132
+layers.10.feed_forward.w2     0,0963      noise_refiner.0.attention.qkv 0,0708
+layers.20.attention.out       0,0935      mediana                       0,0935
+```
+
+**Quanto o perfil mudou:** nada.
+
+| par | spearman | metade pior igual |
+|---|---|---|
+| beyond-reality-v2 vs sua propria versao recuperada | **+0,999** | **85/85** |
+| recuperado vs turbo | +0,997 | 84/85 |
+| recuperado vs de-turbo | +0,986 | 83/85 |
+
+Os dois ultimos sao **identicos** aos que o original marca contra os mesmos dois checkpoints. O
+recuperado ocupa exatamente o lugar do original na familia.
+
+### O que isso fecha
+
+Perturbar **cada peso do modelo em ~9,4%** nao move a decisao de qual camada precisa de 8 bits.
+Somado ao que ja estava medido - estatistica do peso nao prediz (acaso), ativacao sintetica nao
+prediz (pior que acaso), finetunes diferentes concordam a +0,98 - a conclusao fica dificil de
+escapar: **o perfil nao e funcao dos valores dos pesos.** E funcao da arquitetura e das ativacoes
+que ela produz, e nenhuma das duas muda quando se requantiza o peso.
+
+Consequencia pratica direta: da para calibrar na variante que estiver a mao. Nao precisa ser a
+mais recente, nem a de maior precisao, nem sequer uma intacta.
+
+E uma consequencia para o proprio `svdq_to_bf16.py`: o que ele recupera preserva a estrutura que
+importa para esta decisao, mesmo perdendo 9,4% do peso. Isso nao diz que a imagem dele e boa - nao
+foi medido aqui - so que o perfil de quantizacao dele e o mesmo.
