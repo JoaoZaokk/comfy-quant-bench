@@ -2353,3 +2353,34 @@ deveria logar. Nao publiquei - mesma regra do item 1.
 Uma GPU (sm86), um build do comfy-kitchen. A recusa e o teste de capacidade da propria extensao,
 entao a regra dos 8 pode ser outra em outra placa. O que transfere e o metodo: ler os booleanos,
 nao inferir do tempo.
+
+
+## 2026-08-19, parte 17 - a recusa de captura do W4A8 esta dentro do kernel chunked
+
+Item 8, aberto na parte 12. A regra dos 8 da parte 16 deu o controle que faltava: o mesmo op, no
+mesmo tamanho, tomando caminho interno diferente.
+
+| shape | caminho interno | captura em M=5856 |
+|---|---|---|
+| N=3840, K=3840 | `w4a8_codebook_linear_chunked` | **falha** |
+| N=3841, K=3840 | cauda eager | **captura** |
+
+`N=3841` cai no eager por nao ser divisivel por 8, e captura sem problema exatamente no tamanho em
+que `N=3840` recusa. **A falha esta dentro do `w4a8_codebook_linear_chunked`**, nao no Python em
+volta, nao nos tensores, nao no tamanho da alocacao - senao o caminho eager, que aloca o mesmo
+tanto, falharia junto.
+
+Com isso o reporte fica completo o suficiente para ser util: ponto de entrada exato, limiar exato
+(M x K entre 21,75 e 21,81 milhoes), tres K confirmando que a grandeza e M x K, e um controle
+mostrando que o caminho alternativo do mesmo op captura. O **mecanismo** continua nao determinado -
+esta dentro do `.pyd`, o erro original e engolido pela cascata e `CUDA_LAUNCH_BLOCKING=1` nao o
+expoe.
+
+Rascunho em `UPSTREAM_REPORT_w4a8_capture.md`. Nao publicado.
+
+### Estado da fila de GPU
+
+Os seis itens que estavam bloqueados esperando a placa foram medidos: partes 11 (ordem de M), 12
+(captura), 13 (quem transpoe, LoRA), 14 (widget de dtype), 15 (`.T` e escala), 16 (fallback eager).
+Quatro deram negativo - a hipotese nao se reproduziu - e dois deram positivo com repro. Os dois
+positivos viraram rascunho de reporte upstream e nenhum foi publicado.

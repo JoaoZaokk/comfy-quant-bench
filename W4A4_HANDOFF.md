@@ -223,7 +223,10 @@ secao 6 lista o que foi consertado sem GPU. Nao consertado de proposito:
    `tools/w4a8_fallback_sweep.py`. Nota anterior: instrumentei os quatro `_C.*` do caminho W4A8 e em M=5600 e 5700 so
    `w4a8_codebook_linear_chunked` e chamado, retornando `True` — o fallback eager nao foi
    alcancado por esse lado. Falta achar shape que faca `used` voltar `False`.
-8. **Novo, e o mais acionavel da lista:** achar a causa da recusa de captura do W4A8 acima de
+8. **Parcial 2026-08-19** (parte 17): esta dentro do `w4a8_codebook_linear_chunked` — o mesmo
+   op com N=3841 cai no eager e **captura** no mesmo M em que N=3840 recusa. Falta o mecanismo,
+   que esta no `.pyd`. Rascunho de reporte em `UPSTREAM_REPORT_w4a8_capture.md`.
+   Enunciado original: achar a causa da recusa de captura do W4A8 acima de
    M x K ~ 21,8e6 (parte 12). Esta dentro do `.pyd`; daqui so deu para caracterizar. Se o
    comfy-kitchen tiver fonte disponivel, e um bug reportavel com repro exato em tres linhas.
 4. ~~LoRA sobre modelo quantizado (`ops.py:1377`) — hipotese, hoje so aviso no preflight.~~
