@@ -24,3 +24,5 @@ __pycache__/
 *.pyo
 tools/calib/
 tools/bench/
+
+bench/quality_ladder/*.png

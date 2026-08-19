@@ -2384,3 +2384,61 @@ Os seis itens que estavam bloqueados esperando a placa foram medidos: partes 11 
 (captura), 13 (quem transpoe, LoRA), 14 (widget de dtype), 15 (`.T` e escala), 16 (fallback eager).
 Quatro deram negativo - a hipotese nao se reproduziu - e dois deram positivo com repro. Os dois
 positivos viraram rascunho de reporte upstream e nenhum foi publicado.
+
+
+## 2026-08-19, parte 18 - o threshold varrido: o default nao se sustenta, e a metrica nao mede o que importa
+
+`--promote-error 0.15` estava marcado neste repo como "escolhido, nao derivado". Varrido agora.
+Ferramenta: `tools/quality_ladder.py`. Referencia BF16, mesmas seeds nos dois lados, 2 prompts x
+6 seeds = 12 runs pareados por checkpoint.
+
+### O que a metrica diz
+
+| checkpoint | promovidos | delta vs w4a4 | vence | s/step | GiB |
+|---|---|---|---|---|---|
+| BF16 nativo | — | referencia | — | 0,910 | 11,46 |
+| w4a4 puro | 0 | baseline | — | 0,348 | 3,06 |
+| t0.20 | 10 | -0,0149 | 6/12 | 0,355 | 3,08 |
+| **t0.15 (default)** | 55 | **-0,0002** | **3/12** | 0,403 | 3,18 |
+| t0.10 | 119 | -0,1033 | **12/12** | 0,467 | 3,32 |
+| t0.05 | 156 | -0,1218 | **12/12** | — | 3,40 |
+
+**Pareado, nao media.** A divergencia varia mais entre seeds do que entre checkpoints - na primeira
+execucao um checkpoint teve dispersao 0,2301 em tres seeds enquanto o vao inteiro entre o melhor e
+o pior era 0,1065. Media de amostras nao pareadas convida a uma ordem que os dados nao sustentam;
+os runs sao pareados por construcao (mesma seed, mesmo ruido, mesmo condicionamento), entao a
+comparacao que sobrevive e run a run. A ferramenta imprime as duas, com a de media rotulada como a
+errada.
+
+Pela metrica, **0,15 nao compra nada**: 55 camadas promovidas, +16% de tempo, empate tecnico com o
+W4A4 puro.
+
+### O que as imagens dizem, e por que isso derruba a metrica
+
+Este arquivo dizia, sobre a mistura: *"the images do not visibly separate, and saying otherwise
+would be overclaiming"*. **Era falso.** Separam, e muito.
+
+No W4A4 puro o bloco de pistoes do trompete vira um emaranhado de tubos - nas duas seeds olhadas,
+nao numa. Com camadas promovidas, o mesmo prompt e a mesma seed dao um instrumento coerente. O
+t0.05 sai limpo, com valvulas nitidas.
+
+E aqui esta o problema: **o t0.15, que empata com o W4A4 puro na metrica, e visivelmente melhor que
+ele.** A divergencia de latente mede quanto a composicao inteira andou, e ela anda de qualquer
+jeito - enquadramento diferente, objetos em outro lugar. Esse movimento afoga o sinal estrutural,
+que e o que quebra. **A metrica que este projeto usou para justificar o threshold nao mede o
+defeito que o threshold existe para evitar.**
+
+Mesma familia do erro do crest factor (parte 9): um numero que le como medida de qualidade e nao e.
+
+### O que fica decidido e o que nao
+
+**Decidido:** 0,15 nao se defende. Pela metrica perde para 0,10 e 0,05; pela imagem e melhor que o
+W4A4 puro, entao o valor certo esta abaixo de 0,15, nao acima.
+
+**Nao decidido:** onde exatamente. A ordem fina entre 0,15, 0,10 e 0,05 nao esta estabelecida
+visualmente - olhei 2 seeds para w4a4 e t0.05, e 1 seed para os dois do meio. Um prompt so, um
+modelo so. E "melhor" aqui e julgamento meu olhando imagem, nao medida.
+
+**O que falta e uma metrica que veja o defeito.** Divergencia de latente nao serve. Candidatos que
+nao foram testados: distancia perceptual contra a imagem BF16 na mesma seed, ou pontuar so a regiao
+que quebra. Ate ter isso, a escolha do threshold e feita a olho, e o registro tem de dizer isso.

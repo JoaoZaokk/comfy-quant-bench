@@ -108,12 +108,21 @@ Two separate tracks. Everything in the first needs the GPU; the second does not.
 
 ### Needs the GPU (blocked while it is lent out)
 
-1. **`--promote-error 0.15` was picked, not derived.** Sweep it (and `--budget`) against real
-   images at several seeds to find where quality actually breaks. `--analysis` re-decides from a
-   saved measurement in seconds, so a sweep costs only the generation time. Right now the only
-   evidence that mixing helps is a 11.7% drop in latent divergence and a 3.18x drop in measured
-   per-layer error; **the images do not visibly separate**, and saying otherwise would be
-   overclaiming.
+1. ~~**`--promote-error 0.15` was picked, not derived.**~~ **Varrido 2026-08-19** (parte 18).
+   Duas correcoes ao que esta escrito abaixo:
+
+   - **"the images do not visibly separate" era falso.** Separam muito. O W4A4 puro transforma o
+     bloco de pistoes de um trompete num emaranhado, nas duas seeds olhadas; com camadas promovidas
+     o mesmo prompt sai coerente. Ver `bench/quality_ladder/*.png`.
+   - **Divergencia de latente nao acompanha o defeito visivel.** O default 0,15 fica
+     estatisticamente empatado com o W4A4 puro na metrica (delta -0,0002, vence 3 de 12 runs
+     pareados) e mesmo assim a imagem dele e claramente melhor. A metrica mede quanto a composicao
+     inteira andou, e a composicao anda de qualquer jeito.
+
+   **0,15 nao se sustenta**: promove 55 camadas, custa +16% de tempo e nao ganha na metrica.
+   0,10 (119 camadas) vence 12 de 12 com -0,1033. Texto original abaixo, mantido porque a parte da
+   metodologia continua valendo: sweep contra imagens reais em varias seeds; `--analysis`
+   re-decide em segundos, entao a varredura custa so o tempo de geracao.
 2. Extend `quant_mixed.py` past `zimage`. `ltx_2_5` and `hunyuan_video_15` profiles already exist
    in `calibrate_activations.py`, but each needs its file naming checked against its ComfyUI
    module naming first — the Z-Image trap above is not Z-Image-specific. Lightricks' shipped
