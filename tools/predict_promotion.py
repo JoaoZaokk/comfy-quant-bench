@@ -75,6 +75,45 @@ ROLE_ORDER = ("feed_forward.w3", "feed_forward.w2", "attention.qkv",
               "attention.out", "feed_forward.w1")
 
 
+def weight_errors(weight: torch.Tensor, ops: dict) -> dict:
+    """How badly each format reconstructs this weight, with no activation data at all.
+
+    The trick is the one `svdq_to_bf16.recover_weight` uses: feed the identity. Every row of `I`
+    holds a single nonzero, and a symmetric per-group scale represents a lone nonzero exactly, so
+    the activation quantiser inside the kernel contributes nothing and `linear(I)` returns the
+    effective quantised weight rather than an estimate of it.
+
+    That makes this the *weight* reconstruction error -- a different quantity from the `err_w4a4`
+    the calibration measures, which is the error on the rows the model actually produces. Whether
+    one predicts the other is exactly the open question; nothing about it is obvious, since the
+    activation distribution is what the whole ConvRot rotation exists to handle.
+    """
+    out = {}
+    rows, cols = weight.shape
+    eye = torch.eye(cols, dtype=torch.bfloat16, device=weight.device).unsqueeze(0)[0]
+    reference = weight.float()
+    try:
+        packed4 = ops["q4"](weight, 256, 64)
+        got = ops["lin4"](eye, packed4[0], packed4[1], None, 256, 64, "int4")
+        out["w4a4_weight_err"] = float((got.T.float() - reference).norm() / reference.norm())
+        del packed4, got
+    except Exception:
+        out["w4a4_weight_err"] = float("nan")
+    try:
+        packed8 = ops["q8"](weight, group_size=16, convrot_groupsize=256, symmetric=True,
+                            scale_dtype=torch.float8_e4m3fn, codebook=True, codebook_tensor=None,
+                            stochastic_rounding=0)
+        got = ops["lin8"](eye, packed8[0], packed8[1], packed8[2], codebook=packed8[4],
+                          correction=packed8[3], bias=None, group_size=16, convrot_groupsize=256,
+                          out_dtype=torch.bfloat16)
+        out["w4a8_weight_err"] = float((got.T.float() - reference).norm() / reference.norm())
+        del packed8, got
+    except Exception:
+        out["w4a8_weight_err"] = float("nan")
+    del eye
+    return out
+
+
 def structural(name: str) -> dict:
     """Features read off the layer's *name*: how deep it sits, and what it does.
 
@@ -148,6 +187,12 @@ def main() -> int:
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--promote-error", type=float, default=0.10,
                         help="the threshold whose selection the features are asked to reproduce")
+    parser.add_argument("--weight-error", action="store_true",
+                        help="also compute how badly each format reconstructs the weight itself, "
+                             "by driving the real kernel with an identity matrix. Needs CUDA and "
+                             "the comfy-kitchen CUDA backend, but no calibration, no sampling and "
+                             "no text encoder -- which is the point: if this predicts, a profile "
+                             "costs nothing but the weights.")
     args = parser.parse_args()
 
     from safetensors.torch import safe_open
@@ -159,6 +204,22 @@ def main() -> int:
     measured = {r["layer"]: r for r in rows if r.get(args.target) is not None}
     print(f"{len(measured)} layer(s) with a measured {args.target}")
 
+    ops = None
+    if args.weight_error:
+        sys.path.insert(0, str(PORTABLE_ROOT / "ComfyUI"))
+        import comfy.quant_ops  # noqa: F401
+        from comfy_kitchen import registry as R
+        for name in ("quantize_convrot_w4a4_weight", "convrot_w4a4_linear",
+                     "quantize_w4a8_int8_weight", "w4a8_int8_linear"):
+            module = getattr(R.get_implementation(name), "__module__", "?")
+            if "comfy_kitchen.backends.cuda" not in module:
+                print(f"{name} resolves to {module}, not the CUDA backend; refusing")
+                return 1
+        ops = {"q4": R.get_implementation("quantize_convrot_w4a4_weight"),
+               "lin4": R.get_implementation("convrot_w4a4_linear"),
+               "q8": R.get_implementation("quantize_w4a8_int8_weight"),
+               "lin8": R.get_implementation("w4a8_int8_linear")}
+
     table = []
     with safe_open(str(args.weights), framework="pt") as f:
         available = set(f.keys())
@@ -169,6 +230,9 @@ def main() -> int:
             w = f.get_tensor(key).to(args.device)
             entry = features(w)
             entry.update(structural(name))
+            if ops is not None:
+                entry.update(weight_errors(w.to(torch.bfloat16), ops))
+                torch.cuda.empty_cache()
             entry["layer"] = name
             entry["target"] = row[args.target]
             entry["crest_p99_activation"] = row.get("crest_p99")

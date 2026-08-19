@@ -2777,3 +2777,70 @@ as cegas.
 0,22 para HunyuanVideo, nao 0,10. Em 0,10 aquela familia promove 424 de 432 e a mistura deixa de
 ser mistura. O valor foi escolhido perto da mediana daquela familia (0,2136), que e o que torna a
 comparacao informativa - e e mais uma instancia de que o limiar e por familia.
+
+
+## 2026-08-19, parte 25 - por que nenhum atalho pelo peso funciona: o peso nao varia
+
+Pergunta do usuario: com um checkpoint ja quantizado ao lado do BF16, da para estimar
+matematicamente qual camada precisa do formato caro, sem calibrar?
+
+### Primeiro, o que o checkpoint quantizado da LTX contem
+
+`ltx-2.5-22b-dev-transformer-comfy-int8-convrot` nao traz `_quantization_metadata` no header - usa
+os marcadores `comfy_quant` inline, 1440 deles, um por camada quantizada. Decodificados, os 1440
+sao **a mesma string**:
+
+```
+{"format": "int8_tensorwise", "convrot": true, "convrot_groupsize": 256}
+```
+
+Formato uniforme. **Nao ha perfil por camada para ler ali** - a Lightricks nao escolheu camada a
+camada, aplicou um formato a todas.
+
+### Segundo, e o achado: o peso nao carrega a informacao
+
+Testado o que faltava testar. Nao uma *estatistica* do peso (ja medido: acaso), mas **o erro de
+reconstrucao do proprio peso**: quantizar, desquantizar pela identidade - o mesmo truque do
+`recover_weight`, exato porque uma linha one-hot nao sofre com o quantizador de ativacao - e
+comparar com o original. Zero calibracao, zero amostragem, zero encoder.
+
+Z-Image, 170 camadas:
+
+| grandeza | min | max | CV | max/min |
+|---|---|---|---|---|
+| erro do **peso** w4a4 | 0,1566 | 0,2128 | 6,1% | 1,36x |
+| erro do **peso** w4a8 | 0,0730 | 0,0734 | **0,1%** | **1,01x** |
+| erro da **ativacao** w4a4 | 0,0195 | 0,4758 | 45,5% | **24,4x** |
+| erro da **ativacao** w4a8 | 0,0079 | 0,1666 | 45,3% | 21,1x |
+
+HunyuanVideo 1.5, 432 camadas:
+
+| grandeza | min | max | CV | max/min |
+|---|---|---|---|---|
+| erro do peso w4a4 | 0,1496 | 0,1823 | 4,5% | 1,22x |
+| erro da ativacao w4a4 | 0,0475 | 0,5259 | 35,4% | **11,1x** |
+
+**Todo peso quantiza praticamente igual.** No W4A8 o erro de peso e literalmente constante -
+1,01x entre a melhor e a pior camada de 170. A variacao que a decisao de promocao depende de -
+11x a 24x - esta inteiramente na ativacao.
+
+Spearman entre os dois: **-0,079** no Z-Image e **-0,396** no HunyuanVideo. Nao e so ausencia de
+sinal: no Hunyuan o pouco que existe aponta para o lado errado, e usar erro de peso como preditor
+la seria pior que sortear.
+
+### O que isso fecha
+
+Isto explica de uma vez todos os negativos das partes 19 e 22, que ate agora eram uma lista de
+tentativas fracassadas sem causa comum:
+
+- estatistica de peso nao prediz -> **porque o lado do peso nao varia**
+- erro de reconstrucao do peso nao prediz -> mesma razao, medida diretamente
+- ativacao sintetica prediz pior que o acaso -> porque troca a unica fonte de variacao por outra
+- perfil transfere entre checkpoints da mesma arquitetura -> **porque requantizar o peso nao muda
+  a ativacao**, e a parte 23 mostrou isso ao vivo: 9,4% de dano em cada peso, perfil identico
+
+**Nao da para estimar pelo peso. Nao por falta de uma formula melhor, mas porque a grandeza que
+distingue as camadas nao esta la.** A calibracao nao e um atalho que ainda nao foi encontrado; ela
+mede a unica coisa que varia.
+
+O que continua valendo, e agora com mecanismo por tras: medir uma vez por arquitetura e reusar.
