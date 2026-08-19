@@ -2604,3 +2604,83 @@ default fixo so faz sentido dentro de uma familia, exatamente como o perfil.
 | regra de profundidade entre arquiteturas | **nao** | +0,667 contra +0,220 |
 | "up-projection e a pior do MLP" | talvez | vale nas duas, uma comparacao por modelo |
 | threshold entre arquiteturas | **nao** | 32% contra 94% promovidas no mesmo valor |
+
+
+## 2026-08-19, parte 22 - tres familias medidas: so a familia transfere
+
+Plano: tres checkpoints por arquitetura, medir, guardar, comparar. O que o disco permitiu:
+Z-Image x3, HunyuanVideo 1.5 x2 (so existem dois em alta precisao aqui), WAN 2.1 x1 (arquitetura
+nova, perfil escrito nesta sessao). Qwen-Image continua fora: so ha SVDQ int4 e GGUF.
+
+Ferramenta nova: `tools/profile_transfer.py`, que compara N analises par a par.
+
+### Dentro da familia: transfere, e agora em duas familias
+
+| par | camadas | spearman | mesma metade pior | acaso |
+|---|---|---|---|---|
+| Z-Image turbo vs de-turbo | 170 | +0,981 | 82/85 | 42,5 |
+| Z-Image turbo vs beyond-reality-v2 | 170 | **+0,997** | 84/85 | 42,5 |
+| Z-Image de-turbo vs beyond-reality-v2 | 170 | +0,986 | 83/85 | 42,5 |
+| Hunyuan 720p vs capybara | 432 | **+0,900** | 189/216 | 108,0 |
+
+**A comparacao passou a ser por posto, nao por limiar.** Motivo medido: em `--promote-error 0.10`
+os dois Hunyuan promovem 424 de 432, o acaso vira 417, e um 424/424 perfeito pontua **+6,9** - a
+estatistica nao diz nada enquanto parece uma vitoria. Metade pior de cada um responde a mesma
+pergunta onde ainda da para responde-la.
+
+O resultado do Z-Image nao era quirk: a segunda familia tambem transfere, um pouco mais frouxa
+(87,5% da metade pior contra 96-99%).
+
+### Entre familias: nada transfere
+
+| familia | camadas | err_w4a4 mediano | profundidade vs erro | acima de 0,15 |
+|---|---|---|---|---|
+| Z-Image | 170 | 0,1241 | **+0,667** | 34% |
+| HunyuanVideo 1.5 | 432 | 0,2136 | +0,220 | 94% |
+| WAN 2.1 | 300 | 0,1511 | **+0,088** | 50% |
+
+**A regra de profundidade morre com a terceira familia**: +0,667, +0,220, +0,088. Ela e propriedade
+do Z-Image, nao dos transformers de difusao.
+
+E a hipotese que tinha sobrevivido a duas familias - "a projecao de subida do MLP e a pior" -
+**inverte na terceira**:
+
+```
+Z-Image   w3 (up)   0,1782   >   w2 (down)  0,1364
+Hunyuan   fc1 (up)  0,2565   >   fc2 (down) 0,1956
+WAN       ffn.0(up) 0,1334   <   ffn.2(down) 0,2084
+```
+
+Era exatamente por isso que valia medir a terceira. Com duas eu teria escrito uma regra.
+
+### Placar final da hipotese da familia
+
+| escopo | transfere? |
+|---|---|
+| entre checkpoints da mesma arquitetura | **sim**, medido em duas familias |
+| regra de profundidade entre arquiteturas | **nao** (+0,667 / +0,220 / +0,088) |
+| "up-projection e a pior do MLP" | **nao** (inverte no WAN) |
+| valor de `--promote-error` entre arquiteturas | **nao** (34% / 94% / 50% promovido no mesmo 0,15) |
+| estatistica do peso, qualquer familia | **nao** (acaso) |
+| ativacao sintetica | **nao** (pior que acaso) |
+
+**Sobra uma coisa so, e ela funciona: medir uma vez por arquitetura e reusar via
+`--foreign-analysis`.** Todo atalho que tenta pular essa medicao falhou.
+
+### Terceira convencao de nomes, terceira vez
+
+WAN prefixa as chaves com `model.diffusion_model.` e os modulos nao. Hunyuan troca ponto por
+underscore. Z-Image (publicado) usa naming diffusers. **Assumir que arquivo e modulo tem nomes
+diferentes ate um dump dos dois dizer o contrario** - as tres vezes que isso apareceu aqui, custou
+uma investigacao.
+
+### Custo de calibrar, para dimensionar o proximo
+
+| modelo | tamanho | calibracao | medicao |
+|---|---|---|---|
+| WAN 2.1 VACE 1.3B | 4 GiB | 8,3 s | 300 camadas |
+| Z-Image | 11,5 GiB | 40 s | 170 camadas |
+| HunyuanVideo 1.5 | 15,5 GiB | 67 s | 432 camadas |
+
+Barato. O que custa e o disco: LTX 2.5 (39 GiB BF16 x2) ficou de fora por nao caber na placa sem
+offload, e o Z-Image recuperado de SVDQ por precisar de mais 11,5 GiB num disco a 98%.

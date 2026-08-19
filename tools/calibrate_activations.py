@@ -95,6 +95,13 @@ PROFILE_PATTERNS = {
     "hunyuan_video_15": re.compile(
         r"^double_blocks\.\d+\.(?:(?:img|txt)_attn\.(?:qkv|proj)|(?:img|txt)_mlp\.[02])$"
     ),
+    # WAN 2.1, 30 `blocks` x 10 Linears = 300. `vace_blocks` (the VACE control branch) is left
+    # out: it only runs when a control input is present, so a calibration would record nothing for
+    # it and the converter would then have to guess. Excluded as ever: patch/vace embeddings,
+    # `norm_q`/`norm_k`, `time_embedding`, `text_embedding` and the head.
+    "wan_2_1": re.compile(
+        r"^blocks\.\d+\.(?:(?:self|cross)_attn\.[qkvo]|ffn\.[02])$"
+    ),
 }
 
 # The patterns above match **module** names, because that is what this file hooks. Downstream,
@@ -115,6 +122,12 @@ MODULE_TO_FILE = {
         (re.compile(r"\.(img|txt)_mlp\.0$"), r".\1_mlp.fc1"),
         (re.compile(r"\.(img|txt)_mlp\.2$"), r".\1_mlp.fc2"),
     ),
+    # WAN keeps the module names and prefixes them. Third distinct convention in this table, and
+    # the third time the file and the module disagreed -- worth stating plainly: assume they
+    # differ until a dump of both says otherwise.
+    "wan_2_1": (
+        (re.compile(r"^blocks\."), "model.diffusion_model.blocks."),
+    ),
 }
 
 
@@ -130,6 +143,9 @@ def to_file_name(profile: str, module_name: str) -> str:
 PROFILE_FILE_PATTERNS = dict(PROFILE_PATTERNS)
 PROFILE_FILE_PATTERNS["hunyuan_video_15"] = re.compile(
     r"^double_blocks\.\d+\.(?:(?:img|txt)_attn_(?:qkv|proj)|(?:img|txt)_mlp\.fc[12])$"
+)
+PROFILE_FILE_PATTERNS["wan_2_1"] = re.compile(
+    r"^(?:model\.diffusion_model\.)?blocks\.\d+\.(?:(?:self|cross)_attn\.[qkvo]|ffn\.[02])$"
 )
 
 

@@ -198,6 +198,7 @@ tools/w4a8_fallback_sweep.py   quais shapes fazem o W4A8 desistir do kernel (le 
 tools/quality_ladder.py        divergencia de latente + imagens por checkpoint, pareado por seed
 tools/predict_promotion.py     estatistica de peso preve err_w4a4? (nao: acaso)
 tools/synthetic_vs_real.py     ativacao sintetica substitui a calibracao? (nao: pior que acaso)
+tools/profile_transfer.py      compara N analises par a par; perfil de um checkpoint serve noutro?
 tools/attn_dtype_ab.py         fp16 vs bf16 nos backends de attention
 tools/gpu_lock.py              exclusao mutua com a sessao irma
 tools/_bench_guard.py          lock + ocupacao NVML, falhando fechado
