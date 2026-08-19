@@ -2725,3 +2725,55 @@ mais recente, nem a de maior precisao, nem sequer uma intacta.
 E uma consequencia para o proprio `svdq_to_bf16.py`: o que ele recupera preserva a estrutura que
 importa para esta decisao, mesmo perdendo 9,4% do peso. Isso nao diz que a imagem dele e boa - nao
 foi medido aqui - so que o perfil de quantizacao dele e o mesmo.
+
+
+## 2026-08-19, parte 24 - quanto custa reusar o perfil, em camadas e nao em correlacao
+
+`--foreign-analysis` foi liberado com base em spearman +0,98 a +0,997. Spearman nao e o que o
+conversor usa: ele usa um limiar e escreve um formato por camada. A pergunta certa e **quantas
+camadas saem atribuidas diferente**, e em que direcao - promover a toa custa tamanho e velocidade,
+deixar em 4 bits custa precisao.
+
+`profile_transfer.py` agora reporta isso, com a direcao nomeada, porque os dois lados nao dao o
+mesmo numero.
+
+### Z-Image: reuso e exato
+
+```
+reusando turbo em beyond-reality-v2 @0.10:   0 de 170 camadas diferem
+reusando turbo em recuperado @0.10:          0 de 170
+reusando beyond-reality-v2 em recuperado:    0 de 170
+```
+
+**Zero.** Nos tres pares, incluindo o checkpoint que passou por int4 e voltou. Nesta familia a
+calibracao e literalmente pagavel uma vez.
+
+### HunyuanVideo: reuso custa 11%
+
+```
+reusando capybara em hunyuan15 @0.22:  48 de 432 diferem (18 a toa, 30 expostas, pior 0,3358)
+reusando hunyuan15 em capybara @0.22:  48 de 432 diferem (30 a toa, 18 expostas, pior 0,2339)
+```
+
+11,1% das camadas. E a assimetria importa: na direcao que interessa aqui - usar o perfil do
+`hunyuanvideo1.5_720p` para converter o `capybara` - sao 18 camadas expostas, e a pior delas mede
+0,2339 contra um corte de 0,22. **Todas as discordancias sao rentes ao limiar**, que e onde a
+decisao menos importa: uma camada em 0,2339 e uma em 0,22 sao o mesmo caso duvidoso.
+
+### A regra que sai disso
+
+**A seguranca do reuso e ela propria propriedade da familia, e tem de ser medida uma vez por
+familia.** Z-Image: zero. HunyuanVideo: 11%, concentrado no limiar. Nao da para transportar "reuso
+e seguro" de uma para a outra, exatamente como nao deu para transportar o limiar nem a regra de
+profundidade.
+
+O procedimento que isso sugere, para uma familia nova: calibrar **dois** checkpoints dela uma vez,
+rodar `profile_transfer.py`, e so entao decidir se os proximos podem usar `--foreign-analysis`. O
+custo e uma calibracao extra - 8 a 67 segundos nesta maquina - contra converter todos os proximos
+as cegas.
+
+### Nota sobre o limiar usado
+
+0,22 para HunyuanVideo, nao 0,10. Em 0,10 aquela familia promove 424 de 432 e a mistura deixa de
+ser mistura. O valor foi escolhido perto da mediana daquela familia (0,2136), que e o que torna a
+comparacao informativa - e e mais uma instancia de que o limiar e por familia.

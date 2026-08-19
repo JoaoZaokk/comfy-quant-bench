@@ -322,8 +322,23 @@ def main() -> int:
     if not torch.cuda.is_available():
         raise SystemExit("CUDA is unavailable; calibration must run where the model runs")
 
-    comfy.model_management.vram_state = comfy.model_management.VRAMState.HIGH_VRAM
-    comfy.model_management.set_vram_to = comfy.model_management.VRAMState.HIGH_VRAM
+    # HIGH_VRAM keeps the whole transformer resident, which is what makes the hooks cheap -- but
+    # it is a promise the card cannot always keep. LTX 2.5 is 39 GiB of BF16 against 24 GiB of
+    # RTX 3090, and forcing HIGH_VRAM there turns "slow" into "out of memory". Decided from the
+    # file size against the device, not assumed.
+    candidate_size = Path(args.model)
+    if not candidate_size.is_file():
+        import folder_paths as _fp
+        candidate_size = Path(_fp.get_full_path_or_raise("diffusion_models", args.model))
+    model_gib = candidate_size.stat().st_size / 2 ** 30
+    total_gib = torch.cuda.get_device_properties(0).total_memory / 2 ** 30
+    if model_gib < 0.7 * total_gib:
+        comfy.model_management.vram_state = comfy.model_management.VRAMState.HIGH_VRAM
+        comfy.model_management.set_vram_to = comfy.model_management.VRAMState.HIGH_VRAM
+    else:
+        print(f"{model_gib:.1f} GiB model against {total_gib:.1f} GiB of VRAM: leaving ComfyUI's "
+              f"own VRAM policy alone. Calibration will offload and be slow; the numbers are the "
+              f"same, the wall clock is not.", flush=True)
 
     # Encode every prompt and drop the encoder before the transformer is loaded. Qwen3-4B is
     # ~8 GiB and a 12 GiB BF16 transformer alongside it does not fit on a 24 GiB card.

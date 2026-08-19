@@ -87,6 +87,22 @@ def main() -> int:
         print(f"{a + ' vs ' + b:<{width}}{len(shared):>8}{rho:>+10.3f}"
               f"{f'{hit}/{len(pa)}':>12}{chance:>8.1f}{hit - chance:>+11.1f}")
 
+        # The decision-relevant number, and it is not the correlation. If `b`'s profile is reused
+        # to convert `a`, these are the layers that come out assigned differently than measuring
+        # `a` would have assigned them, split by which way the mistake goes: a layer promoted
+        # without needing it costs size and speed, a layer left at 4 bits that needed 8 costs
+        # accuracy. Reported at the absolute threshold, because that is what the converter uses.
+        ta = {k for k in shared if ra[k]["err_w4a4"] > args.promote_error}
+        tb = {k for k in shared if rb[k]["err_w4a4"] > args.promote_error}
+        wasted, exposed = tb - ta, ta - tb
+        worst = max((ra[k]["err_w4a4"] for k in exposed), default=None)
+        detail = f", worst left at 4 bits {worst:.4f}" if worst is not None else ""
+        # The direction is named because the two are not the same number: reusing b's profile on a
+        # exposes the layers a needs and b does not, and swapping the pair swaps which those are.
+        print(f"{'':<{width}}reusing {b} on {a} at {args.promote_error}: "
+              f"{len(wasted | exposed)} of {len(shared)} layers differ "
+              f"({len(wasted)} promoted needlessly, {len(exposed)} left exposed{detail})")
+
     print(f"\n{'analysis':<28}{'median err_w4a4':>18}{'promoted':>12}{'of':>6}")
     for name, (_, rows) in loaded.items():
         errs = [r["err_w4a4"] for r in rows.values()]
