@@ -2442,3 +2442,91 @@ modelo so. E "melhor" aqui e julgamento meu olhando imagem, nao medida.
 **O que falta e uma metrica que veja o defeito.** Divergencia de latente nao serve. Candidatos que
 nao foram testados: distancia perceptual contra a imagem BF16 na mesma seed, ou pontuar so a regiao
 que quebra. Ate ter isso, a escolha do threshold e feita a olho, e o registro tem de dizer isso.
+
+
+## 2026-08-19, parte 19 - o que NAO substitui a calibracao: estatistica de peso e ativacao sintetica
+
+Pergunta do usuario: da para decidir a promocao por inferencia, sem a passada de calibracao? Duas
+tentativas, as duas negativas, as duas medidas contra as mesmas 170 camadas do Z-Image que ja
+tinham `err_w4a4` medido.
+
+### Estatistica do peso: acaso
+
+`tools/predict_promotion.py`. A parte 9 ja tinha matado o crest factor da **ativacao** (+0,10).
+Estatistica do **peso** nunca tinha sido testada, e e de graca - nao precisa de amostragem nem de
+hook. Nove candidatos, cada um uma forma de perguntar "quanto desta linha e decidido pelos seus
+outliers":
+
+| feature | spearman |
+|---|---|
+| group_waste_mean | +0,225 |
+| row_crest_mean | +0,188 |
+| row_crest_p99 | +0,149 |
+| crest_p99_activation (controle) | +0,095 |
+| top0.1pct_mass | +0,036 |
+| std | -0,023 |
+| kurtosis | +0,002 |
+
+**A correlacao nao e o entregavel.** O conversor escolheria um conjunto de camadas, e o que importa
+e se e o mesmo conjunto que a medicao escolhe. Com 119 de 170 promovidas, **um sorteio do mesmo
+tamanho ja acerta 83,3 por acaso**. O melhor feature acerta 89. Ou seja: **+5,7 sobre o acaso.**
+Nada. A ferramenta imprime a linha do acaso justamente porque `89/119` sozinho le como bom.
+
+### Ativacao sintetica: pior que o acaso
+
+`tools/synthetic_vs_real.py`. Melhor pergunta que a anterior: a medicao em si e barata, o caro e
+**obter as ativacoes**. E se rodar os mesmos kernels em ruido gaussiano da largura certa?
+
+| entrada | spearman vs real | overlap@0,10 | acaso |
+|---|---|---|---|
+| gaussiana | **-0,128** | 78/119 | 83,3 |
+| gaussiana x lognormal por canal | +0,004 | 79/119 | 83,3 |
+
+**Abaixo do acaso nas duas.** E o erro medio sai muito inflado: 0,2295 e 0,2442 no sintetico contra
+**0,1290** no real. Isso confirma com numero a ressalva que o CLAUDE.md ja carregava sobre o smoke
+de `verify_w4a4.py` ("RMSE ~0,25 em entrada aleatoria e sinal de vida, nao metrica de qualidade") -
+ruido faz o W4A4 parecer 1,8x pior do que ele e.
+
+**Conclusao:** o que torna uma camada dificil para o W4A4 e propriedade da ativacao real, e nao
+esta no peso nem em ruido. A passada de calibracao nao sai por esse caminho.
+
+
+## 2026-08-19, parte 20 - mas o perfil transfere entre checkpoints da mesma arquitetura
+
+Hipotese do usuario, e melhor que a minha: o padrao nao esta numa formula, esta na **familia**.
+Mede uma vez por arquitetura, reusa nos parentes.
+
+Testado na forma mais forte disponivel aqui - tres checkpoints Z-Image, **recalibrados os tres nas
+mesmas condicoes** (2 prompts, seeds 1234/5678, 8 passos, 1024px) para nao comparar contra uma
+calibracao antiga com outras condicoes:
+
+| par | spearman(err_w4a4) | overlap @0,10 | acaso |
+|---|---|---|---|
+| turbo vs de-turbo | +0,981 | 119/120 | 84,7 |
+| turbo vs beyond-reality-v2 | **+0,997** | **120/120** | 84,7 |
+| de-turbo vs beyond-reality-v2 | +0,986 | 119/120 | 84,7 |
+
+**O perfil e da arquitetura, nao dos pesos.** Um finetune muda os pesos e nao muda qual camada
+sofre com 4 bits.
+
+### O que mudou no codigo
+
+`quant_mixed.py` recusava reusar uma analise de outro checkpoint - default certo enquanto ninguem
+sabia se transferia. Agora e opt-in explicito, `--foreign-analysis`, que:
+
+- exige **a mesma lista de camadas e os mesmos shapes**, senao recusa dizendo que sao arquiteturas
+  diferentes (o teste de shape ja existia; o de lista de camadas e novo, porque uma camada que a
+  analise nunca mediu cairia no tratamento de `--uncalibrated` em silencio);
+- imprime em toda execucao de qual arquivo vieram os erros, porque o risco inteiro da flag e
+  alguem esquecer qual medicao produziu o arquivo que esta enviando;
+- carrega os numeros acima no proprio `--help`.
+
+Converter um Z-Image novo agora custa **zero calibracao**. Custo medido do reuso: **1 camada de 170
+sai diferente** do que o perfil proprio daquele checkpoint escolheria.
+
+### Ressalva que nao pode cair
+
+Isto e uma arquitetura, tres checkpoints, dois deles provavelmente derivados do primeiro. **Nao ha
+evidencia nenhuma de transferencia entre arquiteturas ou entre fabricantes** - a ideia de que Qwen
+e Z-Image se pareceriam por serem da Alibaba e plausivel e **nao foi testada**. Testar exige
+calibrar um modelo de outra familia, o que precisa do encoder e do perfil daquela familia.

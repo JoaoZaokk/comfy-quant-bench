@@ -214,6 +214,15 @@ def parse_args() -> argparse.Namespace:
                         help="a .calib.pt from tools/calibrate_activations.py")
     parser.add_argument("--analysis", type=Path,
                         help="reuse a previously written analysis JSON instead of remeasuring")
+    parser.add_argument("--foreign-analysis", action="store_true",
+                        help="allow --analysis measured on a DIFFERENT checkpoint of the same "
+                             "architecture, skipping calibration entirely. Measured 2026-08-19 on "
+                             "three Z-Image checkpoints (turbo, de-turbo, beyond-reality-v2): the "
+                             "per-layer err_w4a4 ranking agrees at Spearman +0.981 to +0.997, and "
+                             "at --promote-error 0.10 the three select 119-120 of the same 120 "
+                             "layers where chance overlap is 84.7. The layer set and every shape "
+                             "must still match exactly. This has NOT been shown across "
+                             "architectures or vendors -- only across checkpoints of one model.")
     parser.add_argument("--save-analysis", type=Path,
                         help="write the per-layer measurement table here")
     parser.add_argument("--profile", choices=list(PROFILE_PATTERNS),
@@ -281,10 +290,17 @@ def main() -> int:
         # per-layer errors would silently describe a different computation than the one being
         # written.
         recorded_source = Path(analysis.get("source", "")).name
-        if recorded_source and recorded_source != source.name:
+        if recorded_source and recorded_source != source.name and not args.foreign_analysis:
             raise SystemExit(
                 f"The analysis was measured on {recorded_source!r} but the input is "
-                f"{source.name!r}. Re-measure with --calibration.")
+                f"{source.name!r}. Re-measure with --calibration, or pass --foreign-analysis if "
+                f"the two are the same architecture -- see its help text for what that buys and "
+                f"what it costs.")
+        if recorded_source and recorded_source != source.name:
+            # Loud, every run. The whole risk of this flag is that someone forgets which
+            # measurement produced the file they are shipping.
+            print(f"--foreign-analysis: promoting layers of {source.name!r} using errors measured "
+                  f"on {recorded_source!r}.")
         for field, current in (("group_size", args.group_size),
                                ("convrot_groupsize", args.convrot_groupsize)):
             recorded = analysis.get(field)
@@ -301,6 +317,22 @@ def main() -> int:
                 raise SystemExit(
                     f"{stem}: the analysis recorded shape {list(shapes[stem])} but the input has "
                     f"{info['shape']}. These are not the same weights.")
+        if recorded_source and recorded_source != source.name:
+            # Same shapes where both have a layer is not enough when the analysis comes from
+            # another file: a layer the analysis never measured would fall to --uncalibrated
+            # handling silently, and a layer the analysis has but the input lacks means the two
+            # are not the architecture this transfer was measured on. Both must be empty.
+            # selected_layers returns tensor names; the analysis keys layers without the suffix.
+            present = {n.removesuffix(".weight")
+                       for n in selected_layers(header, profile, args.convrot_groupsize)}
+            missing = sorted(set(shapes) - present)
+            extra = sorted(present - set(shapes))
+            if missing or extra:
+                raise SystemExit(
+                    f"--foreign-analysis requires the same layer set. "
+                    f"{len(missing)} in the analysis but not in the input "
+                    f"(e.g. {missing[:2]}), {len(extra)} the other way (e.g. {extra[:2]}). "
+                    f"These are different architectures; measure this one.")
     else:
         blob = torch.load(args.calibration, map_location="cpu", weights_only=False)
         calibration_meta = blob["meta"]

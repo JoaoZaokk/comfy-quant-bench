@@ -195,6 +195,9 @@ tools/w4a4_breakdown.py        kernel a kernel, e a divisao host/GPU de uma cham
 tools/graph_capture_probe.py   CUDA graph: captura? replay bate com eager? quanto de host sai?
 tools/dispatch_census.py       conta o ramo que cada Linear quantizado tomou numa geracao real
 tools/w4a8_fallback_sweep.py   quais shapes fazem o W4A8 desistir do kernel (le os booleanos)
+tools/quality_ladder.py        divergencia de latente + imagens por checkpoint, pareado por seed
+tools/predict_promotion.py     estatistica de peso preve err_w4a4? (nao: acaso)
+tools/synthetic_vs_real.py     ativacao sintetica substitui a calibracao? (nao: pior que acaso)
 tools/attn_dtype_ab.py         fp16 vs bf16 nos backends de attention
 tools/gpu_lock.py              exclusao mutua com a sessao irma
 tools/_bench_guard.py          lock + ocupacao NVML, falhando fechado
