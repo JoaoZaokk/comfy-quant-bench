@@ -2530,3 +2530,77 @@ Isto e uma arquitetura, tres checkpoints, dois deles provavelmente derivados do 
 evidencia nenhuma de transferencia entre arquiteturas ou entre fabricantes** - a ideia de que Qwen
 e Z-Image se pareceriam por serem da Alibaba e plausivel e **nao foi testada**. Testar exige
 calibrar um modelo de outra familia, o que precisa do encoder e do perfil daquela familia.
+
+
+## 2026-08-19, parte 21 - segunda arquitetura: o que transfere e o que nao
+
+Teste da hipotese da familia contra uma arquitetura genuinamente diferente. Escolhido
+HunyuanVideo 1.5 (`hunyuanvideo1.5_720p_t2v_fp16`, 15,5 GiB) porque o perfil `hunyuan_video_15` ja
+existia e cabe na placa. Qwen-Image nao serve: so ha SVDQ int4 e GGUF Q8 no disco, e calibracao
+precisa da fonte de alta precisao.
+
+### Antes do resultado: dois bugs, e a armadilha de naming pela quarta vez
+
+**O perfil `hunyuan_video_15` nunca tinha sido executado.** Ele lia
+`double_blocks.N.img_attn_qkv` e `img_mlp.fc1`; os modulos carregados chamam-se
+`img_attn.qkv` e `img_mlp.0`. Casou **zero** camadas. Custou barato so porque
+`calibrate_activations` grita `Profile 'hunyuan_video_15' matched no Linear` em vez de calibrar
+conjunto vazio.
+
+**E o motivo do erro e estrutural, nao um typo.** O perfil estava certo *para o arquivo* e errado
+*para o modulo*:
+
+```
+arquivo   double_blocks.0.img_attn_qkv.weight    double_blocks.0.img_mlp.fc1.weight
+modulo    double_blocks.0.img_attn.qkv           double_blocks.0.img_mlp.0
+```
+
+`calibrate_activations` percorre **modulos**; `quant_mixed` percorre **chaves do arquivo**. Os dois
+liam o mesmo `PROFILE_PATTERNS`. Em Z-Image e LTX as duas nomeacoes coincidem e nada forcou a
+distincao a aparecer. Aqui nao coincidem: uma calibracao com chave de modulo descreveria camadas
+que o conversor nao acha, e a juncao voltaria vazia - ou pior, meio populada.
+
+Consertado com tres pecas, todas em `calibrate_activations.py` para ficarem juntas do padrao:
+`MODULE_TO_FILE` (a traducao), `to_file_name()` (aplicada ao gravar a calibracao, com guarda que
+recusa se a traducao colapsar camadas) e `PROFILE_FILE_PATTERNS` (o que o `quant_mixed` casa).
+Terceira armadilha de naming deste tipo no projeto, depois do Z-Image diffusers e do
+`weight_scale` passando sem renomear.
+
+Tambem: `calibrate_activations` montava latente 4-D sempre. Modelo de video handed um latente 4-D
+falha la dentro do transformer com erro de shape que nao fala em latente. Agora le
+`latent_dimensions` do proprio `latent_format` e monta 5-D com `--frames`.
+
+### O resultado
+
+432 camadas medidas (54 `double_blocks` x 8).
+
+| | Z-Image | HunyuanVideo 1.5 |
+|---|---|---|
+| **profundidade vs err_w4a4** | **+0,667** | **+0,220** |
+| err_w4a4 mediano | 0,1241 | 0,2136 |
+| promovidas em `--promote-error 0.15` | 55 de 170 (32%) | 408 de 432 (94%) |
+
+**A regra de profundidade nao transfere.** Forte numa arquitetura, fraca na outra. O inteiro que
+andava metade do caminho no Z-Image nao anda no HunyuanVideo.
+
+**O que aparece nas duas:** a projecao de subida do MLP e a pior das MLP. Z-Image `w3` 0,178 contra
+`w2` 0,136; Hunyuan `img_mlp.fc1` 0,429 contra `img_mlp.fc2` 0,192, e `txt_mlp.fc1` 0,222 contra
+`fc2` 0,198. E uma comparacao por modelo, entao e hipotese, nao regra.
+
+**Estrutura propria do Hunyuan**, sem paralelo no Z-Image: o fluxo de imagem e mais dificil que o
+de texto (`img_attn_qkv` 0,311 contra `txt_attn_qkv` 0,186).
+
+### A consequencia pratica que ninguem tinha visto
+
+**`--promote-error` nao e portavel entre arquiteturas.** O mesmo 0,15 promove 32% do Z-Image e
+**94%** do HunyuanVideo - naquele modelo a mistura vira quase-W4A8 e o ganho de tamanho evapora. Um
+default fixo so faz sentido dentro de uma familia, exatamente como o perfil.
+
+### Placar da hipotese
+
+| escopo | transfere? | evidencia |
+|---|---|---|
+| entre checkpoints da mesma arquitetura | **sim** | spearman +0,981 a +0,997; 119-120 de 120 camadas iguais |
+| regra de profundidade entre arquiteturas | **nao** | +0,667 contra +0,220 |
+| "up-projection e a pior do MLP" | talvez | vale nas duas, uma comparacao por modelo |
+| threshold entre arquiteturas | **nao** | 32% contra 94% promovidas no mesmo valor |

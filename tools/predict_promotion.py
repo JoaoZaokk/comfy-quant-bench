@@ -68,6 +68,33 @@ def spearman(a: list[float], b: list[float]) -> float:
     return num / den if den else float("nan")
 
 
+# Roles ordered by their measured median err_w4a4 on Z-Image: w3 0.178, w2 0.136, qkv 0.123,
+# out 0.107, w1 0.104. The order is data, not intuition -- and it is one model's data, so it is a
+# hypothesis about other architectures, not a fact about them.
+ROLE_ORDER = ("feed_forward.w3", "feed_forward.w2", "attention.qkv",
+              "attention.out", "feed_forward.w1")
+
+
+def structural(name: str) -> dict:
+    """Features read off the layer's *name*: how deep it sits, and what it does.
+
+    These cost nothing at all -- no weights, no activations, no GPU -- and they turned out to
+    beat every weight statistic here. Kept separate from `features` because they generalise
+    differently: a weight statistic is defined for any Linear anywhere, while these depend on the
+    naming convention of one architecture and have to be re-derived for another.
+    """
+    import re
+    match = re.match(r"^(?P<stack>[a-z_]+)\.(?P<index>\d+)\.(?P<role>.+)$", name)
+    if not match:
+        return {"depth": -1.0, "role_rank": float(len(ROLE_ORDER))}
+    role = match.group("role")
+    # Only the main stack gets a depth; the refiners are separate short stacks and their indices
+    # are not comparable to the trunk's.
+    depth = float(match.group("index")) if match.group("stack") == "layers" else -1.0
+    rank = ROLE_ORDER.index(role) if role in ROLE_ORDER else len(ROLE_ORDER)
+    return {"depth": depth, "role_rank": float(len(ROLE_ORDER) - rank)}
+
+
 def features(weight: torch.Tensor) -> dict:
     """Weight-only statistics, each with a reason to be here rather than a swept net.
 
@@ -141,6 +168,7 @@ def main() -> int:
                 continue
             w = f.get_tensor(key).to(args.device)
             entry = features(w)
+            entry.update(structural(name))
             entry["layer"] = name
             entry["target"] = row[args.target]
             entry["crest_p99_activation"] = row.get("crest_p99")

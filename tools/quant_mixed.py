@@ -60,7 +60,7 @@ import psutil  # noqa: E402
 import torch  # noqa: E402
 import torch.nn.functional as F  # noqa: E402
 
-from calibrate_activations import PROFILE_PATTERNS  # noqa: E402
+from calibrate_activations import PROFILE_FILE_PATTERNS, PROFILE_PATTERNS  # noqa: E402,F401
 
 SAFETENSORS_DTYPE = {
     torch.int8: "I8", torch.uint8: "U8", torch.float32: "F32",
@@ -162,7 +162,10 @@ def copy_range(source_handle, output_handle, offset: int, size: int) -> None:
 
 
 def selected_layers(header: dict, profile: str, convrot_groupsize: int) -> list[str]:
-    pattern = PROFILE_PATTERNS[profile]
+    # File-key pattern, not the module pattern: for HunyuanVideo the checkpoint says
+    # img_attn_qkv where the loaded module says img_attn.qkv, and matching the wrong one
+    # selects nothing while looking like a profile that simply found no layers.
+    pattern = PROFILE_FILE_PATTERNS[profile]
     names = []
     for name, info in header.items():
         if not name.endswith(".weight") or not pattern.match(name.removesuffix(".weight")):

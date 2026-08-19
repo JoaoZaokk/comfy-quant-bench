@@ -83,10 +83,54 @@ PROFILE_PATTERNS = {
         r"(?:attn\d+\.(?:to_[qkv]|to_out\.\d+)|ff\.net\.\d+(?:\.proj)?)"
         r")$"
     ),
+    # HunyuanVideo 1.5, 54 `double_blocks` x 8 Linears = 432. Corrected 2026-08-19 on first
+    # execution: this pattern read `img_attn_qkv` and `img_mlp.fc1`, and the model's modules are
+    # `img_attn.qkv` and `img_mlp.0` -- a dot where it expected an underscore, and numbered
+    # Sequential entries where it expected named ones. It matched **nothing**, and
+    # `calibrate_activations` said so loudly ("matched no Linear in HunyuanVideo") rather than
+    # calibrating an empty set, which is the only reason this was cheap to find. The profile had
+    # been written from the checkpoint's key names without ever being run against a loaded model.
+    # Excluded on purpose, same rule as zimage: `img_mod.lin` / `txt_mod.lin` are the modulation
+    # path, and `txt_in`, `vision_in`, `byt5_in`, `time_in` and `final_layer` are the ends.
     "hunyuan_video_15": re.compile(
-        r"^double_blocks\.\d+\.(?:(?:img|txt)_attn_(?:qkv|proj)|(?:img|txt)_mlp\.fc[12])$"
+        r"^double_blocks\.\d+\.(?:(?:img|txt)_attn\.(?:qkv|proj)|(?:img|txt)_mlp\.[02])$"
     ),
 }
+
+# The patterns above match **module** names, because that is what this file hooks. Downstream,
+# `quant_mixed.py` matches **checkpoint key** names, because that is what it rewrites. For Z-Image
+# and LTX those are the same string and nothing forced the distinction into the open. For
+# HunyuanVideo 1.5 they are not:
+#
+#     file    double_blocks.0.img_attn_qkv.weight     double_blocks.0.img_mlp.fc1.weight
+#     module  double_blocks.0.img_attn.qkv            double_blocks.0.img_mlp.0
+#
+# ComfyUI renames on load. A calibration keyed by module name would therefore describe layers that
+# `quant_mixed` cannot find, and the merge would come back empty -- or worse, partially populated.
+# So the calibration is written out keyed by the **file** name, and the translation lives here,
+# next to the pattern it belongs to.
+MODULE_TO_FILE = {
+    "hunyuan_video_15": (
+        (re.compile(r"\.(img|txt)_attn\.(qkv|proj)$"), r".\1_attn_\2"),
+        (re.compile(r"\.(img|txt)_mlp\.0$"), r".\1_mlp.fc1"),
+        (re.compile(r"\.(img|txt)_mlp\.2$"), r".\1_mlp.fc2"),
+    ),
+}
+
+
+def to_file_name(profile: str, module_name: str) -> str:
+    """Module name -> checkpoint key stem, for profiles where ComfyUI renames on load."""
+    for pattern, replacement in MODULE_TO_FILE.get(profile, ()):
+        module_name = pattern.sub(replacement, module_name)
+    return module_name
+
+
+# What `quant_mixed.py` matches against checkpoint keys. Only profiles whose file naming differs
+# from their module naming need an entry; the rest fall back to PROFILE_PATTERNS.
+PROFILE_FILE_PATTERNS = dict(PROFILE_PATTERNS)
+PROFILE_FILE_PATTERNS["hunyuan_video_15"] = re.compile(
+    r"^double_blocks\.\d+\.(?:(?:img|txt)_attn_(?:qkv|proj)|(?:img|txt)_mlp\.fc[12])$"
+)
 
 
 class Reservoir:
@@ -223,6 +267,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sampler", default="euler")
     parser.add_argument("--scheduler", default="simple")
     parser.add_argument("--size", type=int, default=1024)
+    parser.add_argument("--frames", type=int, default=1,
+                        help="frames for a video model; ignored when the latent format is 2-D")
     parser.add_argument("--rows", type=int, default=128,
                         help="reservoir rows kept per layer")
     parser.add_argument("--crest-rows", type=int, default=64,
@@ -343,7 +389,17 @@ def main() -> int:
 
     latent_format = model.model.latent_format
     side = max(args.size // 8, 8)
-    shape = [1, latent_format.latent_channels, side, side]
+    # `latent_dimensions` is 2 for image models and 3 for video ones, and a video model handed a
+    # 4-D latent does not fail cleanly -- it fails somewhere inside the transformer with a shape
+    # error that says nothing about the latent. Read the format rather than assuming images.
+    dimensions = getattr(latent_format, "latent_dimensions", 2)
+    if dimensions == 3:
+        ratio = getattr(latent_format, "temporal_downscale_ratio", 4)
+        frames = max(1, (args.frames - 1) // ratio + 1)
+        shape = [1, latent_format.latent_channels, frames, side, side]
+        print(f"video latent {shape} ({args.frames} frames / temporal ratio {ratio})", flush=True)
+    else:
+        shape = [1, latent_format.latent_channels, side, side]
     started = time.perf_counter()
     runs = 0
     try:
@@ -372,7 +428,12 @@ def main() -> int:
         # so loudly: it usually means the profile matched something outside the sampled path.
         print(f"warning: {len(missing)} hooked layer(s) never ran, e.g. {missing[:3]}")
 
-    payload = {name: entry.finish() for name, entry in stats.items()}
+    # Keyed by checkpoint name, not module name -- see MODULE_TO_FILE. Checked rather than
+    # trusted: a translation that collides would silently drop layers from the calibration.
+    payload = {to_file_name(args.profile, name): entry.finish() for name, entry in stats.items()}
+    if len(payload) != len(stats):
+        raise SystemExit(f"the module->file translation collapsed {len(stats)} layers into "
+                         f"{len(payload)}; MODULE_TO_FILE for profile {args.profile!r} is wrong")
     meta = {
         "source": str(path),
         "profile": args.profile,
