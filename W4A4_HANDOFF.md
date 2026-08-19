@@ -181,7 +181,7 @@ rastreado daqui.
 tools/to_native.py             diffusers -> naming nativo do ComfyUI (obrigatorio antes de quantizar Z-Image)
 tools/calibrate_activations.py ativacoes reais capturadas durante amostragem
 tools/quant_mixed.py           4 ou 8 bits por camada, medido contra o kernel
-tools/m_crossover.py           onde o int4 passa a ganhar do 16-bit (M ~ 128-256 no relogio)
+tools/m_crossover.py           onde o int4 passa a ganhar do 16-bit (M ~ 128-256; --repeats/--reverse)
 tools/w4a4_breakdown.py        kernel a kernel, e a divisao host/GPU de uma chamada
 tools/attn_dtype_ab.py         fp16 vs bf16 nos backends de attention
 tools/gpu_lock.py              exclusao mutua com a sessao irma
@@ -211,7 +211,11 @@ secao 6 lista o que foi consertado sem GPU. Nao consertado de proposito:
 4. LoRA sobre modelo quantizado (`ops.py:1377`) — hipotese, hoje so aviso no preflight.
 5. A mutacao do `.T` em `recover_weight`.
 6. Escala BF16 do nunchaku contra o quantizador real.
-7. `m_crossover` em ordem invertida de M (contraprova de efeito de ordem).
+7. ~~`m_crossover` em ordem invertida de M (contraprova de efeito de ordem).~~ **Feito
+   2026-08-19**, parte 11 do `W4A4_PROGRESS.md`. Sem efeito de ordem: ascendente e descendente
+   cruzam no mesmo intervalo. Mas o controle (duas execucoes ascendentes) mostrou +/-20% de erro
+   entre execucoes de disparo unico, e a ferramenta ganhou `--repeats` intercalado. E ela nunca
+   tinha sido executada — morria em `ModuleNotFoundError: No module named '_bench_guard'`.
 
 ### PR pendente, com permissao ja dada e nao usado
 

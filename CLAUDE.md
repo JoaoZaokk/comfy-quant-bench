@@ -42,8 +42,14 @@ is gone by then.
   every run, pass or fail — a column of PASS lines otherwise reads as "verified".
 - Docstrings carry the provenance and the caveat inline, next to the number, not in a paragraph
   below it. Numbers get pasted out of this repo into other sessions; a ratio with its condition
-  attached ("4.6x faster at M=5856, 1.8x slower at M=1") cannot be misquoted the way a bare "4.6x"
-  can.
+  attached ("4.89x [4.72-5.06] at M=5856 on weight [3840, 3840]; 1.5-2.0x *slower* at M=1")
+  cannot be misquoted the way a bare "4.6x" can.
+- **A single run is not a measurement.** Three consecutive `m_crossover` runs on an idle, locked
+  3090 disagreed by up to 1.4x at the same M and shape, and the crossover itself moved a step
+  between two runs in the *same* direction (2026-08-19, `W4A4_PROGRESS.md` part 11). The tool now
+  repeats interleaved and prints the ratio's own min-max, because a two-decimal number from one
+  burst claims a precision this bench does not have. Anything quoted from here needs a repeat
+  behind it and the spread beside it.
 - An unverified finding stays labelled unverified all the way into the file that acts on it. The
   preflight package's two audit-derived checks are WARN and say "not confirmed by execution" in
   the message itself, because a check that blocks on a hypothesis teaches people to disable checks.

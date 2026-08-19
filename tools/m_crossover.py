@@ -46,6 +46,11 @@ from pathlib import Path
 
 PORTABLE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PORTABLE_ROOT / "ComfyUI"))
+# The embedded interpreter ships a `python313._pth`, which suppresses the usual script-directory
+# entry, so a sibling module in `tools/` is not importable without this. The other three GPU tools
+# already carried the line; this one did not, and `from _bench_guard import BenchGuard` died with
+# ModuleNotFoundError on the first real execution -- the guard had been written but never run.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import torch  # noqa: E402
 import torch.nn.functional as F  # noqa: E402
@@ -78,7 +83,24 @@ def relative(reference: torch.Tensor, got: torch.Tensor) -> float:
                  / reference.float().norm().clamp(min=1e-12))
 
 
-def main() -> int:
+def main(reverse: bool = False, repeats: int = 3) -> int:
+    """Sweep the M column. `reverse` walks it from 8192 down to 1 instead of up.
+
+    `repeats` times every path that many times, interleaved, and reports the ratio's own min-max
+    alongside the median. It defaults to 3 because 1 was measured to be misleading: three
+    single-repeat runs on an idle, locked 3090 disagreed by up to 1.4x at the same M and the same
+    shape (M=2048, weight [3840, 3840]: 4.47x, 4.55x, 3.26x), and the crossover for weight
+    [10240, 3840] landed between 64 and 128 in two runs and between 128 and 256 in the third.
+    A two-decimal number printed from one run is a precision this instrument does not have.
+
+    The sweep is not order-free, and the default order is the one that flatters the right-hand
+    end: M climbs monotonically, so every large-M row is measured on a card that has been under
+    load for the whole table, while M=1 is measured on a cold one. Clocks, and the allocator's
+    fragmentation, both move over that span. If the crossover is a property of the kernels it
+    lands in the same place walking down; if it moves, part of what the ascending table called a
+    crossover was the machine warming up. Run both and compare -- a single direction cannot tell
+    the two apart.
+    """
     if not torch.cuda.is_available():
         print("needs CUDA")
         return 1
@@ -95,7 +117,11 @@ def main() -> int:
     q_w4a8 = R.get_implementation("quantize_w4a8_int8_weight")
     lin_w4a8 = R.get_implementation("w4a8_int8_linear")
 
+    order = tuple(reversed(BATCHES)) if reverse else BATCHES
     print(f"{torch.cuda.get_device_name(0)}, torch {torch.__version__}")
+    # Printed, not implied: these two tables are only comparable to each other if the reader can
+    # see which direction produced each one, and the file gets pasted without its command line.
+    print(f"M order: {'descending 8192 -> 1 (--reverse)' if reverse else 'ascending 1 -> 8192'}")
 
     for out_features, in_features in ((3840, 3840), (10240, 3840)):
         torch.manual_seed(1)
@@ -111,9 +137,9 @@ def main() -> int:
               f"bf16 {bf16_bytes / 2**20:.0f} MiB read per call, "
               f"int4 {bf16_bytes / 4 / 2**20:.0f} MiB")
         print(f"{'M':>7}{'bf16':>9}{'w4a4':>9}{'w4a4/a8':>9}{'w4a8':>9}"
-              f"{'best vs bf16':>22}{'w4a4 err':>10}{'w4a4/a8':>9}{'w4a8 err':>10}")
+              f"{'best vs bf16 [min-max]':>34}{'w4a4 err':>10}{'w4a4/a8':>9}{'w4a8 err':>10}")
 
-        for m in BATCHES:
+        for m in order:
             torch.manual_seed(2)
             x = torch.randn(m, in_features, device="cuda", dtype=torch.bfloat16)
             reference = F.linear(x.float(), weight.float())
@@ -128,20 +154,36 @@ def main() -> int:
                                          group_size=16, convrot_groupsize=256,
                                          out_dtype=torch.bfloat16),
             }
-            times, errors, falhas = {}, {}, []
+            # Repeats are **interleaved**, not batched per path: all four paths are timed once,
+            # then all four again. Timing one path to completion before starting the next lets
+            # any drift over the burst -- clock boost decaying, another process arriving -- land
+            # entirely on whichever path happened to be running, which is exactly how a ratio
+            # picks up a bias that no single median reveals. Interleaved, drift hits every path
+            # alike and cancels in the ratio.
+            reps, errors, falhas = {k: [] for k in paths}, {}, []
             for label, call in paths.items():
                 try:
                     errors[label] = relative(reference, call())
-                    times[label] = timed(call, iters)
                 except Exception as exc:
                     errors[label] = float("nan")
-                    times[label] = float("nan")
+                    falhas.append(label)
                     # Reported at every M, not only the first: an earlier version printed the
                     # exception only for BATCHES[0], so a path that failed from M=128 upward
                     # turned into a silent nan column and the verdict still named a winner.
-                    falhas.append(label)
                     print(f"   M={m} {label} raised: {type(exc).__name__}: {str(exc)[:60]}")
+            for _ in range(repeats):
+                for label, call in paths.items():
+                    if label in falhas:
+                        reps[label].append(float("nan"))
+                        continue
+                    try:
+                        reps[label].append(timed(call, iters))
+                    except Exception:
+                        reps[label].append(float("nan"))
+                        falhas.append(label)
 
+            times = {k: (statistics.median(v) if all(s == s for s in v) else float("nan"))
+                     for k, v in reps.items()}
             quant = {k: v for k, v in times.items() if k != "bf16" and v == v}
             if not quant:
                 verdict = "todos falharam"
@@ -150,14 +192,28 @@ def main() -> int:
                 verdict = f"{min(quant, key=quant.get)} (sem bf16)"
             else:
                 best = min(quant, key=quant.get)
-                ratio = times["bf16"] / quant[best]
-                verdict = (f"{best} {ratio:.2f}x" if ratio >= 1
-                           else f"{best} {1 / ratio:.2f}x slower")
+                # Paired per repeat, so the spread shown is the spread of the *ratio*, which is
+                # the quantity that gets quoted. Three runs of this file on an idle 3090 put the
+                # same M at 3.26x and 4.55x, so a bare two-decimal ratio claims a precision the
+                # measurement does not have, and it travels out of here as if it did.
+                pairs = [b / q for b, q in zip(reps["bf16"], reps[best])
+                         if b == b and q == q and q > 0]
+                ratio = statistics.median(pairs) if pairs else times["bf16"] / quant[best]
+                if ratio >= 1:
+                    verdict = f"{best} {ratio:.2f}x"
+                    lo, hi = min(pairs), max(pairs)
+                else:
+                    # Never as 0.29x: the direction of a ratio below 1 is the thing readers
+                    # invert wrongly, so it is stated as the slower factor instead.
+                    verdict = f"{best} {1 / ratio:.2f}x slower"
+                    lo, hi = 1 / max(pairs), 1 / min(pairs)
+                if len(pairs) > 1:
+                    verdict += f" [{lo:.2f}-{hi:.2f}]"
                 # Naming a winner over a field that lost entrants reads as a complete comparison.
                 if falhas:
                     verdict += f" (de {len(quant)})"
             print(f"{m:>7}{times['bf16']:>9.3f}{times['w4a4']:>9.3f}"
-                  f"{times['w4a4/a8']:>9.3f}{times['w4a8']:>9.3f}{verdict:>22}"
+                  f"{times['w4a4/a8']:>9.3f}{times['w4a8']:>9.3f}{verdict:>34}"
                   f"{errors['w4a4']:>10.4f}{errors['w4a4/a8']:>9.4f}{errors['w4a8']:>10.4f}")
             del x, reference
             torch.cuda.empty_cache()
@@ -183,8 +239,23 @@ if __name__ == "__main__":
     # docstring using this file as its example.
     from _bench_guard import BenchGuard
 
+    import argparse
+
+    # argparse rather than an `in sys.argv` test: silently ignoring a misspelled flag would print
+    # an ascending table labelled as the descending counterproof, or one repeat labelled as three.
+    _parser = argparse.ArgumentParser(description="M sweep: bf16 vs w4a4 vs w4a4/a8 vs w4a8")
+    _parser.add_argument("--reverse", action="store_true",
+                         help="walk M from 8192 down to 1 (order-effect counterproof)")
+    _parser.add_argument("--repeats", type=int, default=3,
+                         help="interleaved timing repeats per M; 1 reproduces the old, "
+                              "misleadingly precise single-shot table")
+    _args = _parser.parse_args()
+    if _args.repeats < 1:
+        print("--repeats must be at least 1")
+        raise SystemExit(2)
+
     with BenchGuard("m_crossover") as _guard:
         if _guard.refused:
             print(_guard.refused)
             raise SystemExit(1)
-        raise SystemExit(main())
+        raise SystemExit(main(reverse=_args.reverse, repeats=_args.repeats))

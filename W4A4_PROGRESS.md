@@ -1699,6 +1699,10 @@ contra 44,6 do AWQ W4A16/Marlin e foi dado como derrota do formato.
 
 Peso 3840x3840, ms, RTX 3090 (duas execucoes, mesmo cruzamento, erros iguais na 4a casa):
 
+> **Substituido pela parte 11 (2026-08-19).** As razoes desta tabela vem de execucoes de disparo
+> unico, que depois foram medidas com +/-20% de erro entre execucoes; o cruzamento se sustentou, os
+> numeros de duas casas nao. Citar os da parte 11, com o intervalo junto.
+
 | M | bf16 | w4a4 | veredito |
 |---|---|---|---|
 | 1 | 0,057 | 0,122 | 1,48x mais lento |
@@ -1868,3 +1872,97 @@ lado que serve o LLM; nao da para produzi-la aqui.
 
 **O lock funcionou em producao:** uma execucao minha foi recusada com `dono=diag-w4a8-gemv pid=1530`
 enquanto a sessao irma media. Sem ele as duas mediriam contendidas.
+
+
+## 2026-08-19, parte 11 - a contraprova de ordem passou, e o instrumento estava errado
+
+Item 1 da fila de GPU do handoff: rodar `m_crossover` com M em ordem decrescente, para saber se o
+cruzamento medido na tabela ascendente era propriedade dos kernels ou efeito de a placa esquentar
+ao longo da varredura. Tres coisas sairam disso, e a segunda e maior que a primeira.
+
+### 0. A ferramenta nunca tinha sido executada
+
+Primeira invocacao morreu antes de tocar a GPU:
+
+```
+File "F:\COMFY_PORTABLE\tools\m_crossover.py", line 198, in <module>
+    from _bench_guard import BenchGuard
+ModuleNotFoundError: No module named '_bench_guard'
+```
+
+O interpretador embutido traz um `python313._pth`, que suprime a entrada usual do diretorio do
+script, entao um modulo irmao em `tools/` nao importa sem `sys.path.insert`. `attn_dtype_ab.py`,
+`check_w4a8.py` e `w4a4_breakdown.py` ja tinham a linha; `m_crossover.py` nao. O guard tinha sido
+**escrito na passada de correcoes e nunca executado** - exatamente a distincao que o CLAUDE.md
+manda declarar. Corrigido; a partir daqui tudo nesta secao e execucao.
+
+### 1. Efeito de ordem: nao detectavel
+
+Ascendente e descendente, mesma sessao, placa ociosa e travada, 3 repeticoes intercaladas por
+ponto. Peso [10240, 3840]:
+
+| M | ascendente | descendente |
+|---|---|---|
+| 64 | 1,39x mais lento | 1,20x mais lento |
+| **128** | **1,10x mais rapido** | **1,17x mais rapido** |
+| 512 | 2,66x | 2,65x |
+| 1024 | 3,99x | 4,00x |
+| 2048 | 4,96x | 5,27x |
+| 5856 | 5,65x | 5,75x |
+| 8192 | 5,75x | 5,76x |
+
+Cruzamento no mesmo intervalo (64|128) nas duas direcoes; em [3840, 3840], 128|256 nas duas. As
+duas curvas caem dentro do proprio min-max uma da outra em quase todo M. **A tabela ascendente nao
+era artefato de aquecimento.** Contraprova passou.
+
+### 2. Mas o numero de uma execucao so tem +/-20% de erro
+
+O controle e que entregou isso. Antes de comparar ascendente com descendente rodei ascendente
+**duas vezes**, e as duas discordaram mais entre si do que ascendente discorda de descendente:
+
+| M, peso [3840, 3840] | asc #1 | desc | asc #2 |
+|---|---|---|---|
+| 2048 | 4,47x | 4,55x | **3,26x** |
+| 256 | 1,46x | 1,39x | 1,19x |
+
+E em [10240, 3840] o proprio cruzamento andou um degrau entre duas execucoes ascendentes: M=128
+saiu 1,34x mais rapido numa e 1,05x **mais lento** na outra.
+
+Com n=2 (uma ascendente, uma descendente) eu teria chamado isso de efeito de ordem e estaria
+errado. E ruido entre execucoes. O que separa os dois e o controle, nao o par.
+
+**Consertado na ferramenta, nao no texto:**
+
+- `--repeats` (default 3) cronometra cada caminho varias vezes, **intercalado** - os quatro
+  caminhos uma vez, depois de novo. Cronometrar um caminho ate o fim antes de comecar o proximo
+  joga toda a deriva do intervalo em cima de quem estava rodando na hora; intercalado, a deriva
+  atinge todos igual e cancela na razao.
+- O veredito agora imprime o min-max **da razao**, que e a grandeza que sai citada daqui. Com 3
+  repeticoes intercaladas o intervalo dentro da execucao fecha muito: `5856  w4a4 5,65x
+  [5,54-5,75]`.
+- `--reverse` e `--repeats` passam por argparse, para uma flag digitada errado nao produzir uma
+  tabela ascendente rotulada como contraprova.
+
+**Ressalva que fica:** o `[min-max]` impresso e a dispersao *dentro* de uma execucao. Entre
+execucoes ainda e maior - M=5856 em [10240, 3840] deu 5,11 / 5,90 / 4,87 nas tres execucoes de
+disparo unico e 5,65-5,75 nas duas com repeticao. Duas casas decimais continuam sendo mais
+precisao do que este instrumento tem.
+
+### 3. Numeros atuais, com a condicao colada
+
+Placa ociosa, lock tomado, 3 repeticoes intercaladas, RTX 3090, torch 2.13.0+cu130:
+
+| | [3840, 3840] | [10240, 3840] |
+|---|---|---|
+| cruzamento | entre M=128 e M=256 | entre M=64 e M=128 |
+| M=5856 | 4,89x [4,72-5,06] | 5,65x [5,54-5,75] |
+| M=8192 | 5,10x [4,97-5,15] | 5,75x [5,68-5,76] |
+| M=1 | 1,5-2,0x mais lento | 1,0-1,4x mais lento |
+
+**Perto do cruzamento o vencedor nao e confiavel.** Em M=256 [3840, 3840] o w4a8 ganhou nas duas
+execucoes com repeticao e o w4a4 tinha ganho nas de disparo unico; a diferenca esta dentro do
+intervalo. Abaixo de M~512 vale ler "empate", nao o rotulo.
+
+Os erros relativos sao identicos ate a 4a casa em todas as cinco execucoes (w4a4 0,2231, w4a4/a8
+0,1574, w4a8 0,0737 em M=5856) - determinismo confirmado; a variacao e toda de tempo, nenhuma de
+numerica.
