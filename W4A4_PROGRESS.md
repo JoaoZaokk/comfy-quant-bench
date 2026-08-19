@@ -1,0 +1,1870 @@
+# ConvRot W4A4 Progress
+
+Last updated: 2026-08-16 (America/Sao_Paulo)
+
+## Inventory
+
+- Portable root: `F:\COMFY_PORTABLE`
+- Embedded Python: `F:\COMFY_PORTABLE\python_embeded\python.exe`
+- Models root: `F:\COMFY_PORTABLE\ComfyUI\models`
+- Inventoried: 158 model files after the first W4A4 output (157 before it)
+- Detailed outputs: `quantization_inventory.json` and `quantization_inventory.md`
+- Hardware: RTX 3090 24 GB, compute capability 8.6
+- Stack: Python 3.13.12, Torch 2.12.1+cu130, CUDA 13.0, comfy-kitchen 0.2.23
+- Free capacity at audit: 120.09 GiB disk; 63.15 GiB total RAM (4.56 GiB free at that moment)
+
+## Published
+
+The converter, the verifier and the text-encoder node are public at
+**https://github.com/JoaoZaokk/ComfyUI-ConvRot-W4A4** (MIT).
+
+The repo copies of `quant_w4a4.py` and `verify_w4a4.py` take a `--comfy-root` argument and
+auto-detect a ComfyUI checkout, so they work from `custom_nodes/` as well as from a portable
+root. `.gitignore` blocks every weight extension; the published tree is 7 files and no model data.
+The working copy of the node in `ComfyUI/custom_nodes/comfy_convrot_native/` is unchanged and still
+functional — replace it with a clone of the repo whenever you want them kept in sync.
+
+## Second HunyuanVideo 1.5 model converted
+
+`diffusion_models/hunyuanvideo1.5_720p_t2v_fp16.safetensors` matched the `hunyuan_video_15`
+profile with no changes: 1361 tensors all FP16, same `txt_in.individual_token_refiner` signature,
+zero single blocks, 432/432 pattern matches all satisfying `shape[1] % 256 == 0`.
+
+| Item | Source | W4A4 |
+| --- | --- | --- |
+| Size | 15.51 GiB | **7.92 GiB** |
+| Tensors | 1361 FP16 | 432 quantized + 929 preserved |
+
+Verification: structural **PASS** (432 layers), source comparison **PASS** (every preserved tensor
+byte-identical), backend `comfy_kitchen.backends.cuda`, real kernel through
+`comfy_kitchen.backends.cuda.convrot_w4a4_linear` with FP16 output, relative RMSE 0.2226, max abs
+error 0.7109.
+
+End-to-end native execution confirmed on the loaded model, same as capybara:
+
+```
+[12] quantized modules after load: 432; first double_blocks.0.img_attn.qkv
+[15] forward ok: (1, 64, 6144); native=1 dequant=0
+     impls=['comfy_kitchen.backends.cuda.convrot_w4a4_linear']
+```
+
+Two HunyuanVideo 1.5 models now run real ConvRot W4A4 through the stock ComfyUI diffusion path
+with no core change and no helper node.
+
+Note the auditor previously labelled `capybara_v0.1` as `flux` because its `double_blocks` keys matched the flux needle. `tools/quant_audit.py` now runs a structural HunyuanVideo check first, mirroring `comfy.model_detection`.
+
+## Candidate ranking
+
+1. `text_encoders/gemma_3_12B_it_heretic.safetensors` — 21.93 GiB, BF16, Gemma 3 12B text encoder. First safe source candidate; preserve embeddings/norms and quantize architecture-specific attention/MLP Linear weights.
+2. `diffusion_models/capybara_v0.1.safetensors` — 15.51 GiB, BF16, Flux-style DiT keys. Recipe needs confirmation against its loader/model config.
+3. `diffusion_models/hunyuanvideo1.5_720p_t2v_fp16.safetensors` — 15.51 GiB, FP16, HunyuanVideo 1.5.
+4. `text_encoders/qwen_2.5_vl_7b.safetensors` — 15.45 GiB, BF16, Qwen2.5-VL. Preserve embeddings, LM head, and vision tower initially.
+5. `SEEDVR2/seedvr2_ema_7b_fp16.safetensors` — 15.35 GiB, FP16, SEEDVR2 transformer.
+6. `SEEDVR2/seedvr2_ema_7b_sharp_fp16.safetensors` — 15.35 GiB, FP16, SEEDVR2 transformer.
+7. `checkpoints/hidream_o1_image_bf16.safetensors` — 15.24 GiB, BF16, mixed checkpoint; component boundaries must be respected.
+8. `diffusion_models/z_image_de_turbo_v1_bf16.safetensors` — 11.46 GiB, BF16, Z-Image.
+9. `diffusion_models/z_image_turbo_bf16.safetensors` — 11.46 GiB, BF16, Z-Image.
+10. `diffusion_models/void_pass2.safetensors` / `unet/void_pass1.safetensors` — 10.38 GiB each, BF16; architecture recipe not yet established.
+
+## Completed
+
+- Created the recursive, metadata-only auditor at `tools/quant_audit.py`.
+- Created `tools/quant_w4a4.py` with strict Gemma/Qwen profiles, automatic output naming, sidecar manifests, atomic writes, disk/RAM checks, and a hard refusal when normal ComfyUI does not select the CUDA ConvRot backend.
+- Created `tools/verify_w4a4.py` for metadata/layout/source-shape validation and optional native-kernel smoke comparison.
+- Parsed Safetensors headers and `_quantization_metadata`; used the installed GGUF reader for GGUF tensor types; inspected PyTorch checkpoints with safe/meta loading where supported.
+- Verified the installed ConvRot symbols and ComfyUI `convrot_w4a4` checkpoint format (`TensorCoreConvRotW4A4Layout`, INT8-packed W4 weights, group size 64).
+- Direct comfy-kitchen CUDA probe on the RTX 3090 selected `comfy_kitchen.backends.cuda.convrot_w4a4_linear`, produced INT8-packed `[256,128]` weights from `[256,256]`, and returned BF16 output. This proves the installed native kernel can execute in isolation.
+- Saved the complete pre-change package snapshot as `_pip_freeze_before_w4a4_cu130_20260816.txt`.
+- Replaced only Torch 2.12.1, torchvision 0.27.1, and torchaudio 2.11.0 with their same-version `cu130` builds through the embedded Python and `--no-deps`. `pip check`, torchvision NMS, torchaudio, and flash-attn imports pass.
+- Repeated the ConvRot probe through normal `ComfyUI/comfy/quant_ops.py`: it now selects `comfy_kitchen.backends.cuda.convrot_w4a4_linear`, stores packed weights as INT8, accepts BF16 activations, and returns BF16 output on the RTX 3090. Native-backend preflight: **PASS**.
+- Diagnosed the SageAttention import failure at the PE dependency level: its `_fused.pyd` and `_qattn_sm80.pyd` require `cudart64_12.dll`, while the cu130 Torch wheel supplies only `cudart64_13.dll`.
+- Added the already-installed local CUDA 12.6 runtime DLL to the embedded Torch library directory without overwriting anything: `python_embeded/Lib/site-packages/torch/lib/cudart64_12.dll`, 556,544 bytes, SHA-256 `D954CA542B3B6BCF03CC2B798A7D00051501CF734CA751050E986AF505CF9DAD`. Source: `venvs/ultravox311/Lib/site-packages/torch/lib/cudart64_12.dll`.
+- SageAttention import and an actual RTX 3090 kernel comparison against PyTorch SDPA passed (`mean_abs` about 0.0011, finite FP16 output). The existing Sage launcher was preserved unchanged.
+- Full `--use-sage-attention` startup smoke test reached `http://127.0.0.1:8191`; both `ComfyUI-FlashVSR` variants loaded, QwenVL detected Sage, SeedVR2 reported Sage/Flash/Triton available, and normal ComfyUI selected the CUDA ConvRot backend.
+- Gemma dry-run selected 336 attention/MLP Linear weights and estimated a 6.91 GiB output. No output file was created.
+- Existing workflow references found for the Gemma source (`ComfyUI/user/default/workflows/Video-LTX2_MultiGPU.app.json`), SEEDVR2, and several Z-Image workflows; these can become matched benchmark fixtures after native loading is enabled.
+
+### gemma_3_12B_it_heretic → ConvRot W4A4
+
+Source (unchanged): `ComfyUI/models/text_encoders/gemma_3_12B_it_heretic.safetensors`
+Output: `ComfyUI/models/text_encoders/gemma_3_12B_it_heretic_w4a4_convrot.safetensors`
+Sidecar: `gemma_3_12B_it_heretic_w4a4_convrot.quant.json`
+
+| Item | Source | W4A4 |
+| --- | --- | --- |
+| Size | 23,545,681,250 B (21.93 GiB) | 7,417,110,666 B (6.91 GiB) |
+| Weight dtype | BF16 | INT8 container holding signed INT4 |
+| Scales | — | FP32, per output row |
+
+- Reduction: 68.5%. Conversion time: 30.209 s on the RTX 3090.
+- 336 attention/MLP Linear weights quantized (`self_attn.{q,k,v,o}_proj`, `mlp.{gate,up,down}_proj`); 293 tensors preserved byte-for-byte.
+- Layout metadata `convrot_w4a4`, `convrot_groupsize` 256, `quant_group_size` 64.
+- `tools/verify_w4a4.py --kernel-smoke` passed: structural PASS for all 336 layers, byte-identical comparison PASS for every preserved tensor, normal ComfyUI resolved `comfy_kitchen.backends.cuda`, and a real layer executed through `comfy_kitchen.backends.cuda.convrot_w4a4_linear` returning BF16. Random-input relative RMSE 0.2511 — a liveness signal, not a quality metric.
+
+Loader path confirmed by reading the installed code (not assumed):
+
+- `comfy.sd.load_clip` reads the Safetensors metadata and `comfy.utils.convert_old_quants` turns `_quantization_metadata` into per-layer `<layer>.comfy_quant` tensors.
+- `comfy.sd.llama_detect` → `comfy.utils.detect_layer_quantization` sees those keys and returns `{"mixed_ops": True}`, selecting `MixedPrecisionOps`.
+- `comfy/ops.py` handles `quant_format == "convrot_w4a4"`: requires `weight_scale`, reads `convrot_groupsize` (default 256), hardcodes `quant_group_size = 64`, defaults `linear_dtype` to `int4`, and builds `TensorCoreConvRotW4A4Layout.Params`. The converter's constants match this exactly.
+- `comfy_kitchen/tensor/convrot_w4a4.py` dispatches `aten.linear` to the native path only when `params.transposed` is False; a transposed weight silently falls back to `weight.dequantize()` + `F.linear`. Any future benchmark must count that fallback, not just check that the file loads.
+- The real workflow node is `LTXAVTextEncoderLoader` (`comfy_extras/nodes_lt_audio.py`), which builds `LTXAVTEModel_` from two files — the Gemma encoder plus the LTX-2.3 checkpoint that supplies `text_embedding_projection`. The earlier single-file `CLIPLoader(type='ltxv')` probe instantiated a different class (`Gemma3_12BModel_`) and is therefore not the path to validate against.
+
+Load result through that real path (`tools/te_smoke.py`, one long-lived process):
+
+- `model_class` `LTXAVTEModel_`, `text_projection_type` `dual_linear`.
+- 336 modules with `quant_format='convrot_w4a4'`, all with `layout_type='TensorCoreConvRotW4A4Layout'`, all with `convrot_groupsize=256`, all 336 weights materialized as `QuantizedTensor`.
+- `loaded completely; 9276.55 MB loaded, full load: True` on `cuda:0`, load 23.277 s, encode 2.611 s, encode peak VRAM 11.34 GB.
+- Conditioning produced normally: shape `[1, 27, 6144]`, float32, mean 0.0049, std 5.118, absmax 270.0.
+
+Loader warnings resolved — **not** caused by quantization:
+
+- 163 warnings total: 162 `Missing weight for layer vision_model.*` plus one `clip missing: ['vision_model...']`.
+- Zero language-model keys are missing or unexpected.
+- The BF16 source header contains **no** `vision_model.*` tensors at all (629 tensors: 626 `model.*`, 2 `multi_modal_projector.*`, 1 `spiece_model`). The W4A4 output has the same namespaces and 965 tensors — exactly 629 + 336 added `weight_scale`. The vision tower is simply absent from this text-encoder-only checkpoint, so these warnings are inherent to the source file.
+
+### Native execution result: the text-encoder path does NOT run the W4A4 kernel
+
+This is the decisive finding so far, and it is negative.
+
+With the model loaded through the real `CLIPType.LTXV` path and `comfy_kitchen.tensor.convrot_w4a4` instrumented, one prompt encode produced:
+
+| Metric | Value |
+| --- | --- |
+| `convrot_w4a4_linear` calls | **0** |
+| `TensorCoreConvRotW4A4Layout.dequantize` calls | **336** (exactly one per quantized layer) |
+| Backends actually used | none — no ConvRot kernel ran |
+
+So the checkpoint is correct but the runtime behaviour is `W4 storage → dequantize → BF16 GEMM`, the outcome the project explicitly forbids.
+
+Forward-time gate values captured from a real quantized Linear:
+
+| Gate | Value |
+| --- | --- |
+| `layout_type` | `TensorCoreConvRotW4A4Layout` |
+| `weight_is_quantized_tensor` | `True` |
+| `weight.dtype` / `orig_dtype` | `torch.bfloat16` |
+| `input.dtype` | **`torch.float32`** |
+| `_full_precision_mm` | `True` |
+| `comfy_force_cast_weights` | `True` |
+| `weight_function` / `bias_function` | 0 / 0 |
+| `transposed` | `False` |
+
+Root cause, isolated to one variable with `tools/convrot_ops_probe.py` (builds a real `MixedPrecisionOps.Linear`, loads a real quantized layer, varies one setting at a time):
+
+| Case | compute dtype | activation dtype | `full_precision_mm` | `force_cast` | native calls | dequant calls |
+| --- | --- | --- | --- | --- | --- | --- |
+| text-encoder settings | fp32 | fp32 | True | True | 1 | 0 |
+| text-encoder settings, force_cast cleared | fp32 | fp32 | True | False | 1 | 0 |
+| diffusion settings | bf16 | bf16 | False | False | 1 | 0 |
+| **observed LTXAV Gemma** | **bf16** | **fp32** | True | True | **0** | **1** |
+| same, only activation dtype changed | bf16 | bf16 | True | True | 1 | 0 |
+
+`_full_precision_mm` and `comfy_force_cast_weights` are **not** the blockers. Because `QUANT_ALGOS["convrot_w4a4"]["quantize_input"]` is `False`, the native path is reached by `F.linear` dispatching on the `QuantizedTensor`, not through the `_use_quantized` branch. The single blocker is the dtype mismatch at `comfy/ops.py:390-393`:
+
+```python
+if weight_has_function or weight.dtype != dtype:
+    weight = weight.to(dtype=dtype)
+    if isinstance(weight, QuantizedTensor):
+        weight = weight.dequantize()
+```
+
+Where the two dtypes come from:
+
+- `comfy/ops.py:1138` sets the quantized weight's `orig_dtype` to the module's **compute dtype**, and for this model that is `dtype_llama` = the dtype of `model.norm.weight` = **BF16** (`comfy/text_encoders/hunyuan_video.py:11` `llama_detect`, applied in `comfy/text_encoders/lt.py:242`).
+- Activations arrive as **FP32** because `comfy/sd.py:261-262` does `self.patcher.set_model_compute_dtype(torch.float32)` with the comment "Match torch.float32 hardcode upcast in TE implemention".
+
+Consequence: on ComfyUI `42d2aa55` / 0.29.0, **no quantized text encoder of any format can execute its native kernel through the stock path** — fp8_scaled, int8_tensorwise and convrot_w4a4 all dequantize for compute. Quantized text encoders are a disk/VRAM-storage feature here, not a compute feature.
+
+### Resolved without touching ComfyUI core
+
+Does ComfyUI actually need the FP32 upcast? **Yes.** It is deliberate, not incidental:
+
+- `comfy/sd1_clip.py:213` requests the input embeddings with `out_dtype=torch.float32`.
+- `comfy/sd1_clip.py:279` passes `dtype=torch.float32` into the transformer.
+- `comfy/sd1_clip.py:282-284` returns `.float()` outputs.
+- `comfy/sd.py:262` only *matches* that with `set_model_compute_dtype(torch.float32)`.
+
+So removing the FP32 text-encoder policy would change numerics for every encoder in the install (T5, CLIP-L/G, Llama, Gemma, Qwen). That is not a safe one-line change and was not made.
+
+The FP32 policy is not the problem — the **mismatch** is. And `comfy_kitchen/tensor/base.py:417-436` shows `QuantizedTensor.to(dtype=...)` only rewrites `params.orig_dtype`; it never touches the packed data. Retyping the quantized weights to FP32 after load therefore removes the mismatch at zero cost, keeps ComfyUI's FP32 encoder policy intact, and lets `F.linear` dispatch to the ConvRot layout handler.
+
+Measured on the real model, same load, two encodes:
+
+| Metric | Stock (emulated) | After retype (native) |
+| --- | --- | --- |
+| `convrot_w4a4_linear` calls | 0 | **336** |
+| Weight dequantizations | 336 | **0** |
+| Backend | none | `comfy_kitchen.backends.cuda.convrot_w4a4_linear` |
+| Encode time | 2.354 s | **0.539 s** (4.37x faster) |
+| Encode peak VRAM | 11.340 GB | 11.372 GB |
+| Relative RMSE vs emulated | — | 0.2011 (max abs 33.0) |
+
+Delivered as a new custom node, `ComfyUI/custom_nodes/comfy_convrot_native/` → **ConvRot W4A4 Native (Text Encoder)**. Drop it between the loader and `CLIPTextEncode`. No core file is modified, so ComfyUI updates cannot clobber it. The node skips any layer carrying weight patches and logs how many it skipped, because a LoRA patch needs a dense weight and will keep dequantizing.
+
+Caveats that still need resolving before calling this a win:
+
+- Relative RMSE 0.2011 on the conditioning is a real quality cost, not noise. A matched-parameter visual A/B is required before recommending W4A4 for this encoder.
+- `CLIP.clone()` shares `cond_stage_model`, so the retype is visible to every clone of that CLIP. Harmless (it changes only the declared logical dtype) but worth knowing.
+- The TE LoRA used in some LTX templates (`gemma-3-12b-it-abliterated_lora_rank64_bf16.safetensors`) forces the dequantized path for the layers it patches.
+
+For diffusion models no node is needed: `pick_operations` builds the ops with `full_precision_mm=False` and matching bf16 activations, and `convrot_w4a4` is never added to the `disabled` set, so the probe dispatches natively out of the box.
+
+### Core-patch tooling (prepared, unused)
+
+`tools/core_patch.py` provides `backup` / `status` / `diff` / `revert` for ComfyUI core files, keyed by SHA-256 and timestamp in `core_patches/ledger.json`, so a later ComfyUI update that rewrites a tracked file is detected instead of silently reverted over. Current state: `No ComfyUI core file is tracked. Core is untouched.`
+
+### capybara_v0.1 — architecture identified before any conversion
+
+The inventory guessed "Flux-style DiT keys". That was **wrong**, and checking it was the point.
+
+Asked ComfyUI itself via the new `tools/inspect_diffusion_arch.py` (builds a meta-device state dict from the header, runs `comfy.model_detection`, instantiates the model on `meta`, enumerates every Linear):
+
+- `model_config` = **`HunyuanVideo15`**, `image_model` = `hunyuan_video`.
+- `hidden_size` 2048, `num_heads` 16, `depth` 54, `depth_single_blocks` **0**, `in_channels` 65, `context_in_dim` 3584, `byt5` True, `use_cond_type_embedding` True, `vision_in_dim` 1152, `meanflow_sum` True.
+- 1364 tensors, all BF16, no `__metadata__` at all.
+- So it is the same family as `diffusion_models/hunyuanvideo1.5_720p_t2v_fp16.safetensors`; one profile covers both.
+
+Note `comfy.model_detection.unet_prefix_from_state_dict` returns `'model.'` for this file, which detects nothing. `load_diffusion_model_state_dict` uses `""`, and so does the inspector.
+
+Key-naming trap, resolved: the checkpoint's keys are **not** the ComfyUI module names.
+
+| ComfyUI module | Checkpoint key |
+| --- | --- |
+| `double_blocks.N.img_attn.qkv` | `double_blocks.N.img_attn_qkv` |
+| `double_blocks.N.img_attn.proj` | `double_blocks.N.img_attn_proj` |
+| `double_blocks.N.img_mlp.0` / `.2` | `double_blocks.N.img_mlp.fc1` / `.fc2` |
+| `double_blocks.N.img_mod.lin` | `double_blocks.N.img_mod.linear` |
+| `txt_in.c_embedder.in_layer` | `txt_in.c_embedder.linear_1` |
+
+`HunyuanVideo.process_unet_state_dict` performs these as plain substring replacements, and it runs **after** `comfy.utils.convert_old_quants` has injected the `<layer>.comfy_quant` keys. So the `_quantization_metadata` layer names must use the **checkpoint's** convention: the same replacements then carry `.comfy_quant` and `.weight_scale` along with the weight. Verified that `.weight_scale` is not caught by that function's `endswith(".scale")` rule.
+
+Profile `hunyuan_video_15` added to `tools/quant_w4a4.py`, auto-detected structurally (presence of `txt_in.individual_token_refiner.blocks.0.norm1.weight` and `double_blocks.0.img_attn_qkv.weight`, mirroring ComfyUI's own HunyuanVideo branch) rather than from the file name — the file name says nothing here.
+
+Quantized, 8 per block x 54 blocks = 432 tensors: `{img,txt}_attn_qkv`, `{img,txt}_attn_proj`, `{img,txt}_mlp.fc1`, `{img,txt}_mlp.fc2`. All satisfy the ConvRot `shape[1] % 256 == 0` constraint.
+
+Preserved: `{img,txt}_mod.linear` (adaLN modulation drives each block's conditioning), every norm, `img_in`, `txt_in.*` including the token refiner, `byt5_in`, `vision_in`, `time_in`, `final_layer`, all embeddings and `task_bias`, and every bias.
+
+Dry run: 432 layers selected, 15.51 GiB → estimated 7.92 GiB (about 49% smaller).
+
+Conversion completed:
+
+| Item | Source | W4A4 |
+| --- | --- | --- |
+| File | `capybara_v0.1.safetensors` | `capybara_v0.1_w4a4_convrot.safetensors` |
+| Size | 16,653,435,264 B (15.51 GiB) | 8,507,756,960 B (7.92 GiB) |
+| Tensors | 1364 BF16 | 432 quantized + 932 preserved |
+
+Reduction 48.9%, conversion time 19.044 s. Sidecar `capybara_v0.1_w4a4_convrot.quant.json` written. Source untouched.
+
+Verification (`tools/verify_w4a4.py --kernel-smoke`):
+
+- Structural: **PASS** (432 ConvRot W4A4 layers).
+- Source comparison: **PASS** — all 932 preserved tensors byte-identical to the source.
+- Normal ComfyUI backend: `comfy_kitchen.backends.cuda`.
+- Real kernel on `double_blocks.0.img_attn_proj` via `comfy_kitchen.backends.cuda.convrot_w4a4_linear`, BF16 output, relative RMSE 0.2326, max abs error 0.5957.
+
+Load through the real diffusion path, traced stage by stage with `tools/stage_probe.py`:
+
+| Stage | Result |
+| --- | --- |
+| `load_torch_file` | 1796 tensors (1364 − 432 weights + 432 packed + 432 scales), metadata `_quantization_metadata` + `quantization` |
+| `convert_old_quants` | 432 `.comfy_quant` keys injected, **0** without a matching weight |
+| `model_config_from_unet` | `HunyuanVideo15`, `quant_config {'mixed_ops': True}` |
+| `process_unet_state_dict` | 2228 keys; quant keys correctly remapped, e.g. `double_blocks.0.img_attn.proj.comfy_quant` |
+| `get_model` + `load_model_weights` | ok |
+| Quantized modules after load | **432**, first `double_blocks.0.img_attn.qkv` |
+| `model.to(cpu)`, move one block to `cuda:0`, forward | ok, output `(1, 64, 6144)` |
+
+So the metadata naming, the remap interaction and the module targeting are all correct end to end.
+
+### Open: non-deterministic 0xC0000005 during large mmap — host issue, not the file
+
+`tools/diffusion_smoke.py` and one `stage_probe.py` run died with exit `-1073741819` (`0xC0000005`, access violation), no traceback, empty stdout and stderr. The crash is **not reproducible against a specific step**: the identical `comfy.utils.load_torch_file` call on the identical file succeeded twice and then crashed once at stage 3.
+
+This matches the two `torch_cpu.dll` access violations and the `os error 1455` seen earlier during conversion, and it tracks memory pressure rather than file content: the Windows commit charge on this host sits at 92-93 GiB against a 97-103 GiB limit because `vmmemWSL` holds roughly 28 GiB for unrelated work. The pagefile auto-expanded from 97.15 to 103.10 GiB mid-session, which is itself a symptom.
+
+Not a W4A4 defect: `verify_w4a4.py` read both files fully and compared every preserved tensor byte for byte with a PASS, and the full load pipeline completes cleanly whenever the allocation succeeds.
+
+Workaround: rerunning `stage_probe.py --stop-after 15` skips the heaviest allocation and completes. Retrying is currently the only mitigation, since WSL must not be touched and the pagefile must not be resized.
+
+### Native execution on the loaded diffusion model: CONFIRMED
+
+With the instrumented run that survived the mmap, a module taken straight out of the loaded `HunyuanVideo15` graph:
+
+```
+[15] forward ok: (1, 64, 6144) torch.float32; native=1 dequant=0
+     impls=['comfy_kitchen.backends.cuda.convrot_w4a4_linear']
+```
+
+Zero weight dequantizations. This is real ConvRot W4A4 execution through the native CUDA kernel on the normal ComfyUI diffusion path, with no core modification and no helper node — exactly what the text-encoder path could not do.
+
+Layered evidence for native execution:
+
+| Layer | Tool | Result |
+| --- | --- | --- |
+| Raw kernel | `verify_w4a4.py --kernel-smoke` | `comfy_kitchen.backends.cuda.convrot_w4a4_linear`, BF16 out |
+| ComfyUI ops | `convrot_ops_probe.py` | native in every diffusion-path case |
+| Loaded model | `stage_probe.py` stage 15 | native=1, dequant=0 |
+
+## Full stack upgrade, 2026-08-16
+
+The user explicitly authorized a full upgrade on this date, overriding the standing
+"do not mass-upgrade" rule, on the condition that a backup exists first.
+
+Backup: `_backup_20260816_preupgrade/` — `pip_freeze_BEFORE.txt` (268 packages), `comfyui_HEAD.txt`,
+`custom_nodes_HEADS.txt` (61 repos), `comfy_kitchen_base.py.bak`, and a full copy of
+`python_embeded` verified at 93,700 files / 8.54 GiB with zero delta. Git tag
+`pre-upgrade-20260816` = `42d2aa55`.
+
+| Component | Before | After |
+| --- | --- | --- |
+| ComfyUI | 0.29.0 `42d2aa55` | **0.33.0** `b963f4ad` (126 commits) |
+| torch | 2.12.1+cu130 | **2.13.0+cu130** |
+| torchvision | 0.27.1+cu130 | **0.28.0+cu130** |
+| torchaudio | 2.11.0+cu130 | unchanged (2.11.0 is the newest published) |
+| triton-windows | 3.7.0.post26 | **3.7.1.post27** |
+| sageattention | 2.2.0+**cu128**torch2.10.0andhigher.post5 | 2.2.0+**cu130**torch2.10.0andhigher.post6 |
+| comfy-kitchen | 0.2.23 | **0.2.31** |
+| comfy-aimdo | 0.4.10 | **0.4.13** |
+| frontend / templates / docs | 1.47.10 / 0.11.19 / 0.5.9 | 1.49.6 / 0.11.41 / 0.5.10 |
+| flash-attn | 2.8.4 | unchanged, deliberately |
+
+Done one component at a time with the full test battery between each, so any break would name its
+own cause. Everything passed at every step.
+
+### The cudart64_12.dll workaround is gone
+
+Sage was on a **cu128** wheel while torch was **cu130** — a CUDA *major* version boundary. That
+mismatch was the actual reason the `cudart64_12.dll` copy was needed. Installing
+`sageattention-2.2.0+cu130...post6` removed the need: with the DLL renamed to `.disabled`,
+`_check_accel.py` still reports Sage OK. The file is renamed, not deleted.
+
+### Two predictions of mine that the tests disproved
+
+1. "flash-attn will break on torch 2.13." It did not. The installed wheel is
+   `flash_attn-2.8.4+cu130torch2.11.0cxx11abiTRUE-cp313-cp313` — built against torch **2.11**, and it
+   runs correctly on **2.13**, two minors ahead, `mean|d|=0.0000` vs SDPA. No cu132 wheel was needed.
+2. "cu132 flash wheels would clash with a cu130 Sage." Both are CUDA 13.x; NVIDIA guarantees minor
+   version compatibility within a major. The earlier pain was cu128 → cu130, which crosses CUDA 12 → 13.
+
+### Post-upgrade verification
+
+| Check | Result |
+| --- | --- |
+| `_check_accel.py` | triton 3.7.1, sageattention, flash_attn all OK |
+| `verify_w4a4.py --kernel-smoke` | structural PASS (432 layers), source comparison PASS, `comfy_kitchen.backends.cuda`, relative RMSE 0.2286 |
+| `stage_probe.py` | 432 quantized modules, `native=1 dequant=0` |
+| `compile_w4a4_fix_poc.py` | torch.compile works, `max_abs_diff 0.000000` |
+| ComfyUI server boot | 61 custom_nodes loaded, 1 failure (`ComfyUI-AnimateDiff-Evolved`, empty folder, pre-existing) |
+| `ConvRotNativeTextEncoder` node | registered |
+
+The PR #52 patch must be re-applied after any comfy-kitchen upgrade — `pip install` overwrites
+`tensor/base.py`. It survived the torch 2.13 move unchanged, so `_make_wrapper_subclass`'s
+`strides=` signature is stable across 2.12 → 2.13.
+
+Not measured yet: whether torch 2.13 is actually faster. Single-layer eager timing moved from
+0.417 ms to 0.228 ms across the upgrade, but the machine was busy with unrelated work throughout,
+so that number is not a result.
+
+### Upgrade casualty: ComfyUI-TenserTensor
+
+```
+custom_nodes\ComfyUI-TenserTensor\nodes_workflow.py, lines 448 and 511
+WorkflowSettings.Output("WORKFLOW_CONFIG")
+TypeError: WorkflowSettings.Output.__init__() takes 1 positional argument but 2 were given
+```
+
+ComfyUI 0.33 changed that `comfy_api.latest._io` signature. The node **imports** fine and so it
+was counted as healthy by the earlier "61 loaded, 1 failure" check — it only fails later, when
+`/object_info` asks it to build its schema. Two of its nodes are unusable
+(`TT_Sd35GgufWorkflowSettingsAdvancedNode` and one other), the rest of the server is unaffected.
+
+Method note: counting `IMPORT FAILED` lines is not sufficient to certify custom nodes after a
+ComfyUI upgrade. Schema construction happens later and can fail on its own. Any future upgrade
+check should fetch `/object_info` and count per-node errors as well.
+
+### Newly available in comfy-kitchen 0.2.31: W4A8
+
+The CUDA backend now advertises capabilities that 0.2.23 did not:
+`w4a8_int8_linear`, `quantize_w4a8_int8_weight`, `dequantize_w4a8_int8_weight`, and `na3d`.
+
+The earlier 0.2.23-vs-0.2.31 comparison missed these because it only diffed
+`torch.library.custom_op("...")` declarations, and these are registry capabilities rather than
+custom ops. W4A8 keeps 4-bit weights but 8-bit activations, which on Ampere should map to the far
+more mature INT8 tensor-core path and should cost much less accuracy than the current
+0.22-0.23 per-layer relative RMSE of W4A4. Worth benchmarking against ConvRot W4A4 on this hardware.
+
+### Benchmark still blocked, on VRAM not on code
+
+`_backup_20260816_preupgrade` and the converted models are all in place, but the A/B needs both
+sides resident without offloading, and desktop applications currently hold about 18.8 GiB of the
+3090. Free VRAM at the last check: 3090 5.4 GiB, 3080 Ti 9.2 GiB. W4A4 needs 7.92 GiB plus the
+text encoder and VAE; the FP16 source needs 15.51 GiB. Measuring one side with offload and the
+other without would conflate "quantization is faster" with "fitting in VRAM is faster".
+
+## VERDICT: ConvRot W4A4 does not work for HunyuanVideo 1.5 on this hardware
+
+Measured 2026-08-16 on an idle RTX 3090, ComfyUI 0.33.0, torch 2.13.0+cu130, Sage enabled.
+Identical prompt, seed, steps (6), resolution (480x480), sampler (euler), scheduler (simple) and
+frame count for every run. Seeds varied between runs so ComfyUI could not serve a cached result.
+Timings are ComfyUI's own "Prompt executed" with the model already resident.
+
+| Config | Steady time | VRAM staged | Image |
+| --- | --- | --- | --- |
+| **FP16 source** | **2.49 s** | 15881 MB | clean, sharp, correct |
+| W4A4 ConvRot g256 | 3.21 s | 8113 MB | **unusable** |
+| W4A4 ConvRot g64 | 3.86 s | 8113 MB | **unusable** |
+| W4A4 ConvRot g16 | 3.42 s | 8113 MB | **unusable** |
+
+The FP16 run produces a clean red apple on a wooden table. Every W4A4 run produces coloured mush in
+which the subject is not identifiable. The prompt was "a red apple on a wooden table, soft daylight".
+
+So W4A4 here is **1.3x to 1.55x slower than FP16 and destroys the output**. Its only advantage,
+about half the VRAM, is worthless when the result is unusable.
+
+### What was ruled out, and how
+
+- **Not torch.compile.** Compiled output matches eager at `max_abs_diff 0.00000000`, and the
+  compiled image shows the same corruption as the uncompiled one.
+- **Not the smoke-test settings.** FP16 at byte-identical settings produces a good image.
+- **Not load order.** The first measurement had W4A4 at 27.31 s against FP16 at 14.56 s, but that
+  charged the cold load of the Qwen 7B text encoder, byt5 and the VAE to whichever model ran first.
+  With both resident and seeds varied, the gap narrows and reverses in FP16's favour.
+- **Not the Hadamard group size.** 256, 64 and 16 were each converted and run. All three are
+  unusable; g64 is visibly the worst and g16 marginally the least bad. The parameter does not rescue it.
+
+### The earlier hardware argument was wrong
+
+Ampere exposes INT4 tensor cores where later architectures deprecated them, so the reasoning went
+that native INT4 MMA would make W4A4 pay off here where it does not elsewhere. It does not. A PTT
+user measured the same conclusion on an AMD 9070XT through a weight-only dequant path
+("INT4 精度實在崩到無法使用" — INT4 precision collapses to the point of being unusable, and INT4
+ConvRot generates slower than INT8 ConvRot). Same outcome through a completely different code path
+and vendor. The native-kernel advantage did not change the result.
+
+### Where this leaves the converted models
+
+`hunyuanvideo1.5_720p_t2v_fp16_w4a4_convrot`, `hv15_w4a4_g64`, `hv15_w4a4_g16` and
+`capybara_v0.1_w4a4_convrot` are structurally valid, load correctly and execute the native kernel.
+They are simply not usable for generation. Keep them as fixtures for kernel and loader work; do not
+use them for output. The Gemma W4A4 text encoder was never visually validated and is now suspect
+by association — the same 4-bit activation error applies.
+
+## W4A8 works, and it is the format to use
+
+Converted the same source with `tools/quant_w4a8.py` to comfy-kitchen's `asym_w4a8_int8` format and
+re-ran the identical benchmark. Same prompt, seed, steps, resolution, sampler, scheduler.
+
+| Config | Steady time | VRAM staged | On disk | Image |
+| --- | --- | --- | --- | --- |
+| FP16 source | **2.94 s** | 15881 MB | 15.51 GiB | good |
+| ConvRot W4A4 g256 | 4.85 s | 8113 MB | 7.92 GiB | **unusable** |
+| **asym_w4a8_int8** | **4.61 s** | **8437 MB** | 8.24 GiB | **good** |
+
+W4A8 is both *faster* than W4A4 and produces a clean, correct image, for 4% more disk. Against
+FP16 it is 1.57x slower for 1.88x less VRAM — a real trade, where W4A4 was pure loss.
+
+Why it survives where W4A4 does not, all three at once:
+
+- **Activations stay at 8 bits.** Half the error in W4A4 came from quantizing them to 4. Ampere's
+  INT8 tensor-core path is mature; its INT4 path is not.
+- **Per-group scales.** `group_size=16` gives a `[N, K/16]` scale grid instead of one scale per row.
+  On a `[8192, 2048]` layer that is 128 scales per row rather than 1.
+- **A Lloyd-Max codebook.** The 16 int4 levels stop being uniformly spaced and are placed where the
+  weights actually are.
+
+ConvRot rotation is still applied underneath, so W4A8 is W4A4 plus three additional defences.
+
+Checkpoint layout, per quantized layer — four tensors, not two:
+
+```
+<layer>.weight            int8 container, packed int4        [N, K // 2]
+<layer>.weight_s_rel      per-group scale, fp8 stored as u8  [N, K // group_size]
+<layer>.weight_s_channel  per-channel scale                  [N]
+<layer>.weight_codebook   Lloyd-Max levels                   [16]
+```
+
+One trap worth recording: `comfy/ops.py` reads `weight_s_rel`, `weight_s_channel` and
+`weight_codebook`, but **never reads the optional asymmetric `correction` tensor**. Quantizing
+asymmetrically would have its correction silently dropped and decode wrong, so the converter forces
+`symmetric=True` and refuses to continue if a correction tensor comes back.
+
+This also lands where the Chinese-language community already converged empirically (INT8 ConvRot
+over INT4), and where the PTT measurements pointed. They reached it by trying; the kernel counter
+just made the reason legible.
+
+### Remaining leads for W4A4 specifically, now lower priority
+
+1. **Fewer layers.** The profile quantizes all 432 attention and MLP projections. Attention may not
+   survive 4 bits while MLP does.
+2. **Not this model.** ConvRot's paper measured 2.26x on FLUX.1-dev, an image model. HunyuanVideo 1.5
+   is a video DiT run here far outside its 720p operating point. The technique may simply not transfer.
+
+## Skipped
+
+- `checkpoints/ltx-2.3-22b-dev-fp8.safetensors` — already FP8; not a high-precision requantization source.
+- LTX Q5/Q6 GGUF files — no matching BF16/FP16 diffusion source found locally; do not stack GGUF-to-W4A4 quantization.
+- Wan FP8/GGUF files — already quantized and no matching high-precision 14B source found locally.
+- Gemma 3 12B Q4_K_M GGUF — matching BF16 source exists locally; use the BF16 source instead.
+- SEEDVR2 GGUF variants — matching FP16 sources exist locally; use those sources instead.
+- VAEs, LoRAs, embeddings, vision encoders, small utilities, and model patches — excluded from the initial pass by policy.
+
+## Failed / Blocked
+
+### SageAttention binary compatibility after cu130 — resolved
+
+Exact error: `ImportError: DLL load failed while importing _fused: The specified module could not be found.`
+
+Confirmed cause: the locally installed `sageattention 2.2.0+cu128torch2.10.0andhigher.post5` binary extension depends on `cudart64_12.dll`. The DLL was no longer present in the embedded Torch library directory after replacing the cu126 wheel with cu130.
+
+Result: **resolved** by restoring the existing CUDA 12.6 runtime DLL side-by-side. No Sage package update, source build, random third-party wheel, core edit, custom-node edit, or launcher edit was needed. Native ConvRot W4A4 and SageAttention both pass on the RTX 3090.
+
+### Windows commit limit blocks large mmap — open
+
+Exact error, twice, from two different callers:
+
+`OSError: The paging file is too small for this operation to complete. (os error 1455)`
+
+1. During conversion, from the converter's own `safe_open` on the 21.93 GiB Gemma source. It also crashed `torch_cpu.dll` twice with `0xc0000005`. **Resolved** by rewriting `tools/quant_w4a4.py` to stream: output header offsets are computed up front, quantized layers are read by byte range and written one at a time, and preserved tensors are copied in 16 MiB chunks. Do not reintroduce `safe_open`/mmap for huge sources on this host.
+2. During validation, from **normal ComfyUI** — `comfy.utils.load_torch_file` → `safetensors.safe_open` on `checkpoints/ltx-2.3-22b-dev-fp8.safetensors` (27.14 GiB). This is not a quantization bug; the same call fails for any large file.
+
+Measured at the time of failure:
+
+| Counter | Value |
+| --- | --- |
+| Commit limit | 98.13 GiB |
+| Committed bytes | 89.49 GiB |
+| Commit headroom | ~8.6 GiB |
+| Free physical RAM | 9.11 GiB (was 21.33 GiB minutes earlier) |
+| Pagefile | `C:\pagefile.sys`, 35,826 MB allocated, 20,403 MB peak |
+
+`vmmemWSL` holds the bulk of the committed memory and is running unrelated Qwen/DeepSeek work, so it is deliberately left alone; the pagefile is deliberately not resized. Consequence: **the 21.93 GiB BF16 Gemma source cannot currently be loaded at all**, so the BF16-vs-W4A4 A/B comparison is blocked on commit headroom, not on any converted file.
+
+Workaround used for validation: the split `text_encoders/ltx-2.3_text_projection_bf16.safetensors` (2.15 GiB, 4 BF16 tensors) supplies `text_embedding_projection.{audio,video}_aggregate_embed.{weight,bias}` in place of the 27.14 GiB checkpoint. `comfy.text_encoders.lt.sd_detect` reads the same keys and still selects `dual_linear`, so the `CLIPType.LTXV` → `LTXAVTEModel_` path is exercised unchanged.
+
+---
+
+## 2026-08-18 — Baseline concorrente: SVDQuant W4A4 (Nunchaku) na 3090
+
+Medido para responder uma pergunta que o projeto ConvRot tinha em aberto sem saber: **W4A4 de
+difusão já entrega na sm86, hoje, com kernels prontos?** Entrega.
+
+Mesmo modelo dos dois lados — Z-Image-Turbo. `z_image_turbo_bf16.safetensors` pelo loader normal
+do ComfyUI contra `svdq-int4_r32-z-image-turbo.safetensors` (nunchaku-ai) pelo
+`NunchakuZImageDiTLoader`. Latente, seed, sampler, scheduler, steps e condicionamento idênticos,
+pesos residentes, um processo por modelo. Ferramenta: `tools/nunchaku_compare.py`.
+
+| | BF16 | SVDQuant INT4 | razão |
+|---|---|---|---|
+| disco | 11.46 GiB | 3.36 GiB | 0.29x |
+| load | 17.35 s | 5.60 s | 0.32x |
+| pico de VRAM | 12.05 GiB | 3.91 GiB | 0.32x |
+| passada (8 steps, 1024²) | 7.07 s | 3.12 s | 0.44x |
+| s/step | 0.8837 | 0.3895 | **2.27x mais rápido** |
+
+Passadas: BF16 `7.07, 7.12, 7.16`; INT4 `3.12, 3.12, 3.12`. Dispersão intra-run abaixo de 1.5%,
+então a razão 2.27x não está competindo com ruído.
+
+**Os kernels W4A4 estão de fato no grafo**, não é dequantização disfarçada. O script conta os
+módulos e imprime:
+
+```
+quantised modules in graph: ComfyNunchakuZImageAttention×34, ComfyNunchakuZImageFeedForward×34,
+                            SVDQW4A4Linear×136
+```
+
+`SVDQW4A4Linear` é o caminho que chama `nunchaku._C.ops.gemm_w4a4`. Isso fecha a verificação que
+estava pendente: `gemm_w4a4` executa na sm86.
+
+### O que isto **não** mostra
+
+`latent relL2 0.7834`, `cosine 0.7208` contra o BF16. O condicionamento é aleatório, então esses
+números medem quanto a trajetória mudou, **não** se a imagem ficou pior. Julgar qualidade exige
+prompt real através do text encoder e olhar os pixels. Enquanto isso não for feito, a coluna de
+qualidade desta comparação está vazia — e uma diferença de trajetória desse tamanho é grande o
+bastante para que "vazia" não seja o mesmo que "sem problema".
+
+### Consequência para o ConvRot
+
+Não invalida o projeto, mas muda a pergunta. O ConvRot converte checkpoints locais arbitrários;
+o Nunchaku consome checkpoints pré-quantizados no formato SVDQuant deles, distribuídos por eles,
+e quantizar os próprios exige o `deepcompressor`. São escopos diferentes. O que o Nunchaku
+estabelece é o **piso de desempenho**: qualquer saída ConvRot W4A4 que renda menos que 2.27x com
+mais que 3.91 GiB de pico precisa de justificativa.
+
+### Ambiente adicionado para isto
+
+`nunchaku 1.2.1+cu13.0torch2.11` (wheel de torch 2.11 rodando sob 2.13, kernel verificado),
+`ComfyUI-nunchaku 1.2.1`, `tomli`. `insightface` e `facexlib` deliberadamente **não** instalados
+— só os nós de PuLID falham por isso, e nenhum caminho de Z-Image passa por eles.
+
+### Repetido com o pipeline completo do ComfyUI (prompt real, CLIP real, VAE real)
+
+A medição acima usava condicionamento sintético, o que deixava a coluna de qualidade vazia.
+Refeita com `qwen_3_4b.safetensors` (o `comfy.text_encoders.z_image.te` é selecionado sozinho
+para Qwen3-4B) e `ae.safetensors` (Z-Image é `ZImage(Lumina2)`, latente Flux 16ch — a
+`qwen_image_vae` é 3D e falha com `IndexError: tuple index out of range` em `memory_used_decode`).
+
+Prompt: `"a red apple on a weathered wooden table, afternoon light, sharp detail"`, 23 tokens,
+`|cond| 14767.041` **idêntico nos dois runs** — o comparador recusa a comparação se divergir.
+
+| | BF16 | SVDQuant INT4 | razão |
+|---|---|---|---|
+| disco | 11.46 GiB | 3.36 GiB | 0.29x |
+| load | 7.81 s | 5.69 s | 0.73x |
+| pico de VRAM | 12.05 GiB | 3.91 GiB | 0.32x |
+| s/step | 0.8920 | 0.3922 | **2.27x mais rápido** |
+
+`latent relL2 0.6344`, `cosine 0.8099`. Passadas BF16 `7.14, 7.17, 7.20`; INT4 `3.14, 3.15, 3.16`.
+A razão 2.27x reproduziu exatamente a da corrida sintética.
+
+**Veredito visual:** as duas imagens atendem ao prompt, são fotorrealistas e estão nítidas.
+Composição, enquadramento, direção de luz e sombra praticamente iguais. Diferenças reais e
+visíveis, nenhuma delas degradação: o BF16 deixa o fundo mais desfocado e cobre a maçã com
+gotas d'água finas e numerosas; o INT4 resolve mais grão e rachadura na madeira, dá luz um pouco
+mais dura e menos gotas. **Não é a mesma imagem** — `relL2 0.63` já dizia isso — mas não há
+perda de qualidade que justifique recusar o INT4. Trajetória diferente, não pior.
+
+Consequência: o piso para o ConvRot fica firme. W4A4 na sm86 entrega 2.27x com 32% da VRAM
+**sem** custo de qualidade perceptível neste teste.
+
+Ressalvas honestas: um prompt, um seed, um modelo, 8 steps. Não é avaliação de qualidade em
+escala, e não cobre rosto, texto na imagem, nem mãos — que é onde quantização costuma quebrar
+primeiro. O decode do BF16 emitiu avisos de OOM do alocador e caiu no caminho tiled do ComfyUI;
+saiu imagem correta, mas a VAE disputou memória com os 12 GiB de pesos, coisa que o INT4 não fez.
+
+---
+
+## 2026-08-18 — Sparge + Sage2 + Triton medidos de verdade (e o resultado é humilde)
+
+Até aqui Sparge estava instalado com kernel provado na sm86, mas **nunca medido em modelo**.
+Medido agora, plugado na atenção do ComfyUI, mesmo Z-Image-Turbo BF16, mesmo prompt, mesmo seed,
+pesos residentes. Backend forçado via `--attention` em `tools/nunchaku_compare.py`.
+
+Antes dos números, três correções de premissa:
+
+- **Sage2++ não existe na 3090.** `sageattention/core.py:162` põe o ramo `# SageAttention2++` em
+  `sm89`; `sm80/86/87` cai em `sageattn_qk_int8_pv_fp16_cuda` com acumulador fp32. É Sage2.
+- **Sparge não empilha com Sage2, contém Sage2.** As entradas chamam-se `spas_sage2_attn_*` —
+  quantização do Sage2 mais esparsidade de blocos. Substitui o `sageattn`, não soma a ele.
+- **Triton não é terceira peça.** Roda dentro dos dois, fazendo a quantização INT8 em
+  `per_thread_int8_triton` (`core.py:442` tem `qk_quant_gran="per_thread"` como default).
+
+| atenção | s/pass | s/step | speedup | blocos pulados |
+|---|---|---|---|---|
+| ComfyUI default (SDPA) | 7.03 | 0.8790 | 1.00x | — |
+| SageAttention 2 | 6.86 | 0.8572 | 1.02x | — |
+| SpargeAttn topk 0.5 | 6.68 | 0.8347 | 1.05x | 47.88% |
+| SpargeAttn topk 0.25 | 6.60 | 0.8247 | **1.07x** | **71.82%** |
+
+**Pular 72% dos blocos de atenção comprou 6.5%.** Não é falha do Sparge — é o que sobra quando a
+atenção não é o gargalo. No mesmo modelo, na mesma placa, o W4A4 do Nunchaku comprou 127%,
+atacando as camadas lineares.
+
+Qualidade: a imagem do `topk 0.25` está íntegra, sem artefato, sem borrão — discutivelmente a
+melhor das três. `relL2 0.8264`, `cosine 0.7118` contra o default: trajetória bem diferente,
+resultado igualmente bom.
+
+### Dois bugs encontrados no caminho, um deles do SpargeAttn
+
+1. **`UnboundLocalError` com `smooth_k=False`.** `spas_sage_attn/core.py:163` atribui `km` só
+   dentro de `if smooth_k:`, e a linha 169 usa `km` incondicionalmente. ComfyUI passa
+   `smooth_k=False` em `attention_sage`, então **toda** chamada morre. Bug do upstream, não da
+   integração. Contornado forçando `smooth_k=True` no shim.
+2. **`assert q.size(-2)>=128`** (`core.py:154`). Toda cross-attention aqui carrega 23 tokens de
+   texto e cai nesse assert. Roteada para o Sage em vez do PyTorch — cair no caminho mais lento
+   faria a medição parecer um resultado de Sparge sem ser.
+
+Sem esses dois contornos o `attention_sage` do ComfyUI engolia a exceção e caía em
+`attention_pytorch` silenciosamente, com a mensagem `Error running sage attention: ..., using
+pytorch attention instead` — ou seja, um usuário que ligasse Sparge assim teria ficado **mais
+lento** achando que estava mais rápido.
+
+### Ressalva que muda a conclusão para outro caso de uso
+
+Isto é um modelo de **imagem**, 16384 tokens de latente e 23 de texto. Modelos de **vídeo** têm
+sequências de ordem de magnitude maiores, e a atenção é quadrática: lá o eixo Sparge/Sage deve
+pesar muito mais do que os 7% vistos aqui. Não medido. Não afirmo.
+
+---
+
+## 2026-08-18 — deepcompressor baixado, bloqueado em compilador
+
+`F:\COMFY_PORTABLE\deepcompressor` (clone raso, 11 MB). Instalado no `python_embeded`:
+`omniconfig 0.1.10`, `datasets 5.0.1`, `pandas 3.0.5`, `pyarrow 25.0.1`, `multiprocess`,
+`docstring-parser`, `tzdata`. Verificado por `pip install --dry-run` **antes** e por
+`import torch` **depois**: nada tocou Torch nem numpy, as quatro principais estavam ausentes
+(nenhum upgrade). `torch 2.13.0+cu130` intacto.
+
+`import deepcompressor` funciona. `deepcompressor.app.diffusion.ptq` **não**:
+
+```
+deepcompressor/data/__init__.py -> data/dtype.py -> data/codebook.py -> csrc/load.py:12
+subprocess.CalledProcessError: Command '['where', 'cl']' returned non-zero exit status 1
+```
+
+`csrc/load.py` compila uma extensão C++ por JIT (`torch.utils.cpp_extension.load`) **no import**,
+e ela é alcançada pela raiz do pacote. Precisa de `cl.exe` (Visual Studio Build Tools, workload
+C++), que não existe nesta máquina. Não é opcional e não tem flag para pular.
+
+Ainda faltam 12 dependências, quase todas de avaliação: `lm_eval jieba fuzzywuzzy rouge
+python-Levenshtein clean-fid dominate bs4 cd-fvd xformers pyav clip image_reward`. Se o caminho
+de conversão precisa de todas, não sei — só dá para descobrir depois que o import passar.
+
+Nota para o plano de `.exe`/GUI: **um wrapper não remove o compilador**, porque o JIT roda no
+import. A saída melhor é pré-compilar a extensão uma vez e distribuir o `.pyd` junto, como o
+woct0rdho faz com Sage e Sparge — mas isso ainda exige MSVC uma vez, aqui.
+
+**Correção, mesmo dia: o bloqueio não existia.** Antes de pedir os 2–7 GB de Build Tools eu
+procurei `cl.exe` na máquina. Já havia **quatro** instalações MSVC: VS 2019 BuildTools,
+VS 18 BuildTools, VS 2022 BuildTools e VS 18 Community. O problema era PATH, não instalação.
+Nada foi instalado a nível de sistema.
+
+### Conversor operacional
+
+`run_deepcompressor.bat` na raiz carrega o `vcvars64.bat` do VS 2022 BuildTools (com fallback
+para os outros dois) e chama `deepcompressor.app.diffusion.ptq` com o Python embedded.
+`--help` responde.
+
+O `vcvars` é necessário **em toda execução**, não só na primeira: `csrc/load.py` compila por JIT
+no import e o `torch.utils.cpp_extension.load` roda `where cl` para validar a toolchain **antes**
+de consultar o próprio cache de build. Extensão cacheada não dispensa o compilador.
+
+Três correções locais foram necessárias (todas comentadas no código como `LOCAL PATCH`, nenhuma
+enviada para o upstream):
+
+1. `deepcompressor/csrc/load.py` — as listas de flags são de GCC. Com CUDA >= 13 o CCCL recusa o
+   pré-processador tradicional do MSVC e o build morre em
+   `preprocessor.h(23): fatal error C1189`. Passei `/Zc:preprocessor` direto ao `cl` e via
+   `-Xcompiler` ao `nvcc`, e troquei as flags GCC por equivalentes MSVC no ramo Windows.
+2. `deepcompressor/app/llm/eval/longbench/eval.py:339` — `open()` sem `encoding` num JSON UTF-8
+   com CJK. No Windows o default é cp1252 e o import inteiro morre com
+   `UnicodeDecodeError: 'charmap' codec can't decode byte 0x9d`. O `open()` irmão da linha 123 já
+   passava `encoding="utf-8"`; a leitura foi esquecida. Um arquivo de benchmark de LLM que nenhum
+   workflow de difusão vai ler impedia `app.diffusion.ptq` de importar.
+3. `python_embeded/Lib/site-packages/deepcompressor.pth` — o embedded ignora `PYTHONPATH` por
+   causa do `python313._pth`, e `pip install -e` falha com
+   `BackendUnavailable: Cannot import 'poetry.core.masonry.api'`. Um `.pth` resolve sem instalar
+   backend de build nenhum.
+
+### Um dano de stack pego e revertido
+
+Instalar `image_reward` **rebaixou `timm` de 1.0.28 para 0.6.13** (ele pina `timm==0.6.13`).
+`timm` é usado por `comfyui-easy-use` e `comfyui-frame-interpolation` — nós reais desta
+instalação. Removi `image_reward` e `fairscale` (ambos só de avaliação, fora do caminho de
+conversão) e restaurei `timm==1.0.28`. Confirmado: `torch 2.13.0+cu130`,
+`torchvision 0.28.0+cu130`, `transformers 5.14.1`, `timm 1.0.28`, tudo intacto.
+
+Lição para o resto do projeto: `pip install --dry-run` mostra o que **seria instalado**, mas eu
+li a lista procurando `torch` e `numpy` e não notei o downgrade de `timm`. A checagem certa é
+comparar a lista inteira contra o que já está instalado, não procurar nomes suspeitos.
+
+### O que ainda falta para converter um checkpoint local
+
+Configs existentes: `flux.1-dev`, `flux.1-schnell`, `pixart-sigma`, `sana-1.6b`. Presets de
+quantização: `int4`, `nvfp4`, `fast`, `gptq`, `__default__`.
+
+**Não há config para Z-Image nem para Qwen-Image**, que são os modelos de imagem em uso aqui. E o
+pipeline carrega pelo `diffusers`, não lê `.safetensors` do ComfyUI direto. Então converter um
+checkpoint local exige escrever config nova e ter o modelo em formato diffusers — mais o custo de
+GPU das três etapas (referência, calibração com 128 prompts do COCO, quantização com avaliação).
+
+---
+
+## 2026-08-18 — SANA validado até a metade, e abortado por custo
+
+O pipeline de três etapas do deepcompressor **roda** nesta máquina. Não terminou porque o preço
+não compensa, não porque quebrou.
+
+| etapa | resultado |
+|---|---|
+| 1. referência | pulada (`--skip-eval true`), não altera o modelo produzido |
+| 2. calibração | ✅ 128/128 amostras, **25min42**, 3,43 s/amostra, 7,5 GiB de dataset |
+| 3. quantização INT4 | ▶ iniciou e progrediu; **abortada pelo usuário** |
+
+O número que motivou abortar, lido do log em execução:
+
+```
+smoothing: 1/20 [36:11<8:48:12, 1668.00s/it]
+GPU 9857 MiB, 100%  |  RAM 59.9 GB
+```
+
+**36 minutos por camada, 8h48 estimadas, para um modelo de 1.6B.** Cabe em 24 GB de VRAM (usa
+9,8 GB), mas consome ~60 GB de RAM — nesta máquina isso disputa commit com o `vmmemWSL`.
+
+Isso confirma empiricamente o que o guia de comunidade [spooknik/deepcompressor-guide] afirma em
+teoria (48 GB mínimo, 18–20 h para FLUX 12B): o gargalo do SVDQuant não é capacidade, é tempo e
+RAM. Extrapolar para Qwen-Image (20B, 12,5× o SANA) não é conservador.
+
+### Estrutura do formato SVDQuant, mapeada a partir do checkpoint oficial
+
+Feito sem download extra — `svdq-int4_r32-z-image-turbo.safetensors` já estava no disco.
+1099 tensores, 136 camadas quantizadas.
+
+Uma camada (`context_refiner.0.attention.to_out.0`):
+
+```
+qweight             I8    (3840, 1920)   INT4 empacotado 2-por-byte
+wscales             BF16  (60, 3840)     3840/64 = 60 grupos -> group_size 64
+smooth_factor       BF16  (3840,)
+smooth_factor_orig  BF16  (3840,)
+proj_down           BF16  (3840, 32)     branch low-rank, rank 32
+proj_up             BF16  (3840, 32)
+```
+
+Composição do arquivo: `qweight` 83,3%, BF16 não quantizado 7,7%, `wscales` 5,2%,
+low-rank (`proj_up`+`proj_down`) 3,7%, `smooth_factor` 0,0%.
+
+O formato **se declara** no `__metadata__`, então não há engenharia reversa a fazer:
+
+```json
+"quantization_config": {"method": "svdquant",
+  "weight": {"dtype": "int4", "scale_dtype": null, "group_size": 64},
+  "activation": {"dtype": "int4", "scale_dtype": null, "group_size": 64},
+  "rank": 32, "skip_refiners": false}
+"config": {"_class_name": "ZImageTransformer2DModel", "_diffusers_version": "0.36.0.dev0", ...}
+```
+
+`_class_name: ZImageTransformer2DModel` derruba a alegação de que Z-Image dependeria do diffusers
+ganhar uma pipeline class — ela existe.
+
+### Por que isto importa para o ConvRot
+
+Comparando com a saída do nosso conversor (`gemma_3_12B_it_heretic_w4a8`, 673 camadas):
+
+```
+weight              I8    (3840, 7680)
+weight_codebook     F32   (16,)
+weight_s_channel    F32   (3840,)
+weight_s_rel        U8    (3840, 960)
+format: asym_w4a8_int8, group_size 16, convrot_groupsize 256
+```
+
+São **duas estratégias diferentes para o mesmo problema** — outliers em 4 bits.
+
+- **SVDQuant absorve**: branch de posto 32 mais suavização de ativação. Encontrar esse branch
+  exige SVD sobre ativações reais, logo calibração, logo as 8h48 e os 60 GB de RAM.
+- **ConvRot rotaciona**: `convrot_groupsize 256`, escala em dois níveis (F32 por canal + U8
+  relativo por grupo de 16) e codebook de 16 entradas. Rotação é transformada direta e
+  **não requer calibração**.
+
+Essa é a vantagem prática do ConvRot que não estava registrada: converte em minutos, sem dataset,
+sem 128 prompts do COCO, sem noite de GPU. O SVDQuant compra qualidade-por-bit pagando em
+calibração. Qual das duas vence em qualidade final não foi medido e não se deduz da estrutura.
+
+### Estado
+
+Processo de quantização morto (PID 5504). Restam órfãos 7,5 GiB de dataset de calibração em
+`deepcompressor/examples/diffusion/datasets/` — mantidos por ora, reutilizáveis se o SANA for
+retomado. Modelo SANA bf16 (9,07 GiB) em `D:/deepcompressor-models/`.
+
+---
+
+## 2026-08-18 (tarde) — SVDQuant medido em modelo real, com imagens
+
+Tudo abaixo foi executado nesta máquina. Condicionamento real (prompt, text encoder, VAE), pesos
+residentes, mesma seed, e o comparador **recusa** a comparação se o `cond_norm` divergir entre os
+lados — então "mesmo prompt" aqui significa mesmo tensor, não mesma string.
+
+### FLUX.1-dev — o maior ganho da sessão
+
+| | fp8 e4m3fn | SVDQuant INT4 r32 | razão |
+|---|---|---|---|
+| disco | 11,08 GiB | 6,30 GiB | 0,57x |
+| load | 134,3 s | 75,8 s | 0,56x |
+| VRAM (nvidia-smi) | 12.682 MiB | 7.134 MiB | 0,56x |
+| s/step @1024², 20 steps | 1,1222 | 0,3899 | **2,88x** |
+
+`latent cosine 0.9344`. Visualmente indistinguível: mesma maçã, mesma madeira, mesma luz e
+sombra. Prompt `"a red apple on a weathered wooden table, afternoon light, sharp detail"`,
+`cond_norm 156.5873` idêntico nos dois lados.
+
+### Beyond_Reality Z-Image v2 — antes/depois contra o bf16 do próprio autor
+
+O `tonera` publica o transformer bf16 ao lado do quantizado, então este é o único par da sessão
+sem proxy: mesmo modelo, mesmo autor, um quantizado e o outro não.
+
+| | bf16 | SVDQuant INT4 r32 |
+|---|---|---|
+| disco | 11,46 GiB | 3,36 GiB |
+| VRAM | 12,05 GiB | 3,91 GiB |
+| s/step @1024², 8 steps | 0,8793 | 0,3915 |
+| | | **2,25x** |
+
+### Qwen-Image — build de terceiro é legítimo
+
+`QuantFunc/Nunchaku-Qwen-Image-2512` (balance, INT4) carrega no loader **oficial** e roda
+idêntico ao `nunchaku-ai/nunchaku-qwen-image` r128: ambos 0,617 s/step, 12,35 GiB de pico,
+`SVDQW4A4Linear×480` + `NunchakuQwenImageTransformerBlock×60`, 781 módulos quantizados. Os dois
+declaram `rank 128`, `group_size 64` — o rank não os diferencia.
+
+### `tonera/Qwen-Image-Edit-2511-Lightning` NÃO carrega
+
+```
+ValueError: Key transformer_blocks.0.img_mod.1.qweight not found in state_dict
+```
+
+Causa, verificada tensor a tensor:
+
+```
+oficial 2509 — img_mod.1: qweight I32 (4608,1536) + wscales + wzeros   -> AWQ W4A16
+tonera  2511 — img_mod.1: weight  F16 (18432,3072)                     -> não quantizado
+```
+
+O loader do `ComfyUI-nunchaku 1.2.1` exige as camadas `mod` quantizadas. Isso também explica os
+13,72 GiB dele contra 11,79 do oficial. **13,72 GiB de peso morto** até haver suporte ou uma
+build com `mod` em AWQ — `QuantFunc/Nunchaku-Qwen-Image-EDIT-2511` é a alternativa óbvia, não
+baixada.
+
+Correção de um registro anterior: eu havia escrito "600 camadas quantizadas, 480 com low-rank,
+120 sem". O certo é **480 em SVDQuant W4A4 e 120 em AWQ W4A16** — as `mod` usam outro formato,
+com zero-point, não é ausência de branch.
+
+### `tools/svdq_to_bf16.py` — reconstrução de peso a partir do SVDQuant
+
+Recupera BF16 de um checkpoint SVDQuant sondando o kernel com a identidade (`W.T = forward(I)`),
+em vez de reverter o interleave de tensor core, que o pacote não expõe.
+
+Contra o bf16 original do Beyond_Reality, 20 camadas:
+
+```
+mediana 0.0972 | melhor 0.0473 | pior 0.1059
+```
+
+**~10% de erro relativo nos pesos** é o que o SVDQuant custou para levar 11,46 → 3,36 GiB.
+
+Três coisas descobertas ao construir, todas por medição:
+
+1. **A camada não é linear.** É W4A4 — a ativação também é int4. Verificar com `x` denso
+   aleatório mede erro de ativação, não de reconstrução, e reprova (0,0988) uma recuperação
+   correta.
+2. **A fusão do feed-forward é `w3+w1`, não `w1+w3`.** Ordem natural dá erro relativo 1,4199
+   contra o original; a invertida dá 0,0995. Cortando a matriz recuperada ao meio: metade
+   superior casa com `w3` (0,099), inferior com `w1` (0,1001).
+3. **O quantizado funde o que o diffusers separa**, e casar só por nome comparava 5 camadas de
+   20 — todas `to_out` — reportando isso como se cobrisse a rede. Verificado pelas formas:
+   `to_qkv (11520,3840) = to_q+to_k+to_v`, `feed_forward.net.0.proj (20480,3840) = w3+w1`,
+   `feed_forward.net.2 = w2`.
+
+### Erro de metodologia meu, registrado
+
+Comparei Qwen-Image **base** contra Qwen-Image-**2512** com 8 steps e cfg 1.0 — ajuste de modelo
+distilled. O base saiu cru e eu quase atribuí isso à quantização. Refeito com **20 steps e
+cfg 4.0**, mesmo arquivo e mesma seed, a imagem fica nítida e correta (custo: 24,77s contra
+4,93s, porque cfg>1 roda cond e uncond).
+
+**Cada modelo tem o seu ajuste; comparar dois num ajuste único mede o ajuste, não o modelo.**
+Mesmo erro de categoria do threshold do FBCache, que também não era portável entre arquiteturas.
+
+### Bugs corrigidos nas ferramentas
+
+- `extra_model_paths.yaml` **nunca era lido** por script fora do `main.py`, então todo modelo no
+  D: dava "not found" — inclusive dentro dos nós do nunchaku. Agora é carregado explicitamente.
+- Ordem de carga invertida: o modelo de difusão entrava **antes** de o prompt ser codificado.
+  Qwen-2.5-VL-7B (~15 GiB) + Qwen-Image INT4 (12 GiB) estouravam os 24 GiB. O comentário no
+  código já dizia a ordem certa; a implementação fazia o contrário.
+- Decode 5D: o latente do Qwen tem eixo temporal mesmo para imagem parada
+  (`TypeError: Cannot handle this data type: (1, 1, 3, 1)`).
+- Sonda de identidade precisa ser 3D `(1, in, in)`; 2D morre em
+  `not enough values to unpack (expected 3, got 2)`.
+- Loaders do nunchaku **não compartilham assinatura**: ZImage recebe só o nome, Qwen exige
+  `cpu_offload` posicional, FLUX recebe seis argumentos (um deles `cache_threshold`, o
+  first-block cache próprio deles — fixado em 0 para não misturar cache com quantização).
+- `save_file` do safetensors falha no D: com `os error 50: The request is not supported`. Merge
+  dos shards feito com escrita manual (header + streaming).
+
+### Bugs conhecidos e **não** corrigidos
+
+- `svdq_to_bf16` nunca rodou em modelo inteiro, só `--limit 20`.
+- Os 6 workflows `.nunchaku.json` nunca foram abertos nem enfileirados (teste 4). Precisa de GPU.
+
+---
+
+## 2026-08-18 - sessao sem GPU
+
+GPU emprestada para trabalho de LLM nao relacionado. Tudo abaixo e CPU, rede ou git. A NVML
+confirma **3 processos de terceiros na placa durante toda a sessao**, o que por si so e o motivo
+de um dos consertos abaixo ter a forma que tem.
+
+### Os dois bugs de ferramenta acima: corrigidos
+
+**1. `peak VRAM` mentindo no caminho nunchaku.** Causa: `torch.cuda.max_memory_allocated` so
+conta o que passou pelo caching allocator do PyTorch, e o nunchaku aloca os pesos dentro da
+extensao C++. Reportava `0,21 GiB` para um modelo de ~7 GiB - e o pior nao e errar, e errar ao
+lado de uma linha BF16 que estava certa: a coluna lia como um ganho de memoria de 50x.
+
+Corrigido com uma classe `DevicePeak` em `tools/nunchaku_compare.py`: thread daemon amostrando
+NVML a cada 50 ms, do instante anterior ao load ate o fim das passadas cronometradas.
+
+Detalhe que **obriga** a forma da solucao: no Windows o driver roda em modo WDDM e a NVML se
+recusa a quebrar o total por processo (`nvmlDeviceGetComputeRunningProcesses` devolve entradas
+com `usedGpuMemory` indisponivel). Entao o que existe e uso do dispositivo inteiro, e a
+atribuicao vem de subtrair uma baseline tomada imediatamente antes de o modelo carregar. Isso so
+vale se nada mais na placa crescer no meio - condicao que **nao e assumida**: o numero de outros
+processos e medido, gravado no arquivo de resultado e impresso ao lado da figura.
+
+Os dois numeros passam a ser gravados (`peak_gib` da NVML, `torch_peak_gib` do allocator) junto
+com `peak_source`. E o `--compare` **recusa** dividir um contra o outro:
+
+```
+peak VRAM GiB                       0.21          7.00          --
+  !! not comparable: A measured by torch caching allocator (undercounts CUDA extensions),
+     B by nvml device-wide minus baseline. Re-run both.
+```
+
+Arquivos `.pt` antigos nao tem `peak_source` e sao tratados como allocator por definicao, que e
+o que sao. **Consequencia pratica: medicao de VRAM anterior a hoje nao pode ser comparada com as
+futuras.** Os numeros de VRAM ja registrados neste log vieram de `nvidia-smi` a mao e continuam
+validos; o que nao vale e o que saiu da coluna da ferramenta.
+
+**2. `--verify` do `svdq_to_bf16` testando a propriedade errada.** O antigo exigia
+`layer(x) ~= x @ W.T` com folga de 2e-2. Isso e impossivel: W4A4 quantiza **a ativacao** tambem,
+entao a camada nao e linear na entrada e nenhuma matriz BF16 a reproduz exatamente. Media 0,0988
+e reprovava reconstrucao correta.
+
+O que o formato **tem** e que a sonda de identidade e *exata*, nao aproximada - cada linha de `I`
+tem um unico nao-zero, e escala simetrica por grupo representa um nao-zero solitario (e os zeros
+ao redor) sem erro nenhum. Medido, nao deduzido: erro maximo `0.0`. Logo `recovered` e o peso
+efetivo que o kernel guarda, e o residuo em entrada aleatoria e a quantizacao da *sonda*.
+
+O gate novo e por direcao, com dois limiares, e cada camada e pontuada **ao lado de uma matriz
+deliberadamente errada** (as proprias linhas embaralhadas), para que a margem seja impressa em
+vez de afirmada. Calibracao medida contra uma camada que quantiza a ativacao em INT4 por grupo
+de 64:
+
+| caso | cos | relL2 | gate antigo (rel<=0,02) | gate novo (cos>=0,99 e rel<=0,25) |
+|---|---|---|---|---|
+| reconstrucao correta | 0,9942 | 0,1072 | **REPROVA** <- o bug | aprova |
+| matriz errada (embaralhada) | 0,0010 | 1,4150 | reprova | reprova |
+| correta x 1,5 | 0,9943 | 0,5080 | reprova | **reprova** <- cosseno sozinho aprovaria |
+
+A ultima linha e o motivo de manter os **dois** limiares: escala errada mantem cosseno 1.
+
+Adicionado tambem um teste que nao existia e que cobre o caso que o docstring dizia estar
+protegido sem nunca ter sido exercitado: com o bias suprimido a camada tem de mapear zero em
+zero. Custa um forward num tensor de zeros, pega uma falha que corromperia toda linha da camada,
+e por isso roda mesmo com `--verify 0`.
+
+`tools/test_svdq_verify.py` trava essa calibracao: 4 testes, CPU, sem checkpoint e sem GPU. Um
+deles falha de proposito se o teto de 0,02 voltar a ser alcancavel.
+
+> **Nota de ambiente:** nao ha `pytest` neste interpretador embedded. Os comandos de teste do
+> CLAUDE.md que invocam um nao funcionam como escritos. O arquivo carrega o proprio runner.
+
+### PR #3 upstream: chengzeyi/Comfy-WaveSpeed#149
+
+Porte das correcoes do FBCache para o upstream de verdade. Upstream esta parado desde
+**2025-08-02** (`8253745`), e o fork divergiu 2170 linhas em `first_block_cache.py`, entao
+cherry-pick nao aplica. Rebase feito a mao, em worktree isolado - o no vivo em `custom_nodes/`
+nao foi tocado.
+
+Dos 7 bugs do fork, **so 2 existem no upstream**:
+
+| bug | upstream 8253745 | acao |
+|---|---|---|
+| 1. clone do input do bloco 0 | **presente**, `fbcache_nodes.py:257` | portado |
+| 2. deteccao FLUX larga demais | nao - upstream compara nome exato | descartado |
+| 3. Wan sem `blocks` | ausente, mas seria *feature* | descartado |
+| 4. igualdade de string vs MRO | presente | portado |
+| 5. `modulation_dims` (#120) | ja tem; foi o fork que perdeu | descartado |
+| 6. cache unica p/ cond+uncond | design diferente (`sequence_num`) | descartado |
+| 7. gate `cos_sim` | adicao do fork (ec3d421) | descartado, como previsto |
+
+O bug 1 foi **provado contra a classe real do ComfyUI**, nao argumentado:
+
+```
+block returns the same object it was handed : True
+the aliased original was mutated            : True
+residual measured against the alias  (max)  : 0.0
+residual measured against a copy     (max)  : 0.25027644634246826
+```
+
+E a razao de ninguem ter percebido: `are_two_tensors_similar` faz
+`(t1-t2).abs().mean() / t1.abs().mean()`, que para dois tensores nulos e `0/0` -> `nan`, e
+`nan < threshold` e `False`. Miss permanente, saida bit-identica ao modelo sem patch, nada
+levantado e nada logado - e ainda **mais lento**, porque o bloco 0 roda duas vezes.
+
+O mesmo aliasing esta em tres lugares no upstream, os tres corrigidos. A flag
+`clone_original_hidden_states` foi **removida** em vez de virar `True`: nao existe configuracao
+correta em que pular a copia esteja certo.
+
+Dois testes de CPU acompanham. O segundo **falha no upstream como publicado** e passa com a
+mudanca - verificado nos dois sentidos com `git stash`.
+
+Declarado no PR o que ele *nao* cobre: ambiente e ComfyUI 0.29.0 / torch 2.13, nao o de agosto
+de 2025; nao ha comparacao de imagem ponta a ponta; e o gate do primeiro bloco na rota FLUX
+(`first_hidden_states_residual = img`, estado bruto e nao residuo) foi deixado exatamente como
+esta, porque mexer moveria o significado de `residual_diff_threshold` para todo usuario atual.
+
+### Qwen-Image-Edit-2511: substituto baixado, e o diagnostico anterior corrigido
+
+Baixado `QuantFunc/Nunchaku-Qwen-Image-EDIT-2511`, variante **`balance_int4` (rank 128)** ->
+`D:/ComfyUI-Models/diffusion_models/svdq-int4_r128-qwen-image-edit-2511.safetensors`,
+12.654.443.120 bytes (tamanho conferido contra o manifesto antes de instalar).
+
+Rank 128 escolhido **nao** por ser "balance": e o rank que o slot ja usava
+(`svdq-int4_r128-qwen-image-edit-2509`), entao a troca continua sendo de um arquivo so, em vez
+de mudar junto o ponto de qualidade/velocidade. FP4 nao foi baixado - sm_86 nao tem FP4.
+
+Comparacao de header das tres (so CPU, so metadados) mostra que o registro anterior sobre o
+build da tonera estava **impreciso**:
+
+| checkpoint | camadas `img_mod`/`txt_mod` | formato |
+|---|---|---|
+| 2511 QuantFunc r128 (novo) | `qweight I32` + `wscales` + `wzeros` | AWQ W4A16 - **igual ao 2509** |
+| 2509 (funciona) | `qweight I32` + `wscales` + `wzeros` | AWQ W4A16 |
+| 2511-lightning (tonera) | `qweight I8` + `smooth_factor` + `smooth_factor_orig`, mais 4 `weight` F16 | SVDQuant |
+
+O que estava escrito antes - "`img_mod` deixado em F16" - e so a ponta: sao 4 tensores em F16,
+mas o problema real e que a tonera quantizou **todas** as 116 camadas de modulacao como
+**SVDQuant onde o loader exige AWQ**. Estruturalmente o arquivo novo e identico ao 2509 que
+funciona, o que e evidencia forte mas **ainda nao e carga**: nunca foi aberto por um loader,
+porque isso precisa de GPU.
+
+O arquivo da tonera (13,71 GiB) continua no disco e continua morto.
+
+> Nota lateral: `D:` neste host e um share de rede (`\\192.168.3.68\estoque`), o que explica
+> `save_file` do safetensors falhar la com `os error 50`.
+
+### Pendente ao fim da sessao sem GPU
+
+1. Abrir e enfileirar os 6 workflows `.nunchaku.json` (teste 4).
+2. Carregar o 2511 novo por um loader de verdade e comparar contra o 2509.
+3. Rodar `svdq_to_bf16` em modelo inteiro.
+4. Confirmar as duas colunas de VRAM novas numa medicao real.
+
+---
+
+## 2026-08-18, parte 2 - GPU de volta
+
+Os itens 1, 2 e 4 acima foram executados. O 3 continua aberto. E os **dois consertos da parte 1
+foram testados contra hardware e os dois estavam errados** - um na causa, outro na propria ideia.
+
+### O `--verify` estava errado pela SEGUNDA vez
+
+A calibracao da parte 1 (`cos >= 0,99`) veio de um stand-in sem smoothing e sem ramo de baixa
+dimensao. Contra o kernel real ela nao sobrevive. Z-Image INT4 r32, 14 camadas amostradas ao
+longo da rede:
+
+| matriz | cos | relL2 |
+|---|---|---|
+| reconstrucao correta | 0,704 .. 0,998 | 0,058 .. 0,894 |
+| linhas embaralhadas | 0,004 max | razao 0,56 |
+| correta x 1,5 | 0,995 max | razao 0,65 |
+| correta + 20% ruido | **0,976 max** | **razao 0,963** |
+
+Uma `feed_forward.net.2` **correta** pontua 0,704. Uma matriz **20% errada** pontua 0,976. A
+errada ganha da certa, entao nenhum limiar absoluto separa. Com o gate da parte 1, so 4 de 12
+camadas corretas passariam.
+
+Causa medida, nao suposta: o `smooth_factor` por canal. Varrendo o espectro dele num stand-in na
+CPU, uma reconstrucao **correta** anda de cos 0,994 ate 0,586 - atravessa exatamente onde uma
+matriz ruidosa de camada facil se senta. E o mesmo erro de categoria do threshold do FBCache: o
+numero descreve a camada, nao a correcao.
+
+Homogeneidade tambem foi testada (`layer(cI)/c == layer(I)`): exatamente 0 em toda camada, e ~0
+tambem em entrada aleatoria. Nao distingue nada - quantizacao simetrica por grupo e homogenea
+para qualquer entrada.
+
+O que **sobrou** como checagem de verdade, em `check_recovery`:
+
+- **bias**: com o bias suprimido a camada tem de mapear zero em zero. 0,0 em toda camada de todo
+  checkpoint testado.
+- **determinismo**: duas sondas de identidade identicas tem de bater bit a bit.
+- **magnitude**: matriz toda-zero ou nao-finita e lancamento de kernel que falhou sem levantar.
+
+E o que a sonda de identidade e, agora medido no kernel real e nao argumentado: **exata**.
+`layer(8I)/8` bate com `layer(I)` em exatamente 0 em toda camada amostrada.
+
+Os escores em entrada aleatoria viraram **tabela de diagnostico, nao veredito**, com o controle
+embaralhado impresso do lado e o aviso de que 20% errado pontua 0,976. Quem so tem o kernel nao
+tem oraculo; **so `--reference` responde se a reconstrucao presta**.
+
+`tools/test_svdq_verify.py` reescrito: 5 testes CPU. Um deles reproduz a falha de discriminacao
+de proposito - falha se um limiar voltar a parecer defensavel.
+
+### O VRAM estava certo no conserto e errado na causa
+
+Escrevi que "o nunchaku aloca fora do allocator do PyTorch". Medido nas tres rotas, mesmo dia:
+
+| rota | modulos quantizados no grafo | torch allocator | NVML |
+|---|---|---|---|
+| FLUX.1-dev | **2** | 0,21 GiB | 6,71 GiB (**31x**) |
+| Qwen-Edit-2511 | 480 | 12,35 GiB | 12,60 GiB |
+| Z-Image | 204 | 3,91 GiB | 4,55 GiB |
+
+Nao e "o caminho nunchaku" - e **so o FLUX**, que carrega o transformer inteiro no engine nativo
+e devolve um wrapper (por isso so 2 modulos Python). Qwen e Z-Image constroem `SVDQW4A4Linear` em
+Python, cujos buffers **sao** tensores torch, e ali os dois numeros batem dentro de um contexto
+CUDA. A linha `quantised modules in graph` que a ferramenta ja imprimia e o sintoma: **2 significa
+que a pegada e invisivel ao PyTorch**.
+
+Corrigido tambem um defeito do proprio aviso que escrevi: eu alertava sobre "N outros processos
+de compute". Na WDDM a NVML lista 4 processos numa 3090 ociosa a 36 MiB - o processo System, um
+servico da AMD, um tray app - todos com `usedGpuMemory` indisponivel. O aviso dispararia sempre.
+Agora alerta sobre **memoria residente** na baseline, que e o que de fato ameaca a subtracao.
+
+### ComfyUI 0.33 quebra o loader Z-Image do nunchaku no Windows
+
+Os 6 workflows reescritos: **o swap esta correto**. O no exige exatamente um input (`model_name`),
+`swap_to_nunchaku` escreveu exatamente um, com o valor certo, e o diff contra os originais mostra
+que **so** o modelo de difusao mudou. Confirmado tambem que `MarkdownNote` sumindo do
+`/object_info` era falso positivo do meu proprio checador - no de frontend nao chega ao backend.
+
+Mas ao enfileirar, o loader morre:
+
+```
+AttributeError: 'NoneType' object has no attribute 'dtype'
+nunchaku/models/linear.py:152  torch_dtype = kwargs.pop("torch_dtype", linear.weight.dtype)
+```
+
+O mesmo checkpoint pelo mesmo no, chamado direto no processo com as mesmas flags e os 2297 nos
+registrados, carrega sem erro (136 modulos SVDQ). Repro minimo de **9 nos escritos a mao**, sem
+nada dos workflows, falha identico - entao nao e workflow, nem swap, nem checkpoint.
+
+Causa-raiz, `ComfyUI/comfy/ops.py:520-538`:
+
+```python
+class Linear(torch.nn.Linear, CastWeightBiasOp):
+    def __init__(self, in_features, out_features, bias=True, device=None, dtype=None):
+        if (not comfy.memory_management.aimdo_enabled
+            or type(self)._load_from_state_dict is not disable_weight_init.Linear._load_from_state_dict):
+            super().__init__(in_features, out_features, bias, device, dtype)
+            return
+        # "Windows doesn't over-commit memory ... If the commit charge exceeds the ceiling
+        #  we can destabilize the system."
+        torch.nn.Module.__init__(self)
+        self.weight = None
+```
+
+ComfyUI 0.33 adicionou lazy-init de `Linear` **especifico para Windows**: o peso so aparece em
+`_load_from_state_dict`. O nunchaku le `orig_attn.qkv.weight.dtype` em `patch_model`, antes disso.
+`aimdo_enabled` so vira `True` em `main.py:289`, que e por onde o servidor passa e um script
+importando comfy como biblioteca nao passa - o que explica os dois resultados de uma vez.
+
+**Workaround, testado com geracao real (nao inferido do codigo):**
+
+```
+.\python_embeded\python.exe -s .\ComfyUI\main.py --windows-standalone-build --use-sage-attention --disable-dynamic-vram --listen 127.0.0.1 --port 8190
+```
+
+Com essa flag, `TXT2IMG-ZIMG.nunchaku` e `Zimg-TXT2IMG-_multigpu.app.nunchaku` **rodaram e
+salvaram imagem** (`z-image-turbo_00118/00119`). Vale PR para ComfyUI-nunchaku - ha repro minimo
+e a linha exata.
+
+Dos outros 4 workflows: 2 (`image_qwen_image_edit_2509_relight`, `templates-image_to_real`)
+pedem `qwen_2.5_vl_7b_fp8_scaled.safetensors`, que nao esta instalado, e **os originais tambem
+pedem** - quebra anterior ao rewrite. Os outros 2 falham em `LoadImage` por PNG de entrada
+ausente (`z-image-turbo_00547_.png`, `z-image-turbo_00030_.png`), que e dado do usuario.
+
+### Qwen-Image-Edit-2511: carrega e roda
+
+781 modulos quantizados no grafo (`SVDQW4A4Linear` x480), 4,95s / 8 steps, 12,60 GiB, disco 11,79
+GiB. A predicao estrutural da parte 1 (header identico ao 2509) confirmou-se em carga real. O
+build da tonera continua morto.
+
+Erro de metodologia meu, repetido: mandei o primeiro par de imagens em 8 steps / cfg 1,0, que e
+ajuste de modelo distilled. Qwen-Edit base quer 20 steps / cfg 4,0 - refeito, 24,8s contra 4,9s
+(cfg>1 roda cond e uncond). **Ja estava escrito neste log e eu repeti.**
+
+### Benchmark controlado Z-Image: BF16 x INT4
+
+Prompt de contagem do usuario (objetos contaveis: 3 chaves vermelha/amarela/verde, 4 engrenagens,
+6 vidracas, 3 itens na prateleira, alca da xicara a direita, lapis amarelo com borracha rosa),
+seed 1234 fixa, cfg 1,0, mesmo encoder (`qwen_3_4b`, lumina2) e mesmo VAE (`ae.safetensors`).
+`|cond| 30234,8223` identico nas quatro execucoes - a condicionante e a mesma, o unico eixo que
+muda e o modelo.
+
+| | BF16 | INT4 SVDQuant | razao |
+|---|---|---|---|
+| disco | 11,46 GiB | 3,36 GiB | **3,41x mais leve** |
+| VRAM | 12,95 GiB | 4,68 GiB | **2,77x menos** |
+| 8 steps | 10,29 s | 4,90 s | **2,10x** |
+| 16 steps | 21,04 s | 9,85 s | **2,14x** |
+| s/step | 1,29 - 1,32 | 0,613 | |
+| latent relL2 | - | 0,629 (8s) / 0,638 (16s) | |
+| latent cosine | - | 0,816 (8s) / 0,813 (16s) | |
+
+A divergencia de trajetoria **nao piora com mais steps**.
+
+Primeira tentativa foi feita com `--repeats 1` e produziu `7,26 s/step` para o BF16 a 8 steps -
+cold start, numero invalido, descartado e refeito com `--repeats 3`. A propria ferramenta avisa
+que reporta a passada mais rapida "porque as lentas sao lentas por motivos que nao tem nada a ver
+com o modelo", e eu ignorei o proprio aviso.
+
+**INT8 SVDQuant nao existe.** `SVDQW4A4Linear` aceita `int4` e `nvfp4`, mais nada, e nvfp4 e
+Blackwell. Nao ha ponto intermediario de 8 bits para comparar; FP8 e4m3fn seria armazenamento
+apenas (sem compute FP8 na sm_86) e foi descartado a pedido em vez de ser passado como se fosse
+SVDQuant de 8 bits.
+
+### Ambiente: ComfyUI subiu de 0.29.0 para 0.33.0
+
+O CLAUDE.md dizia `0.29.0` / commit `42d2aa55`. O servidor reporta **0.33.0** (`v0.33.0-19-gc1739380`,
+lancado 2026-08-18). Corrigido no CLAUDE.md. E essa subida que trouxe o lazy-init acima.
+
+### Ainda pendente
+
+1. ~~Rodar `svdq_to_bf16` em modelo inteiro~~ - **feito**, ver abaixo. Falta o alvo real,
+   `svdq-int4-qwen-image-2512-balance`, que nao tem BF16 publicado (e por isso nao tem como
+   ser conferido).
+2. PR para ComfyUI-nunchaku sobre o lazy-init.
+3. ~~`beyond-reality-zimage-v2_bf16.safetensors` pode ter saido do proprio `svdq_to_bf16`~~ -
+   **resolvido, nao saiu.** O usuario lembrava de te-lo baixado (a v1 veio quebrada e ele pegou
+   esta outra), e o header confirma: **0 chaves fundidas, 102 separadas** (`.to_q.weight`,
+   `.w1.weight`, `.w3.weight`). `svdq_to_bf16` recupera as matrizes ja fundidas - e obrigado a
+   isso, porque e assim que o kernel as guarda - entao nao teria como produzir q/k/v e w1/w3
+   separados. 12,31 GB, 521 tensores, sem metadata. **Serve como referencia limpa.**
+
+   Teste generico util: para saber se um BF16 saiu de uma recuperacao SVDQuant, procurar
+   `attention.to_qkv` / `feed_forward.net.0.proj` no header. Presentes = recuperado; ausentes
+   com q/k/v separados = publicado.
+
+
+## 2026-08-18, parte 3 - `svdq_to_bf16` num modelo inteiro, com verdade-terreno
+
+Primeira execucao completa da ferramenta. Fonte `svdq-int4_r32-beyond-reality-zimage-v2`
+(3,61 GB), referencia `beyond-reality-zimage-v2_bf16` (12,31 GB, publicado - proveniencia
+confirmada pelo teste de chaves separadas).
+
+**136 de 136 camadas recuperadas e casadas contra o original. Zero nao-pareadas.**
+
+| | |
+|---|---|
+| erro relativo mediano vs BF16 | **0,1013** |
+| melhor | 0,0382 |
+| pior | 0,1239 (`layers.29.feed_forward.net.2`) |
+| taxa | ~2,0 camadas/s |
+
+Isso valida em escala o **mapa de fusao**, inclusive a ordem `w3+w1` descoberta antes em 20
+camadas. Ordem errada teria falhado o casamento ou explodido o erro; casou 136/136 em ~0,10.
+E o numero responde a pergunta que nenhuma checagem interna responde: **W4A4 custa cerca de 10%
+de erro relativo de peso** neste modelo.
+
+`check_recovery` passou nas 8 camadas amostradas (bias, determinismo, finitude). O arquivo saiu
+sem nenhuma chave SVDQ residual, 419 tensores, todos BF16.
+
+### Coincidencia que NAO deve ser lida como validacao
+
+O diagnostico de entrada aleatoria deu 0,099 a 0,104 aqui, praticamente igual ao erro real de
+0,1013. **E acaso.** No z-image-turbo o mesmo diagnostico espalhou de 0,058 a 0,894 para um erro
+real presumivelmente parecido. O diagnostico continua nao servindo de proxy - foi exatamente por
+isso que deixou de ser gate.
+
+### Limitacao encontrada so ao rodar inteiro
+
+O arquivo recuperado mantem o layout **fundido** do SVDQuant:
+
+| | tensores | chaves fundidas |
+|---|---|---|
+| recuperado | 419 | 68 (`to_qkv`, `net.0.proj`) |
+| publicado | 521 | 0 |
+
+Os bytes equivalem, os nomes nao. O docstring da ferramenta dizia que o resultado vira "um
+safetensors comum que qualquer loader le" - **forte demais**, e ja corrigido no proprio arquivo.
+Le quem aceita a forma fundida. Desfundir e possivel (as formas dizem onde cortar) mas nao esta
+implementado.
+
+Saida de 11,46 GiB escrita em `D:/_svdq_recover_tmp/` e **apagada depois da conferencia**: e
+qualidade INT4 em tamanho BF16, e o BF16 publicado deste modelo ja existe. So faz sentido guardar
+para modelo sem BF16 original.
+
+
+## 2026-08-18, parte 4 - o recuperado separa W4 de A4
+
+Comparacao de tres no Beyond_Reality Z-Image v2, mesmo prompt de contagem, seed 1234, 8 steps,
+cfg 1,0, mesmo encoder e VAE:
+
+| | pesos | ativacoes | relL2 vs original | cosine | tempo | VRAM |
+|---|---|---|---|---|---|---|
+| original BF16 | BF16 | BF16 | - | - | 10,21 s | 12,95 GiB |
+| **recuperado** | **INT4** | **BF16** | 0,4019 | 0,9194 | 10,16 s | 12,95 GiB |
+| INT4 nativo | INT4 | INT4 | 0,4046 | 0,9154 | 4,83 s | 4,68 GiB |
+
+`recuperado vs int4` da relL2 0,3569 - os dois estao mais perto um do outro do que qualquer um
+esta do original. Mesmo modelo em dois trajes.
+
+**O achado.** O usuario notou que uma caneta fina sai perfeita no recuperado e deformada no INT4.
+Os pesos sao os MESMOS nos dois (a sonda de identidade e exata, medido), entao a unica variavel
+entre essas duas imagens e a **quantizacao da ativacao**. Ou seja: o dano visivel vem do **A4**,
+nao do W4. Reduzir peso a 4 bits custou ~10% de erro relativo e nao quebrou geometria fina;
+quantizar a ativacao quebrou.
+
+Mecanismo coerente: erro de peso e um desvio fixo que curva a trajetoria suavemente; erro de
+ativacao e ruido novo a cada bloco de cada passo, de alta frequencia, e estrutura de poucos pixels
+e onde aparece primeiro. Bate com `feed_forward.net.2` - entrada pos-ativacao - ser a pior camada
+em todo diagnostico deste projeto.
+
+**Nao exagerar:** no espaco latente as duas estao a MESMA distancia do original (0,4019 e 0,4046).
+Muda o *tipo* de erro, nao a magnitude. A parte perceptual e uma imagem, uma seed, olho nu.
+
+**Isso derruba o que este log e o docstring diziam** - que recuperar um modelo com BF16 disponivel
+seria "estritamente pior, sem razao para rodar". E o unico jeito de separar W4 de A4, portanto e
+instrumento de ablacao. Corrigido no docstring de `svdq_to_bf16.py`.
+
+### O recuperado nao carregava, e o conserto
+
+`KeyError: 'noise_refiner.0.attention.to_k.weight'` - a ferramenta devolve os pesos **fundidos**
+como o kernel os guarda, e o ComfyUI quer q/k/v separados. Os cortes:
+
+    attention.to_qkv        -> to_q, to_k, to_v    tres pedacos no dim 0
+    feed_forward.net.0.proj -> w3, w1              dois pedacos, w3 PRIMEIRO
+    feed_forward.net.2      -> w2                  so renomeia
+
+Validado contra o BF16 publicado antes de gravar: **521 tensores, 0 faltando, 0 sobrando, 0 com
+forma errada**, tamanho identico ao byte. A ordem `w3+w1`, provada antes em 20 camadas, segurou
+nas 136.
+
+Hoje isso e script avulso no scratchpad. **`svdq_to_bf16` ainda nao faz** - e enquanto nao fizer,
+a saida da ferramenta nao carrega, que e exatamente o proposito dela. Deve ser absorvido.
+
+### Pendente
+
+1. Absorver o desfundir em `svdq_to_bf16`.
+2. PR para ComfyUI-nunchaku sobre o lazy-init do ComfyUI 0.33.
+3. Confirmar o achado W4-vs-A4 com mais seeds antes de trata-lo como conclusao.
+
+
+## 2026-08-18, parte 5 - o caminho INT4 nao e deterministico entre processos
+
+Medido ao tentar confirmar o achado W4-vs-A4. Mesmo modelo, mesma seed, mesmo prompt, mesma
+condicionante (`|cond|` identico), duas execucoes em processos separados:
+
+| modelo | execucoes identicas? | relL2 entre elas |
+|---|---|---|
+| original BF16 | **sim** | 0,00000 |
+| recuperado BF16 | **sim** | 0,00000 |
+| **INT4 nunchaku** | **nao** | **0,29794** |
+
+O gap que eu estava lendo como dano do A4 era **+0,038**. O ruido do proprio INT4 entre execucoes
+e **0,298**, quase 8x maior. O gap esta afogado.
+
+**Invalida:** todo `relL2` / `cosine` de INT4 reportado neste log (0,629 e 0,638 no z_image_turbo;
+0,4046 e 0,4399 no Beyond_Reality) - sao **amostras**, nao medidas. E invalida o teste de
+acumulacao por steps que eu propus: o gap encolheu de +0,0380 (8 steps) para +0,0225 (24 steps),
+que era o oposto da previsao, mas nenhum dos dois numeros tem significado.
+
+**Sobrevive:** disco, VRAM e velocidade (nao dependem do latente); o erro de peso 0,1013 contra o
+BF16 publicado (calculado dos pesos, nao de amostragem); e o mecanismo estrutural de que o
+recuperado tem os mesmos pesos com ativacoes BF16 - reforcado, alias, porque o recuperado E
+deterministico e o INT4 nao, o que aponta a variacao para o caminho de ativacao/kernel.
+
+**A observacao da caneta continua de pe como observacao, sem medida.** Confirma-la exige N
+execucoes da mesma seed para medir o espalhamento, nao mais seeds.
+
+`check_recovery` testa determinismo **dentro** de um processo e passou. Entre processos e outra
+coisa - provavelmente autotuning escolhendo GEMM diferente. Nao coberto.
+
+## Desenho decidido para o proximo conversor (nao implementado)
+
+Decisao do usuario, 2026-08-18: o proximo `.py` **nao** deve usar allowlist fixa. Deve **rodar o
+modelo algumas vezes, observar as ativacoes durante a geracao** e so entao decidir a precisao por
+camada - umas em 4 bits, outras em 8, com inicio e fim em precisao maior.
+
+Isso e calibracao com consciencia de ativacao, e ha evidencia deste projeto a favor:
+
+- o `smooth_factor` do SVDQuant **e** essa estatistica, ja coletada por calibracao;
+- varrendo o espectro dele num stand-in, uma reconstrucao **correta** anda de cos 0,994 a 0,586 -
+  a sensibilidade e por camada e ja esta escrita no checkpoint;
+- `feed_forward.net.2` (entrada pos-ativacao) foi a pior camada em **todo** diagnostico deste
+  projeto. O ranking de sensibilidade ja aparece sozinho.
+
+Metade da ideia ja existe: `PROFILE_PATTERNS` em `quant_w4a4.py` ja exclui embeddings, norms,
+`lm_head` e vision tower. A mudanca e trocar **lista fixa escrita a mao** por **decisao medida**.
+
+**Verificar ANTES de escrever qualquer linha:** o kernel aceita precisao por camada? Ha
+`_w4a8.safetensors` no disco (capybara, hv15, ltx-2.5, minimax), entao o formato existe - mas
+nunca foi confirmado se `comfy_kitchen` executa W4A8 **nativo** ou cai em dequant + GEMM BF16.
+Regra dura do projeto: se cair para eager, perdeu o sentido. Um conversor que produz arquivo que
+nada executa e o pior resultado possivel.
+
+
+## 2026-08-18, parte 6 - o kernel misto JA existe no comfy_kitchen
+
+Verificado, nao suposto. `registry.get_implementation` resolve **tudo abaixo em
+`comfy_kitchen.backends.cuda`** - nenhum cai em eager:
+
+| operacao | resolve para |
+|---|---|
+| `convrot_w4a4_linear` | cuda |
+| `w4a8_int8_linear` | cuda |
+| `int8_linear` | cuda |
+| `quantize_int8_convrot_weight` | cuda |
+| `quantize_w4a8_int8_weight` | cuda |
+| `scaled_mm_svdquant_w4a4` | cuda |
+
+O backend CUDA tambem traz `rotate_int8_convrot_weight`, `quantize_int8_convrot_staged`,
+`quantize_int4_rowwise_convrot64_to_int8`, `dequantize_w4a8_int8_weight`, alem de nvfp4, mxfp8 e
+fp8. Ou seja: **ConvRot em INT8 e W4A8 nativo ja estao implementados.** O conversor com precisao
+por camada nao precisa de kernel novo - so precisa escolher.
+
+Correcao de premissa: isso nao e implementacao da Intel. E do proprio `comfy_kitchen`. A Intel tem
+INT8 no OpenVINO / Neural Compressor / AutoRound, mas o que viabiliza o plano nesta maquina sao
+estes kernels.
+
+**Armadilha a evitar:** o backend `eager` declara **as mesmas capabilities**, e o `triton` esta
+`disabled: True`. `w4a8_int8_linear` resolveria sem erro caindo em eager. O conversor tem de
+rodar a mesma preflight de `quant_w4a4.py` **para cada op que pretende usar**, nao so para
+`convrot_w4a4_*`.
+
+**Consequencia para o achado de hoje:** eu escrevi que "INT8 nao existe como ponto intermediario".
+Correto para SVDQuant (`SVDQW4A4Linear` so aceita int4 e nvfp4) e **errado para este projeto** -
+existe em ConvRot. Se o dano visivel vier mesmo do A4, `w4a8_int8_linear` mantem a economia de
+peso (o disco vem do peso) e devolve a ativacao para 8 bits. E o ponto intermediario que eu
+procurei e nao achei.
+
+
+## 2026-08-18, parte 7 - W4A8 medido: erra ~3x menos que W4A4
+
+`tools/check_w4a8.py` (novo). Mesmo peso, mesma entrada, so muda a precisao da ativacao. As
+quatro ops confirmadas resolvendo em `comfy_kitchen.backends.cuda` antes de medir - o script
+recusa reportar se qualquer uma cair em eager.
+
+| forma | entrada | W4A8 | W4A4 | W4A8 melhor |
+|---|---|---|---|---|
+| 3840x3840 | gaussiana | 0,0739 | 0,2230 | 3,02x |
+| 3840x3840 | pos-ativacao | 0,0739 | 0,2234 | 3,02x |
+| 3840x10240 | gaussiana | 0,0738 | 0,2370 | 3,21x |
+| **3840x10240** | **pos-ativacao** | **0,0737** | **0,2464** | **3,34x** |
+| 11520x3840 | gaussiana | 0,0738 | 0,2231 | 3,02x |
+| 11520x3840 | pos-ativacao | 0,0738 | 0,2233 | 3,03x |
+
+Medicao direta do que a observacao da caneta sugeriu, agora **sem o ruido de amostragem** que
+afogou a tentativa anterior: o peso e identico nos dois lados, so a ativacao muda.
+
+**O criterio para o conversor por camada esta neste quadro.** W4A8 fica cravado em 0,0737-0,0739
+nas tres formas e nas duas distribuicoes - insensivel. W4A4 varia 0,2230 a 0,2464 e **piora
+exatamente na 3840x10240 com entrada pos-ativacao**, que e a forma e a entrada da
+`feed_forward.net.2`, a pior camada em todo diagnostico deste projeto desde o inicio. Ativacao
+em 4 bits e sensivel a distribuicao; em 8 bits nao e. E isso que uma passada de calibracao
+detectaria, e e por isso que promover so algumas camadas faz sentido.
+
+**Limites do que foi medido:** peso sintetico gaussiano, nao peso de modelo real - mede o kernel,
+nao o modelo. O piso de 0,0739 do W4A8 e o custo do **peso** em 4 bits com codebook, nao da
+ativacao; nao desce sem subir o peso. E a distribuicao `post_activation` e uma imitacao de SwiGLU
+com outliers plantados, com faixa dinamica realista mas distribuicao inventada.
+
+Duas armadilhas de assinatura, achadas na marra:
+
+- `quantize_convrot_w4a4_weight(weight, convrot_groupsize=256, quant_group_size=64)` - passar
+  `64` primeiro levanta `int4 MMA kernel requires quant_group_size 64`, mensagem que aponta para
+  o valor certo no lugar errado.
+- `quantize_w4a8_int8_weight` devolve **(qdata, s_rel, s_channel, correction, codebook)**. Ler o
+  indice 3 como codebook falha com `correction must have shape (240, 3840), got (16,)` - o 16
+  sendo o codebook de 16 entradas, que foi o que denunciou a ordem.
+
+
+## 2026-08-18, parte 8 - ablacao com 3 seeds, fechando a historia da caneta
+
+18 execucoes (3 modelos x 3 seeds x 8 e 24 steps), Beyond_Reality Z-Image v2.
+
+| steps | modelo | relL2 vs original por seed | media | spread |
+|---|---|---|---|---|
+| 8 | recuperado | 0,4019 / 0,5611 / 0,4119 | 0,4583 | 0,159 |
+| 8 | **int4** | 0,4399 / 0,6690 / 0,5368 | **0,5485** | 0,229 |
+| 24 | recuperado | 0,4269 / 0,5957 / 0,4220 | 0,4815 | 0,174 |
+| 24 | **int4** | 0,4494 / 0,6962 / 0,5576 | **0,5677** | 0,247 |
+
+**O int4 e pior que o recuperado nas 6 comparacoes pareadas, sem excecao.** Como o recuperado tem
+os MESMOS pesos e ativacoes BF16, a diferenca e a quantizacao de ativacao - a mesma conclusao que
+a caneta sugeriu.
+
+Dimensionando: gap ~0,09, ruido entre execucoes do mesmo int4 na mesma seed ~0,035 (medido:
+0,4046 e 0,4399). Gap ~2,5x o ruido, e 6/6 na mesma direcao daria 1,6% por acaso puro.
+**Sugestivo, nao conclusivo.** O spread entre seeds (0,16-0,25) e o que afogou a tentativa
+anterior, que comparava seeds diferentes sem perceber.
+
+O que fecha o caso continua sendo `check_w4a8.py`, onde peso e entrada sao identicos e nao ha
+amostragem: W4A8 erra 3x menos. Esta parte 8 e **confirmacao independente**, nao prova.
+
+
+## 2026-08-18, parte 9 - o conversor de precisao mista existe e roda
+
+Tres ferramentas novas, na ordem em que se usam:
+
+```
+tools/to_native.py            renomeia diffusers -> nomes nativos do ComfyUI (BF16, sem perda)
+tools/calibrate_activations.py roda o modelo de verdade e guarda as ativacoes reais por camada
+tools/quant_mixed.py           mede os kernels reais nessas ativacoes e escolhe 4 ou 8 bits por camada
+```
+
+### A descoberta que obrigou o passo 1
+
+Um checkpoint Z-Image publicado esta em naming **diffusers** (`attention.to_q/to_k/to_v`), e o
+ComfyUI funde os tres num `attention.qkv` no load (`model_detection.py:1498`). A matematica
+sobrevive - quantizacao e por linha e concatenar linhas e seguro - mas o **mecanismo nao**:
+`sd_map` so mapeia `.weight`. As chaves `weight_scale` / `weight_s_rel` / `comfy_quant` caem no
+ramo identidade (`if k not in sd_map: sd_map[k] = k`) e ficam com o nome antigo, longe do modulo
+que precisa delas. **O arquivo carrega e a camada fica sem escala.** Falha silenciosa.
+
+`to_native.py` resolve renomeando antes. O plano nao e escrito a mao: vem de
+`comfy.utils.z_image_to_diffusers` invertido, e e conferido contra o proprio
+`convert_diffusers_mmdit` do ComfyUI rodado em tensores `meta` (custo zero de memoria). 521 chaves
+-> 453, batendo exatamente. **Latente bit-identico** ao original no mesmo seed - o remap nao muda
+nada, o que separa "bug de remap" de "bug de quantizacao" no resto da investigacao.
+
+Efeito colateral: em naming nativo o Z-Image tem **170** Linears quantizaveis (34 blocos x 5), nao
+238. O perfil anterior, escrito em naming diffusers, casava so 102.
+
+### Bug encontrado e corrigido: fp16 no reservatorio
+
+A calibracao guardava as amostras em `float16`. A entrada de `layers.0.feed_forward.w2` chega a
+**344064**, que estoura o maximo do fp16 (65504) e vira `inf`. Os tres erros dessa camada viraram
+`nan`, `nan > limiar` e falso, e **a camada com a maior ativacao do modelo recebia o formato mais
+barato**. Corrigido para `bfloat16` (mesmos 2 bytes, alcance do fp32). Depois da correcao ela
+aparece como a pior camada do modelo (W4A4 0,4719) e e promovida.
+
+`quant_mixed.py` agora tambem recusa medicao nao-finita em vez de compara-la.
+
+### O crest factor NAO prediz o erro
+
+Escrevi na propria ferramenta que crest factor era "a estatistica a que o caminho de ativacao do
+ConvRot e sensivel". Medido em 170 camadas reais:
+
+| correlacao com err_w4a4 | valor |
+|---|---|
+| Pearson (crest p99) | **+0,068** |
+| Spearman (crest p99) | **+0,096** |
+| Spearman (err_w4a8) | **+0,978** |
+
+O mecanismo e real - uma escala por token, um canal outlier define a escala do vetor todo - mas
+nao chega na saida, porque o canal que estoura a escala costuma ser tambem o que domina o
+resultado. `feed_forward.w2` tem o maior crest do modelo (p50 97,7, contra o maximo teorico
+`sqrt(10240) = 101,2`) e `attention.out` tem o menor (p50 15,9) - e `attention.out` contem a
+segunda pior camada. Heuristica descartada; a decisao e medida contra o kernel.
+
+### Erro por camada, ativacoes reais (170 camadas, Z-Image v2)
+
+| formato | min | p50 | max |
+|---|---|---|---|
+| bf16 (piso) | 0,0014 | ~0,0018 | 0,0022 |
+| W4A4 | 0,0176 | 0,1254 | 0,4719 |
+| W4A8 | 0,0077 | 0,0393 | 0,1676 |
+
+Razao W4A4/W4A8: p50 **3,18x**, faixa 2,29x-4,55x. Consistente com `check_w4a8.py`.
+
+**Ativacao real erra bem menos que gaussiana sintetica**: o `check_w4a8.py` dava W4A4 0,223-0,246
+e W4A8 0,0737 fixo. Nas ativacoes reais a mediana do W4A4 e 0,125. O benchmark sintetico
+**superestimava o dano em ~2x**.
+
+Por sub-camada (p50 do W4A4): `feed_forward.w3` 0,177 > `feed_forward.w2` 0,133 >
+`attention.qkv` 0,124 > `attention.out` 0,107 > `feed_forward.w1` 0,103.
+
+### Resultado, `--promote-error 0.15`
+
+115 camadas em `convrot_w4a4`, 55 em `asym_w4a8_int8`, 0 em BF16. Pior erro W4A4 que sobra no
+modelo: 0,1486.
+
+Carregado pelo loader normal do ComfyUI: **115 + 55 modulos com o `quant_format` certo e
+`_full_precision_mm` falso em todos** - nenhum caiu em math dequantizada. Os 170 pesos sao
+`QuantizedTensor`. Precisao mista num arquivo so e comportamento nativo do formato
+(`ops.py:1142` despacha pelo JSON de cada camada), nao truque.
+
+| | BF16 nativo | W4A4 puro | misto |
+|---|---|---|---|
+| disco | 11,46 GiB | 3,06 GiB (**3,74x mais leve**) | 3,18 GiB (**3,61x mais leve**) |
+| VRAM (torch alloc) | 12,21 GiB | 3,74 GiB | 3,86 GiB (**3,16x menos**) |
+| s/step | 1,290 | 0,583 (**2,21x menos**) | 0,598 (**2,16x menos**) |
+| relL2 vs BF16 | 0 | 0,5651 | **0,4592** |
+| cosseno vs BF16 | 1 | 0,8583 | **0,8955** |
+
+Promover 55 de 170 camadas custou **0,12 GiB (3,9%)** e 2,5% de velocidade, porque o peso continua
+4-bit nos dois formatos - muda a precisao da **ativacao** e a granularidade da escala.
+
+### O kernel ConvRot do comfy_kitchen E deterministico
+
+Duas execucoes do mesmo arquivo, mesma seed, processos separados: **latente bit-identico**. Isso
+contrasta com a parte 5, onde o caminho INT4 do Nunchaku variava 0,29794 entre processos. Logo os
+numeros desta parte 9 sao **medidas**, nao amostras - ao contrario dos da parte 5.
+
+### O que estes numeros NAO dizem
+
+`relL2` no latente mede divergencia de trajetoria, nao qualidade. As tres imagens
+(`bench/beyond-reality-zimage-v2_native.png`, `bench/mixed.png`, `bench/w4a4.png`) sao coerentes,
+sem banding, sem colapso de anatomia, maos integras nas tres. **Nao da para afirmar pela imagem
+que o misto e melhor que o W4A4 puro** - precisaria de muitas amostras e julgamento humano. O que
+esta provado e a reducao de 11,7% na divergencia e a reducao de 3,18x no erro por camada medido
+contra o kernel.
+
+Nenhuma das tres acerta as contagens do prompt (3 chaves de fenda, 4 engrenagens). Isso e o modelo
+a 8 passos, nao a quantizacao - o BF16 erra igual.
+
+
+## 2026-08-18, parte 10 - onde o int4 cruza: M decide tudo
+
+Ferramenta: `tools/m_crossover.py`. Varre M de 1 a 8192 num Linear so, quatro caminhos, mesmo
+peso. Motivada por um projeto irmao (Qwen quantizado em vLLM) onde ConvRot W4A4 fez 28,7 tok/s
+contra 44,6 do AWQ W4A16/Marlin e foi dado como derrota do formato.
+
+### Nao era derrota do formato. Era o M
+
+Peso 3840x3840, ms, RTX 3090 (duas execucoes, mesmo cruzamento, erros iguais na 4a casa):
+
+| M | bf16 | w4a4 | veredito |
+|---|---|---|---|
+| 1 | 0,057 | 0,122 | 1,48x mais lento |
+| 8 | 0,059 | 0,155 | 2,08x mais lento |
+| 64 | 0,066 | 0,122 | 1,84x mais lento |
+| 128 | 0,097 | 0,110 | 1,13x mais lento |
+| **256** | 0,185 | 0,130 | **1,43x mais rapido** |
+| 1024 | 0,560 | 0,175 | 3,19x |
+| **5856** | 2,640 | 0,569 | **4,64x** |
+
+**Cruzamento em M ~ 128-256.** Em 10240x3840 o cruzamento cai entre 64 e 128 e o ganho em
+M=5856 e 5,03x.
+
+Decode de LLM vive em M=1..8, onde o W4A4 e 1,8-1,9x mais lento - o kernel puro **prediz** o
+1,55x que o projeto irmao mediu em producao. Difusao nunca tem fase de decode: o Z-Image entrega
+M=5856 a todo Linear, 240 chamadas por geracao de 8 passos. **O mesmo formato, na mesma placa,
+inverte de 1,9x mais lento para 4,6x mais rapido so pelo M.**
+
+Contraste dos denominadores, medido nos dois lados:
+
+```
+LLM prefill    GEMM 94%   attention  6%
+difusao        GEMM 67%   attention 33%   (parte 9)
+```
+
+### `linear_dtype="int8"` NAO e o tier W4A8
+
+Confusao real que existia no projeto irmao, resolvida aqui. `convrot_w4a4_linear` aceita
+`linear_dtype` em `{"int4", "int8"}` - o `int8` e ativacao 8 bits **no layout de peso do W4A4**.
+O tier `w4a8_int8_linear` tem layout proprio (`qdata + s_rel + s_channel` + codebook Lloyd-Max).
+Sao coisas diferentes, e a diferenca e grande:
+
+| caminho | erro | vs w4a4 | ms em M=5856 |
+|---|---|---|---|
+| `w4a4` | 0,2231 | - | 0,569 |
+| `w4a4` com `linear_dtype="int8"` | 0,1571 | 1,42x melhor | 1,321 |
+| `w4a8_int8_linear` | **0,0737** | **3,03x melhor** | **1,121** |
+
+O tier real e 2,13x mais preciso **e** mais rapido que o knob, em M grande. Em M=1 inverte: o knob
+faz 0,085 ms contra 0,121 do tier. Decode quer o knob, prefill quer o tier.
+
+### Ressalva que nao pode ser omitida ao citar isto
+
+O baseline `bf16` aqui e `F.linear` sobre peso bf16: le 28 MiB onde um kernel weight-only-int4
+(Marlin) leria 7. Isso o penaliza **exatamente** no regime limitado por banda. Mas acima de M~128
+os dois viram compute-bound e o Marlin desempacota para bf16, fazendo os mesmos FLOP - a vantagem
+dele so existe abaixo do cruzamento. Estimativa (nao medicao): contra Marlin o cruzamento fica em
+M ~ 270 em vez de ~200. **Isto nao e um benchmark de Marlin e nao pode ser citado como um.**
+
+Segunda ressalva: kernel puro nao tem model runner nem captura de CUDA graph. Se o tier W4A8
+ganha aqui, isso diz que vale consertar a captura no vLLM - nao que ja funcione la.
+
+### Bug meu no caminho
+
+O guard que recusa rodar com a placa ocupada usava `torch.cuda.mem_get_info()`, que neste host
+WDDM reporta **1292 MiB onde o NVML reporta 548** para o mesmo instante - 744 MiB de discordancia,
+mais o custo de ~270 MiB de criar o contexto. O guard recusava numa placa ociosa. Passou a ler via
+NVML **antes** do torch tocar em CUDA, com teto de 2 GiB.
+
+### Correcao da parte 10: o cruzamento era do relogio, nao do kernel
+
+`tools/w4a4_breakdown.py` perfila os kernels CUDA dentro de uma chamada e separa tempo de GPU de
+tempo de host. Duas hipoteses caem, uma minha e uma de fora.
+
+**Cai a hipotese "a administracao custa mais que a multiplicacao" em M=1.** Perfilado:
+
+```
+M=1  w4a4   int4_linear_kernel      32,2 us  88,5%   <- o GEMM
+            quantize_int4_rowwise    4,2 us  11,5%   <- a quantizacao de ativacao
+```
+
+A quantizacao de ativacao e 11,5%, nao a maioria.
+
+**Cai a minha, que era pior.** Relogio contra GPU, peso 3840x3840:
+
+| M | caminho | relogio us | GPU us | host us | host % |
+|---|---|---|---|---|---|
+| 1 | bf16 | 89,7 | 45,2 | 44,6 | 49,6% |
+| 1 | **w4a4** | 196,5 | **35,3** | **161,2** | **82,1%** |
+| 1 | w4a8 | 136,7 | 62,2 | 74,5 | 54,5% |
+| 128 | bf16 | 93,0 | 69,0 | 24,0 | 25,8% |
+| 128 | w4a4 | 122,1 | 27,9 | 94,3 | 77,2% |
+| 5856 | bf16 | 2470,2 | 2457,2 | 13,0 | 0,5% |
+| 5856 | w4a4 | 529,3 | 472,4 | 56,9 | 10,7% |
+
+**Em tempo de GPU o W4A4 ganha do bf16 em TODO M medido** - 35,3 contra 45,2 em M=1, 27,9 contra
+69,0 em M=128, 472,4 contra 2457,2 em M=5856. **Nao existe cruzamento no kernel.** O cruzamento em
+M~128-256 registrado acima e do relogio, e o relogio carrega ~160 us de despacho Python por
+chamada, fixo, que so deixa de importar quando o trabalho de GPU cresce o bastante para afoga-lo.
+
+Consequencia para quem serve LLM: custo de host e exatamente o que a captura de CUDA graph
+elimina. Um decode em M=1 sem CUDA graph mede despacho, nao kernel. O projeto irmao abandonou o
+tier `w4a8_int8_linear` **por quebrar a captura de CUDA graph** - isto e, abandonou por causa do
+mecanismo que consertaria o problema que o motivou. A pergunta certa la nao e "o kernel int4 serve
+em M=1" e sim "o decode roda com graph ligado".
+
+Ressalva: os 161 us sao do wrapper Python do `comfy_kitchen` nesta stack; o numero absoluto nao
+transfere para outro caminho de chamada. O que transfere e a forma - em M=1 o trabalho de GPU e
+minusculo e qualquer overhead de host o domina.
+
+Tambem observado: o W4A4 troca de kernel com M. Em M=1 e 8 usa `int4_linear_kernel`, escrito a mao
+em `convrot_w4a4.cu`; em M=128 e acima usa um GEMM CUTLASS (`cutlass::Kernel2<...integer_s...>`).
+
+### Lock de GPU
+
+`tools/gpu_lock.py` e `/c/Users/joaoz/w4a4/gpu_lock.sh` (sessao irma) usam o mesmo arquivo
+`F:/GPU_BENCH.lock`, um com `open(path,"x")` e outro com `set -o noclobber` - ambos atomicos.
+Interop testado nos dois sentidos: cada um recusa quando o outro segura, e cada um mostra o dono
+gravado pelo outro. Sem isso, dois monitores "esperando a GPU liberar" disparam no mesmo segundo.
+
+### Os microssegundos que faltavam: sao `cudaLaunchKernel`
+
+Perfil de CPU (`ProfilerActivity.CPU + CUDA`), M=1, peso 3840x3840, self time por chamada:
+
+| w4a4 | us | contagem |
+|---|---|---|
+| **cudaLaunchKernel** | **59,5** | **x2** |
+| aten::empty | 11,3 | x3 |
+| aten::reshape | 8,8 | x7 |
+| aten::view | 7,9 | x7 |
+| cudaFuncSetAttribute | 1,6 | x1 |
+| **total self CPU** | **109,0** | |
+
+| bf16 | us | contagem |
+|---|---|---|
+| cudaLaunchKernel | 9,4 | x1 |
+| aten::mm | 11,0 | x1 |
+| **total self CPU** | **64,1** | |
+
+Nao e pybind, nao e validacao de shape, nao e `contiguous`. E launch: **59,5 dos 109 us**. E nao e
+so "dois launches em vez de um" - por launch da 29,75 us contra 9,40 do bf16, **3,2x mais caro**.
+Mais 3 alocacoes, 14 operacoes de view/reshape e um `cudaFuncSetAttribute` a cada forward, que e
+configuracao que normalmente se faz uma vez.
+
+Tudo nessa lista e do tipo que a captura de CUDA graph pode eliminar. **Medido, nao prometido** -
+a primeira versao deste paragrafo dizia "o graph elimina tudo", o que era afirmacao e nao medicao:
+
+| caminho | eager us | sob CUDA graph | removido | captura |
+|---|---|---|---|---|
+| bf16 | 75,4 | 53,7 | 21,7 (29%) | OK, saida confere |
+| **w4a4** | 137,3 | **46,6** | **90,7 (83%)** | OK, saida confere |
+| w4a8 | 160,0 | 77,5 | 82,6 (52%) | OK, saida confere |
+
+**Em eager o w4a4 e mais lento que o bf16 em M=1; sob graph ele e 1,15x mais rapido** (46,6 contra
+53,7). A ordem inverte so por remover o despacho.
+
+Nao remove tudo: sobram ~11 us de host por replay no w4a4 (46,6 de relogio contra 35,3 de GPU).
+Entao "o graph apaga o overhead" e falso; "o graph apaga 83% dele nesta stack" e o que foi medido.
+
+**Os dois ops do comfy_kitchen sao capture-safe** - `convrot_w4a4_linear` e `w4a8_int8_linear`
+capturam e reproduzem com saida correta. Isso importa para o projeto irmao, que abandonou o tier
+W4A8 por quebrar a captura: o que quebrou la nao pode ser o kernel, porque aqui ele captura.
+
+Ressalvas: captura de **um op** com tensores estaticos, nao de um modelo inteiro com batch
+dinamico; e Windows/WDDM. Prova que o op e capture-safe, nao que a integracao de outro projeto o
+seja.
+
+**Ressalva de magnitude:** isto e Windows/WDDM, onde o launch atravessa o scheduler do SO e custa
+caro - 9,4 us ate no caminho bf16 de um unico launch. Em Linux o custo por launch e bem menor, e o
+projeto irmao roda em WSL. **Os 30 us por launch nao transferem.** O que transfere e a estrutura
+(2 launches + 3 allocs + 14 metadata contra 1 launch) e a aritmetica: com 35 us de trabalho de GPU
+em M=1, qualquer overhead de host dessa ordem vira a maioria do tempo.
+
+**Marlin nao existe nesta stack** (`marlin`, `gptqmodel`, `auto_gptq`, `vllm`, `awq` todos
+ausentes no interpretador embutido). A linha `Marlin W4A16` da tabela comparativa tem de sair do
+lado que serve o LLM; nao da para produzi-la aqui.
+
+**O lock funcionou em producao:** uma execucao minha foi recusada com `dono=diag-w4a8-gemv pid=1530`
+enquanto a sessao irma media. Sem ele as duas mediriam contendidas.

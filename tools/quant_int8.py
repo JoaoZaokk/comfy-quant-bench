@@ -1,0 +1,251 @@
+"""Create a ComfyUI int8_tensorwise checkpoint, with or without the ConvRot rotation.
+
+Two formats from one converter, because they differ by exactly one step:
+
+    --convrot     rotate with Hadamard(256), then row-wise int8   == what Lightricks ships as
+                                                                     "comfy-int8-convrot"
+    --no-convrot  row-wise int8 only                              == plain W8A8
+
+Both write `<layer>.weight` as I8 plus `<layer>.weight_scale`, and both are read by ComfyUI's
+`int8_tensorwise` layout. The `convrot` flag in the per-layer metadata is what makes `comfy/ops.py`
+apply the inverse rotation at load (`ops.py:1267`), so it must match how the weight was produced.
+
+Unlike quant_w4a8.py this does not require CUDA. Every quantizer here resolves to comfy-kitchen's
+eager backend on CPU, measured at ~50 ms for a 2048x2048 layer, so a 1440-layer model costs about a
+minute of compute and is dominated by reading and writing the file. Pass `--device cuda` to use the
+GPU when it is free.
+
+Note that producing a checkpoint on CPU says nothing about whether it will *run* natively -- that
+is decided at load time by the GPU's capabilities. `int8_tensorwise` is not in the disabled set on
+SM 8.6, so it runs natively on Ampere; nvfp4 and mxfp8 do not.
+
+Same safety rules as the other converters: streaming writes, atomic replace, refuses to overwrite a
+source, an existing output, a stale partial, or to requantize an already-quantized checkpoint.
+
+    python tools/quant_int8.py --input ltx-2.5-...-bf16.safetensors --convrot --dry-run
+"""
+
+from __future__ import annotations
+
+import argparse
+import importlib.metadata
+import json
+import os
+import shutil
+import struct
+import sys
+import time
+from pathlib import Path
+
+import psutil
+import torch
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from quant_w4a8 import (  # noqa: E402
+    HIGH_PRECISION_DTYPES,
+    PROFILE_PATTERNS,
+    SAFETENSORS_DTYPE,
+    copy_range,
+    detect_profile,
+    human_size,
+    read_header,
+    read_tensor,
+)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--input", required=True, type=Path)
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--profile", choices=["auto", *PROFILE_PATTERNS], default="auto")
+    convrot = parser.add_mutually_exclusive_group()
+    convrot.add_argument("--convrot", dest="convrot", action="store_true", default=True,
+                         help="rotate before quantizing, as Lightricks does (default)")
+    convrot.add_argument("--no-convrot", dest="convrot", action="store_false",
+                         help="plain row-wise int8, no rotation")
+    parser.add_argument("--convrot-groupsize", type=int, default=256)
+    parser.add_argument("--device", default="cpu", choices=["cpu", "cuda"])
+    parser.add_argument("--dry-run", action="store_true")
+    return parser.parse_args()
+
+
+def selected_layers(header: dict, profile: str, convrot: bool, groupsize: int) -> list[str]:
+    pattern = PROFILE_PATTERNS[profile]
+    out = []
+    for name, info in header.items():
+        shape = info["shape"]
+        if not (pattern.fullmatch(name) and info["dtype"] in HIGH_PRECISION_DTYPES
+                and len(shape) == 2):
+            continue
+        # Rotation needs K divisible by the Hadamard size; plain int8 has no such constraint.
+        if convrot and shape[1] % groupsize:
+            continue
+        out.append(name)
+    return out
+
+
+def quantize(weight: torch.Tensor, convrot: bool, groupsize: int):
+    from comfy_kitchen.backends.eager import quantization as eager
+    import comfy_kitchen as ck
+
+    if convrot:
+        implementation = ck.registry.get_implementation(
+            "quantize_int8_convrot_weight",
+            kwargs={"weight": weight, "group_size": groupsize})
+        return implementation(weight, group_size=groupsize)
+    return eager.quantize_int8_rowwise(weight)
+
+
+def main() -> int:
+    args = parse_args()
+    source = args.input.resolve()
+    if not source.is_file() or source.suffix.lower() != ".safetensors":
+        raise SystemExit("Input must be an existing .safetensors file")
+    suffix = "int8_convrot" if args.convrot else "int8"
+    output = (args.output or source.with_name(f"{source.stem}_{suffix}.safetensors")).resolve()
+    sidecar = output.with_suffix(".quant.json")
+    if output == source:
+        raise SystemExit("Refusing to overwrite the source model")
+    if output.exists() or sidecar.exists():
+        raise SystemExit(f"Refusing to overwrite existing output or sidecar: {output}")
+    if args.device == "cuda" and not torch.cuda.is_available():
+        raise SystemExit("CUDA requested but unavailable")
+
+    header, metadata = read_header(source)
+    if metadata.get("_quantization_metadata"):
+        raise SystemExit("Refusing to requantize a checkpoint that already has quantization metadata")
+    inline = sum(1 for name in header if name.endswith(".comfy_quant"))
+    if inline:
+        raise SystemExit(f"Refusing to requantize: source carries {inline} inline "
+                         "'.comfy_quant' markers, so it is already quantized")
+
+    profile = detect_profile(source, list(header)) if args.profile == "auto" else args.profile
+    selected = selected_layers(header, profile, args.convrot, args.convrot_groupsize)
+    if not selected:
+        raise SystemExit(f"Profile {profile!r} selected no compatible layers")
+
+    print(f"Source: {source}")
+    print(f"Profile: {profile}   convrot={args.convrot} "
+          f"groupsize={args.convrot_groupsize}   device={args.device}")
+    print(f"Selected Linear weights: {len(selected)}")
+    print(f"Output: {output}")
+    if args.dry_run:
+        for name in selected[:8]:
+            print(f"  {name}: {header[name]['shape']} {header[name]['dtype']}")
+        if len(selected) > 8:
+            print(f"  ... {len(selected) - 8} more")
+        return 0
+
+    started = time.perf_counter()
+    partial = output.with_suffix(output.suffix + ".partial")
+    if partial.exists():
+        raise SystemExit(f"Refusing to overwrite stale partial output: {partial}")
+
+    selected_set = set(selected)
+    # Two-pass design, not streaming. The old `largest * 3 + 2 GiB` came from quant_w4a4.py and
+    # is the worst offender here: measured at 2.375 GiB asked against 19.144 GiB accumulated on
+    # LTX-2.5, an 8.1x understatement. A guard that passes and then thrashes is worse than none.
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from _ram_guard import check, int8_bytes
+
+    accumulated = sum(int8_bytes(*header[n]["shape"]) for n in selected)
+    refusal = check(psutil.virtual_memory().available, accumulated, label="INT8 conversion")
+    if refusal:
+        raise SystemExit(refusal)
+    if shutil.disk_usage(output.parent).free < source.stat().st_size:
+        raise SystemExit("Insufficient disk space")
+
+    quantized: dict[str, dict] = {}
+    with source.open("rb") as handle:
+        data_start = 8 + struct.unpack("<Q", handle.read(8))[0]
+        for index, name in enumerate(selected, 1):
+            info = header[name]
+            start, end = info["data_offsets"]
+            weight = read_tensor(handle, data_start + start, end - start,
+                                 info["dtype"], info["shape"]).to(args.device)
+            qdata, scale = quantize(weight, args.convrot, args.convrot_groupsize)
+            quantized[name] = {"qdata": qdata.cpu().contiguous(),
+                               "scale": scale.cpu().contiguous().float()}
+            del weight, qdata, scale
+            if args.device == "cuda":
+                torch.cuda.empty_cache()
+            if index % 120 == 0 or index == len(selected):
+                print(f"[{index}/{len(selected)}] quantized", flush=True)
+
+    layers = {name.removesuffix(".weight"): {"format": "int8_tensorwise",
+                                             **({"convrot": True,
+                                                 "convrot_groupsize": args.convrot_groupsize}
+                                                if args.convrot else {})}
+              for name in selected}
+    output_metadata = dict(metadata)
+    output_metadata["_quantization_metadata"] = json.dumps(
+        {"format_version": "1.0", "layers": layers}, separators=(",", ":"))
+    output_metadata["quantization"] = f"int8_tensorwise{'+convrot' if args.convrot else ''}"
+
+    target = {"__metadata__": output_metadata}
+    offset, plan = 0, []
+    for name, info in header.items():
+        if name in selected_set:
+            entry = quantized[name]
+            for key, tensor in ((name, entry["qdata"]),
+                                (f"{name}_scale", entry["scale"])):
+                nbytes = tensor.numel() * tensor.element_size()
+                target[key] = {"dtype": SAFETENSORS_DTYPE[tensor.dtype],
+                               "shape": list(tensor.shape),
+                               "data_offsets": [offset, offset + nbytes]}
+                plan.append(("write", tensor))
+                offset += nbytes
+        else:
+            start, end = info["data_offsets"]
+            size = end - start
+            target[name] = {"dtype": info["dtype"], "shape": info["shape"],
+                            "data_offsets": [offset, offset + size]}
+            plan.append(("copy", (start, size)))
+            offset += size
+
+    payload = json.dumps(target, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    payload += b" " * (-len(payload) % 8)
+    try:
+        with source.open("rb") as source_handle, partial.open("xb") as out_handle:
+            data_start = 8 + struct.unpack("<Q", source_handle.read(8))[0]
+            out_handle.write(struct.pack("<Q", len(payload)))
+            out_handle.write(payload)
+            body_start = out_handle.tell()
+            for kind, item in plan:
+                if kind == "write":
+                    out_handle.write(memoryview(item.numpy()).cast("B"))
+                else:
+                    start, size = item
+                    copy_range(source_handle, out_handle, data_start + start, size)
+            written = out_handle.tell() - body_start
+            if written != offset:
+                raise RuntimeError(f"length mismatch: wrote {written}, planned {offset}")
+            out_handle.flush()
+            os.fsync(out_handle.fileno())
+        os.replace(partial, output)
+    finally:
+        if partial.exists():
+            partial.unlink()
+
+    elapsed = time.perf_counter() - started
+    sidecar.write_text(json.dumps({
+        "source": str(source), "source_size": source.stat().st_size,
+        "output": str(output), "output_size": output.stat().st_size,
+        "architecture": profile,
+        "quantization": f"int8_tensorwise{'+convrot' if args.convrot else ''}",
+        "convrot": args.convrot, "convrot_groupsize": args.convrot_groupsize,
+        "quantized_tensors": len(selected), "preserved_tensors": len(header) - len(selected),
+        "quantized_on": args.device,
+        "comfy_kitchen_version": importlib.metadata.version("comfy-kitchen"),
+        "torch_version": torch.__version__,
+        "conversion_seconds": round(elapsed, 3),
+    }, indent=2), encoding="utf-8")
+    print(f"Wrote {output} ({human_size(output.stat().st_size)}) in {elapsed / 60:.1f} min")
+    print(f"Wrote {sidecar}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
