@@ -66,6 +66,13 @@ def parse_args() -> argparse.Namespace:
                              "audit finding: comfy/ops.py:1377 requires len(self.weight_function) "
                              "== 0 to take the quantized path, and a LoRA patch installs one.")
     parser.add_argument("--lora-strength", type=float, default=1.0)
+    parser.add_argument("--weight-dtype",
+                        choices=["default", "fp8_e4m3fn", "fp8_e4m3fn_fast", "fp8_e5m2"],
+                        default="default",
+                        help="the UNETLoader widget, passed through exactly as nodes.py:993 does. "
+                             "Tests comfy/sd.py:2303, which assigns the widget value to unet_dtype "
+                             "even when quant_config is set, while :2306 protects "
+                             "manual_cast_dtype from the same thing.")
     return parser.parse_args()
 
 
@@ -182,8 +189,21 @@ def main() -> int:
     candidate = Path(args.model)
     path = str(candidate) if candidate.is_file() else \
         folder_paths.get_full_path_or_raise("diffusion_models", args.model)
-    print(f"loading {path}", flush=True)
-    model = comfy.sd.load_diffusion_model(path)
+    # Built the way nodes.py:993 builds it, so this exercises the real widget rather than a
+    # plausible imitation of it.
+    model_options = {}
+    if args.weight_dtype == "fp8_e4m3fn":
+        model_options["dtype"] = torch.float8_e4m3fn
+    elif args.weight_dtype == "fp8_e4m3fn_fast":
+        model_options["dtype"] = torch.float8_e4m3fn
+        model_options["fp8_optimizations"] = True
+    elif args.weight_dtype == "fp8_e5m2":
+        model_options["dtype"] = torch.float8_e5m2
+
+    print(f"loading {path} (weight_dtype={args.weight_dtype})", flush=True)
+    model = comfy.sd.load_diffusion_model(path, model_options=model_options)
+    print(f"unet_dtype={model.model.get_dtype()}  "
+          f"manual_cast={getattr(model.model, 'manual_cast_dtype', None)}", flush=True)
     diffusion_model = model.get_model_object("diffusion_model")
     # Detected on the weight object, not on `named_buffers()`. Measured on the mixed Z-Image
     # checkpoint: 170 `comfy_quant` keys in `state_dict()`, 170 modules whose `.weight` is a
@@ -197,6 +217,20 @@ def main() -> int:
                          "dispatch and this census would report an honest zero for the wrong "
                          "reason")
     print(f"{len(quantized)} quantized layer(s) in the loaded graph", flush=True)
+
+    # The dtype histogram of everything that is *not* quantized. `unet_dtype` reaching fp8 is only
+    # half a finding; what makes it a defect is which tensors land there. The quantized layers are
+    # already 4-bit and cannot be affected, so any damage falls on the norms, embeddings and
+    # modulation that the profile deliberately left in high precision.
+    from collections import Counter as _Counter
+    hist = _Counter()
+    for name, p in list(diffusion_model.named_parameters()) + list(diffusion_model.named_buffers()):
+        if isinstance(p, QuantizedTensor):
+            hist["QuantizedTensor"] += 1
+        else:
+            hist[str(p.dtype)] += 1
+    print("unquantized tensor dtypes: "
+          + ", ".join(f"{k} x{v}" for k, v in sorted(hist.items())), flush=True)
 
     if args.lora:
         import comfy.utils

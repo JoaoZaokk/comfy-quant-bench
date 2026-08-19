@@ -186,7 +186,14 @@ if __name__ == "__main__":
         except AssertionError as exc:
             failures += 1
             print(f"FAIL  {name}: {exc}")
-    print("\nNOTE  check_dtype_widget encodes a reading of comfy/sd.py:2295-2309, not an "
-          "executed experiment. What the fp8-compute/4-bit-weight combination actually does has "
-          "not been measured on a GPU.")
+    # This used to say check_dtype_widget was a reading and had never been executed. It has been,
+    # on 2026-08-19 -- see the docstring for the table. What is still untested is listed instead,
+    # because the point of the line is to name the gap, not to be reassuring once one gap closes.
+    print("\nNOT COVERED BY THESE TESTS:")
+    print("  * Every check here runs against file headers and node lists. None of them loads a "
+          "model, so none proves what the loader does -- that lives in tools/dispatch_census.py.")
+    print("  * check_lora_over_quantized: dispatch was measured, accuracy was not. A LoRA delta "
+          "over an already-4-bit weight may cost quality that no count would show.")
+    print("  * Only ConvRot W4A4 and AsymW4A8Int8 have been exercised on a real model. The other "
+          "five formats in QUANT_ALGOS have not.")
     raise SystemExit(1 if failures else 0)

@@ -2166,3 +2166,68 @@ os checkpoints reais desta maquina" pulava todos e imprimia **PASS**, com `(0 re
 exercised)` numa linha que ninguem le. Corrigido para `parents[2]`, e agora **falha** se o
 diretorio nao existir ou se nenhum checkpoint for exercitado - teste que nao testa nada tem de
 quebrar, nao passar. Passou a exercitar 4.
+
+
+## 2026-08-19, parte 14 - o widget de dtype num checkpoint quantizado: medido, e o traco errou o sintoma
+
+Item 1 da fila de GPU, o unico candidato a PR upstream. O traco de leitura dizia: `comfy/sd.py`
+sabe que o arquivo e quantizado - testa `model_config.quant_config is not None` duas vezes - mas
+protege so metade da decisao.
+
+```python
+if model_config.quant_config is not None:
+    weight_dtype = None                    # 2296: ignora o dtype farejado do arquivo
+if dtype is None:
+    unet_dtype = model_management.unet_dtype(...)
+else:
+    unet_dtype = dtype                     # 2303: o widget passa, sem consultar quant_config
+if model_config.quant_config is not None:
+    manual_cast_dtype = unet_manual_cast(None, ...)   # 2306: protegido
+else:
+    manual_cast_dtype = unet_manual_cast(unet_dtype, ...)
+```
+
+### O que a execucao mostrou
+
+`zimage-v2-mixed`, 4 passos, 512px, mesma seed, so mudando o widget do `UNETLoader`:
+
+| widget | unet_dtype | tensores nao quantizados | norm do latente |
+|---|---|---|---|
+| default | bfloat16 | bf16 x283 | **747,06** |
+| fp8_e4m3fn | float8_e4m3fn | bf16 x76, **fp8_e4m3fn x207** | **713,98** |
+| fp8_e5m2 | float8_e5m2 | bf16 x76, **fp8_e5m2 x207** | **828,08** |
+
+`manual_cast` fica `bfloat16` nos tres - a protecao da linha 2306 funciona. E o dispatch fica
+**680 de 680 no kernel nativo** nos tres: o widget nao consegue tocar os 170 layers quantizados,
+que ja sao de 4 bits.
+
+**O mecanismo do traco estava certo. O sintoma que eu imaginei estava errado.** Nao trava, nao
+produz lixo, nao cai para eager. O que ele faz e converter para fp8 os **207 tensores que o perfil
+deixou de proposito em alta precisao** - normas, embeddings, modulacao - e a saida muda.
+
+Escala, medida no mesmo latente e na mesma seed: uma LoRA em forca 1,0 move de 747,06 para 728,99.
+O `fp8_e5m2` move para 828,08 - **cerca de quatro vezes mais longe que aplicar uma LoRA inteira**.
+Sem erro, sem aviso, e sem perda de velocidade que denuncie.
+
+O silencio e o que faz disso ERROR e nao WARN no preflight. Quem marca o widget ve um modelo que
+carrega, roda na velocidade cheia, e devolve outra imagem.
+
+### Sobre o PR
+
+O `git log -S` nao decide a intencao: neste checkout o bloco inteiro aparece como adicionado num
+commit de atualizacao de templates (`e8e8fee2`), entao nao da para dizer daqui se a assimetria foi
+deliberada ou passou batida. **O que da para afirmar** e que existem dois guards adjacentes
+neutralizando dtype quando `quant_config` esta setado, e o caminho do dtype explicito escapa dos
+dois - e que a consequencia agora esta medida, com repro de uma linha.
+
+O mesmo formato aparece em duas funcoes do arquivo (`unet_dtype = model_options.get("dtype", ...)`
+na outra), entao um PR mexeria nos dois pontos.
+
+Nao publiquei nada. Nao ha remote configurado, e abrir issue upstream e acao para fora - fica para
+decisao do usuario, com o texto pronto.
+
+### Ferramenta
+
+`tools/dispatch_census.py` ganhou `--weight-dtype`, montado exatamente como `nodes.py:993` monta,
+e passou a imprimir o histograma de dtype dos tensores **nao** quantizados. Sem esse histograma o
+achado seria "a saida mudou"; com ele e "207 tensores foram convertidos, e sao estes".

@@ -205,9 +205,12 @@ secao 6 lista o que foi consertado sem GPU. Nao consertado de proposito:
 
 ### Fila que precisa de GPU
 
-1. **O mestiço fp8/4-bit.** `comfy/sd.py:2303` da o `dtype` do widget ao `unet_dtype` mesmo com
-   `quant_config` setado, enquanto `:2306` protege o `manual_cast_dtype`. Traçado **lendo**, nao
-   executando. Medir o que acontece de fato destrava um PR de duas linhas.
+1. ~~**O mestiço fp8/4-bit.** `comfy/sd.py:2303` da o `dtype` do widget ao `unet_dtype` mesmo com
+   `quant_config` setado, enquanto `:2306` protege o `manual_cast_dtype`.~~ **Medido 2026-08-19**
+   (parte 14). Nao trava e nao cai para eager: 680/680 nativo nos tres widgets. Converte para fp8
+   os **207 tensores nao quantizados** (normas, embeddings, modulacao) e move o latente mais que
+   uma LoRA inteira — 747,06 → 828,08 com `fp8_e5m2`, contra 728,99 da LoRA. Silencioso.
+   **Texto de PR/issue pronto, nao publicado** — falta decisao do usuario.
 2. ~~`tensor/convrot_w4a4.py:237` — quem transpõe? Monkeypatch contador num forward real.~~
    **Feito 2026-08-19** (parte 13). Transpõe o próprio ComfyUI, 680x numa geração de 4 passos —
    mas via `aten.t` + `aten.mm`, onde `transposed=True` é o estado *exigido* e o kernel roda.

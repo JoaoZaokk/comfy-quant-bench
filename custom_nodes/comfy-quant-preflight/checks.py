@@ -200,8 +200,23 @@ def check_dtype_widget(path: Path, weight_dtype: str) -> tuple | None:
 
     A BF16 file with weight_dtype=fp8 is NOT this. There the widget is the whole point.
 
-    Caveat kept deliberately visible: the trace is a reading of the code, not an execution. What
-    the mongrel actually does -- crash, garbage, or work by accident -- has not been measured.
+    **Measured 2026-08-19, and the trace was right about the mechanism and wrong about the
+    symptom.** It does not crash and it does not produce garbage. `tools/dispatch_census.py` on
+    the mixed Z-Image checkpoint, 4 steps at 512px:
+
+        widget        unet_dtype           unquantized tensors        latent norm
+        default       bfloat16             bf16 x283                  747.06
+        fp8_e4m3fn    float8_e4m3fn        bf16 x76, fp8_e4m3fn x207  713.98
+        fp8_e5m2      float8_e5m2          bf16 x76, fp8_e5m2  x207   828.08
+
+    All three ran 680 of 680 dispatches on the native kernel: the widget cannot touch the 170
+    quantized layers, which are already 4-bit. What it casts is the 207 tensors the profile
+    deliberately kept in high precision -- norms, embeddings, modulation -- and the output moves.
+    For scale, a LoRA at strength 1.0 moved the same latent from 747.06 to 728.99; fp8_e5m2 moves
+    it to 828.08, roughly four times further, with no error, no warning, and no slowdown to notice.
+
+    Silence is what makes this an ERROR rather than a WARN. A user who sets this widget sees a
+    model that loads, runs at full speed, and returns a different picture.
     """
     if weight_dtype in (None, "", "default"):
         return None
