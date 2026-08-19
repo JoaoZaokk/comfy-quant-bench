@@ -17,9 +17,10 @@
 /quantization_inventory.json
 /quantization_inventory.md
 
-# Nothing under tools/ that is not source.
-tools/__pycache__/
-tools/**/__pycache__/
-tools/*.pyc
+# Nothing but source in the tracked trees. Written generically on purpose: the first version
+# of this named tools/ only, and __pycache__ from custom_nodes/ went straight into a commit.
+__pycache__/
+*.pyc
+*.pyo
 tools/calib/
 tools/bench/
