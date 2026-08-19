@@ -2295,3 +2295,61 @@ o teste do preflight exercitar zero arquivos e reportar PASS (parte 13).
 E o arquivo tropecou no mesmo `python313._pth` do `m_crossover`: `from svdq_to_bf16 import ...`
 morre com `ModuleNotFoundError` porque o interpretador embutido suprime o diretorio do script. A
 suite ja carregava o modulo por `importlib`; agora os testes de GPU usam esse mesmo objeto.
+
+
+## 2026-08-19, parte 16 - o fallback eager do W4A8 e alcancavel, silencioso e 6x mais lento
+
+Item 3 da fila. A auditoria apontou `cuda/__init__.py:2213` e `:2261`: a cadeia do
+`w4a8_int8_linear` tenta kernels em sequencia, cada um devolvendo um booleano visivel ao host, e a
+cauda e `return eager_w4a8_int8_linear(...)` - matematica dequantizada com o nome de um op
+quantizado, sem uma linha de log. O que faltava era **qual shape chega la**.
+
+Ferramenta: `tools/w4a8_fallback_sweep.py`. Nao infere nada - embrulha os quatro pontos de entrada
+`_C.*` e le os booleanos, entao uma linha marcada `EAGER` e uma linha em que o C++ disse nao.
+
+### A regra
+
+**`out_features % 8 != 0` cai no eager.** Medido, nao deduzido:
+
+| N | verdito | N | verdito |
+|---|---|---|---|
+| 1000 | kernel | 1004 | EAGER |
+| 1001 | EAGER | 1006 | EAGER |
+| 1002 | EAGER | **1008** | kernel |
+| 1003 | EAGER | 1016 | kernel |
+| 3840 | kernel | 1020 | EAGER |
+| 3841 | EAGER | 1024 | kernel |
+
+Nao e paridade - 1002 e par e cai. Nao e multiplo de 128 - 1000 nao e e passa. E divisibilidade
+por 8. `K` nao entra: 256, 512, 1024, 2560 e 3840 dao o mesmo resultado para o mesmo N.
+
+### O que custa, e o que nao custa
+
+**Nao custa correcao.** Erro relativo contra referencia float32: 0,0736 no eager, 0,0737 no
+kernel. O fallback calcula a mesma coisa.
+
+**Custa velocidade, e muito.** M=5856, K=3840:
+
+```
+N=1024  kernel   0,571 ms       N=3840  kernel   1,133 ms
+N=1020  EAGER    2,869 ms       N=3841  EAGER    6,762 ms
+        5,02x                           5,97x
+```
+
+**Cinco a seis vezes**, sem aviso nenhum. Um modelo com um unico layer de `out_features` nao
+divisivel por 8 perde o formato naquele layer e nada no log diz isso.
+
+### Relevancia pratica
+
+Os layers do Z-Image sao todos divisiveis por 8 (3840, 11520), entao este projeto nao esbarra
+nisso hoje. Quem esbarra: modelo podado, arquitetura com head count esquisito, ou qualquer coisa
+com dimensao escolhida por outro criterio que nao alinhamento.
+
+Segundo candidato a reporte upstream, e mais simples que o do widget de dtype: a cauda eager
+deveria logar. Nao publiquei - mesma regra do item 1.
+
+### Ressalva
+
+Uma GPU (sm86), um build do comfy-kitchen. A recusa e o teste de capacidade da propria extensao,
+entao a regra dos 8 pode ser outra em outra placa. O que transfere e o metodo: ler os booleanos,
+nao inferir do tempo.

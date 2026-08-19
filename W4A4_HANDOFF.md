@@ -185,6 +185,7 @@ tools/m_crossover.py           onde o int4 passa a ganhar do 16-bit (M ~ 128-256
 tools/w4a4_breakdown.py        kernel a kernel, e a divisao host/GPU de uma chamada
 tools/graph_capture_probe.py   CUDA graph: captura? replay bate com eager? quanto de host sai?
 tools/dispatch_census.py       conta o ramo que cada Linear quantizado tomou numa geracao real
+tools/w4a8_fallback_sweep.py   quais shapes fazem o W4A8 desistir do kernel (le os booleanos)
 tools/attn_dtype_ab.py         fp16 vs bf16 nos backends de attention
 tools/gpu_lock.py              exclusao mutua com a sessao irma
 tools/_bench_guard.py          lock + ocupacao NVML, falhando fechado
@@ -216,8 +217,10 @@ secao 6 lista o que foi consertado sem GPU. Nao consertado de proposito:
    mas via `aten.t` + `aten.mm`, onde `transposed=True` é o estado *exigido* e o kernel roda.
    O ramo que dequantiza precisa de `aten.linear`, que nunca é chamado nesse caminho.
    680/680 nativo. Falta `torch.compile`.
-3. `cuda/__init__.py:2213` e `:2261` — achar shape que o CUTLASS recusa, provar o fallback eager.
-   **Parcial 2026-08-19:** instrumentei os quatro `_C.*` do caminho W4A8 e em M=5600 e 5700 so
+3. ~~`cuda/__init__.py:2213` e `:2261` — achar shape que o CUTLASS recusa, provar o fallback eager.~~
+   **Feito 2026-08-19** (parte 16). Regra: `out_features %% 8 != 0` cai no eager. Silencioso,
+   numericamente correto (0,0736 vs 0,0737) e **5-6x mais lento**. Repro em
+   `tools/w4a8_fallback_sweep.py`. Nota anterior: instrumentei os quatro `_C.*` do caminho W4A8 e em M=5600 e 5700 so
    `w4a8_codebook_linear_chunked` e chamado, retornando `True` — o fallback eager nao foi
    alcancado por esse lado. Falta achar shape que faca `used` voltar `False`.
 8. **Novo, e o mais acionavel da lista:** achar a causa da recusa de captura do W4A8 acima de
