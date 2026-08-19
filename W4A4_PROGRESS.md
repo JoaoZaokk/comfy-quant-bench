@@ -2905,3 +2905,64 @@ confirmar que despacha nativo, e medir contra o BF16 com parametros casados. `di
 faria a parte do despacho, mas hoje so instrumenta os layouts W4A4 e W4A8 - o
 `TensorWiseINT8Layout` nao esta na lista, entao rodar como esta reportaria zero e pareceria uma
 resposta.
+
+
+## 2026-08-19, parte 27 - aceitacao do LTX 2.5 W8A8: passa no que da para testar, e o resto esta bloqueado
+
+`ltx-2.5-22b-distilled-transformer-bf16_int8_convrot.safetensors`, 20,0 GiB.
+
+### Antes: o instrumento nao enxergava o formato
+
+`tools/diffusion_smoke.py` embrulhava `convrot_w4a4_linear` e `w4a8_int8_linear`. O layout int8
+nao chama funcao de registry - chama `torch.ops.comfy_kitchen.int8_linear` direto - entao um
+checkpoint int8 reportava **zero linears e zero dequantizacoes**, que le como "nada rodou" e nao
+como "esta ferramenta nao olha esse layout".
+
+Terceira vez que essa mesma classe de buraco aparece: o proprio docstring do `diffusion_smoke`
+registra que ele ja tinha sido consertado uma vez pelo mesmo motivo, e continuava incompleto. O
+`dispatch_census.py` tinha o mesmo (corrigido junto, mais o latente de video 5-D).
+
+Consertado embrulhando o handler registrado no `_LAYOUT_DISPATCH_TABLE` em vez da funcao.
+
+### O que passou
+
+```
+loader                     comfy.sd.load_diffusion_model, sem no custom
+VRAM apos carga            20,02 GiB
+modulos quantizados        1440
+formatos                   int8_tensorwise x1440
+layouts                    TensorWiseINT8Layout x1440
+convrot_groupsize          256 x1440
+camadas sondadas           4, todas nativas
+  native_linear_calls      2 por camada
+  weight_dequant_calls     0
+all_native                 true
+```
+
+O despacho vai por `comfy_kitchen.tensor.int8.t` seguido de `.addmm` - o mesmo padrao `t` + `mm`
+que a parte 13 contou no Z-Image, e nao por `linear`, entao o ramo que dequantiza continua fora do
+caminho tambem neste formato.
+
+### O aviso que parecia grave e nao e
+
+A carga emite `WARNING: unet unexpected: [...]` com **1440 chaves**, todas `.comfy_quant`. Parece
+que os marcadores nao foram consumidos - o que seria a mesma armadilha do Z-Image em naming
+diffusers, onde a escala passa batida e a camada carrega sem erro.
+
+Nao e. Os numeros casam exatamente: **1440 chaves reportadas como sobra, 1440 modulos carregados
+quantizados**, todos com o formato e o groupsize certos. O loader consome o marcador para montar a
+config e depois lista a mesma chave como nao-consumida no state dict. Se tivesse ignorado,
+`quantized_module_count` seria zero.
+
+Vale registrar porque o aviso e alarmante e a verificacao e barata: comparar as duas contagens.
+
+### O que continua bloqueado
+
+**O benchmark casado contra o BF16 nao foi feito.** Nao por falta de GPU: amostrar LTX 2.5 nao e
+uma chamada de `KSampler`. Os workflows deste projeto usam `LTXAVTextEncoderLoader`,
+`LTXVAudioVAELoader` e `CheckpointLoaderSimple` de um pacote de custom nodes, com o gemma de 12B
+carregando a projecao a partir do proprio checkpoint - e os arquivos 2.5 aqui sao transformer
+sozinho, em `diffusion_models`. Montar isso e integracao, nao comando.
+
+Entao a aceitacao deste arquivo esta em: **carrega e despacha nativo, sim, medido. Qualidade e
+velocidade contra o BF16, nao medido.** Nao chamar de aceito sem essa segunda metade.
