@@ -2231,3 +2231,67 @@ decisao do usuario, com o texto pronto.
 `tools/dispatch_census.py` ganhou `--weight-dtype`, montado exatamente como `nodes.py:993` monta,
 e passou a imprimir o histograma de dtype dos tensores **nao** quantizados. Sem esse histograma o
 achado seria "a saida mudou"; com ele e "207 tensores foram convertidos, e sao estes".
+
+
+## 2026-08-19, parte 15 - o `.T` e a escala do nunchaku: os dois corretos, agora com teste que prova
+
+Itens 5 e 6 da fila. Os dois viviam no mesmo lugar - `recover_weight` em `tools/svdq_to_bf16.py` -
+e a suite de testes dizia, em toda execucao, que nao cobria nenhum dos dois:
+
+> "a bug in the shipped recover_weight -- the dropped `.T`, for one -- passes this suite"
+
+Isso porque os testes de CPU exercitam `_recover`, uma reimplementacao no proprio arquivo de teste,
+e nao a funcao enviada, que constroi a camada por dentro do nunchaku e precisa de GPU.
+
+### O `.T` esta certo
+
+Camada real do `svdq-int4_r32-beyond-reality-zimage-v2`, comparando a matriz recuperada contra a
+propria camada de onde ela saiu:
+
+```
+layer(x) vs F.linear(x, recovered)     rel 0,101
+layer(x) vs F.linear(x, recovered.T)   rel 1,413
+```
+
+**A assercao tem de ser um contraste, nao um limiar.** O `SVDQW4A4Linear` quantiza a ativacao
+tambem, entao `layer(x)` com x aleatorio carrega erro de ativacao W4A4 que `F.linear` nao tem - o
+0,101 nao pode ser pequeno. Um limiar apertado o bastante para rejeitar a transposta rejeitaria
+tambem a resposta certa. A razao entre as duas separa por mais de dez vezes.
+
+### A escala esta certa
+
+Erro relativo sozinho nao distingue ruido de quantizador de bug de escala: os dois sobem. O alpha
+de minimos quadrados distingue. Contra o BF16 publicado do mesmo modelo:
+
+| camada | alpha | rel@1 | rel@alpha |
+|---|---|---|---|
+| context_refiner.0.attention.to_out.0 | 0,992197 | 0,096566 | 0,096248 |
+| context_refiner.1.attention.to_out.0 | 0,992261 | 0,096307 | 0,095994 |
+| noise_refiner.0.attention.to_out.0 | 0,997170 | 0,056853 | 0,056782 |
+| layers.0.attention.to_out.0 | 0,998100 | 0,047259 | 0,047220 |
+| layers.17.attention.to_out.0 | 0,992848 | 0,092716 | 0,092438 |
+
+Alpha entre 0,992 e 0,998, e corrigir por alpha melhora o residuo em menos de 0,4% dele mesmo.
+**Nao ha fator de escala** - o que sobra e ruido de quantizacao int4, na magnitude esperada.
+
+### E os testes tem dentes
+
+Provado por mutacao, como os de `split_fused`. Derrubando o `.T` da funcao enviada:
+
+```
+CAUGHT  gpu_recover_weight_returns_the_layers_own_linear_map: rel 1,4128
+CAUGHT  gpu_recovered_weight_has_no_systematic_scale_error: alpha=0,000486
+```
+
+Os dois pegam. Um teste que passa nao vale nada ate alguma coisa faze-lo falhar.
+
+### Como os testes de GPU entraram na suite
+
+Nomeados `gpu_*`, nao `test_*`, e o runner so os chama quando ha CUDA, nunchaku e os dois
+checkpoints. Faltando qualquer um, imprime **SKIP** e uma linha `GAP` dizendo que o `.T` e a escala
+ficaram sem verificacao naquela execucao. Nunca PASS - esse e exatamente o modo de falha que deixou
+o teste do preflight exercitar zero arquivos e reportar PASS (parte 13).
+
+E o arquivo tropecou no mesmo `python313._pth` do `m_crossover`: `from svdq_to_bf16 import ...`
+morre com `ModuleNotFoundError` porque o interpretador embutido suprime o diretorio do script. A
+suite ja carregava o modulo por `importlib`; agora os testes de GPU usam esse mesmo objeto.

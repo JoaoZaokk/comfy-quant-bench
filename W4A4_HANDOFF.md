@@ -227,8 +227,12 @@ secao 6 lista o que foi consertado sem GPU. Nao consertado de proposito:
    **Feito 2026-08-19** (parte 13). Nao dequantiza: 680/680 nativo com a LoRA aplicada e em
    efeito (latente move de 747,06 para 728,99). Hipotese refutada. Continua em aberto o outro
    lado: se o delta de LoRA sobre peso de 4 bits custa **qualidade**. Isso ninguem mediu.
-5. A mutacao do `.T` em `recover_weight`.
-6. Escala BF16 do nunchaku contra o quantizador real.
+5. ~~A mutacao do `.T` em `recover_weight`.~~ **Feito 2026-08-19** (parte 15). O `.T` esta
+   correto: orientacao certa da rel 0,101 contra a propria camada, a transposta da 1,413.
+   Coberto agora por `gpu_recover_weight_returns_the_layers_own_linear_map`, provado por mutacao.
+6. ~~Escala BF16 do nunchaku contra o quantizador real.~~ **Feito 2026-08-19** (parte 15). Sem
+   fator sistematico: alpha de minimos quadrados entre 0,992 e 0,998 em cinco camadas, e corrigir
+   por alpha melhora o residuo em menos de 0,4%. O resto e ruido int4 esperado.
 7. ~~`m_crossover` em ordem invertida de M (contraprova de efeito de ordem).~~ **Feito
    2026-08-19**, parte 11 do `W4A4_PROGRESS.md`. Sem efeito de ordem: ascendente e descendente
    cruzam no mesmo intervalo. Mas o controle (duas execucoes ascendentes) mostrou +/-20% de erro
