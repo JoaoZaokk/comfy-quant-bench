@@ -2066,3 +2066,103 @@ recusa aqui tambem. A conclusao deles pode estar certa. **Vale mandar o limiar p
   levanta o mesmo erro cascateado. Uma varredura de 5600,5664,5680,5700,5856 morreu dentro da linha
   do 5700. O probe agora para na primeira falha e diz por que, em vez de imprimir cascata como se
   fosse medida.
+
+
+## 2026-08-19, parte 13 - quem transpoe, e o que a LoRA faz: os dois medidos, os dois negativos
+
+Itens 2 e 4 da fila de GPU. Ferramenta nova: `tools/dispatch_census.py`, que embrulha os handlers
+de layout registrados e conta, numa geracao real, qual ramo cada Linear quantizado tomou.
+
+### 1. Quem transpoe: o proprio ComfyUI, 680 vezes, e nao e o ramo perigoso
+
+O achado da auditoria (reportado por dois auditores independentes) e
+`comfy_kitchen/tensor/convrot_w4a4.py:237`:
+
+```python
+if weight._params.transposed:
+    return torch.nn.functional.linear(input_tensor, weight.dequantize(), bias)
+```
+
+Peso com a flag ligada nao chega ao kernel: dequantiza e multiplica em BF16. O que nunca se
+estabeleceu por leitura foi **se alguem neste checkout transpoe**. Um auditor deu media por isso,
+o outro deu alta olhando so o mecanismo.
+
+Contado numa geracao real do `zimage-v2-mixed`, 4 passos, 512px:
+
+```
+w4a4.mm                    460      w4a4.t:flips False -> True   460
+w4a4.mm:native kernel      460      w4a8.t:flips False -> True   220
+w4a8.mm                    220
+w4a8.mm:native kernel      220
+kernel nativo: 680    dequantizado para BF16: 0
+```
+
+**Alguem transpoe: 680 vezes.** Mas nao cai onde o achado temia. O ComfyUI despacha o Linear como
+`aten.t` seguido de `aten.mm`, nunca como `aten.linear` - e no handler de `mm` a flag `transposed`
+e o estado **exigido**: `_resolve_convrot_w4a4_rhs` levanta `RuntimeError` se ela estiver falsa, e
+com ela ligada roda o kernel. O ramo que dequantiza precisa de `linear` sobre um peso ja
+transposto, combinacao que nao ocorre nesse caminho.
+
+Cobertura completa, nao amostra: 115 layers `convrot_w4a4` x 4 passos = 460, 55 layers
+`asym_w4a8_int8` x 4 = 220, total 680 = os 170 layers em todos os passos. Nenhum ficou de fora.
+
+**Ressalva:** vale para este modelo, este sampler, esta resolucao. `torch.compile` e qualquer node
+que chame `linear()` num peso ja transposto continuam sem medicao.
+
+**A primeira versao da ferramenta errou o rotulo** e marcou os 460 `mm` como "TRANSPOSED
+(dequantized to BF16)". So peguei porque o resumo se contradizia com a tabela. `transposed` nao
+significa a mesma coisa nos tres handlers, e assumir que significa faz a ferramenta rotular o
+caminho correto como o perigoso. Corrigido com a tabela `DEQUANTIZES_WHEN_TRANSPOSED`, derivada
+linha a linha do fonte.
+
+### 2. LoRA sobre quantizado: nao dequantiza
+
+Hipotese da auditoria em `comfy/ops.py:1377`: o caminho quantizado exige
+`len(self.weight_function) == 0`, e uma LoRA popula `weight_function`, logo toda camada com LoRA
+cairia para BF16 em silencio.
+
+Medido com `char_Liria_zimage.safetensors` em forca 1,0, **150 das chaves aplicadas caindo em
+layers quantizados**: 680 despachos, todos no kernel nativo, zero dequantizados - identico a
+execucao sem LoRA. Camada que tivesse caido para o fallback **sumiria** da contagem, nao apareceria
+como dequantizada, entao a contagem e o instrumento certo para esta pergunta.
+
+**O controle importa mais que o resultado.** Contagem igual com LoRA tem duas causas possiveis: ou
+a LoRA rodou e o kernel tambem, ou a LoRA foi engolida em silencio. A contagem nao distingue. O
+latente distingue:
+
+```
+sem LoRA   norm 747,060303   mean -0,436329   first +0,066680
+com LoRA   norm 728,985107   mean -0,471541   first +0,047811
+```
+
+A LoRA esta em efeito. O kernel continua nativo. **Hipotese refutada neste caminho.**
+
+O WARN do preflight foi reescrito: em vez de repetir a hipotese, agora carrega a medicao e estreita
+o aviso para o que continua desconhecido - se aplicar delta de LoRA sobre peso ja de 4 bits custa
+**qualidade**. Isso nao foi medido.
+
+### 3. Dois guards que nunca podiam disparar
+
+Achados de tabela, nao de leitura - os dois apareceram porque uma ferramenta se recusou a rodar
+quando devia rodar, ou passou quando nao devia.
+
+**`calibrate_activations.py`** recusava checkpoint ja quantizado testando
+`named_buffers()` por sufixo `comfy_quant`. Medido no `zimage-v2-mixed`:
+
+```
+named_buffers    com comfy_quant:   0
+named_parameters com comfy_quant:   0
+state_dict       com comfy_quant: 170
+modulos cujo .weight e QuantizedTensor: 170
+```
+
+O marcador nao e buffer registrado. **O guard nunca protegeu nada** - so nunca tinha recebido um
+arquivo quantizado para deixar passar. Trocado para `isinstance(module.weight, QuantizedTensor)`.
+
+**`test_checks.py`** do preflight calculava `ROOT = parents[3]`, aritmetica correta para o stub
+dentro de `ComfyUI/custom_nodes/`, mas o pacote mora um nivel acima. Resolvia para `F:/`, e
+`MODELS` apontava para `F:/ComfyUI/models/diffusion_models`, inexistente. O teste chamado "contra
+os checkpoints reais desta maquina" pulava todos e imprimia **PASS**, com `(0 real checkpoint(s)
+exercised)` numa linha que ninguem le. Corrigido para `parents[2]`, e agora **falha** se o
+diretorio nao existir ou se nenhum checkpoint for exercitado - teste que nao testa nada tem de
+quebrar, nao passar. Passou a exercitar 4.

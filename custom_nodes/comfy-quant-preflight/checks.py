@@ -263,15 +263,24 @@ def check_nunchaku_needs_disable_dynamic_vram(class_types: list[str]) -> tuple |
 
 
 def check_lora_over_quantized(class_types: list[str], quantized_files: int) -> tuple | None:
-    """A LoRA in the graph plus a quantized model may quietly dequantize every patched layer.
+    """A LoRA over a quantized model was suspected of dequantizing every patched layer. Measured.
 
-    Provenance: audit finding on `ops.py:1377`, **unverified**. `ModelPatcher` populates
-    `weight_function`, and with it present `cast_bias_weight` is said to take the branch that
-    calls `dequantize_convrot_w4a4_weight` -- undoing the rotation -- and run F.linear in BF16,
-    with no log line.
+    Provenance: audit finding on `ops.py:1377`, which requires `len(self.weight_function) == 0`
+    to take the quantized path. The reasoning was that `ModelPatcher` populates `weight_function`,
+    so a LoRA would send every patched layer down the dequantize branch and run it in BF16 with
+    no log line.
 
-    WARN and explicitly labelled unverified. Blocking a workflow on a hypothesis is how a
-    preflight check earns a reputation for being wrong.
+    **Measured 2026-08-19 and it did not reproduce.** `tools/dispatch_census.py` counted every
+    dispatch during a real 4-step generation of the mixed Z-Image checkpoint with
+    `char_Liria_zimage.safetensors` at strength 1.0, 150 of whose patched keys land on quantized
+    layers: 680 calls, all of them through the native kernel, none dequantized -- identical to the
+    run without the LoRA. And the LoRA was genuinely in effect: the latent moved (norm 747.06 ->
+    728.99). A layer that had fallen back would have vanished from the layout dispatch entirely
+    rather than showing up as a dequantized call, so the count is the right instrument for this.
+
+    Kept as a WARN rather than deleted, narrowed to what is still unknown: one model, one LoRA,
+    one strength, one resolution. And nothing here measures *quality* -- whether applying a LoRA
+    delta to an already-quantized weight costs accuracy is a separate question that was not asked.
     """
     if not quantized_files:
         return None
@@ -279,8 +288,9 @@ def check_lora_over_quantized(class_types: list[str], quantized_files: int) -> t
     if not loras:
         return None
     return (WARN,
-            f"{', '.join(sorted(set(loras)))} is applied to a quantized model. A LoRA sets "
-            "weight_function, which is reported to send the layer down the dequantize path and "
-            "run it in BF16 -- losing the speed and the format, silently. This is an audit "
-            "hypothesis that has NOT been confirmed by execution; treat it as worth measuring, "
-            "not as a fact.")
+            f"{', '.join(sorted(set(loras)))} is applied to a quantized model. The audit "
+            "hypothesis that this silently dequantizes the patched layers was MEASURED on "
+            "2026-08-19 and did not reproduce: 680 of 680 dispatches stayed on the native kernel "
+            "with the LoRA applied and in effect. What remains unverified is whether the LoRA "
+            "delta costs accuracy once the weight is already 4-bit -- that was not measured. "
+            "Check your output, not your throughput.")

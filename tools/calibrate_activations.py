@@ -294,9 +294,18 @@ def main() -> int:
 
     # A quantized checkpoint would calibrate the damage instead of the signal. Refuse rather than
     # produce a plausible-looking file that describes the wrong thing.
-    already = [name for name, _ in diffusion_model.named_buffers() if name.endswith("comfy_quant")]
+    #
+    # This used to test `named_buffers()` for a `comfy_quant` suffix, and that check could never
+    # fire. Measured 2026-08-19 on the mixed Z-Image checkpoint: 170 `comfy_quant` keys in
+    # `state_dict()`, 170 modules whose `.weight` is a QuantizedTensor, **0** in `named_buffers()`
+    # and 0 in `named_parameters()`. The marker is materialised by the quantized Linear, not
+    # registered as a buffer. So the guard that was supposed to stop a calibration from running on
+    # an already-quantized file had never stopped anything -- it had simply never been given one.
+    from comfy_kitchen.tensor.base import QuantizedTensor
+    already = [name for name, module in diffusion_model.named_modules()
+               if isinstance(getattr(module, "weight", None), QuantizedTensor)]
     if already:
-        raise SystemExit(f"{path} carries {len(already)} comfy_quant markers; calibration needs "
+        raise SystemExit(f"{path} has {len(already)} QuantizedTensor weights; calibration needs "
                          "the high-precision source")
 
     pattern = PROFILE_PATTERNS[args.profile]

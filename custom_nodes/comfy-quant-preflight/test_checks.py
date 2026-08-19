@@ -18,7 +18,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import checks  # noqa: E402
 
-ROOT = Path(__file__).resolve().parents[3]
+# parents[2], not [3]. This package lives at F:/COMFY_PORTABLE/custom_nodes/comfy-quant-preflight,
+# so [0]=the package, [1]=custom_nodes, [2]=the portable root. The [3] this used to carry was the
+# arithmetic for the *stub* inside ComfyUI/custom_nodes/, one level deeper, and it resolved to
+# F:/ -- so MODELS pointed at F:/ComfyUI/models/diffusion_models, which does not exist, and the
+# real-checkpoint test skipped every file and printed "(0 real checkpoint(s) exercised)" while
+# reporting PASS.
+ROOT = Path(__file__).resolve().parents[2]
 MODELS = ROOT / "ComfyUI" / "models" / "diffusion_models"
 
 
@@ -134,7 +140,11 @@ def test_lora_check_needs_both_halves():
     assert checks.check_lora_over_quantized(["LoraLoader"], quantized_files=0) is None
     assert checks.check_lora_over_quantized(["KSampler"], quantized_files=3) is None
     found = checks.check_lora_over_quantized(["LoraLoader"], quantized_files=1)
-    assert found and found[0] == checks.WARN, "an unverified finding must not block"
+    # Still WARN, but now for the opposite reason: the dequantization it warned about was measured
+    # on 2026-08-19 and did not reproduce, so blocking on it would be blocking on a refuted claim.
+    # What survives is the unmeasured half -- accuracy of a LoRA delta over a 4-bit weight.
+    assert found and found[0] == checks.WARN, "a refuted finding must not block either"
+    assert "did not reproduce" in found[1], "the message must carry the measurement, not the fear"
 
 
 def test_against_the_real_checkpoints_on_this_machine():
@@ -157,6 +167,11 @@ def test_against_the_real_checkpoints_on_this_machine():
         # It is not quantized, so it must NOT be flagged -- the check is about quantized files in
         # diffusers naming, not about diffusers naming as such.
         assert checks.check_file(source) == [], "an unquantized diffusers file was flagged"
+    # A test named "against the real checkpoints" that silently exercises none is worse than no
+    # test: it prints PASS. If the models directory is genuinely absent this should be visible as
+    # a failure and fixed, not skipped.
+    assert MODELS.is_dir(), f"{MODELS} does not exist; this test checked nothing"
+    assert seen, f"no checkpoint found under {MODELS}; this test checked nothing"
     print(f"      ({seen} real checkpoint(s) exercised)")
 
 

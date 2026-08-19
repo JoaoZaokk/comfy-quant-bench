@@ -184,6 +184,7 @@ tools/quant_mixed.py           4 ou 8 bits por camada, medido contra o kernel
 tools/m_crossover.py           onde o int4 passa a ganhar do 16-bit (M ~ 128-256; --repeats/--reverse)
 tools/w4a4_breakdown.py        kernel a kernel, e a divisao host/GPU de uma chamada
 tools/graph_capture_probe.py   CUDA graph: captura? replay bate com eager? quanto de host sai?
+tools/dispatch_census.py       conta o ramo que cada Linear quantizado tomou numa geracao real
 tools/attn_dtype_ab.py         fp16 vs bf16 nos backends de attention
 tools/gpu_lock.py              exclusao mutua com a sessao irma
 tools/_bench_guard.py          lock + ocupacao NVML, falhando fechado
@@ -207,7 +208,11 @@ secao 6 lista o que foi consertado sem GPU. Nao consertado de proposito:
 1. **O mestiço fp8/4-bit.** `comfy/sd.py:2303` da o `dtype` do widget ao `unet_dtype` mesmo com
    `quant_config` setado, enquanto `:2306` protege o `manual_cast_dtype`. Traçado **lendo**, nao
    executando. Medir o que acontece de fato destrava um PR de duas linhas.
-2. `tensor/convrot_w4a4.py:237` — quem transpõe? Monkeypatch contador num forward real.
+2. ~~`tensor/convrot_w4a4.py:237` — quem transpõe? Monkeypatch contador num forward real.~~
+   **Feito 2026-08-19** (parte 13). Transpõe o próprio ComfyUI, 680x numa geração de 4 passos —
+   mas via `aten.t` + `aten.mm`, onde `transposed=True` é o estado *exigido* e o kernel roda.
+   O ramo que dequantiza precisa de `aten.linear`, que nunca é chamado nesse caminho.
+   680/680 nativo. Falta `torch.compile`.
 3. `cuda/__init__.py:2213` e `:2261` — achar shape que o CUTLASS recusa, provar o fallback eager.
    **Parcial 2026-08-19:** instrumentei os quatro `_C.*` do caminho W4A8 e em M=5600 e 5700 so
    `w4a8_codebook_linear_chunked` e chamado, retornando `True` — o fallback eager nao foi
@@ -215,7 +220,10 @@ secao 6 lista o que foi consertado sem GPU. Nao consertado de proposito:
 8. **Novo, e o mais acionavel da lista:** achar a causa da recusa de captura do W4A8 acima de
    M x K ~ 21,8e6 (parte 12). Esta dentro do `.pyd`; daqui so deu para caracterizar. Se o
    comfy-kitchen tiver fonte disponivel, e um bug reportavel com repro exato em tres linhas.
-4. LoRA sobre modelo quantizado (`ops.py:1377`) — hipotese, hoje so aviso no preflight.
+4. ~~LoRA sobre modelo quantizado (`ops.py:1377`) — hipotese, hoje so aviso no preflight.~~
+   **Feito 2026-08-19** (parte 13). Nao dequantiza: 680/680 nativo com a LoRA aplicada e em
+   efeito (latente move de 747,06 para 728,99). Hipotese refutada. Continua em aberto o outro
+   lado: se o delta de LoRA sobre peso de 4 bits custa **qualidade**. Isso ninguem mediu.
 5. A mutacao do `.T` em `recover_weight`.
 6. Escala BF16 do nunchaku contra o quantizador real.
 7. ~~`m_crossover` em ordem invertida de M (contraprova de efeito de ordem).~~ **Feito
