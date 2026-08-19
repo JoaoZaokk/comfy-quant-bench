@@ -30,4 +30,15 @@ Name pytest files `test_*.py`. Validate each quantized model individually: file 
 
 ## Commit & Pull Request Guidelines
 
-The root is not a Git repository; commits belong to `ComfyUI/` or an individual custom-node repository. Follow the existing short imperative subjects (`Fix ...`, `Add ...`, `Support ...`). PRs should state the problem, behavioral change, tests run, model/hardware affected, and before/after measurements; include screenshots only for visible UI or output changes.
+The root **is** a Git repository as of 2026-08-19, tracking only `tools/`, `custom_nodes/`, the
+root `.md` files and two root scripts. Its `.gitignore` is an allowlist (`/*` then re-include),
+because a denylist that misses one entry tries to commit a 42 GiB safetensors; models,
+`python_embeded`, venvs and `ComfyUI/` stay out. Verify with `git add -An --dry-run` before any
+`git add`.
+
+`ComfyUI/` is a **nested checkout with its own remote**, and its `.gitignore:8` excludes
+`/custom_nodes/`. Git will not descend into it, so nothing under `ComfyUI/` can be tracked from
+the root repository — anything written there is invisible to both and dies in a reinstall. That is
+why `custom_nodes/comfy-quant-preflight/` lives at the root and a three-line stub inside
+`ComfyUI/custom_nodes/` loads it. Commits to ComfyUI itself still belong to that checkout or to an
+individual custom-node repository. Follow the existing short imperative subjects (`Fix ...`, `Add ...`, `Support ...`). PRs should state the problem, behavioral change, tests run, model/hardware affected, and before/after measurements; include screenshots only for visible UI or output changes.

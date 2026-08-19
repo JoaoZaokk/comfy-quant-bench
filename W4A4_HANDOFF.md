@@ -166,3 +166,57 @@ wheel has (upstream has 5). A reinstall of that wheel silently reverts it.
 
 Do not start by installing packages. Do not touch the WSL jobs. No original model has been
 modified.
+
+## Estado em 2026-08-19
+
+**O repositorio existe.** A raiz virou repo git com `.gitignore` em allowlist. Rastreia `tools/`,
+`custom_nodes/`, os `.md` da raiz e dois scripts. **`git add -An --dry-run` antes de qualquer
+`git add`** — um denylist que erra uma entrada tenta commitar um safetensors de 42 GiB.
+`ComfyUI/` e checkout aninhado com remote proprio e git nao desce nele; nada la dentro pode ser
+rastreado daqui.
+
+### Ferramentas novas
+
+```
+tools/to_native.py             diffusers -> naming nativo do ComfyUI (obrigatorio antes de quantizar Z-Image)
+tools/calibrate_activations.py ativacoes reais capturadas durante amostragem
+tools/quant_mixed.py           4 ou 8 bits por camada, medido contra o kernel
+tools/m_crossover.py           onde o int4 passa a ganhar do 16-bit (M ~ 128-256 no relogio)
+tools/w4a4_breakdown.py        kernel a kernel, e a divisao host/GPU de uma chamada
+tools/attn_dtype_ab.py         fp16 vs bf16 nos backends de attention
+tools/gpu_lock.py              exclusao mutua com a sessao irma
+tools/_bench_guard.py          lock + ocupacao NVML, falhando fechado
+tools/_ram_guard.py            acumulacao real, nao a estimativa de streaming
+custom_nodes/comfy-quant-preflight/   recusa workflow cuja config de quantizacao nao pode ser verdade
+```
+
+### O que foi corrigido, e o que nao foi
+
+`AUDITORIA_2026-08-18.md` tem os 127 achados (marcados como **hipoteses nao verificadas**) e a
+secao 6 lista o que foi consertado sem GPU. Nao consertado de proposito:
+
+- `test_svdq_verify` cobre `split_fused` agora (provado por mutacao) mas **nao** `recover_weight`
+  — essa monta a camada por dentro do nunchaku e precisa de GPU. O runner imprime esse buraco em
+  toda execucao.
+- `quant_audit` conta INT4 empacotado certo, mas `dtype_bytes` continua sendo bytes de container.
+  Isso e proposital e agora esta documentado no topo do `.md` gerado.
+
+### Fila que precisa de GPU
+
+1. **O mestiço fp8/4-bit.** `comfy/sd.py:2303` da o `dtype` do widget ao `unet_dtype` mesmo com
+   `quant_config` setado, enquanto `:2306` protege o `manual_cast_dtype`. Traçado **lendo**, nao
+   executando. Medir o que acontece de fato destrava um PR de duas linhas.
+2. `tensor/convrot_w4a4.py:237` — quem transpõe? Monkeypatch contador num forward real.
+3. `cuda/__init__.py:2213` e `:2261` — achar shape que o CUTLASS recusa, provar o fallback eager.
+4. LoRA sobre modelo quantizado (`ops.py:1377`) — hipotese, hoje so aviso no preflight.
+5. A mutacao do `.T` em `recover_weight`.
+6. Escala BF16 do nunchaku contra o quantizador real.
+7. `m_crossover` em ordem invertida de M (contraprova de efeito de ordem).
+
+### PR pendente, com permissao ja dada e nao usado
+
+Nenhum remote esta configurado, entao nada foi publicado. O unico candidato que **eu mesmo provei**
+e o das chaves de quantizacao em `convert_diffusers_mmdit` — provado por leitura do mapa e por
+`to_native.py` produzir latente bit-identico. Os outros dois candidatos (`_full_precision_mm`
+inerte, `weight_correction` nunca lido) sao achados de auditoria nao verificados e **nao devem
+virar PR antes de medicao**.
