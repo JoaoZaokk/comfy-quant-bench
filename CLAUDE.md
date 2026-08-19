@@ -18,6 +18,42 @@ Also read [AGENTS.md](AGENTS.md) (root policy) and [ComfyUI/AGENTS.md](ComfyUI/A
 - WSL on this host runs unrelated Qwen/DeepSeek jobs. Do not stop, restart, or reconfigure it — but note `vmmemWSL` eats ~28 GB RAM and can starve conversions (see *Memory gotchas*).
 - **W4A4 means native ConvRot CUDA execution**, not weight-only INT4 followed by BF16 GEMM. Any change that lets the work fall back to eager/dequantized math defeats the entire project.
 
+## Say which one it was: traced, or executed
+
+Reading code and running code produce the same confident prose. That is the specific failure mode
+this project keeps hitting — not carelessness, and not reluctance to be wrong, but that a careful
+trace through a call chain *feels* like evidence and *reads* like a measurement, and nothing in
+the writing separates them. It has cost real work here more than once:
+
+| written as fact | what it actually was | what measurement said |
+|---|---|---|
+| "crest factor is the statistic ConvRot's activation path is sensitive to" | a mechanism argument, in a tool's own docstring | Spearman **+0.096** over 170 layers. No relationship. |
+| "CUDA graph removes the 109 us" | inference from what graphs do | removes **83%**; ~11 us of host survives per replay |
+| "host overhead is 161 us" | one median, from a contaminated process | **77 us** clean. Passed to a sibling project before it was checked. |
+| "`verify_w4a4.py` runs the same check" | a claim in this very file | it resolves one op; the converter resolves two |
+| "the probe is exact, with no error at all" | true of the weight, argued for the activation | BF16 scale rounding, ~1.4e-3 mean relative |
+
+The fix is mechanical, because intent does not survive the next session. **When a conclusion comes
+from reading, the artifact that carries it must say so, in the artifact.** Not in the chat, which
+is gone by then.
+
+- Tools print it. `tools/verify_w4a4.py`, `tools/test_svdq_verify.py` and
+  `custom_nodes/comfy-quant-preflight/` each end their output with what they did *not* cover, on
+  every run, pass or fail — a column of PASS lines otherwise reads as "verified".
+- Docstrings carry the provenance and the caveat inline, next to the number, not in a paragraph
+  below it. Numbers get pasted out of this repo into other sessions; a ratio with its condition
+  attached ("4.6x faster at M=5856, 1.8x slower at M=1") cannot be misquoted the way a bare "4.6x"
+  can.
+- An unverified finding stays labelled unverified all the way into the file that acts on it. The
+  preflight package's two audit-derived checks are WARN and say "not confirmed by execution" in
+  the message itself, because a check that blocks on a hypothesis teaches people to disable checks.
+- **No upstream PR from a trace.** Only from something run here. `AUDITORIA_2026-08-18.md` lists
+  three PR candidates; only one has been proved, and the other two wait for the GPU.
+
+Corollary that has paid off repeatedly: when a measurement contradicts a claim in this repo, the
+claim is what changes, including claims in this file — and the tool that produced the wrong number
+gets fixed too, not just the sentence.
+
 ## Environment
 
 | Item | Value |
