@@ -66,6 +66,8 @@ def parse_args() -> argparse.Namespace:
                              "audit finding: comfy/ops.py:1377 requires len(self.weight_function) "
                              "== 0 to take the quantized path, and a LoRA patch installs one.")
     parser.add_argument("--lora-strength", type=float, default=1.0)
+    parser.add_argument("--frames", type=int, default=1,
+                        help="frames for a video model; ignored when the latent format is 2-D")
     parser.add_argument("--weight-dtype",
                         choices=["default", "fp8_e4m3fn", "fp8_e4m3fn_fast", "fp8_e5m2"],
                         default="default",
@@ -102,13 +104,16 @@ def instrument() -> list:
     import comfy.quant_ops  # noqa: F401  (registers the backends and the layouts)
     from comfy_kitchen.tensor import base as tensor_base
     from comfy_kitchen.tensor.convrot_w4a4 import TensorCoreConvRotW4A4Layout
+    from comfy_kitchen.tensor.int8 import TensorWiseINT8Layout
     from comfy_kitchen.tensor.w4a8_int8 import AsymW4A8Int8Layout
 
-    # Both layouts, because a mixed checkpoint has both and instrumenting one produces a census
-    # that looks complete and covers two thirds of the model. `AsymW4A8Int8Layout` has the same
-    # shape of bug in the same place -- `w4a8_int8.py:330` dequantizes to BF16 when the weight is
-    # transposed, exactly like convrot_w4a4.py:237.
-    layouts = {"w4a4": TensorCoreConvRotW4A4Layout, "w4a8": AsymW4A8Int8Layout}
+    # Every quantized layout this project produces. Instrumenting a subset gives a census that
+    # looks complete and is not: an int8 checkpoint run against the first two would report zero
+    # dispatches and read as an answer. All three have the same shape of bug in the same place --
+    # `int8.py:275`, `w4a8_int8.py:330` and `convrot_w4a4.py:237` each dequantize to BF16 when the
+    # weight carries a transposed flag.
+    layouts = {"w4a4": TensorCoreConvRotW4A4Layout, "w4a8": AsymW4A8Int8Layout,
+               "int8": TensorWiseINT8Layout}
     table = getattr(tensor_base, "_LAYOUT_DISPATCH_TABLE", None)
     if table is None:
         raise SystemExit("comfy_kitchen.tensor.base has no _LAYOUT_DISPATCH_TABLE; the registry "
@@ -262,7 +267,16 @@ def main() -> int:
 
     latent_format = model.model.latent_format
     side = max(args.size // 8, 8)
-    latent = torch.zeros([1, latent_format.latent_channels, side, side], device="cpu")
+    # Same rule as calibrate_activations: a video model handed a 4-D latent fails inside the
+    # transformer with a shape error that never mentions latents.
+    if getattr(latent_format, "latent_dimensions", 2) == 3:
+        ratio = getattr(latent_format, "temporal_downscale_ratio", 4)
+        frames = max(1, (args.frames - 1) // ratio + 1)
+        shape = [1, latent_format.latent_channels, frames, side, side]
+        print(f"video latent {shape} ({args.frames} frames / temporal ratio {ratio})", flush=True)
+    else:
+        shape = [1, latent_format.latent_channels, side, side]
+    latent = torch.zeros(shape, device="cpu")
     noise = comfy.sample.prepare_noise(latent, args.seed, None)
     started = time.perf_counter()
     samples = comfy.sample.sample(

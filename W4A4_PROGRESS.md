@@ -2844,3 +2844,64 @@ distingue as camadas nao esta la.** A calibracao nao e um atalho que ainda nao f
 mede a unica coisa que varia.
 
 O que continua valendo, e agora com mecanismo por tras: medir uma vez por arquitetura e reusar.
+
+
+## 2026-08-19, parte 26 - W8A8 existe, e o convrot vale a pena nele
+
+Pedido: fazer um W8A8 do LTX 2.5. Duas respostas, e a primeira e que ele ja existe.
+
+### `int8_tensorwise` e W8A8 de verdade, medido
+
+O layout `TensorWiseINT8Layout` chama `torch.ops.comfy_kitchen.int8_linear` com a ativacao em
+bf16, e o comentario do fonte diz "TensorWise needs dynamic row-wise quant" - o que sugere que a
+ativacao e quantizada dentro do kernel, mas sugerir nao e medir.
+
+Discriminador: recuperar o peso efetivo pela identidade (exato, uma linha one-hot nao sofre com
+quantizador simetrico de ativacao), depois rodar o kernel com entrada comum e comparar contra
+`x @ W_hat.T`. Se baterem, a ativacao ficou em alta precisao; se nao, foi quantizada.
+
+| formato | erro do peso | kernel vs `x @ W_hat.T` | veredito |
+|---|---|---|---|
+| convrot_w4a4 | 0,1566 | 0,15699 | ativacao em int4 |
+| asym_w4a8_int8 | 0,0731 | 0,00966 | ativacao em int8 |
+| **int8_tensorwise** | **0,0094** | **0,00938** | **ativacao em int8** |
+
+A contribuicao da ativacao do `int8_tensorwise` (0,00938) e a mesma do W4A8 (0,00966) - os dois
+quantizam a ativacao para int8. A diferenca entre eles esta toda no peso: 0,0094 contra 0,0731,
+**8x**.
+
+Erro total aproximado por formato: W4A4 ~0,22, W4A8 ~0,074, **W8A8 ~0,013**.
+
+### E ja existe em disco, tres vezes
+
+| arquivo | GiB | origem |
+|---|---|---|
+| `ltx-2.5-22b-dev-transformer-comfy-int8-convrot` | 20,0 | Lightricks, marcadores `comfy_quant` inline |
+| `ltx-2.5-22b-distilled-transformer-bf16_int8` | 20,0 | nosso, sem convrot |
+| `ltx-2.5-22b-distilled-transformer-bf16_int8_convrot` | 20,0 | nosso, com convrot |
+
+### O convrot vale a pena no int8
+
+Ninguem tinha checado. No W4A4 a rotacao e essencial; no int8 poderia ser custo sem retorno.
+Vinte camadas do LTX distilled, desquantizadas pelos ops reais
+(`dequantize_int8_convrot_weight_dtype` e `dequantize_int8_simple_dtype`, nao por multiplicacao a
+mao, que ignoraria a rotacao) e comparadas contra o BF16 fonte:
+
+| | mediana | min | max | max/min |
+|---|---|---|---|---|
+| int8 sem convrot | 0,01144 | 0,00970 | 0,01926 | **2,0x** |
+| int8 com convrot | 0,00942 | 0,00902 | 0,01065 | **1,2x** |
+
+**Corta 17,1% do erro na mediana e ate 51,0% na pior camada.** O que importa nao e a mediana: a
+rotacao **comprime a dispersao**, de 2,0x para 1,2x entre a melhor e a pior camada. Ela conserta as
+camadas ruins, nao a media - que e exatamente o que uma rotacao contra outliers deveria fazer.
+
+Entao, para W8A8, usar a variante com convrot. Ja esta pronta.
+
+### O que continua sem ter sido feito
+
+Nenhum desses tres arquivos foi verificado pelo padrao deste projeto: carregar pelo loader normal,
+confirmar que despacha nativo, e medir contra o BF16 com parametros casados. `dispatch_census.py`
+faria a parte do despacho, mas hoje so instrumenta os layouts W4A4 e W4A8 - o
+`TensorWiseINT8Layout` nao esta na lista, entao rodar como esta reportaria zero e pareceria uma
+resposta.
