@@ -200,6 +200,33 @@ def effective_weight_bits(quant_formats: list[str], dtype_bytes: dict[str, int])
     the bytes on disk, and `dtype_bytes` sums to the file size, so falsifying them would break
     that accounting.
     """
+    # No format declared and no low-precision container in the file: nothing is packed, so the
+    # dtype IS the weight width and reporting it is safe. This is the narrow case where deriving
+    # bits from the dtype cannot be wrong -- there is no container to be fooled by. Everything
+    # else falls through to the declared format, or to None.
+    if not quant_formats:
+        present = {d for d, b in (dtype_bytes or {}).items() if b}
+        # I8 and U8 are the two dtypes used as *containers* here: I8 holds packed int4
+        # (convrot_w4a4, asym_w4a8_int8, SVDQuant) and U8 holds packed fp4 (nvfp4) or a
+        # reinterpreted fp8. With one of those present and nothing declaring what is inside,
+        # the width is genuinely unknown and must stay unknown.
+        #
+        # FP8 is not in that set. F8_E4M3 and F8_E5M2 store one weight per byte -- there is no
+        # packing scheme in this ecosystem that hides narrower weights inside them -- so a file
+        # whose only low-precision dtype is fp8 has a knowable width of 8.
+        ambiguous = {"I8", "U8", "INT8", "UINT8"}
+        widths = {"F32": 32, "FLOAT32": 32, "BF16": 16, "BFLOAT16": 16,
+                  "F16": 16, "FLOAT16": 16, "F64": 64, "F8_E4M3": 8, "F8_E5M2": 8}
+        if present and not (present & ambiguous):
+            known = [widths[d] for d in present if d in widths]
+            if not known:
+                return None
+            # The *narrowest* is the answer when fp8 is present: the fp32/bf16 tensors in a
+            # "_fp8_scaled" checkpoint are its scales and norms, not its weights, and reporting
+            # 32 because a scale is fp32 would describe the wrong tensors entirely.
+            return min(known) if present & {"F8_E4M3", "F8_E5M2"} else max(known)
+        return None
+
     known = []
     for name in quant_formats:
         if name in FORMAT_WEIGHT_BITS:
@@ -527,6 +554,16 @@ def candidate_score(model: dict) -> float:
     return model["size_bytes"] * (1 + role_weight * 0.05 + linear_ratio * 0.1)
 
 
+def bits_cell(model: dict) -> str:
+    """Bits per weight, or '?' -- never a number this tool did not actually derive.
+
+    '?' is the honest rendering of "no dialect declared a format". Printing the container width
+    here instead would reproduce the exact bug this column was added to fix.
+    """
+    bits = model.get("effective_weight_bits")
+    return str(bits) if bits else "?"
+
+
 def markdown_report(inventory: dict) -> str:
     stack = inventory["stack"]
     models = inventory["models"]
@@ -537,6 +574,25 @@ def markdown_report(inventory: dict) -> str:
         f"Generated: `{inventory['generated_at']}`  ",
         f"Models root: `{inventory['models_root']}`  ",
         f"Files: **{len(models)}**; total size: **{human_size(inventory['total_size_bytes'])}**",
+        "",
+        "## Reading this file",
+        "",
+        "`dtype_counts` and `dtype_bytes` in the JSON describe the **container**, not the weight. "
+        "A 4-bit format packs two weights per INT8 byte, so those fields report half the weight "
+        "count and, if summed as if they were weights, double the real bit width. They are left "
+        "that way on purpose: they are true statements about bytes on disk, and `dtype_bytes` "
+        "sums to the file size. Falsifying them would break that accounting.",
+        "",
+        "The per-weight number is **`Bits`** below, and `effective_weight_bits` in the JSON. It "
+        "is derived from the declared format, never from the dtype. Worked example from this "
+        "inventory: `svdq-int4_r32-z-image-turbo.safetensors` reports `I8: 3008102400` bytes and "
+        "`Bits: 4` -- those bytes hold twice 3008102400 weights, at 4 bits each.",
+        "",
+        "`Bits: ?` means the file carries a low-precision container (I8/U8/FP8) and **no** dialect "
+        "this tool reads declared what is inside it. That is *unknown*, not *unquantized*: "
+        "treating the two as the same is what reported a nunchaku INT4 checkpoint as INT8 until "
+        "2026-08-19. A file with only high-precision dtypes and no markers is not ambiguous -- "
+        "there is no container to hide anything -- so it reports its dtype width directly.",
         "",
         "## Installed W4A4 Stack",
         "",
@@ -553,18 +609,21 @@ def markdown_report(inventory: dict) -> str:
     if not stack["native_convrot_ready"]:
         lines.append("> Conversion is blocked: normal ComfyUI startup selects the eager ConvRot implementation, not the CUDA Tensor Core backend.")
         lines.append("")
-    lines.extend(["| Rank | Model | Size | Current | Role | Architecture | W4A4 |", "|---:|---|---:|---|---|---|---|"])
+    lines.extend(["| Rank | Model | Size | Current | Bits | Role | Architecture | W4A4 |",
+                  "|---:|---|---:|---|---:|---|---|---|"])
     for rank, model in enumerate(candidates, 1):
         lines.append(
             f"| {rank} | `{model['relative_path']}` | {model['size_human']} | {model['current_precision']} | "
-            f"{model['role']} | {model['architecture']} | {model['w4a4_assessment']} |"
+            f"{bits_cell(model)} | {model['role']} | {model['architecture']} | {model['w4a4_assessment']} |"
         )
-    lines.extend(["", "## Full Inventory (size descending)", "", "| Model | Size | Format | Current | Type | Architecture | W4A4? |", "|---|---:|---|---|---|---|---|"])
+    lines.extend(["", "## Full Inventory (size descending)", "",
+                  "| Model | Size | Format | Current | Bits | Type | Architecture | W4A4? |",
+                  "|---|---:|---|---|---:|---|---|---|"])
     for model in models:
         note = model.get("inspection_error", model["w4a4_assessment"])
         lines.append(
             f"| `{model['relative_path']}` | {model['size_human']} | {model['format']} | {model['current_precision']} | "
-            f"{model['role']} | {model['architecture']} | {note} |"
+            f"{bits_cell(model)} | {model['role']} | {model['architecture']} | {note} |"
         )
     return "\n".join(lines) + "\n"
 
