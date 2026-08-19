@@ -1,0 +1,38 @@
+# Line endings, pinned rather than left to core.autocrlf.
+#
+# This is not hypothetical bookkeeping. On 2026-08-18 a sibling project on this same machine lost
+# two full benchmark rounds because a shell script picked up CRLF on Windows: inside a Linux
+# container `set -euo pipefail\r` becomes `pipefail: invalid option name` and the entrypoint dies
+# in two seconds. YAML, Python, PowerShell and Dockerfiles tolerate CRLF; bash does not.
+#
+# So: text normalised in the repo, and anything a Linux shell will execute forced to LF on
+# checkout regardless of platform.
+
+* text=auto
+
+*.sh text eol=lf
+*.bash text eol=lf
+Dockerfile text eol=lf
+*.dockerfile text eol=lf
+
+# Python is read by interpreters that accept either, but keeping it LF means a diff never shows a
+# whole file changed because it was opened in a different editor.
+*.py text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+
+# Windows launchers must keep CRLF: cmd.exe mis-parses LF-only batch files.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+*.safetensors binary
+*.gguf binary
+*.pt binary
+*.pth binary
+*.ckpt binary
+*.png binary
+*.pyd binary

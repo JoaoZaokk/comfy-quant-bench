@@ -5,6 +5,7 @@
 /*
 
 !/.gitignore
+!/.gitattributes
 !/tools/
 !/*.md
 !/inspect_quant.py
