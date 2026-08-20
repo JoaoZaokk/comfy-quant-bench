@@ -2966,3 +2966,150 @@ sozinho, em `diffusion_models`. Montar isso e integracao, nao comando.
 
 Entao a aceitacao deste arquivo esta em: **carrega e despacha nativo, sim, medido. Qualidade e
 velocidade contra o BF16, nao medido.** Nao chamar de aceito sem essa segunda metade.
+
+## 2026-08-19, parte 28 - o widget `type` do CLIPLoader derrubou tres runs, e o MultiGPU nao roda quantizado no Windows
+
+Tentativa de rodar o workflow de aceitacao do LTX 2.5 int8 pela UI. Nenhuma imagem saiu. Tres
+tracebacks distintos, um deles com cara de bug de kernel. Nenhum era.
+
+### Tres erros, um knob - **tracado no codigo, nao executado**
+
+| erro | classe de CLIP que carregou |
+|---|---|
+| `NotImplementedError: Cannot copy out of meta tensor` | `SD1ClipModel` |
+| `ValueError: invalid tokenizer` | tokenizer gemma3_4b via `lumina2.py` |
+| `RuntimeError: Tensors must have same number of dimensions: got 4 and 3` | `Gemma3_12BModel_` |
+
+`nodes.py:1024` e a origem dos tres:
+
+```python
+clip_type = getattr(comfy.sd.CLIPType, type.upper(), comfy.sd.CLIPType.STABLE_DIFFUSION)
+```
+
+Qualquer `type` que nao seja `ltxv` **nao levanta erro** - cai no fallback STABLE_DIFFUSION, que
+fareja o state dict, ve GEMMA_3_12B e constroi o encoder errado (`sd.py:1813`).
+
+Cadeia do erro de dimensao:
+
+1. `lt.py:96` - `Gemma3_12BModel(layer="all")` devolve todas as camadas escondidas empilhadas. A
+   condicao sai **4-D** `[B, L+1, T, C]`.
+2. Esse caminho nao tem `text_embedding_projection` - ela vive no `LTXAVTEModel`, que so o
+   `type=ltxv` monta. Nada achata o eixo de camadas.
+3. `av_model.py:587` testa `context.shape[-1]`; nao bate com
+   `cross_attention_dim + audio_cross_attention_dim`, entao nao faz curto-circuito e segue com o
+   tensor 4-D.
+4. `embeddings_connector.py:290` faz `.unsqueeze(0).repeat(shape[0],1,1)`, que e 3-D. `torch.cat`
+   de 4-D com 3-D.
+
+O sinal no log, e ele e barato: `clip missing: ['vision_model.embeddings.patch_embedding.weight',
+...]`. Um Gemma3-12B puro espera torre de visao; o text encoder do LTX nao tem. Esse warning
+aparece em **todo** run que morre na dimensao e **nao** aparece no que carregou `LTXAVTEModel_`.
+
+Correto para os checkpoints deste projeto: **`type: ltxv`**. Os dois workflows em
+`user/default/workflows/` ja estao assim em disco; a alteracao foi feita no canvas.
+
+### ComfyUI-MultiGPU quebra qualquer modelo quantizado fora do device de execucao - **medido**
+
+`custom_nodes/ComfyUI-MultiGPU/p2p_registry.py:20`:
+
+```python
+_libcudart = ctypes.CDLL("libcudart.so")
+```
+
+Nome de biblioteca Linux, sem ramo Windows. `can_access_peer` (`p2p_registry.py:62`) **nao captura**
+a excecao, e `__init__.py:557` chama a funcao sempre que `tensor_device.index != exec_device.index`.
+Como o pacote monkeypatcha o `_wrap_for_dlpack` do comfy_kitchen com
+`wrap_for_dlpack_with_device_guard`, o patch e **global**: basta qualquer tensor quantizado estar
+num device diferente do de execucao.
+
+`FileNotFoundError: Could not find module 'libcudart.so'` reproduzido em 5 runs, por tres caminhos
+diferentes: `dequantize_int8_convrot_weight_dtype`, `dequantize_per_tensor_fp8` e
+`dequantize_w4a8_int8_weight`.
+
+Consequencia pratica: **a 3080 Ti e inutilizavel para modelo quantizado nesta maquina** enquanto o
+pacote estiver instalado. Nao adianta evitar os nos MultiGPU - o patch entra no import. A defesa e
+nao cruzar device nenhum: tudo em `cuda:0`, offload pelo DynamicVRAM.
+
+Terceiro candidato a report upstream, e o de repro mais curto dos tres
+(ver `AUDITORIA_2026-08-18.md` para os outros dois).
+
+### O metadata do checkpoint esta limpo - **medido, so o header**
+
+Levantada a hipotese de que os `.comfy_quant` reportados como `unet unexpected` indicassem despacho
+perdido. Nao indicam - a parte 27 ja tinha medido isso contando modulos. O header corrobora por
+outro angulo, e custa um `read` de 8 bytes mais o JSON:
+
+```
+ltx-2.5-22b-distilled-transformer-bf16_int8_convrot.safetensors
+  layers no _quantization_metadata:      1440
+  layer + ".weight" casa com tensor:     1440/1440
+  conjuntos de campos distintos:         1  -> {"format":"int8_tensorwise","convrot":true,"convrot_groupsize":256}
+  weight I8 [2048,2048]   scale F32 [2048,1]
+```
+
+Nomes corretos, nenhuma camada orfa, nenhum campo faltando, `convrot_groupsize` presente nos 1440 -
+que e o parametro que `comfy_kitchen/tensor/int8.py:172` passa para
+`dequantize_int8_convrot_weight_dtype`. O nome do arquivo nao mente: neste esquema *int8-convrot* e
+`format: int8_tensorwise` mais a flag, nao um format separado.
+
+Controle que **nao** serve de espelho: o `ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors`
+oficial nao tem `_quantization_metadata` **nenhum** e tem 7229 tensores contra 5789 do nosso, com
+tamanho em disco praticamente igual. Esquema diferente, provavelmente resolvido por
+`convert_old_quants`.
+
+Nota de modo de falha, caso a duvida volte: o I8 tem a **mesma largura** do slot bf16
+(`[2048,2048]`, nao empacotado). Se o marcador fosse perdido de verdade, o `copy_` passaria calado e
+os codigos -127..127 virariam pesos sem escala. Isso e ruido visivel, nao degradacao sutil.
+
+### comfy-cli / comfy-mcp: validacao de workflow offline
+
+Instalado a pedido, em **venv isolada** - `venvs/comfymcp`, criada com o Python 3.12.10 do sistema.
+`python_embeded` intocado, verificado antes e depois. `comfy-cli 1.16.0`, `comfy-mcp 0.10.0`.
+
+O que vale, e nao e a parte de gerar imagem:
+
+```bash
+comfy validate --workflow <wf.json> --input <object_info.json>   # offline, sem servidor, sem GPU
+comfy stop --port 8190                                            # mata servidor que o CLI nao subiu
+comfy free --unload-models --free-memory                          # devolve VRAM sem matar o servidor
+```
+
+`validate` converte UI->API sozinho e confere class_types, shapes, enums e fiacao. Medido nos dois
+workflows, com a GPU ocupada por outra sessao:
+
+```
+LTX25-int8-acceptance-v2   valid: true  errors: 0  warnings: 0  converted_from_ui: 18 nos
+LTX25-int8-acceptance      valid: true  errors: 0  warnings: 0  converted_from_ui: 18 nos
+```
+
+**E nao teria pego o bug desta parte.** Os dois passam limpos e os dois morreram em runtime.
+`type: lumina2` e um enum *valido*; o validate nao sabe que so `ltxv` produz o embedding certo. Ele
+pega fiacao e digitacao - que foi o que queimou tres tentativas de montar API-format na mao - e nao
+pega escolha errada.
+
+Telemetria, checada antes de registrar: `comfy_cli/tracking.py` manda para Mixpanel e PostHog em
+`https://t.comfy.org`. Sanitiza `prompt`, `changelog`, `set_overrides` e credenciais. **As duas
+travas nao sao equivalentes**: a config `enable_tracking` cobre so a telemetria passiva de comando,
+enquanto `submit_feedback` (`tracking.py:648`) e explicitamente *nao* gated no consentimento e so
+para com as env `DO_NOT_TRACK` / `COMFY_NO_TELEMETRY`. O `comfy_mcp` em si nao tem telemetria
+nenhuma. Registrado em escopo user com **as duas** env vars ligadas, mais
+`COMFY_LOCAL_URL=http://127.0.0.1:8190` - sem isso ele falaria com a 8188, que aqui nao existe.
+
+Nenhuma ferramenta do MCP foi exercitada ainda. O `comfy validate` acima rodou pela linha de
+comando, nao pelo MCP.
+
+### O launcher
+
+Nao existe registro de que algum `.bat` estivesse errado. `run_nvidia_gpu_8190_loopback.bat` e o
+certo e foi o usado - os `Arguments` do report de erro batem com ele exatamente. A unica flag
+condicional documentada e `--disable-dynamic-vram`, e **so** para loader Nunchaku SVDQuant.
+
+**Nao adicionar `--disable-dynamic-vram` para LTX 2.5.** Medido e registrado em
+`tools/_dynamic_vram.py`: sem DynamicVRAM esse modelo leva o processo a 44.5 GiB de working set
+numa maquina de 63.1, antes de qualquer bloco chegar na GPU.
+
+### O que continua bloqueado
+
+O mesmo da parte 27, e nada mudou: **benchmark casado contra o BF16 nao foi feito.** Alem disso o
+workflow v2 ainda nao rodou de ponta a ponta - parou no `CLIPTextEncode` por causa do `type`, e a
+correcao nao foi testada porque a GPU passou para a outra sessao.

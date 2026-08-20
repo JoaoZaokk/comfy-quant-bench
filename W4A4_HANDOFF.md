@@ -265,3 +265,46 @@ e o das chaves de quantizacao em `convert_diffusers_mmdit` — provado por leitu
 `to_native.py` produzir latente bit-identico. Os outros dois candidatos (`_full_precision_mm`
 inerte, `weight_correction` nunca lido) sao achados de auditoria nao verificados e **nao devem
 virar PR antes de medicao**.
+
+## Retomada: LTX 2.5 int8 pela UI (parte 28 do PROGRESS)
+
+**Estado:** o workflow de aceitacao nao rodou de ponta a ponta. Parou no `CLIPTextEncode`. A causa
+esta identificada e a correcao **nao foi testada** — a GPU passou para a sessao irma no meio.
+
+**Proximo passo, nesta ordem:**
+
+1. Subir pelo `run_nvidia_gpu_8190_loopback.bat`. Se subir por ferramenta, usar `Start-Process`
+   para o usuario ter janela e poder fechar — subir em background pelo harness deixa o servidor
+   sem como matar pela UI. Alternativa que funciona nos dois casos: `comfy stop --port 8190`.
+2. Carregar `user/default/workflows/LTX25-int8-acceptance-v2.json` **do disco**, sem reaproveitar
+   canvas editado.
+3. Rodar. Se falhar, ler o log antes de mexer em widget.
+
+**Duas armadilhas que custaram a sessao inteira. Nao redescobrir:**
+
+- **`type` do CLIPLoader tem de ser `ltxv`.** Qualquer outro valor nao da erro: cai no fallback
+  STABLE_DIFFUSION (`nodes.py:1024`), fareja o state dict e monta um Gemma3-12B puro, cuja saida e
+  4-D. O sintoma final e `RuntimeError: Tensors must have same number of dimensions: got 4 and 3`
+  no `embeddings_connector.py:290`, a tres camadas de distancia da causa. O sinal barato no log e
+  `clip missing: ['vision_model...']`.
+- **Nenhum no MultiGPU, e nada fora de `cuda:0`.** `ComfyUI-MultiGPU/p2p_registry.py:20` faz
+  `ctypes.CDLL("libcudart.so")` sem ramo Windows, e o chamador nao captura. Como o pacote
+  monkeypatcha o `_wrap_for_dlpack` do comfy_kitchen no import, **qualquer** tensor quantizado num
+  device diferente do de execucao mata a run. Nesta maquina a 3080 Ti esta fora para modelo
+  quantizado enquanto o pacote existir.
+
+**Ferramenta nova disponivel** (venv isolada `venvs/comfymcp`, `python_embeded` intocado):
+
+```bash
+venvs/comfymcp/Scripts/comfy.exe validate --workflow <wf.json> --input <object_info.json>
+```
+
+Valida grafo offline, sem servidor e sem GPU — converte UI->API e confere class_types, shapes,
+enums e fiacao. **Nao pega semantica**: os dois workflows que quebraram passam limpos nele.
+Tambem ha `comfy stop --port` e `comfy free --unload-models --free-memory` (devolve VRAM sem
+derrubar o servidor). Registrado como MCP em escopo user, com `DO_NOT_TRACK` e
+`COMFY_NO_TELEMETRY` ligados; nenhuma ferramenta do MCP foi exercitada ainda.
+
+**Encerrado, nao reabrir:** o `WARNING: unet unexpected: [... .comfy_quant]` **nao** indica perda
+de despacho. Medido duas vezes por caminhos independentes — contagem de modulos na parte 27, e
+auditoria do header na parte 28.

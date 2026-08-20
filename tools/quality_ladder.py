@@ -65,6 +65,24 @@ def parse_args() -> argparse.Namespace:
                         help="file in models/vae. Without it no images are written and the run "
                              "reports latents only.")
     parser.add_argument("--out", type=Path, default=PORTABLE_ROOT / "bench" / "quality_ladder")
+    parser.add_argument("--frames", type=int, default=1,
+                        help="frames for a video model; ignored when the latent format is 2-D")
+    parser.add_argument("--clip-device", choices=["default", "cpu"], default="default",
+                        help="'cpu' keeps the text encoder off the card entirely. LTX 2.5's is a "
+                             "24 GiB gemma4-12B, which does not share a 24 GiB card with anything")
+    parser.add_argument("--distorch", default=None,
+                        help="distribute the model's blocks instead of offloading it whole, using "
+                             "ComfyUI-MultiGPU's DisTorch2. Two forms:\n"
+                             "  simple  'cuda:0;20;cpu'  -- compute on cuda:0, borrow 20 GiB from "
+                             "one donor\n"
+                             "  expert  'cuda:0,15gb;cuda:1,8gb;cpu,*'  -- explicit quota per "
+                             "device in priority order, '*' takes the remainder\n"
+                             "Prefer the expert form with a second GPU ahead of cpu: donating to "
+                             "another card's VRAM beats donating to pageable host RAM. Applies "
+                             "only to checkpoints that do not fit; see the note printed at the "
+                             "end about what it does to the s/step column.")
+    parser.add_argument("--distorch-compute", default="cuda:0",
+                        help="the device that runs the maths when --distorch uses the expert form")
     return parser.parse_args()
 
 
@@ -75,10 +93,14 @@ def encode(args, folder_paths, comfy_sd, comfy_mm, prompts):
     Same constraint calibrate_activations.py hit; same solution.
     """
     paths = [folder_paths.get_full_path_or_raise("text_encoders", c) for c in args.clip]
+    options = {}
+    if args.clip_device == "cpu":
+        options["load_device"] = options["offload_device"] = torch.device("cpu")
     clip = comfy_sd.load_clip(
         ckpt_paths=paths,
         embedding_directory=folder_paths.get_folder_paths("embeddings"),
-        clip_type=getattr(comfy_sd.CLIPType, args.clip_type.upper()))
+        clip_type=getattr(comfy_sd.CLIPType, args.clip_type.upper()),
+        model_options=options)
     out = []
     for text in prompts:
         positive = [list(clip.encode_from_tokens_scheduled(clip.tokenize(text))[0])]
@@ -97,14 +119,69 @@ def sample_all(args, name, conditioning, comfy_sample, comfy_sd, comfy_mm, folde
     candidate = Path(name)
     path = str(candidate) if candidate.is_file() else \
         folder_paths.get_full_path_or_raise("diffusion_models", name)
-    model = comfy_sd.load_diffusion_model(path)
+    # Same size-aware rule as calibrate_activations: forcing HIGH_VRAM on a 39 GiB checkpoint
+    # against a 24 GiB card turns slow into out-of-memory. Decided per model, inside this
+    # function, because a ladder can mix a BF16 reference that must offload with quantized
+    # candidates that fit.
+    gib = Path(path).stat().st_size / 2 ** 30
+    total = torch.cuda.get_device_properties(0).total_memory / 2 ** 30
+    if args.distorch and gib >= 0.7 * total:
+        # DisTorch2 assigns each block a device and moves the parameters there, then patches
+        # ModelPatcher.load_models_gpu so the loader stops trying to place the whole model. That
+        # is a different thing from ComfyUI's own offload, which keeps the model whole and swaps
+        # it against whatever else wants the card.
+        comfy_mm.vram_state = comfy_mm.VRAMState.NORMAL_VRAM
+        comfy_mm.set_vram_to = comfy_mm.VRAMState.NORMAL_VRAM
+        model = comfy_sd.load_diffusion_model(path)
+        # Loaded as a package, not as a loose module. `distorch_2.py` opens with
+        # `from .device_utils import get_device_list`, and a bare `import distorch_2` off sys.path
+        # dies with "attempted relative import with no known parent package" -- after the model has
+        # already been read into RAM, which is the expensive way to find out. The directory name
+        # carries a hyphen, so it cannot be imported by name either; ComfyUI itself loads custom
+        # nodes through importlib for the same reason.
+        import importlib.util
+        pack = PORTABLE_ROOT / "ComfyUI" / "custom_nodes" / "ComfyUI-MultiGPU"
+        spec = importlib.util.spec_from_file_location(
+            "comfyui_multigpu", pack / "__init__.py", submodule_search_locations=[str(pack)])
+        package = importlib.util.module_from_spec(spec)
+        sys.modules["comfyui_multigpu"] = package
+        spec.loader.exec_module(package)
+        distorch_2 = importlib.import_module("comfyui_multigpu.distorch_2")
+        distorch_2.register_patched_safetensor_modelpatcher()
+        # Two syntaxes into one argument. The expert form carries a comma -- 'cuda:1,8gb;cpu,*' --
+        # and goes before the '#'; the simple form is 'compute;gb;donor' and goes after it. Told
+        # apart by the comma rather than by a second flag, because the pack's own strings are
+        # written this way and a reader copying one from its README should have it work.
+        allocation = (f"{args.distorch}#{args.distorch_compute}" if "," in args.distorch
+                      else f"#{args.distorch}")
+        distorch_2.analyze_safetensor_loading(model, allocation)
+        print(f"  DisTorch2 {allocation!r} on {gib:.1f} GiB", flush=True)
+    else:
+        model = None
+        if gib < 0.7 * total:
+            comfy_mm.vram_state = comfy_mm.VRAMState.HIGH_VRAM
+            comfy_mm.set_vram_to = comfy_mm.VRAMState.HIGH_VRAM
+        else:
+            comfy_mm.vram_state = comfy_mm.VRAMState.NORMAL_VRAM
+            comfy_mm.set_vram_to = comfy_mm.VRAMState.NORMAL_VRAM
+            print(f"  {gib:.1f} GiB against {total:.1f} GiB of VRAM: offloading whole. Slower, "
+                  f"same numbers. --distorch distributes blocks instead.", flush=True)
+
+    if model is None:
+        model = comfy_sd.load_diffusion_model(path)
     latent_format = model.model.latent_format
     side = max(args.size // 8, 8)
+    if getattr(latent_format, "latent_dimensions", 2) == 3:
+        ratio = getattr(latent_format, "temporal_downscale_ratio", 4)
+        frames = max(1, (args.frames - 1) // ratio + 1)
+        shape = [1, latent_format.latent_channels, frames, side, side]
+    else:
+        shape = [1, latent_format.latent_channels, side, side]
 
     results, per_step = {}, []
     for prompt_index, (positive, negative) in enumerate(conditioning):
         for seed in args.seeds:
-            latent = torch.zeros([1, latent_format.latent_channels, side, side], device="cpu")
+            latent = torch.zeros(shape, device="cpu")
             noise = comfy_sample.prepare_noise(latent, seed, None)
             torch.cuda.synchronize()
             started = time.perf_counter()
@@ -143,8 +220,18 @@ def main() -> int:
     if not torch.cuda.is_available():
         raise SystemExit("needs CUDA")
 
-    comfy_mm.vram_state = comfy_mm.VRAMState.HIGH_VRAM
-    comfy_mm.set_vram_to = comfy_mm.VRAMState.HIGH_VRAM
+    # Deliberately not set here any more: sample_all decides per checkpoint, because a ladder can
+    # hold a 39 GiB BF16 reference that must offload next to quantized candidates that fit.
+
+    # Before anything is loaded. Without it comfy/ops.py builds every Linear eagerly and the whole
+    # checkpoint is committed in host RAM -- 44.5 GiB working set for a 39 GiB model on this box,
+    # measured, with 4 GiB of system memory left over. See tools/_dynamic_vram.py.
+    from _dynamic_vram import enable as enable_dynamic_vram
+    if enable_dynamic_vram():
+        print("DynamicVRAM enabled: weights load lazily rather than all at once", flush=True)
+    else:
+        print("DynamicVRAM NOT available. Every weight will be materialised in host RAM at load; "
+              "a large BF16 reference may not fit.", flush=True)
 
     conditioning = encode(args, folder_paths, comfy_sd, comfy_mm, prompts)
     runs = len(prompts) * len(args.seeds)
@@ -219,6 +306,15 @@ def main() -> int:
     if total < 8:
         print(f"{total} runs is a small sample for a quantity this noisy. Treat any ordering here "
               "as provisional until it survives more seeds.")
+    if args.distorch:
+        # The divergence column is unaffected -- the same arithmetic runs, on parameters that live
+        # somewhere else -- but s/step is not. A distributed model pays a transfer per block per
+        # step, so its seconds are a property of the placement, not of the format, and putting
+        # them in the same column as a resident model's invites exactly the wrong comparison.
+        print("\n--distorch was used on at least one checkpoint. Its s/step measures the block "
+              "placement, not the format: do not compare that row against a resident model's. "
+              "Divergence is unaffected, and that is checkable -- the same checkpoint run with "
+              "and without --distorch must give the same latent.")
 
     if args.vae:
         _write_images(args, all_latents, folder_paths, comfy_sd)
