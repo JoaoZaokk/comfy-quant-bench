@@ -194,3 +194,30 @@ uma cópia de volta.
 **Não coberto:** o caminho HTTP vivo (`submit`/`history`/`queue`, o laço de poll, os códigos 2/3/5
 contra um servidor de verdade) continua sem execução. `Comfy.wait_up` lançando `TimeoutError` não
 tem teste. `Entry` não tem teste próprio.
+
+
+## Nota de obsolescencia (2026-08-21, mais tarde no mesmo dia)
+
+A Resolucao acima diz **97 linhas**, e diz certo para o momento em que foi escrita. Nao vale mais:
+o orquestrador depois **retirou** a restricao "nao invente uma quarta costura" -- ela era dele, nao
+do ticket, e era o que travava o numero, porque dois tercos do que sobrava em `main()` era
+`argparse`. Com a restricao fora, saíram `build_argparser`, `resolve_object_info`, `apply_seed` e
+`refuse_on_fatal`.
+
+Medido agora, nao estimado: `def main()` na linha 642 e `if __name__` na 684 -->
+**`main()` tem ~40 linhas**, contra 97 na Resolucao acima e 182 antes de tudo.
+
+```
+grep -n "^def main\|^if __name__" tools/comfy_run_workflow.py
+642:def main() -> int:
+684:if __name__ == "__main__":
+```
+
+**A clausula de ~25 linhas continua NAO atingida** -- 40 nao e ~25, e arredondar isso para "perto
+o bastante" e exatamente o que este ticket existe para nao deixar acontecer. As outras duas
+clausulas (poll e relatorio como funcoes proprias; caminho de requisicao unico com decodificacao
+de erro num lugar so) seguem cumpridas.
+
+O `Status: resolved` ficou como estava, mas **repousava sobre um numero velho** ate esta nota. Se
+o dono do repo achar que 40 nao fecha a terceira clausula, reabrir e decisao dele -- e a regra do
+CRITERIO PREVIO: fechar sem atender o criterio escrito antes nao e minha decisao.
