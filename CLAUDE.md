@@ -17,7 +17,7 @@ Also read [AGENTS.md](AGENTS.md) (root policy) and [ComfyUI/AGENTS.md](ComfyUI/A
 - **Only** `.\python_embeded\python.exe`. Never global Python, pip, or Conda. Always pass `-s` when running scripts directly so user site-packages stay out.
 - **Never** delete, move, overwrite, or requantize an original model. Outputs go beside their source with a `_w4a4_convrot` suffix; the converter refuses to overwrite anything.
 - **Do not mass-upgrade** Torch / CUDA / ComfyUI / comfy-kitchen. Inspect installed versions and local APIs before proposing any package change. `_pip_freeze_before_w4a4_cu130_20260816.txt` is the current known-good freeze baseline.
-- WSL on this host runs unrelated Qwen/DeepSeek jobs. Do not stop, restart, or reconfigure it — but note `vmmemWSL` eats ~28 GB RAM and can starve conversions (see *Memory gotchas*).
+- **WSL on this host runs the owner's ERP. Do not stop, restart, or reconfigure it.** Measured 2026-08-21: the running distro is `docker-desktop`, holding eleven live containers — the `baselinker-erp-offline` stack (`zhao-*` / `baselinker-*`), a postgres, and a WhatsApp gateway. The `Ubuntu` distro was *Stopped* and holds no project, so this rule was never really about the Qwen/DeepSeek jobs it used to name. `wsl --shutdown` takes the ERP down with it. `vmmemWSL` eats ~28 GB RAM and can starve conversions (see *Memory gotchas*).
 - **W4A4 means native ConvRot CUDA execution**, not weight-only INT4 followed by BF16 GEMM. Any change that lets the work fall back to eager/dequantized math defeats the entire project.
 
 ## Say which one it was: traced, or executed
