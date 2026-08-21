@@ -84,6 +84,13 @@ def measure(x: torch.Tensor, args: argparse.Namespace, hadamard, rotate) -> dict
 
     row_absmax = x.abs().amax(dim=-1).clamp(min=1e-10)
     row_rms = x.pow(2).mean(dim=-1).sqrt()
+    # The crest the W4A4 scale actually sees is the ROTATED one: the scale is per-row absmax of
+    # the already-rotated activation (comfy_kitchen/backends/eager/convrot_w4a4.py:112). This
+    # file used to report only the raw crest and attribute it to the ConvRot path. Both are
+    # reported now -- the raw one says what the rotation has to fix, the rotated one says what
+    # the scale must cover.
+    rot_absmax = rotated.abs().amax(dim=-1).clamp(min=1e-10)
+    rot_rms = rotated.pow(2).mean(dim=-1).sqrt()
     # Persistent-channel outliers are the SmoothQuant signature: one column hot across all tokens.
     channel_absmax = x.abs().amax(dim=0)
     channel_ratio = (channel_absmax.max() / channel_absmax.median().clamp(min=1e-10)).item()
@@ -97,6 +104,7 @@ def measure(x: torch.Tensor, args: argparse.Namespace, hadamard, rotate) -> dict
         "rows": x.shape[0],
         "channels": x.shape[1],
         "crest_row_mean": (row_absmax / row_rms.clamp(min=1e-10)).mean().item(),
+        "crest_row_mean_rot": (rot_absmax / rot_rms.clamp(min=1e-10)).mean().item(),
         "channel_outlier_ratio": channel_ratio,
         "bits_int4_rowwise": entropy_bits(codes_a4, INT4_LEVELS, INT4_MAX),
         "bits_int4_group": entropy_bits(codes_a4g, INT4_LEVELS, INT4_MAX),
@@ -156,7 +164,10 @@ def main() -> int:
     mean = lambda key: sum(r[key] for r in rows) / len(rows)  # noqa: E731
 
     print(f"  tokens x channels, per sample        {rows[0]['rows']} x {rows[0]['channels']}")
-    print(f"  crest factor per token  max|x|/rms   {mean('crest_row_mean'):>8.1f}")
+    print(f"  crest per token, RAW    max|x|/rms   {mean('crest_row_mean'):>8.1f}   "
+          f"what the rotation has to fix")
+    print(f"  crest per token, ROTATED             {mean('crest_row_mean_rot'):>8.1f}   "
+          f"<-- what the W4A4 scale covers")
     print(f"  worst channel / median channel       {mean('channel_outlier_ratio'):>8.1f}")
     print()
     print(f"  effective bits, int4 per-token scale {mean('bits_int4_rowwise'):>8.3f}   "

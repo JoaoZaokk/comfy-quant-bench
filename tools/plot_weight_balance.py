@@ -77,7 +77,7 @@ def collect(label: str, path: Path, args: argparse.Namespace) -> dict:
     energy = np.zeros(len(MAG_EDGES) - 1)
     codes_w4a4 = np.zeros(LEVELS)
     codes_group = np.zeros(LEVELS)
-    crests, ladder = [], {"A": [], "B": [], "C": [], "D": []}
+    crests, crests_rot, ladder = [], [], {"A": [], "B": [], "C": [], "D": []}
 
     print(f"{label}: {profile}, {len(names)} layers", flush=True)
     with path.open("rb") as handle:
@@ -91,7 +91,15 @@ def collect(label: str, path: Path, args: argparse.Namespace) -> dict:
             rotated = _rotate_weight(w, h, args.convrot_groupsize)
 
             rms = w.pow(2).mean().sqrt()
+            # TWO crests, and the difference between them is the whole point of the rotation.
+            # `crests` is the raw weight -- what the rotation has to fix. `crests_rot` is what
+            # the ConvRot W4A4 scale actually sees, because the scale is per-row absmax of the
+            # ALREADY-ROTATED tensor (comfy_kitchen/backends/eager/convrot_w4a4.py:112).
+            # This file used to report only the first and label it "the W4A4 scale reaches to
+            # here", which attributed a pre-rotation number to a post-rotation path.
             crests.append((w.abs().max() / rms).item())
+            rms_rot = rotated.pow(2).mean().sqrt()
+            crests_rot.append((rotated.abs().max() / rms_rot).item())
             # Energy per bin, so the tail is weighted by w^2 rather than by how many weights
             # happen to be out there. bincount takes weights; histc does not.
             edges = torch.as_tensor(MAG_EDGES[1:-1], device=w.device, dtype=torch.float32)
@@ -128,6 +136,7 @@ def collect(label: str, path: Path, args: argparse.Namespace) -> dict:
         "codes_w4a4": codes_w4a4 / n,
         "codes_group": codes_group / n,
         "crests": crests,
+        "crests_rot": crests_rot,
         "ladder": {k: float(np.mean(v)) for k, v in ladder.items()},
     }
 
@@ -219,8 +228,8 @@ def main() -> int:
     fig.savefig(args.out, dpi=150)
     print(f"Wrote {args.out}")
     for model in models:
-        print(f"  {model['label']}: crest median "
-              f"{np.median(model['crests']):.1f}, ladder "
+        print(f"  {model['label']}: crest median raw {np.median(model['crests']):.1f} -> "
+              f"rotated {np.median(model.get('crests_rot') or model['crests']):.1f}, ladder "
               + "  ".join(f"{k}={v:.4f}" for k, v in model["ladder"].items()))
     return 0
 

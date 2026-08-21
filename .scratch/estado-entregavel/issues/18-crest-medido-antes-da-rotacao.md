@@ -1,7 +1,7 @@
 # `activation_balance.py` e `plot_weight_balance.py` medem crest no tensor errado
 
 Type: task
-Status: open
+Status: resolved
 
 ## Question
 
@@ -47,3 +47,43 @@ comentário — o cálculo tem que mudar de tensor.
 Se a correção for feita sem GPU disponível (é troca de uma variável, não precisa rodar), ainda
 assim marcar como **não remedido numericamente** até alguém rodar as duas versões lado a lado e
 registrar quanto o crest publicado muda — isso é `[GPU]` e fica para outra rodada.
+
+## Resolução — 2026-08-21, lock `claude:rodada3-gpu-lane`
+
+**Consertado nos dois arquivos, e o número muda muito — de forma desigual entre modelos.**
+
+O conserto **não** foi trocar `w` por `rotated`. Foi reportar **os dois**, porque são estatísticas
+diferentes: o cru diz o que a rotação tem de consertar, o rotacionado diz o que a escala precisa
+cobrir. Trocar em silêncio mudaria o sentido de um número já publicado sem que ninguém percebesse.
+
+```
+.\python_embeded\python.exe -s tools\plot_weight_balance.py \
+  --model "LTX2.5 distilled=D:/ComfyUI-Models/diffusion_models/ltx-2.5-22b-distilled-transformer-bf16.safetensors" \
+  --model "Gemma4 12B TE=D:/ComfyUI-Models/text_encoders/gemma4-12b-with-proj-ltx-2.5-bf16.safetensors" \
+  --out <scratch>/weight_balance_rot.png
+```
+
+| modelo | crest cru | crest rotacionado | fator |
+|---|---|---|---|
+| LTX 2.5 22B distilled | 16,1 | **7,0** | 2,3x |
+| Gemma4 12B TE | 19,5 | **15,7** | 1,24x |
+
+8 camadas amostradas por modelo, `convrot_groupsize` padrão.
+
+**O achado que o gráfico antigo escondia:** a rotação vale quase o dobro no LTX do que no Gemma.
+Os dois pareciam equivalentes (16,1 contra 19,5) e não são — depois da rotação são 7,0 contra 15,7.
+Isso é diferença de arquitetura, e estava invisível porque as duas barras mediam o tensor errado.
+
+O rótulo do gráfico dizia literalmente **"median crest N — the W4A4 scale reaches to here"**
+apontando para o número pré-rotação. Agora aponta para o rotacionado e diz `(rotated)`.
+
+**Uma corrida basta aqui, e vale dizer por quê:** isto não é medição de tempo. É estatística
+determinística sobre bytes de peso lidos do disco — a mesma entrada dá o mesmo número. A regra
+"uma corrida não é medição" existe para efeitos que a contenção move; este não é um deles.
+
+**Não coberto:** `activation_balance.py` recebeu o mesmo conserto (imprime `crest per token, RAW`
+e `crest per token, ROTATED`) mas **não foi executado** — precisa de ativações capturadas de uma
+corrida de sampling, que é outra ferramenta e outro ticket. O conserto dele está provado por
+`py_compile` e por leitura lado a lado com o de `plot_weight_balance.py`, não por execução.
+Nenhum número de erro de quantização foi re-medido; a escada A/B/C/D acima é a que a ferramenta já
+produzia e não depende do crest.
