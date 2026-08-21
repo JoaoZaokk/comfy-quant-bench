@@ -39,8 +39,54 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+# The API-format prompt has exactly one central type: a node input is EITHER a literal value
+# OR a wire to another node's output slot -- `["origin_id", slot]` in the JSON ComfyUI reads.
+# This used to be nowhere in the code; every input was a bare dict value, and "is this a wire?"
+# was answered ad hoc with `isinstance(v, list)` at each call site (main() had one, three levels
+# into the orchestrator). Modeled here once so the question has one answer.
+Wire = tuple[str, int]
+Value = str | int | float | bool
+
+
+@dataclass
+class Node:
+    """One node of a converted API-format prompt.
+
+    `wired` names which `inputs` keys hold a `Wire` rather than a literal `Value` -- tracked
+    explicitly at construction time (ui_to_api already knows this; it built the wire in the same
+    loop), not re-derived later by inspecting the value's Python type. That is what lets
+    `set_widget` answer "is this a wire?" without an isinstance check.
+    """
+
+    class_type: str
+    inputs: dict[str, Value | Wire]
+    wired: set[str] = field(default_factory=set)
+
+    def is_wire(self, key: str) -> bool:
+        return key in self.wired
+
+    def set_widget(self, key: str, value: Value) -> bool:
+        """Set a widget input to `value`. No-op if `key` is absent or is wired to another
+        node's output -- overriding a wire's endpoints is not what a widget override means.
+        Returns whether the value was actually set, so a caller can report what happened
+        without re-asking "was this a wire" itself."""
+        if key not in self.inputs or self.is_wire(key):
+            return False
+        self.inputs[key] = value
+        return True
+
+    def to_api(self) -> dict:
+        """The `{class_type, inputs}` shape ComfyUI's /prompt endpoint expects. `wired` is
+        bookkeeping for this module only -- the server has never heard of it."""
+        return {"class_type": self.class_type, "inputs": self.inputs}
+
+
+def prompt_to_api(prompt: dict[str, Node]) -> dict[str, dict]:
+    return {nid: node.to_api() for nid, node in prompt.items()}
 
 
 def http_get(base: str, path: str, timeout: float = 30.0) -> Any:
@@ -145,8 +191,8 @@ def widget_names(defn: dict) -> list[str]:
     return out
 
 
-def ui_to_api(wf: dict, object_info: dict) -> tuple[dict, list[str]]:
-    """UI-format graph -> API-format prompt. Returns (prompt, warnings)."""
+def ui_to_api(wf: dict, object_info: dict) -> tuple[dict[str, Node], list[str]]:
+    """UI-format graph -> {node_id: Node}. Returns (prompt, warnings)."""
     warnings: list[str] = []
     # link id -> (origin_node_id, origin_slot)
     links: dict[int, tuple[int, int]] = {}
@@ -155,7 +201,7 @@ def ui_to_api(wf: dict, object_info: dict) -> tuple[dict, list[str]]:
         if isinstance(link, (list, tuple)) and len(link) >= 3:
             links[link[0]] = (link[1], link[2])
 
-    prompt: dict[str, dict] = {}
+    prompt: dict[str, Node] = {}
     for node in wf.get("nodes", []) or []:
         ctype = node.get("type")
         nid = str(node.get("id"))
@@ -168,18 +214,18 @@ def ui_to_api(wf: dict, object_info: dict) -> tuple[dict, list[str]]:
             continue
 
         inputs: dict[str, Any] = {}
-        connected: set[str] = set()
+        wired: set[str] = set()
         for slot in node.get("inputs", []) or []:
             name, lid = slot.get("name"), slot.get("link")
             if lid is None or lid not in links:
                 continue
             origin, oslot = links[lid]
-            inputs[name] = [str(origin), oslot]
-            connected.add(name)
+            inputs[name] = (str(origin), oslot)
+            wired.add(name)
 
         # Widgets fill, in order, the widget-able inputs that are NOT wired.
         vals = list(node.get("widgets_values") or [])
-        names = [n for n in widget_names(defn) if n not in connected]
+        names = [n for n in widget_names(defn) if n not in wired]
         if len(vals) < len(names):
             warnings.append(
                 f"node {nid} ({ctype}): {len(vals)} widget values for {len(names)} widget "
@@ -223,7 +269,7 @@ def ui_to_api(wf: dict, object_info: dict) -> tuple[dict, list[str]]:
                 f"filled with the server default {inputs[name]!r}"
             )
 
-        prompt[nid] = {"class_type": ctype, "inputs": inputs}
+        prompt[nid] = Node(class_type=ctype, inputs=inputs, wired=wired)
     return prompt, warnings
 
 
@@ -234,6 +280,13 @@ def main() -> int:
     ap.add_argument("--wait-server", type=float, default=900.0)
     ap.add_argument("--timeout", type=float, default=5400.0)
     ap.add_argument("--dump-api", help="write the converted API prompt here and exit")
+    ap.add_argument(
+        "--object-info-file",
+        help="read /object_info from this JSON file instead of the live server, and skip "
+        "waiting for the server. Only meaningful together with --dump-api: the conversion "
+        "still needs SOME /object_info, but a real run needs the server up anyway to POST the "
+        "prompt, so this flag exists for testing the conversion offline, not for a real run.",
+    )
     ap.add_argument("--label", default="run")
     ap.add_argument(
         "--seed",
@@ -248,20 +301,25 @@ def main() -> int:
 
     wf = json.loads(Path(args.workflow).read_text(encoding="utf-8"))
 
-    waited = wait_for_server(args.server, args.wait_server)
-    print(f"server {args.server} up after {waited:.1f}s")
-    object_info = http_get(args.server, "/object_info", timeout=120.0)
-    print(f"/object_info: {len(object_info)} node classes")
+    if args.object_info_file:
+        object_info = json.loads(Path(args.object_info_file).read_text(encoding="utf-8"))
+        print(f"/object_info: {len(object_info)} node classes (loaded from "
+              f"{args.object_info_file}, NOT the server -- only valid for offline --dump-api "
+              f"testing)")
+    else:
+        waited = wait_for_server(args.server, args.wait_server)
+        print(f"server {args.server} up after {waited:.1f}s")
+        object_info = http_get(args.server, "/object_info", timeout=120.0)
+        print(f"/object_info: {len(object_info)} node classes")
 
     prompt, warnings = ui_to_api(wf, object_info)
     if args.seed is not None:
         hit = 0
         for nid, node in prompt.items():
             for key in ("noise_seed", "seed"):
-                if key in node["inputs"] and not isinstance(node["inputs"][key], list):
-                    node["inputs"][key] = args.seed
+                if node.set_widget(key, args.seed):
                     hit += 1
-                    print(f"  seed override: node {nid} ({node['class_type']}).{key} = {args.seed}")
+                    print(f"  seed override: node {nid} ({node.class_type}).{key} = {args.seed}")
         if hit == 0:
             print("  WARN --seed given but no seed widget found -- the graph will "
                   "hit ComfyUI's node cache and time nothing")
@@ -270,13 +328,13 @@ def main() -> int:
     print(f"converted {len(prompt)} nodes")
 
     if args.dump_api:
-        Path(args.dump_api).write_text(json.dumps(prompt, indent=2), encoding="utf-8")
+        Path(args.dump_api).write_text(json.dumps(prompt_to_api(prompt), indent=2), encoding="utf-8")
         print(f"wrote {args.dump_api} -- not executed")
         return 0
 
     client_id = str(uuid.uuid4())
     t0 = time.time()
-    resp = http_post(args.server, "/prompt", {"prompt": prompt, "client_id": client_id})
+    resp = http_post(args.server, "/prompt", {"prompt": prompt_to_api(prompt), "client_id": client_id})
     pid = resp.get("prompt_id")
     if not pid:
         print(f"server refused the prompt: {json.dumps(resp)[:2000]}")
