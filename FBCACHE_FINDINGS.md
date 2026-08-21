@@ -193,6 +193,45 @@ dentro de 1%, o que é a evidência de que a razão não depende da resolução 
 
 Baselines concordam em 4%.
 
+#### O mesmo modelo, olhando o pixel em vez do latente (2026-08-21)
+
+`tools/fbcache_visual.py` era o unico dos oito `fbcache_*` sem resultado registrado aqui. Rodou.
+**EXECUTADO** duas vezes, 3090 ociosa sob lock, 480x480, 33 frames, 20 steps, cfg 6.0, seed 12345,
+euler/simple, shift 7.0, prompt fixo -- as duas corridas alternadas com a mesma invocacao:
+
+| threshold | s (min-max) | speedup | hits | relL2 no **pixel** | max diff |
+|---|---|---|---|---|---|
+| baseline | 57.8 - 59.0 | 1.00x | - | - | - |
+| 0.12 | 30.5 - 31.1 | **1.86 - 1.93x** | 18/40 | 0.2363 | 0.9236 |
+| 0.20 | 20.0 - 20.2 | **2.86 - 2.95x** | 26/40 | 0.2580 | 0.7761 |
+
+Duas coisas que so esta ferramenta podia dizer, e que mudam a leitura da tabela acima:
+
+**1. Reproduz a medicao do `fbcache_probe.py` por um caminho independente.** Outra resolucao,
+outro numero de steps efetivos, outro arquivo, mesma razao: 1.89x contra 1.86-1.93x em 0.12, e
+3.06x contra 2.86-2.95x em 0.20. `relL2` e `hits` sairam **identicos** nas duas corridas (o seed
+fixa tudo), entao o unico ruido e o tempo, e ele e de ~2%.
+
+**2. O numero de qualidade nunca foi otimista -- e ninguem tinha olhado o que ele significa.**
+O `relL2` do latente (0.2157 / 0.2639) e praticamente o mesmo do pixel (0.2363 / 0.2580). O que
+faltava nao era um numero melhor, era a imagem: em **0.20 a foto e outra foto**. O baseline da
+uma maca com textura de casca, pintas claras, veio de madeira visivel e uma mesa em diagonal indo
+para o fundo; em 0.20 a maca e lisa, plastificada, sem pinta nenhuma, a mesa virou uma tabua
+horizontal chapada e o fundo virou borrao uniforme. Em 0.12 a textura da casca sobrevive, mas a
+**composicao ja mudou** -- outra tabua, outro bokeh, outro gradiente de cor na fruta.
+
+Ou seja: `relL2 0.24` nao e "levemente degradado". Nao ha faixa de threshold aqui em que o FBCache
+seja de graca no HunyuanVideo 1.5; ha uma faixa em que ele e **rapido e diferente**. Se o uso
+tolera outra imagem pelo mesmo prompt (exploracao, previa, grade de variacoes), 2.9x esta ali. Se
+o uso e "a mesma imagem, mais rapido", nao esta.
+
+Contatos em `_fbcache_visual/` e `_fbcache_visual_run2/` (`*_baseline.png`, `*_t0.12.png`,
+`*_t0.2.png`), oito quadros por folha.
+
+**Nao coberto:** um prompt, um modelo, uma resolucao, dois thresholds. Nada aqui diz que a mesma
+razao ou a mesma perda visual valem para FLUX, Wan ou LTX -- cada um tem sua faixa de residual, e
+a deste modelo (0.0302 a 0.3546 nesta corrida) e o que decide onde o cache dispara.
+
 ### FLUX.1-dev fp8 (rota `flux`, 20 steps, pesos residentes)
 
 | threshold | s | speedup | hits | relL2 |
@@ -309,7 +348,10 @@ Todos em CPU, todos passando.
 | `tools/fbcache_clone_test.py` | prova do bug 2 |
 
 Ferramentas: `tools/fbcache_probe.py` (A/B com baseline duplo), `tools/fbcache_audit.py`
-(instrumenta a cadeia de decisão por step).
+(instrumenta a cadeia de decisão por step),
+e `tools/fbcache_visual.py` (A/B ponta a ponta com os text encoders reais e os quadros
+decodificados -- o unico que responde "com que cara fica", medido em 2026-08-21, secao
+HunyuanVideo 1.5 acima).
 
 ## Pendências
 

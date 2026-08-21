@@ -234,7 +234,39 @@ A second, separate effort also runs on this stand:
 - [CORTIQ_LTX25_HANDOFF.md](CORTIQ_LTX25_HANDOFF.md) — the `cortiq` / LTX-2.5 investigation: what was **measured** (the 52× end-to-end gap, where the time goes, the PV-NT accuracy result) and the five claims that had to be withdrawn. Read this before touching `F:\cortiq-cmf`.
 - [.scratch/estado-entregavel/map.md](.scratch/estado-entregavel/map.md) — the **plan**: 17 tickets across both repos, with the blocking graph. Every debt ticket carries its closing criterion, written before anyone looked at the result. `.scratch/` is the local issue tracker; nothing in it touches GitHub.
 
-**GPU access, agreed 2026-08-20.** Take the lock with `Assert-GpuLock` (it throws; never `Take-GpuLock | Out-Null`). If refused, measure the card itself with NVML for ~1 minute — the lock file is not the card. Card idle **and** lock held is a problem: say so in chat ("waited X, lock held by `<owner>`") and move to work that needs no GPU. **Do not wait, and never take a live lock silently.** Why it matters: contention moves numbers — the same code, the same day, gave `im2col 74.4 s` on a quiet machine and `87.0 s` on a loaded one, 17%, against a 10 s effect being measured.
+### The GPU window
+
+Three elements, agreed 2026-08-21, and deliberately only three: **block size, how to ask, how to
+let go.** A longer protocol is one nobody follows.
+
+**The block is 30 minutes and it has a name.** Not "I need the card" — `bench:ticket25_fbcache_visual`.
+The owner string is what the other side reads when it is refused, and `cortiq:bench` tells it
+nothing it can plan around. Work that cannot state its block in advance does not get one: it takes
+the card for a measurement, not for a session.
+
+**Asking is `Assert-GpuLock -Owner '<repo>:<what>'`.** It throws; never `Take-GpuLock | Out-Null`,
+which returns `$false`, prints "not taking", and then runs the benchmark anyway — that happened on
+2026-08-19 against a live sibling with a 2-second-old heartbeat. If refused: **measure the card
+itself with NVML for about a minute — the lock file is not the card.** Card idle *and* lock held is
+a problem, not a wait: say so in chat ("waited X, lock held by `<owner>`") and move to work that
+needs no GPU. **Do not wait, and never take a live lock silently.**
+
+**Letting go is `Release-GpuLock`, after the work stops, never before.** Holding the lock while
+idle — even announced, even for "I want the card for a comparison later" — is a false claim on a
+shared card; a free lock over a busy GPU is the same lie pointing the other way. `Release-GpuLock`
+removes the file **only if it is still ours**, so a lock somebody legitimately took after ours went
+stale is never clobbered.
+
+Why any of this matters: contention moves numbers. Same code, same day, `im2col 74.4 s` on a quiet
+machine against `87.0 s` on a loaded one — **17%**, against a 10 s effect being measured. And on
+2026-08-19 a hand-written lock named a pid that was dead the instant it was written, so the card sat
+idle behind it for roughly forty minutes.
+
+**Provenance of this section:** agreed with the bench owner on 2026-08-21, when only one session
+held the card ("gpu liberada, so tem voce agora"). It is therefore **one side's protocol written
+down, in force until contested** — not a negotiated settlement between two live sessions. The
+mechanism it describes (`tools/gpu_lock.ps1`, the detached heartbeat, the 55 s staleness limit) was
+executed; the *agreement* is a decision, not a measurement.
 
 ## Memory gotchas
 

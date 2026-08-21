@@ -1,7 +1,7 @@
 # Fatos de operação da bancada voltam para o `CLAUDE.md`
 
 Type: task
-Status: blocked (fatos 1 e 2 escritos; fato 3 segue bloqueado pelo 01, ver Resolução)
+Status: resolved (os tres fatos escritos; fato 3 entrou quando o 01 fechou)
 Blocked by: 01
 
 ## Question
@@ -84,3 +84,22 @@ porque o critério de fechamento deste ticket pede os três fatos juntos; só do
 escritos. Reabrir/fechar de verdade quando o `01` estiver resolvido e o fato 3 puder
 ser escrito na mesma passada — como o próprio ticket já recomendava ("escrever o
 documento uma vez só é melhor que escrever duas").
+
+
+## Resolucao, parte 2 — o fato 3 (2026-08-21)
+
+O ticket `01` fechou, entao o fato 3 pode ser escrito, e foi: `CLAUDE.md`, secao
+`### The GPU window`, substituindo o paragrafo de uma linha que existia antes. Os tres elementos
+(bloco de 30 min nomeado / `Assert-GpuLock` / `Release-GpuLock` depois do trabalho parar) estao la,
+com os dois erros literais que o criterio pedia ao lado: o `im2col 74.4 s` contra `87.0 s` (17% de
+contencao contra um efeito de 10 s) e o lock de 2026-08-19 que nomeava um pid morto no instante em
+que foi escrito, com a placa ociosa atras dele por ~40 min.
+
+Como o ticket recomendava, escrito **numa passada so** junto dos fatos 1 e 2, e nao em duas.
+
+Criterio agora atendido inteiro: os tres fatos no `CLAUDE.md`, cada um com o erro/numero literal
+junto — que era metade do valor do registro.
+
+**Sem cobertura:** a mesma coisa que o `01` diz de si — o fato 3 e um protocolo de um lado so, e a
+secao do `CLAUDE.md` declara isso. Os fatos 1 e 2 continuam sendo transcricao de medicao anterior,
+nao reproducao (ver parte 1).

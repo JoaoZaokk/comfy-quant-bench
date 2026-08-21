@@ -1,7 +1,7 @@
 # `fbcache_visual.py` é o único `fbcache_*` sem resultado registrado
 
 Type: task
-Status: open
+Status: resolved
 
 ## Question
 
@@ -51,3 +51,39 @@ código quebrado, é lacuna de execução:
   docstring do arquivo.
 
 Qualquer uma das duas fecha o ticket. Ficar como está — sem rodar e sem decisão — não fecha.
+
+## Resolucao
+
+Fechou pelo **primeiro** ramo do criterio: rodou, e o resultado entrou em `FBCACHE_FINDINGS.md`
+junto dos outros sete (secao "HunyuanVideo 1.5", subsecao "O mesmo modelo, olhando o pixel em vez
+do latente"). O `fbcache_visual.py` tambem entrou na linha de Ferramentas, que antes citava so o
+`probe` e o `audit`.
+
+**EXECUTADO** duas vezes, 3090 ociosa sob lock `bench:ticket25_fbcache_visual`, invocacao
+identica nas duas (a segunda so com `--out` diferente):
+
+```
+.\python_embeded\python.exe -s .\tools\fbcache_visual.py
+.\python_embeded\python.exe -s .\tools\fbcache_visual.py --out F:\COMFY_PORTABLE\_fbcache_visual_run2
+```
+
+| threshold | s (min-max) | speedup | hits | relL2 no pixel |
+|---|---|---|---|---|
+| baseline | 57,8 - 59,0 | 1,00x | - | - |
+| 0,12 | 30,5 - 31,1 | 1,86 - 1,93x | 18/40 | 0,2363 |
+| 0,20 | 20,0 - 20,2 | 2,86 - 2,95x | 26/40 | 0,2580 |
+
+Duas corridas, spread de ~2% no tempo; `relL2` e `hits` identicos (o seed fixa). Reproduz por
+caminho independente a medicao que o `fbcache_probe.py` ja tinha (1,89x / 3,06x) em outra
+resolucao e outro arquivo.
+
+**O achado que so esta ferramenta podia dar:** o `relL2` do latente nunca esteve otimista --
+0,2157/0,2639 no latente contra 0,2363/0,2580 no pixel, praticamente o mesmo numero. O que
+faltava era **olhar**. Em 0,20 a imagem e outra imagem: a maca perde a textura de casca inteira,
+a mesa em diagonal com veio de madeira vira uma tabua chapada, o bokeh vira borrao uniforme. Em
+0,12 a textura sobrevive mas a composicao ja mudou. "relL2 0,24" nao e degradacao leve; e uma
+foto diferente pelo mesmo prompt.
+
+**O que ficou sem cobertura:** um prompt, um modelo, uma resolucao, dois thresholds. Nada aqui
+se estende a FLUX/Wan/LTX. E a leitura visual e minha, a olho, sobre as folhas de contato -- nao
+ha metrica perceptual (LPIPS/SSIM) por tras dela; o que esta medido e tempo, hits e relL2.
