@@ -17,7 +17,7 @@ import sys
 import time
 from pathlib import Path
 
-from huggingface_hub import hf_hub_download
+from hf_parallel_get import download as parallel_download
 
 ROOT = Path("D:/ComfyUI-Models")
 
@@ -60,9 +60,19 @@ def main() -> int:
             continue
         print(f"[{index}/{len(FILES)}] {repo}  {filename}  ({human(expected)})", flush=True)
         started = time.perf_counter()
-        path = hf_hub_download(repo_id=repo, filename=filename, local_dir=str(local_dir))
+        try:
+            # download() raises SystemExit (not caught by a bare hf_hub_download call before) on
+            # a server/expected-size mismatch, and returns 130 instead of raising on Ctrl-C.
+            rc = parallel_download(repo, filename, local_dir, expected_size=expected)
+        except SystemExit as error:
+            print(f"          FAILED: {error}\n", flush=True)
+            return 1
+        if rc == 130:
+            print("\ninterrupted; rerun the same command to resume")
+            return 130
         elapsed = time.perf_counter() - started
-        size = Path(path).stat().st_size
+        path = local_dir / filename
+        size = path.stat().st_size if path.is_file() else 0
         rate = size / elapsed / 1024**2 if elapsed else 0
         status = "OK" if size == expected else f"SIZE MISMATCH: got {size}, expected {expected}"
         print(f"          -> {path}\n          {human(size)} in {elapsed / 60:.1f} min "

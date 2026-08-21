@@ -158,11 +158,14 @@ def test_main_uses_set_widget_not_dict_mutation():
     the shipped source of `main`, not a copy -- a regression that reintroduces the old pattern
     fails this test even if every other test above still passes with the model unused."""
     import inspect
-    src = inspect.getsource(crw.main)
-    assert "set_widget" in src, "main() must call Node.set_widget for the seed override"
-    assert 'node["inputs"]' not in src, "main() must not subscript a Node's inputs directly"
+    # Ticket 06 moved the seed loop out of main() into apply_seed(). The assertion is unchanged --
+    # the override goes through Node.set_widget and never subscripts a Node -- only its address
+    # did. Both are read, because main() must not grow its own copy back.
+    src = inspect.getsource(crw.apply_seed) + inspect.getsource(crw.main)
+    assert "set_widget" in src, "the seed override must go through Node.set_widget"
+    assert 'node["inputs"]' not in src, "the seed override must not subscript a Node's inputs"
     assert "node['class_type']" not in src and 'node["class_type"]' not in src, (
-        "main() must use node.class_type, not dict-style subscripting")
+        "use node.class_type, not dict-style subscripting")
 
 
 def test_no_isinstance_list_wire_test_survives_in_the_file():
@@ -323,34 +326,49 @@ def test_cache_hit_threshold_is_a_named_module_constant():
 
 def test_cache_detection_uses_server_side_duration_not_wall():
     """The exact regression this ticket is about: `if wall < 5.0 and files:` must be gone from
-    main(), and the cache_hit expression must be built from `server_side_s` (the server's own
-    execution_start -> execution_success span), not from `wall` (this client's estimate)."""
+    the module, and the cache_hit expression must be built from `server_side_s` (the server's
+    own execution_start -> execution_success span), not from `wall` (this client's estimate).
+
+    Ticket 06 moved this computation out of `main()` into `Entry.cache_hit` (a property, one
+    place the whole module computes it from, instead of main() recomputing it inline every
+    time it prints something). The proof this test makes is unchanged -- only WHERE it looks
+    changed, because the code it is proving something about moved. Before ticket 06 this read
+    `inspect.getsource(crw.main)`; a `cache_hit = ...` assignment doesn't exist in main() any
+    more (main() now reads `entry.cache_hit`), so this reads the property itself."""
     import inspect
     import re
-    src = inspect.getsource(crw.main)
-    assert "wall < 5.0" not in src, "the old wall-based heuristic must not survive"
-    assert "wall < CACHE_HIT_THRESHOLD_S" not in src, (
+    full_src = (TOOLS / "comfy_run_workflow.py").read_text(encoding="utf-8")
+    assert "wall < 5.0" not in full_src, "the old wall-based heuristic must not survive"
+    assert "wall < CACHE_HIT_THRESHOLD_S" not in full_src, (
         "the threshold moved to server_side_s, not merely renamed on wall")
-    assert "server_side_s" in src, "main() must compute a first-class server-side duration"
-    # Find the cache_hit assignment itself and check ITS right-hand side does not name `wall` --
-    # `wall` legitimately still appears elsewhere in main() (the WALL summary line), so a
-    # whole-function substring check for "wall" would false-positive on that unrelated print.
-    m = re.search(r"cache_hit\s*=\s*(.+)", src)
-    assert m, "expected a `cache_hit = ...` assignment in main()"
+    assert "server_side_s" in full_src, "the module must compute a first-class server-side duration"
+
+    prop_src = inspect.getsource(crw.Entry.cache_hit.fget)
+    assert "server_side_s" in prop_src and "CACHE_HIT_THRESHOLD_S" in prop_src
+    # The docstring is allowed to say "wall" in English prose (it explains why wall is NOT
+    # used); what must never say `wall` is the actual `return` expression -- same rationale
+    # ticket 06's original test used to isolate the assignment's RHS instead of scanning the
+    # whole function body.
+    m = re.search(r"return\s+(.+)", prop_src, re.DOTALL)
+    assert m, "expected a `return ...` expression in Entry.cache_hit"
     rhs = m.group(1)
-    assert "server_side_s" in rhs and "CACHE_HIT_THRESHOLD_S" in rhs
     assert re.search(r"\bwall\b", rhs) is None, (
         f"cache_hit must be computed from server_side_s, not wall -- got: {rhs}")
 
 
 def test_cache_hit_gets_its_own_exit_code():
     """A cache hit must not be folded into exit 0 (success) or exit 1 (failure) -- it needs a
-    code a caller (run_e2e_comfy.ps1) can distinguish from both."""
+    code a caller (run_e2e_comfy.ps1) can distinguish from both.
+
+    Ticket 06: main() now reads `entry.cache_hit` (a property) rather than a local `cache_hit`
+    variable, since the cache-hit computation itself moved to `Entry.cache_hit` -- the pattern
+    below matches that new shape; the assertion it proves (a cache hit gets exit code 5, on its
+    own, not folded into 0 or 1) is unchanged."""
     import inspect
     import re
     src = inspect.getsource(crw.main)
-    assert re.search(r"if\s+cache_hit\s*:\s*\n\s*return\s+5", src), (
-        "expected `if cache_hit: return 5` (its own exit code) in main()")
+    assert re.search(r"if\s+entry\.cache_hit\s*:\s*\n\s*return\s+5", src), (
+        "expected `if entry.cache_hit: return 5` (its own exit code) in main()")
 
 
 # --------------------------------------------------------------------------------------------
@@ -397,15 +415,18 @@ def test_golden_dump_covers_a_real_wired_and_a_real_wire_free_seed_case():
 NOT_COVERED = (
     "This suite does not talk to a live ComfyUI server: it exercises ui_to_api/prompt_to_api/"
     "Node/Note in-process, and main() only up to the point where a fatal Note returns 4 -- never "
-    "past it. The --force-allows-submission path, the actual /prompt POST, /history poll, and "
-    "main() decomposition from ticket 06 are untouched here by design (that HTTP path needs a "
-    "live server, which this environment does not permit) -- those are other tickets' scope or "
-    "another run's job, not verified by this one. Ticket 04's cache-vs-render check is covered "
-    "only STATICALLY here (source-pattern tests on main()'s shipped text: server_side_s / "
-    "CACHE_HIT_THRESHOLD_S / 'return 5' exist, 'wall < 5.0' is gone, and the cache_hit expression "
-    "does not name wall) -- whether a real /history response from a cache-hit prompt drives "
-    "server_side_s under the threshold and main() actually exits 5 against a live server was NOT "
-    "run here. "
+    "past it. Ticket 06 split main() into Comfy (the HTTP boundary: wait_up/object_info/submit/"
+    "history/queue), run_and_wait (submit+poll -> Entry) and report (prints an Entry) -- those "
+    "units now EXIST and are read directly by the static tests below, but none of them is called "
+    "here with a real or fake server: the --force-allows-submission path, the actual /prompt "
+    "POST, and the /history poll loop are untouched here by design (that HTTP path needs a live "
+    "server, which this environment does not permit) -- those are other tickets' scope or another "
+    "run's job, not verified by this one. Ticket 04's cache-vs-render check is covered only "
+    "STATICALLY here (source-pattern tests on Entry.cache_hit's and main()'s shipped text: "
+    "server_side_s / CACHE_HIT_THRESHOLD_S / 'return 5' exist, 'wall < 5.0' is gone, and the "
+    "cache_hit expression does not name wall) -- whether a real /history response from a "
+    "cache-hit prompt drives server_side_s under the threshold and main() actually exits 5 "
+    "against a live server was NOT run here. "
     "tools/fixtures/object_info_ltx25.json reflects ComfyUI 0.33.0's schema for exactly the 16 "
     "node classes LTX25-int8-acceptance-v2.json uses; it will silently go stale if those nodes' "
     "INPUT_TYPES change upstream and nobody regenerates it -- this suite cannot detect that "

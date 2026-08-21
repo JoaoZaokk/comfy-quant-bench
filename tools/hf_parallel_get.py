@@ -138,21 +138,30 @@ def fetch_chunk(source: Source, dest: Path, index: int, start: int, end: int,
     raise AssertionError
 
 
-def main() -> int:
-    args = parse_args()
-    dest = (args.dest / args.file).resolve()
+def download(repo: str, file: str, dest_dir: Path, *, revision: str = "main",
+            connections: int = 8, chunk_mb: int = 256, retries: int = 6,
+            expected_size: int | None = None) -> int:
+    """Library entry point for the CLI above -- same body `main()` used to run inline against
+    `args.*`, now against explicit parameters so a caller (e.g. `fetch_ltx25.py`) can import this
+    instead of shelling out. Returns 0 on success, 130 if interrupted (matching the CLI's own exit
+    code for Ctrl-C) -- the caller must check the return value, since interruption does NOT raise
+    here (see the `except KeyboardInterrupt` below, unchanged from the original `main()`).
+    Raises SystemExit on a server/expected-size mismatch or a short final file, exactly as the CLI
+    did when run as a subprocess -- callers must catch `SystemExit`, not just `Exception`.
+    """
+    dest = (dest_dir / file).resolve()
     dest.parent.mkdir(parents=True, exist_ok=True)
     state_path = dest.with_suffix(dest.suffix + ".parts.json")
 
-    source = Source(args.repo, args.file, args.revision)
+    source = Source(repo, file, revision)
     total = source.size()
-    if args.expected_size and total != args.expected_size:
-        raise SystemExit(f"server reports {total} bytes, expected {args.expected_size}")
+    if expected_size and total != expected_size:
+        raise SystemExit(f"server reports {total} bytes, expected {expected_size}")
     if dest.is_file() and dest.stat().st_size == total and not state_path.exists():
         print(f"already complete: {dest} ({human(total)})")
         return 0
 
-    chunk = args.chunk_mb * 1024 * 1024
+    chunk = chunk_mb * 1024 * 1024
     ranges = [(i, s, min(s + chunk, total) - 1)
               for i, s in enumerate(range(0, total, chunk))]
 
@@ -180,9 +189,9 @@ def main() -> int:
                            capture_output=True, check=False)
 
     todo = [r for r in ranges if r[0] not in done]
-    print(f"{args.file}")
-    print(f"  {human(total)} in {len(ranges)} chunks of {args.chunk_mb} MiB, "
-          f"{len(done)} already done, {args.connections} connections\n", flush=True)
+    print(f"{file}")
+    print(f"  {human(total)} in {len(ranges)} chunks of {chunk_mb} MiB, "
+          f"{len(done)} already done, {connections} connections\n", flush=True)
 
     progress = {"done": 0}
     lock = threading.Lock()
@@ -194,8 +203,8 @@ def main() -> int:
                                           "done": sorted(done)}), encoding="utf-8")
 
     try:
-        with ThreadPoolExecutor(max_workers=args.connections) as pool:
-            futures = {pool.submit(fetch_chunk, source, dest, i, s, e, args.retries,
+        with ThreadPoolExecutor(max_workers=connections) as pool:
+            futures = {pool.submit(fetch_chunk, source, dest, i, s, e, retries,
                                    progress, lock): i for i, s, e in todo}
             for future in as_completed(futures):
                 index = future.result()
@@ -222,6 +231,13 @@ def main() -> int:
     print(f"    {human(total)} in {elapsed / 60:.1f} min "
           f"({progress['done'] / elapsed / 1024**2:.1f} MiB/s this run)")
     return 0
+
+
+def main() -> int:
+    args = parse_args()
+    return download(args.repo, args.file, args.dest, revision=args.revision,
+                    connections=args.connections, chunk_mb=args.chunk_mb,
+                    retries=args.retries, expected_size=args.expected_size)
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 # `nunchaku_compare.py`: pico de VRAM nunca desconta memória liberada, e `--attention sage` não verifica nada
 
 Type: task
-Status: open
+Status: resolved
 
 ## Question
 
@@ -38,3 +38,43 @@ Fecha em duas partes independentes:
    retorna 1 se o backend não estiver de fato disponível, em vez de só imprimir texto.
 
 Não fecha com decisão escrita: os dois são bugs de código, não hipóteses a validar.
+
+## Resolução
+
+Ambos consertados em `tools/nunchaku_compare.py`. LIDO e EXECUTADO como indicado abaixo — nenhum
+número de VRAM real foi medido nesta rodada (GPU em uso pelo orquestrador); a prova é
+`py_compile` mais leitura lado a lado, não uma corrida real.
+
+1. **Pico só sobe** -- `DevicePeak` ganhou `self.min_after_peak`, atualizado em `_run()`: quando a
+   amostra iguala ou supera o pico atual, o pico *e* o mínimo são resetados para esse valor;
+   caso contrário só o mínimo desce. `summary()` agora expõe `device_released_gib =
+   peak - min_after_peak`, sempre um número quando NVML está disponível (nunca `None` só porque
+   deu zero) e `None` só quando NVML não está disponível. Os dois pontos de impressão --
+   o resumo de uma corrida em `main()` e a comparação de duas em `report()` -- foram trocados de
+   checagem "truthy" (`if released:`) para `is not None`, e ambos agora imprimem "not measured"
+   explicitamente no caso `None` em vez de omitir a linha. EXECUTADO: validei o algoritmo de
+   estado (peak/min_after_peak) isolado, fora do arquivo, com uma sequência sintética de amostras
+   (`10,15,20,12,8,18,5` -> peak=20, min_after_peak=5, released=15), sem GPU e sem tocar o
+   arquivo real -- confirma a lógica, não confirma o número que o NVML real produziria.
+   A premissa contestada no achado original (se o CLIP segue residente no baseline do ComfyUI)
+   continua NÃO observada -- não afirmo nada sobre ela.
+2. **`--attention sage` sem checagem** -- o ramo `sage` agora importa
+   `comfy.ldm.modules.attention` e confere `SAGE_ATTENTION_IS_AVAILABLE` antes de imprimir
+   "attention: SageAttention", devolvendo 1 com mensagem se ausente -- mesmo idioma que os ramos
+   `sparge` (`SAGE_ATTENTION_IS_AVAILABLE`) e `flash` (`FLASH_ATTENTION_IS_AVAILABLE`) já usavam
+   logo acima/abaixo dele no arquivo.
+
+Comando que provou (LIDO/EXECUTADO conforme acima, sem GPU):
+
+```
+F:\COMFY_PORTABLE\python_embeded\python.exe -s -m py_compile F:\COMFY_PORTABLE\tools\nunchaku_compare.py
+```
+-> `COMPILE_OK`, sem alterar nenhum outro arquivo.
+
+**O que ficou sem cobertura**: nenhum número de VRAM real (NVML) foi coletado -- a GPU estava em
+uso por outro ticket. O comportamento do `sage` branch (retorno 1 quando SageAttention de fato
+está ausente, e execução normal quando está presente) não foi exercitado ao vivo, só verificado
+por leitura lado a lado com os ramos `sparge`/`flash` que já faziam o mesmo. Não existe suíte de
+teste dedicada a `nunchaku_compare.py` neste repo (só `test_comfy_run_workflow.py`, que cobre
+outro arquivo) -- nenhuma foi rodada nem criada aqui, por estar fora dos arquivos permitidos deste
+ticket.

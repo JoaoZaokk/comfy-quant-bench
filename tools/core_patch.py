@@ -41,6 +41,11 @@ def parse_args() -> argparse.Namespace:
 
     revert = sub.add_parser("revert", help="restore a tracked file from its backup")
     revert.add_argument("target")
+    revert.add_argument(
+        "--force",
+        action="store_true",
+        help="overwrite even if the installed file no longer matches the hash recorded at backup time",
+    )
 
     return parser.parse_args()
 
@@ -150,6 +155,24 @@ def command_revert(args) -> int:
     backup_path = PORTABLE_ROOT / entry["backup"]
     if not backup_path.is_file():
         raise SystemExit(f"Backup file is gone: {backup_path}")
+
+    if not path.is_file():
+        if not args.force:
+            raise SystemExit(
+                f"Refusing to revert {key}: installed file is missing, so it cannot be confirmed to "
+                f"still match the hash recorded at backup time ({entry['original_sha256']}). "
+                "Pass --force to restore it anyway."
+            )
+    else:
+        installed = sha256(path)
+        if installed != entry["original_sha256"] and not args.force:
+            raise SystemExit(
+                f"Refusing to revert {key}: installed file does not match the hash recorded at backup "
+                f"time (installed {installed}, recorded original {entry['original_sha256']}). It may "
+                "have been changed since the backup (e.g. by a ComfyUI update or a local edit). "
+                "Pass --force to overwrite it anyway."
+            )
+
     shutil.copy2(backup_path, path)
     restored = sha256(path)
     if restored != entry["original_sha256"]:

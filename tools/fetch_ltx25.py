@@ -23,7 +23,7 @@ import sys
 import time
 from pathlib import Path
 
-from huggingface_hub import hf_hub_download
+from hf_parallel_get import download as parallel_download
 
 REPO = "Lightricks/LTX-2.5"
 ROOT = Path("D:/ComfyUI-Models")
@@ -93,13 +93,20 @@ def main() -> int:
         print(f"[{index}/{len(selected)}] {filename}  ({human(expected)})  -- {why}", flush=True)
         started = time.perf_counter()
         try:
-            path = hf_hub_download(repo_id=REPO, filename=filename, local_dir=str(ROOT))
-        except Exception as error:
+            # download() raises SystemExit (not Exception) on a size mismatch, and returns 130
+            # rather than raising when the user hits Ctrl-C mid-chunk -- both handled below,
+            # since letting either fall through as a per-file "FAILED" would either miss the
+            # SystemExit or silently roll on to the next file after an interrupt.
+            rc = parallel_download(REPO, filename, ROOT, expected_size=expected)
+        except (SystemExit, Exception) as error:
             print(f"          FAILED: {type(error).__name__}: {str(error)[:160]}\n", flush=True)
             failures.append(filename)
             continue
+        if rc == 130:
+            print("\ninterrupted; rerun the same command to resume")
+            return 130
         elapsed = time.perf_counter() - started
-        size = Path(path).stat().st_size
+        size = (ROOT / filename).stat().st_size if (ROOT / filename).is_file() else 0
         rate = size / elapsed / 1024**2 if elapsed else 0
         status = "OK" if size == expected else f"SIZE MISMATCH: got {size}, expected {expected}"
         if size != expected:

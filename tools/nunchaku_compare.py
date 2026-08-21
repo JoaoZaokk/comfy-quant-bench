@@ -87,6 +87,7 @@ class DevicePeak:
         self.interval = interval
         self.baseline = 0
         self.peak = 0
+        self.min_after_peak = 0
         self.other_processes = -1
         self._stop = threading.Event()
         self._thread = None
@@ -112,7 +113,7 @@ class DevicePeak:
     def start(self) -> None:
         if not self.available:
             return
-        self.baseline = self.peak = self._used()
+        self.baseline = self.peak = self.min_after_peak = self._used()
         try:
             procs = self._nvml.nvmlDeviceGetComputeRunningProcesses(self._handle)
             # Count only processes NVML can actually attribute memory to. On WDDM it attributes
@@ -134,7 +135,17 @@ class DevicePeak:
     def _run(self) -> None:
         while not self._stop.wait(self.interval):
             try:
-                self.peak = max(self.peak, self._used())
+                used = self._used()
+                # The running minimum seen *since the current peak was set*, not since start:
+                # it resets to the new peak whenever one is hit, so it falls when memory is freed
+                # after that peak and tracks a fresh peak again once one occurs. A max-only figure
+                # can never report that anything was freed at all; a caller reading only `peak`
+                # has no way to tell "nothing was released" from "release was never measured".
+                if used >= self.peak:
+                    self.peak = used
+                    self.min_after_peak = used
+                else:
+                    self.min_after_peak = min(self.min_after_peak, used)
             except Exception:
                 return  # a dead sampler is reported as a missing number, not a wrong one
 
@@ -146,10 +157,16 @@ class DevicePeak:
     def summary(self) -> dict:
         if not self.available:
             return {"device_peak_gib": None, "device_baseline_gib": None,
-                    "other_gpu_processes": None}
+                    "device_released_gib": None, "other_gpu_processes": None}
+        # Explicitly a number, never omitted: `peak - min_after_peak` is 0.0 when nothing was
+        # freed after the peak sample, and 0.0 is a real, measured result -- not the same thing
+        # as "release was not measured" (which is `None`, the NVML-unavailable case above). A
+        # caller that tests this value with a bare `if released:` will silently drop the
+        # legitimate zero; test `is not None` instead.
         return {
             "device_peak_gib": (self.peak - self.baseline) / 2**30,
             "device_baseline_gib": self.baseline / 2**30,
+            "device_released_gib": (self.peak - self.min_after_peak) / 2**30,
             "other_gpu_processes": self.other_processes,
             "per_process_attribution": self.per_process_available,
         }
@@ -276,6 +293,19 @@ def report(a_path: str, b_path: str) -> int:
     if a["meta"].get("torch_peak_gib") is not None and b["meta"].get("torch_peak_gib") is not None:
         row("  of which torch alloc", a["meta"]["torch_peak_gib"], b["meta"]["torch_peak_gib"],
             ratio=False)
+    # `is not None`, always -- never `if rel_a:` -- because 0.00 GiB released is a real,
+    # measured result (peak was never given back) and must print as "0.00", not be dropped the
+    # way a bare truthiness check would drop it. `None` (NVML was unavailable on that run) is the
+    # only case that prints "not measured", and each side is judged independently: one run can
+    # have NVML and the other not.
+    rel_a = a["meta"].get("device_released_gib")
+    rel_b = b["meta"].get("device_released_gib")
+    if rel_a is not None and rel_b is not None:
+        row("  VRAM released after peak", rel_a, rel_b, ratio=False)
+    elif rel_a is not None or rel_b is not None:
+        print(f"{'  VRAM released after peak':<26}"
+              f"{(f'{rel_a:.2f}' if rel_a is not None else 'not measured'):>14}"
+              f"{(f'{rel_b:.2f}' if rel_b is not None else 'not measured'):>14}")
     others = [m["meta"].get("other_gpu_processes") for m in (a, b)]
     if any(o for o in others if o and o > 0):
         print(f"  !! other GPU processes during measurement: A={others[0]}, B={others[1]}. "
@@ -451,6 +481,15 @@ def main() -> int:
         comfy_attention.sageattn = sparge_shim
         print(f"attention: SpargeAttn (topk {args.sparge_topk}) replacing sageattn", flush=True)
     elif args.attention == "sage":
+        # Same idiom as the sparge and flash branches just above/below: check the module's own
+        # availability flag before claiming the backend is in use. Without this, an environment
+        # where SageAttention failed to import silently falls back to `attention_pytorch` (see
+        # attention.py:646,676-680) and the run gets labelled "sage" anyway -- a mislabelled
+        # measurement, not a missing one.
+        import comfy.ldm.modules.attention as comfy_attention
+        if not comfy_attention.SAGE_ATTENTION_IS_AVAILABLE:
+            print("sage attention did not load, so this would silently measure the default")
+            return 1
         print("attention: SageAttention", flush=True)
     elif args.attention == "flash":
         import comfy.ldm.modules.attention as comfy_attention
@@ -701,6 +740,15 @@ def main() -> int:
         print(f"  torch allocator saw {torch_peak_gib:.2f} GiB; driver saw "
               f"{peak_gib:.2f} GiB above a {device['device_baseline_gib']:.2f} GiB baseline "
               f"with {device['other_gpu_processes']} other process(es) present")
+    # `is not None`, not truthy: 0.00 GiB released is a real, measured result (nothing was freed
+    # after the peak) and must print as that, not vanish the way a bare `if device[...]:` would
+    # make it vanish. `None` -- NVML unavailable -- is the only case that prints "not measured".
+    released = device.get("device_released_gib")
+    if released is not None:
+        print(f"  {released:.2f} GiB released after peak (measured; a max-only figure would "
+              f"never show this)")
+    else:
+        print("  VRAM released after peak: not measured (NVML unavailable)")
     print(json.dumps({k: v for k, v in meta.items() if k != "passes"}, indent=None))
     return 0
 

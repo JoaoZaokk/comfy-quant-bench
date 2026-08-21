@@ -1,7 +1,7 @@
 # `core_patch.py revert` sobrescreve o arquivo atual sem checar o hash dele antes
 
 Type: task
-Status: open
+Status: resolved
 
 ## Question
 
@@ -51,3 +51,47 @@ a checagem prévia.
 
 Não fecha com decisão escrita: é uma condição de corrida entre o backup e o revert que só o código
 fecha.
+
+## Resolução
+
+`command_revert` (`tools/core_patch.py`) agora calcula `sha256(path)` do arquivo instalado **antes**
+de chamar `shutil.copy2`, e compara contra `entry["original_sha256"]` — o mesmo idioma que
+`command_backup` já usava. Se divergir (ou se o arquivo instalado sumiu), recusa com
+`SystemExit` citando os dois hashes (ou a ausência do arquivo) em vez de sobrescrever, salvo
+`--force` (novo argumento em `revert`, adicionado ao `argparse`). A checagem pós-cópia existente
+(linha ~177 depois da edição) foi mantida — ela continua tautológica sobre o próprio backup, mas
+serve para detectar corrupção do backup, não substitui a checagem prévia.
+
+LIDO: `tools/core_patch.py` inteiro (172 linhas antes da edição) antes de editar; só as funções
+`parse_args` (subparser `revert`) e `command_revert` foram tocadas.
+
+EXECUTADO (não só lido):
+- `F:\COMFY_PORTABLE\python_embeded\python.exe -s -m py_compile tools\core_patch.py` -> exit 0.
+- Teste próprio em
+  `C:\Users\joaoz\AppData\Local\Temp\claude\F--COMFY-PORTABLE\f8b3a3e8-2bcc-442f-9487-5b4aebcfe1f2\scratchpad\test_core_patch_revert_hash_guard.py`,
+  rodado com
+  `F:\COMFY_PORTABLE\python_embeded\python.exe -s <caminho do teste>`. O teste monkeypatcha
+  `PORTABLE_ROOT`/`COMFY_ROOT`/`BACKUP_ROOT`/`LEDGER` do módulo importado para uma árvore fake sob
+  `tempfile.mkdtemp()` — nunca usa nem escreve em `F:\COMFY_PORTABLE\ComfyUI` nem no
+  `F:\COMFY_PORTABLE\core_patches` real (confirmado depois, via timestamps: o `core_patches/` real
+  é de 16/08, intocado por esta sessão). 12 asserções, todas PASS:
+  1. backup + revert sem alteração -> sucede sem `--force`.
+  2. arquivo alterado desde o backup (simula update do ComfyUI) -> `revert` sem `--force` recusa
+     via `SystemExit`, mensagem cita os dois hashes, arquivo fica intocado.
+  3. mesmo caso 2, com `--force` -> revert prossegue e restaura o conteúdo original.
+  4. arquivo instalado ausente no momento do revert -> recusa sem `--force`; com `--force`,
+     restaura.
+  5. `--force` de fato chega em `parse_args()` no subcomando `revert` (nível argparse).
+
+NÃO COBERTO por este teste ou por esta correção:
+- `command_backup`, `command_diff`, `command_status` — não tocados, não reexercitados em detalhe
+  (só `command_backup` foi chamado incidentalmente como setup do teste).
+- Nenhum arquivo real do ComfyUI foi tocado nesta sessão — comando_revert/backup contra arquivo de
+  verdade foi explicitamente proibido pelo ticket e não rodou.
+- Não há teste de que a mensagem de recusa chega formatada do jeito exato no `stderr` do CLI real
+  (subprocess); o teste chama `command_revert` in-process com um `argparse.Namespace` construído à
+  mão, não via `sys.argv` completo (exceto o teste 5, que só cobre o parsing do `--force`, não a
+  execução completa via CLI).
+- Condição de corrida *durante* o `shutil.copy2` em si (TOCTOU entre o `sha256(path)` de checagem e
+  a cópia) não é fechada — está fora do escopo que o ticket descreveu (a corrida é
+  backup-vs-revert, não dentro do próprio revert).
