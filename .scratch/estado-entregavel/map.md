@@ -90,9 +90,42 @@ Herdada do `CLAUDE.md` da bancada e reforçada por este dia:
 
 ## Decisions so far
 
-<!-- índice: uma linha por ticket fechado, com link para o detalhe -->
+<!-- indice: uma linha por ticket fechado, com link para o detalhe -->
 
-_(nenhuma ainda)_
+**21 de 29 fechados** em 2026-08-21. Um por linha, na ordem do numero.
+
+- [02 — Triagem barata dos 93 arquivos rastreados](issues/02-triagem-dos-88-arquivos.md)
+- [03 — `ui_to_api` descarta nó desconhecido em silêncio e submete o grafo assim](issues/03-ui-to-api-descarta-no-em-silencio.md)
+- [04 — A trava anti-cache é um chute, e está duplicada em duas linguagens](issues/04-heuristica-de-cache-duplicada.md)
+- [05 — Não existe modelo do formato API, e três achados são sintoma disso](issues/05-modelo-tipado-do-formato-api.md)
+- [06 — `main()` tem 127 linhas e faz oito trabalhos](issues/06-decompor-main.md)
+- [07 — `CONV3D_PROF` é a terceira cópia de um idioma que já existia na crate](issues/07-idioma-de-profiler-triplicado.md)
+- [08 — `add_shaped` tem 8 parâmetros porque falta um tipo](issues/08-add-shaped-oito-parametros.md)
+- [09 — O laço im2col existe três vezes, e a flag que o duplica não precisa existir](issues/09-tres-copias-do-im2col.md)
+- [11 — O que acontece com o branch `pv-nt-audit-local`](issues/11-destino-do-branch-de-auditoria.md)
+- [12 — Inventário auditável de env, nodes e modelos convertidos](issues/12-inventario-da-bancada.md)
+- [13 — O GEMM do VAE vale ir para a placa?](issues/13-gemm-do-vae-no-device.md)
+- [14 — `gpu_q4tp_batch` recusa `b=375` e `b=1879`: é o lote ou a forma?](issues/14-recusa-do-gpu-q4tp-batch.md)
+- [15 — Re-medir o PV-NT sob janela limpa](issues/15-remedir-pv-nt-com-janela-limpa.md)
+- [16 — Artefatos nossos que moram dentro de `ComfyUI/`](issues/16-artefatos-nossos-dentro-de-comfyui.md)
+- [18 — `activation_balance.py` e `plot_weight_balance.py` medem crest no tensor errado](issues/18-crest-medido-antes-da-rotacao.md)
+- [19 — `core_patch.py revert` sobrescreve o arquivo atual sem checar o hash dele antes](issues/19-core-patch-revert-sem-checar-hash-atual.md)
+- [20 — A sonda de "backend nativo pronto" segue duplicada, e já divergiu](issues/20-sonda-de-backend-nativo-duplicada.md)
+- [21 — `nunchaku_compare.py`: pico de VRAM nunca desconta memória liberada, e `--attention sage` não verifica nada](issues/21-nunchaku-compare-pico-de-vram-so-sobe.md)
+- [24 — `quant_w4a8.py`: `as_bytes()` morto. `quant_int8.py`: sem preflight de backend com `--device cuda`](issues/24-quant-w4a8-as-bytes-morto-quant-int8-sem-preflight.md)
+- [26 — `hf_parallel_get.py` resolve o problema que `fetch_*` descrevem, mas nenhum dos dois o usa](issues/26-hf-parallel-get-sem-chamador.md)
+- [29 — Cinco scripts de medição morrem quando o binário escreve no stderr](issues/29-scripts-de-medicao-morrem-com-o-proprio-log.md)
+
+**Em aberto:**
+
+- [01 — Janela de GPU acordada com a outra sessão](issues/01-janela-de-gpu.md) — `open`
+- [10 — `std::env::var` dentro da função que o patch existe para acelerar](issues/10-env-var-no-caminho-quente.md) — `open`
+- [17 — Fatos de operação da bancada voltam para o `CLAUDE.md`](issues/17-fatos-de-operacao-de-volta-ao-claude-md.md) — `blocked`
+- [22 — `svdq_to_bf16.py`: três achados de baixa confiança seguem sem fechar](issues/22-svdq-to-bf16-achados-baixa-confianca-abertos.md) — `open`
+- [23 — `test_svdq_verify.py` não chama `recover_weight`, a função que ele diz testar](issues/23-test-svdq-verify-nao-chama-recover-weight.md) — `open`
+- [25 — `fbcache_visual.py` é o único `fbcache_*` sem resultado registrado](issues/25-fbcache-visual-sem-resultado-registrado.md) — `open`
+- [27 — Teste atrás de `cfg(feature)` reporta `ok` rodando zero testes](issues/27-teste-com-cfg-feature-reporta-ok-com-zero-testes.md) — `open`
+- [28 — Convolução direta no VAE, sem materializar o im2col](issues/28-conv-direta-sem-materializar-im2col.md) — `open`
 
 ## Not yet specified
 
