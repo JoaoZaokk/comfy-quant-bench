@@ -213,6 +213,13 @@ Record negative and unsupported results rather than hiding them.
 - [W4A4_HANDOFF.md](W4A4_HANDOFF.md) — current state snapshot and the ordered next-steps list.
 - `quantization_inventory.{json,md}` — generated; do not hand-edit.
 
+A second, separate effort also runs on this stand:
+
+- [CORTIQ_LTX25_HANDOFF.md](CORTIQ_LTX25_HANDOFF.md) — the `cortiq` / LTX-2.5 investigation: what was **measured** (the 52× end-to-end gap, where the time goes, the PV-NT accuracy result) and the five claims that had to be withdrawn. Read this before touching `F:\cortiq-cmf`.
+- [.scratch/estado-entregavel/map.md](.scratch/estado-entregavel/map.md) — the **plan**: 17 tickets across both repos, with the blocking graph. Every debt ticket carries its closing criterion, written before anyone looked at the result. `.scratch/` is the local issue tracker; nothing in it touches GitHub.
+
+**GPU access, agreed 2026-08-20.** Take the lock with `Assert-GpuLock` (it throws; never `Take-GpuLock | Out-Null`). If refused, measure the card itself with NVML for ~1 minute — the lock file is not the card. Card idle **and** lock held is a problem: say so in chat ("waited X, lock held by `<owner>`") and move to work that needs no GPU. **Do not wait, and never take a live lock silently.** Why it matters: contention moves numbers — the same code, the same day, gave `im2col 74.4 s` on a quiet machine and `87.0 s` on a loaded one, 17%, against a 10 s effect being measured.
+
 ## Memory gotchas
 
 Conversions check free disk (`estimate + 1 GiB`) and free RAM (`3 × largest selected tensor + 2 GiB`) and exit rather than thrash. If it refuses, the fix is to close memory-heavy WSL/worker processes **manually** — never change the pagefile or kill processes automatically.
