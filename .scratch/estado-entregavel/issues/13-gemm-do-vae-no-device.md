@@ -95,3 +95,19 @@ sincronização são um número só aqui. O encoder e o VAE de áudio não foram
 estágios, não explica nenhum. E `--features gpu` é escolha de compilação, não de dispatch por
 forma: um braço que escolhesse por volume por chamada não foi testado e é justamente o que o
 resultado sugere valer.
+
+
+## Nota de 2026-08-21 (mais tarde): em que placa isto foi medido
+
+O ticket `28` descobriu que o `cortiq` pega o adaptador por `request_adapter(HighPerformance)`
+quando `CMF_GPU_ADAPTER` nao esta setado, e que neste host isso resolve para a **RTX 3080 Ti**,
+nao para a 3090. As corridas desta Resolucao nao setaram a variavel.
+
+**O veredito continua valendo.** Reconferido na 3090 pinada, sob lock, duas rodadas alternadas: o
+braco de device (`--features gpu`, classe unica) da **332,9 e 335,9 s** contra **261,4 e 274,0 s**
+do host. Perde igual.
+
+**Os numeros por bloco, nao.** A tabela `after_block_4` / `_6` / `_8` acima foi medida na 3080 Ti,
+que esteve entre 9% e 26% de utilizacao com trabalho de terceiro durante toda aquela sessao. Use
+os SINAIS dela (a placa ganha em bloco largo, perde em bloco estreito — o que o ticket 28 depois
+confirmou ser funcao de `m`), nao as razoes 2,4x e 2,9x como propriedade da 3090.

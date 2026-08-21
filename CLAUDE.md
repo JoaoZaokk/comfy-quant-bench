@@ -262,6 +262,22 @@ machine against `87.0 s` on a loaded one — **17%**, against a 10 s effect bein
 2026-08-19 a hand-written lock named a pid that was dead the instant it was written, so the card sat
 idle behind it for roughly forty minutes.
 
+**Holding the lock is not the same as using the locked card.** Verified 2026-08-21, executed:
+`F:\cortiq-cmf` selects its wgpu adapter with `request_adapter(HighPerformance)` when
+`CMF_GPU_ADAPTER` is unset, and on this host that resolves to the **RTX 3080 Ti**, not the 3090.
+A whole measurement session ran on `cuda:1` — which was 9-26% busy in every `nvidia-smi` sample —
+while the lock sat on an idle 3090. The probe cache is what exposed it, because it stamps the
+adapter name into every line:
+
+```
+0.5.95	NVIDIA GeForce RTX 3080 Ti/Vulkan	gemm-nt	gpu
+```
+
+So for any cortiq measurement: **pin the card** with `CMF_GPU_ADAPTER=3090` (index into
+`cortiq gpu`, or a case-insensitive substring of the adapter name), and confirm it afterwards by
+pointing `CMF_PROBE_CACHE` at a file and reading which adapter it names. A lock on the wrong card
+protects nothing and reads as protection.
+
 **Provenance of this section:** agreed with the bench owner on 2026-08-21, when only one session
 held the card ("gpu liberada, so tem voce agora"). It is therefore **one side's protocol written
 down, in force until contested** — not a negotiated settlement between two live sessions. The

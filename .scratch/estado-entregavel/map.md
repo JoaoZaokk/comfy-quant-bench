@@ -94,7 +94,7 @@ Herdada do `CLAUDE.md` da bancada e reforçada por este dia:
 
 <!-- indice: uma linha por ticket fechado, com link para o detalhe -->
 
-**28 de 29 fechados** em 2026-08-21. Um por linha, na ordem do numero.
+**29 de 29 fechados** em 2026-08-21. Um por linha, na ordem do numero.
 
 - [01 — Janela de GPU acordada com a outra sessão](issues/01-janela-de-gpu.md)
 - [02 — Triagem barata dos 93 arquivos rastreados](issues/02-triagem-dos-88-arquivos.md)
@@ -123,11 +123,12 @@ Herdada do `CLAUDE.md` da bancada e reforçada por este dia:
 - [25 — `fbcache_visual.py` é o único `fbcache_*` sem resultado registrado](issues/25-fbcache-visual-sem-resultado-registrado.md)
 - [26 — `hf_parallel_get.py` resolve o problema que `fetch_*` descrevem, mas nenhum dos dois o usa](issues/26-hf-parallel-get-sem-chamador.md)
 - [27 — Teste atrás de `cfg(feature)` reporta `ok` rodando zero testes](issues/27-teste-com-cfg-feature-reporta-ok-com-zero-testes.md)
+- [28 — Convolução direta no VAE, sem materializar o im2col](issues/28-conv-direta-sem-materializar-im2col.md)
 - [29 — Cinco scripts de medição morrem quando o binário escreve no stderr](issues/29-scripts-de-medicao-morrem-com-o-proprio-log.md)
 
 **Em aberto:**
 
-- [28 — Convolução direta no VAE, sem materializar o im2col](issues/28-conv-direta-sem-materializar-im2col.md) — `open`
+- (nenhum)
 
 ## Not yet specified
 
