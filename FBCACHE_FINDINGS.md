@@ -196,14 +196,22 @@ Baselines concordam em 4%.
 #### O mesmo modelo, olhando o pixel em vez do latente (2026-08-21)
 
 `tools/fbcache_visual.py` era o unico dos oito `fbcache_*` sem resultado registrado aqui. Rodou.
-**EXECUTADO** duas vezes, 3090 ociosa sob lock, 480x480, 33 frames, 20 steps, cfg 6.0, seed 12345,
-euler/simple, shift 7.0, prompt fixo -- as duas corridas alternadas com a mesma invocacao:
+**EXECUTADO** tres vezes, 3090 sob lock, 480x480, 33 frames, 20 steps, cfg 6.0, seed 12345,
+euler/simple, shift 7.0, prompt fixo, mesma invocacao nas tres (so o `--out` muda):
 
-| threshold | s (min-max) | speedup | hits | relL2 no **pixel** | max diff |
+| threshold | s (3 corridas) | speedup | hits | relL2 no **pixel** | max diff |
 |---|---|---|---|---|---|
-| baseline | 57.8 - 59.0 | 1.00x | - | - | - |
-| 0.12 | 30.5 - 31.1 | **1.86 - 1.93x** | 18/40 | 0.2363 | 0.9236 |
-| 0.20 | 20.0 - 20.2 | **2.86 - 2.95x** | 26/40 | 0.2580 | 0.7761 |
+| baseline | 57,8 / 59,0 / 58,6 | 1,00x | - | - | - |
+| 0.12 | 30,5 / 31,1 / 30,7 | **1,86 - 1,93x** | 18/40 | 0,2363 | 0,9236 |
+| 0.20 | 20,0 / 20,2 / 20,3 | **2,86 - 2,95x** | 26/40 | 0,2580 | 0,7761 |
+
+Sao tres e nao duas por um motivo que vale registrar: **a segunda corrida nao teve janela limpa.**
+Um agente desta mesma sessao rodou `tools/test_svdq_verify.py` pelo comando documentado no topo do
+proprio arquivo, e o bloco `__main__` dele autodetecta CUDA/nunchaku/checkpoint e disparou dois
+testes de kernel na placa por volta de 06:29 -- dentro da corrida 2. A terceira foi feita depois,
+com a placa comprovadamente parada (`nvidia-smi`: 44 MiB, 0%). O baseline limpo (58,6) caiu
+**entre** os dois anteriores, entao a contaminacao nao moveu nada alem do ruido normal e nenhum
+numero precisou ser retirado -- mas a faixa acima inclui uma corrida suja, e esta dito qual.
 
 Duas coisas que so esta ferramenta podia dizer, e que mudam a leitura da tabela acima:
 
@@ -225,8 +233,15 @@ seja de graca no HunyuanVideo 1.5; ha uma faixa em que ele e **rapido e diferent
 tolera outra imagem pelo mesmo prompt (exploracao, previa, grade de variacoes), 2.9x esta ali. Se
 o uso e "a mesma imagem, mais rapido", nao esta.
 
-Contatos em `_fbcache_visual/` e `_fbcache_visual_run2/` (`*_baseline.png`, `*_t0.12.png`,
+Contatos em `_fbcache_visual/`, `_fbcache_visual_run2/` e `_fbcache_visual_run3/` (`*_baseline.png`, `*_t0.12.png`,
 `*_t0.2.png`), oito quadros por folha.
+
+**A ferramenta ja tinha rodado antes, e ninguem soube.** `_fbcache_visual/` guardava um
+`..._t0.08.png` de **2026-08-17 18:26** -- prova de uma corrida anterior que nunca entrou aqui. O
+ticket que mandou rodar dizia "nao ha evidencia de que ja rodou"; a evidencia estava numa pasta
+nao rastreada, e a corrida de 2026-08-21 **sobrescreveu** os outros tres PNGs daquela (mesmos
+nomes de arquivo). O que aquela corrida mediu esta perdido; o unico quadro que sobreviveu foi o
+`0.08`, porque nesta nao pedi esse threshold.
 
 **Nao coberto:** um prompt, um modelo, uma resolucao, dois thresholds. Nada aqui diz que a mesma
 razao ou a mesma perda visual valem para FLUX, Wan ou LTX -- cada um tem sua faixa de residual, e

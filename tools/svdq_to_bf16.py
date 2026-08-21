@@ -66,7 +66,7 @@ The residual comes from the activation scale being stored in BF16, not float32. 
 over 200k random amax values, `7 * bfloat16(amax / 7)` never reproduces `amax`: mean relative
 error 0.0014, max 0.0039. So treat the recovery as good to ~1e-3 relative, not to zero.
 
-Two caveats on that number, both unclosed: it assumes nunchaku stores the INT4 `oscales` in BF16
+**[GPU]** Two caveats on that number, both unclosed: it assumes nunchaku stores the INT4 `oscales` in BF16
 (read from `ops/quantize.py` and `models/linear.py`, not executed), and the test that would catch
 it -- `test_identity_probe_is_exact` -- runs `FakeW4A4` in float32, where the error structurally
 cannot appear. Closing it needs a GPU: quantize a known BF16 weight with nunchaku's own quantizer
@@ -291,6 +291,85 @@ def split_fused(stem: str, weight: torch.Tensor) -> dict:
     return {f"{stem}.weight": weight}
 
 
+def _in_out(header: dict, stem: str) -> tuple[int, int] | None:
+    """`(out_features, in_features)` for a quantised stem, from its low-rank pair.
+
+    Not from `qweight`: that is the INT4 container and its second axis is half of `in_features`.
+    `proj_up` is `[out, rank]` and `proj_down` is `[in, rank]`, both stored uncompressed.
+    """
+    down, up = header.get(f"{stem}.proj_down"), header.get(f"{stem}.proj_up")
+    if not down or not up:
+        return None
+    return up["shape"][0], down["shape"][0]
+
+
+def check_fusion(header: dict, stems: list[str], config: dict) -> list[str]:
+    """Refuse, before a single tensor is read, the fusions `split_fused` cannot see from a shape.
+
+    `split_fused` decides by name and by divisibility. Divisibility is not the property that
+    matters -- three of the four ways this can go wrong leave the divisibility check green and
+    produce a file that loads, or half-loads, and is wrong. Each check below refuses one of them,
+    and each is here because it was **measured** on the SVDQuant checkpoints on this machine
+    (2026-08-21, headers only, four files: z-image-turbo, beyond-reality-zimage-v2, qwen-image,
+    flux.1-dev):
+
+    * **A fused stem that carries a bias.** The weight is split into `to_q/to_k/to_v.weight`
+      while `to_qkv.bias` rides through the passthrough under the *fused* name, so the output has
+      three weights and a bias none of them matches. Latent where `split_fused` matches today
+      (the 102 matching stems in each Z-Image file have zero bias) and **active the moment the
+      pattern is widened**: Qwen-Image has 300 stems one prefix away from matching (`attn.to_qkv`
+      rather than `attention.to_qkv`) and **every one of them has a bias**.
+
+    * **`to_qkv` where `out != 3 * in`.** Equal thirds is what `chunk(3)` assumes; GQA breaks it
+      while leaving `out % 3 == 0` perfectly possible. Measured: `out == 3 * in` on all 94 fused
+      attention stems across the four files, so refusing on inequality costs nothing today.
+
+    * **`n_kv_heads != n_heads` in the model's own config.** The direct statement of the same
+      thing, when the publisher wrote it down. Z-Image carries both keys (30 and 30 here).
+
+    * **`net.0.proj` that is a single projection, not a gate pair.** The decisive evidence is the
+      sibling `net.2` (the `w2` that consumes the gate output): if the projection is a gate pair,
+      `w2` takes half of it. Measured -- Z-Image `net.2` takes 10240 of `net.0.proj`'s 20480, a
+      gate pair; **Qwen-Image `net.2` takes 12288 of 12288**, so Qwen's `net.0.proj` is a single
+      `gelu` projection and cutting it in half would write two tensors nothing consumes. That is
+      the scenario `AUDITORIA_2026-08-18.md` called constructed; it is sitting in a real file.
+
+    Returns one string per problem, empty when there is nothing to refuse. **This is a
+    header-level check: shapes and names only.** It does not run the kernel, does not look at a
+    single weight value, and therefore cannot tell a correct split from a plausible one -- it
+    only refuses the cases that are provably wrong before any work starts.
+    """
+    problems: list[str] = []
+    n_heads, n_kv = config.get("n_heads"), config.get("n_kv_heads")
+    for stem in stems:
+        split_keys = split_fused(stem, torch.empty(6, 1))
+        if set(split_keys) == {f"{stem}.weight"}:
+            continue                                  # passthrough: nothing is being cut
+        if f"{stem}.bias" in header:
+            problems.append(
+                f"{stem}: the weight is renamed to {sorted(split_keys)} but "
+                f"{stem}.bias passes through under the fused name, so no split weight would "
+                f"match it")
+        shape = _in_out(header, stem)
+        if stem.endswith("attention.to_qkv"):
+            if shape and shape[0] != 3 * shape[1]:
+                problems.append(
+                    f"{stem}: out={shape[0]} is not 3*in={3 * shape[1]}, so q/k/v are not equal "
+                    f"thirds (GQA?) and chunk(3) would cut in the wrong places")
+            if n_heads is not None and n_kv is not None and n_heads != n_kv:
+                problems.append(
+                    f"{stem}: the model config says n_heads={n_heads} but n_kv_heads={n_kv}, "
+                    f"so k and v are narrower than q and this is not a three-equal-way fusion")
+        elif stem.endswith("feed_forward.net.0.proj"):
+            sibling = _in_out(header, stem[: -len("net.0.proj")] + "net.2")
+            if shape and sibling and sibling[1] != shape[0] // 2:
+                problems.append(
+                    f"{stem}: out={shape[0]}, but the sibling net.2 consumes {sibling[1]}, not "
+                    f"{shape[0] // 2}. A gate pair feeds w2 half of it; this one is a single "
+                    f"projection and splitting it in two would write tensors nothing reads")
+    return problems
+
+
 def verify(layer, weight: torch.Tensor, device: str, dtype: torch.dtype) -> dict:
     """Diagnostic scores for one recovered layer. **Reported, never gated.** Read why.
 
@@ -429,6 +508,28 @@ def main() -> int:
     print(f"rank {quant_cfg.get('rank')}, group_size "
           f"{quant_cfg.get('weight', {}).get('group_size')}")
 
+    # Refuse before touching a tensor, not after writing 11 GiB. `--keep-fused` skips it because
+    # nothing is being split in that mode, so none of the three failures can happen.
+    if not args.keep_fused:
+        config = json.loads(metadata.get("config", "{}")) if metadata else {}
+        problems = check_fusion(header, stems, config)
+        if problems:
+            print(f"\nrefusing to convert: {len(problems)} fusion(s) this tool cannot split "
+                  f"correctly in this file.")
+            for problem in problems:
+                print(f"  {problem}")
+            print("\nNothing was written. Either pass --keep-fused to write the fused weights "
+                  "under their fused names, or teach split_fused this architecture and re-run.")
+            return 1
+
+    # BF16 for the recovery, and only for the recovery. Everything that is not part of a
+    # quantised layer -- norms included -- is copied byte-for-byte further down with the source's
+    # own `info["dtype"]`, so a checkpoint whose norms are F32 keeps them F32. Measured
+    # 2026-08-21 on four SVDQuant files here (z-image-turbo, beyond-reality-zimage-v2,
+    # qwen-image, flux.1-dev): every passthrough tensor is BF16 in all four, and the copy path
+    # never converts. `AUDITORIA_2026-08-18.md` listed "dtype BF16 hardcoded for the norms" as an
+    # open low-confidence finding; the norms are not the ones at risk here. What IS hardcoded is
+    # the dtype the Nunchaku layer is built with, below.
     dtype = torch.bfloat16
     print("loading source into RAM", flush=True)
     tensors = load_file(str(src))

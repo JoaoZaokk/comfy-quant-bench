@@ -40,6 +40,8 @@ that invoke one do not work as written -- so the file carries its own runner. It
 from __future__ import annotations
 
 import importlib.util
+import sys
+import types
 from pathlib import Path
 
 import torch
@@ -245,23 +247,157 @@ def test_split_fused_refuses_indivisible_qkv():
         f"an indivisible qkv was split anyway into {sorted(out)}")
 
 
+def _zeros_param(*shape, dtype, device):
+    return nn.Parameter(torch.zeros(*shape, dtype=dtype, device=device), requires_grad=False)
+
+
+class _FakeSVDQW4A4Linear(nn.Module):
+    """Stand-in for `nunchaku.models.linear.SVDQW4A4Linear`, installed into `sys.modules` (see
+    `_fake_nunchaku` below) so that `svdq_to_bf16.recover_weight` -- called for real in the
+    tests below, not reimplemented -- builds this instead of the CUDA kernel.
+
+    Carries the same seven attributes `recover_weight` copies state into (`qweight`, `wscales`,
+    `smooth_factor`, `smooth_factor_orig`, `proj_down`, `proj_up`, `bias`), sized the way the
+    real layer sizes them, so every `.copy_()` inside `recover_weight` runs against real tensors
+    of the right shape. `qweight` itself cannot be the linear map: it is INT4-packed and half as
+    wide as `in_features` (`recover_weight` computes `in_features` from `half_in * 2`), which is
+    exactly the packing the module docstring says the whole tool exists to avoid unpacking. The
+    actual map lives in `_true_weight`, a plain float matrix fixed at construction (seed 0) and
+    exposed on the returned layer for the test to check against. `forward` is
+    `x @ _true_weight.T [+ bias]` -- no quantisation, so the identity probe inside
+    `recover_weight` recovers it bit-exact, and a transpose bug in that probe shows up as a
+    shape or value mismatch, not noise to argue about.
+    """
+
+    def __init__(self, in_features, out_features, rank=1, bias=True, precision="int4",
+                torch_dtype=torch.float32, device="cpu"):
+        super().__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        gen = torch.Generator().manual_seed(0)
+        self._true_weight = torch.randn(out_features, in_features, generator=gen).to(torch_dtype)
+        self.qweight = _zeros_param(out_features, in_features // 2, dtype=torch_dtype,
+                                    device=device)
+        self.wscales = _zeros_param(out_features, dtype=torch_dtype, device=device)
+        self.smooth_factor = _zeros_param(in_features, dtype=torch_dtype, device=device)
+        self.smooth_factor_orig = _zeros_param(in_features, dtype=torch_dtype, device=device)
+        self.proj_down = _zeros_param(in_features, rank, dtype=torch_dtype, device=device)
+        self.proj_up = _zeros_param(rank, out_features, dtype=torch_dtype, device=device)
+        self.bias = _zeros_param(out_features, dtype=torch_dtype, device=device) if bias else None
+
+    def forward(self, x):
+        out = x.to(self._true_weight.dtype) @ self._true_weight.T
+        return out + self.bias if self.bias is not None else out
+
+
+class _fake_nunchaku:
+    """Context manager: makes `from nunchaku.models.linear import SVDQW4A4Linear` -- the import
+    line inside `recover_weight` -- resolve to `_FakeSVDQW4A4Linear`, for the duration of the
+    block, by pre-populating `sys.modules`. Restores whatever (if anything) was there before on
+    exit, so this cannot leak into another test or clobber a real nunchaku import."""
+
+    NAMES = ("nunchaku", "nunchaku.models", "nunchaku.models.linear")
+
+    def __enter__(self):
+        self._saved = {name: sys.modules.get(name) for name in self.NAMES}
+        nunchaku_mod = types.ModuleType("nunchaku")
+        models_mod = types.ModuleType("nunchaku.models")
+        linear_mod = types.ModuleType("nunchaku.models.linear")
+        linear_mod.SVDQW4A4Linear = _FakeSVDQW4A4Linear
+        nunchaku_mod.models = models_mod
+        models_mod.linear = linear_mod
+        sys.modules.update({"nunchaku": nunchaku_mod, "nunchaku.models": models_mod,
+                            "nunchaku.models.linear": linear_mod})
+        return self
+
+    def __exit__(self, *exc):
+        for name, mod in self._saved.items():
+            if mod is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = mod
+        return False
+
+
+def _fake_tensors(stem: str, in_features: int, out_features: int, rank: int = 4,
+                  bias: bool = True) -> dict:
+    """A `tensors` dict shaped like the slice of an SVDQuant checkpoint `recover_weight` reads:
+    the six state-tensor keys plus an optional bias, named `{stem}.{suffix}` exactly as the real
+    file stores them. Values are zeros -- `_FakeSVDQW4A4Linear` only `.copy_()`s them, never
+    reads them back out for its math -- so only shape and key names matter here."""
+    out = {
+        f"{stem}.qweight": torch.zeros(out_features, in_features // 2),
+        f"{stem}.wscales": torch.zeros(out_features),
+        f"{stem}.smooth_factor": torch.zeros(in_features),
+        f"{stem}.smooth_factor_orig": torch.zeros(in_features),
+        f"{stem}.proj_down": torch.zeros(in_features, rank),
+        f"{stem}.proj_up": torch.zeros(rank, out_features),
+    }
+    if bias:
+        out[f"{stem}.bias"] = torch.zeros(out_features)
+    return out
+
+
+def test_recover_weight_calls_the_real_function():
+    """Closes the gap this suite used to document instead of closing: `recover_weight` itself,
+    called for real (`svdq.recover_weight`, not a reimplementation), with `nunchaku` faked out
+    from under it so the whole thing runs on CPU with no checkpoint.
+
+    Rectangular on purpose (12 in, 8 out): `recover_weight`'s identity probe is
+    `layer(eye)[0].T.contiguous()`. Drop that `.T` and the returned matrix comes back shape
+    (12, 8) instead of (8, 12) -- a shape mismatch against `layer._true_weight`, not a small
+    numeric drift, so this fails loudly and immediately under that mutation. LIDO+EXECUTADO:
+    verified by mutating a scratch copy of svdq_to_bf16.py (svdq_to_bf16.py itself was not
+    touched -- another session is editing it) and running this test against the mutated copy;
+    see the ticket resolution / task report for the exact command and the observed failure.
+    """
+    stem = "layers.0.attention.to_out.0"
+    tensors = _fake_tensors(stem, in_features=12, out_features=8)
+    with _fake_nunchaku():
+        layer, recovered, zero_leak = svdq.recover_weight(tensors, stem, "cpu", torch.float32)
+    assert recovered.shape == (8, 12), (
+        f"expected (out_features, in_features) = (8, 12), got {tuple(recovered.shape)}")
+    assert torch.equal(recovered, layer._true_weight), (
+        "recovered does not match the layer's own map")
+    assert zero_leak == 0.0, f"bias was not suppressed during the probe: zero response {zero_leak}"
+
+
+def test_recover_weight_without_bias():
+    """The `has_bias = f'{stem}.bias' in tensors` branch in `recover_weight`: no bias key in the
+    tensors dict must leave `layer.bias` None, and the rest of the recovery must still work."""
+    stem = "layers.0.attention.to_out.0"
+    tensors = _fake_tensors(stem, in_features=6, out_features=4, bias=False)
+    with _fake_nunchaku():
+        layer, recovered, zero_leak = svdq.recover_weight(tensors, stem, "cpu", torch.float32)
+    assert layer.bias is None
+    assert recovered.shape == (4, 6)
+    assert torch.equal(recovered, layer._true_weight)
+    assert zero_leak == 0.0
+
+
 # NOT a test, deliberately not named test_*, and printed by the runner instead.
 #
-# `recover_weight(tensors, stem, device, dtype)` builds the layer itself from a state dict via
-# nunchaku's own module, so it cannot be handed a FakeW4A4 and cannot run on CPU. Everything in
-# this file that exercises "the probe" therefore exercises `_recover`, the reimplementation
-# above -- not the shipped function. That is why the suite stayed green when the audit mutated
-# svdq_to_bf16 three ways at once (w3/w1 swapped, `.T` dropped, q/k/v inverted): none of the
-# three is reachable from here.
+# `recover_weight(tensors, stem, device, dtype)` used to be reachable only through `_recover`,
+# the reimplementation above, because it imports nunchaku's own `SVDQW4A4Linear` and that class
+# needs CUDA. `test_recover_weight_calls_the_real_function` and
+# `test_recover_weight_without_bias` close that by installing a fake `nunchaku.models.linear`
+# module (`_fake_nunchaku` / `_FakeSVDQW4A4Linear`, above) into `sys.modules` before calling
+# `svdq.recover_weight` -- the real function, unmodified -- so its dimension parsing, state-
+# tensor copying, bias suppression/restoration, and the `.T` identity probe all run for real on
+# CPU. What that fake cannot reach is the real kernel's own math -- INT4 dequantisation, the
+# low-rank branch, smoothing -- which lives inside the real SVDQW4A4Linear.forward, not inside
+# recover_weight, and still needs CUDA and nunchaku installed.
 #
-# What the new split_fused tests above DO cover: the w3/w1 order and the q/k/v order, because
-# split_fused is a pure tensor operation and the real function is called directly. The `.T`
-# mutation lives inside recover_weight and remains untested.
+# split_fused above is covered the same way but needs no fake: it's a pure tensor operation, so
+# the real function is called directly.
 UNTESTED_ON_CPU = (
-    "recover_weight() is NOT covered by the CPU tests: it builds its layer from a state dict "
-    "through nunchaku and needs a GPU. The probe tests above exercise the in-file "
-    "reimplementation `_recover`, so a bug in the shipped recover_weight passes them. The "
-    "gpu_ tests below close the `.T` and the scale; everything else about it is still open."
+    "recover_weight()'s own code -- dimension parsing, state-tensor copying, bias "
+    "suppression/restoration, and the `.T` identity probe -- is now called for real on CPU "
+    "(test_recover_weight_calls_the_real_function, test_recover_weight_without_bias), with "
+    "nunchaku faked out from under it. What that fake CANNOT exercise is the real kernel's own "
+    "math: INT4 dequantisation, the low-rank branch, and smoothing, all inside the real "
+    "SVDQW4A4Linear.forward rather than inside recover_weight. The gpu_ tests below close that "
+    "against the real kernel and the real checkpoint; until they run, that part is unverified."
 )
 
 # ---------------------------------------------------------------------------------------------
