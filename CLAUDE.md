@@ -6,7 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `F:\COMFY_PORTABLE` is a **live ComfyUI Portable installation**, not a clean source project. It is currently the working bench for the **ConvRot W4A4 quantization project** (converting local high-precision checkpoints to native 4-bit weight / 4-bit activation format).
 
-The root is **not** a Git repository. `ComfyUI/` is the Git checkout (version **0.33.0**, `v0.33.0-19-gc1739380`, 2026-08-18 -- it was 0.29.0/`42d2aa55` earlier in this project's life). Commits belong to `ComfyUI/` or to an individual repo under `ComfyUI/custom_nodes/` (60 installed).
+**Three separate Git repositories overlap here, and confusing them is easy.** The root *is* a repo — on `master`, tracking **89 files** as of 2026-08-21 (`git ls-files | wc -l`; this file used to say the root was not a repo, which stopped being true once `tools/` was committed). It is an **allowlist**: `.gitignore` ignores `/*` and re-includes tracked paths one by one, because models alone are ~600 GiB. `ComfyUI/` is a *separate* checkout (version **0.33.0**, `v0.33.0-19-gc1739380`, 2026-08-18 -- it was 0.29.0/`42d2aa55` earlier in this project's life) and is **not** tracked by the root repo. Each of the **66 entries** under `ComfyUI/custom_nodes/` (64 directories) is its own repo; only three files there are ours and tracked by the root, all under `custom_nodes/comfy-quant-preflight/`.
+
+Count these before quoting them. Both the file count and the node count were wrong in this file until they were recounted — see the memory `escrevo-mais-rapido-do-que-confiro`.
 
 Also read [AGENTS.md](AGENTS.md) (root policy) and [ComfyUI/AGENTS.md](ComfyUI/AGENTS.md) (upstream engineering style — mandatory before editing anything under `ComfyUI/`).
 
@@ -66,14 +68,14 @@ gets fixed too, not just the sentence.
 |---|---|
 | Python | 3.13.12 (embedded) |
 | Torch | 2.13.0+cu130 (torchvision 0.28.0, torchaudio 2.11.0, all `+cu130`) — subiu de 2.12.1 em algum ponto; `_check_accel.py` confirma Triton/Sage/FlashAttention ainda executando kernel sob 2.13 |
-| comfy-kitchen | 0.2.23 |
+| comfy-kitchen | **0.2.31** (era 0.2.23 neste arquivo; subiu em algum ponto e a nota não acompanhou. É o registry que decide se `convrot_w4a4_linear` resolve para `comfy_kitchen.backends.cuda.*` — reconfira o preflight antes de confiar em conversão antiga) |
 | spas_sage_attn (SpargeAttn) | 0.1.0+cu130torch2.9.0andhigher.post4 — wheel abi3 do woct0rdho, traz `_qattn_sm80.pyd`, roda kernel na sm86 |
 | nunchaku (SVDQuant) | 1.2.1+cu13.0torch2.11 — build de torch 2.11 rodando sob 2.13; `ops.attention_fp16` executa na sm86, `ops.gemm_w4a4` ainda não exercitado |
 | GPUs | RTX 3090 24 GB (`cuda:0`, cc 8.6), RTX 3080 Ti 12 GB (`cuda:1`) |
 
 Non-obvious environment facts:
 
-- The cu130 Torch wheel ships only `cudart64_13.dll`, but the installed SageAttention 2.2.0 binary extensions (`_fused.pyd`, `_qattn_sm80.pyd`) link `cudart64_12.dll`. A CUDA 12.6 runtime DLL was copied side-by-side into `python_embeded\Lib\site-packages\torch\lib\cudart64_12.dll` (556,544 bytes, SHA-256 `D954CA54...F9DAD`, sourced from `venvs\ultravox311`). **Do not remove it** — Sage, FlashVSR, and the Sage launchers depend on it.
+- ~~The cu130 Torch wheel ships only `cudart64_13.dll`, but the installed SageAttention 2.2.0 binary extensions link `cudart64_12.dll`, so a CUDA 12.6 runtime DLL was copied side-by-side into `torch\lib\cudart64_12.dll`. **Do not remove it.**~~ **OBSOLETE, and the file is already gone.** Checked 2026-08-21: `find python_embeded -iname "cudart64*.dll"` returns only `cudart64_13.dll`, and `sageattention._qattn_sm80`, `sageattention._fused`, `spas_sage_attn._qattn_sm80` and `flash_attn` **all import successfully** without it — that is the Windows loader resolving the whole DLL chain, not a grep. The accel stack was reinstalled on 2026-08-16 with cu130 builds (`sageattention 2.2.0+cu130torch2.10.0andhigher.post6`, installed 15:01; `cudart64_13.dll` timestamped 15:34) which link `torch_cuda.dll` rather than cudart directly. **Do not "restore" the 12.6 DLL.** Caveat that travels with this: an import proves DLL resolution, **not kernel execution** — `_check_accel.py` does the forward-and-compare and needs the card, and was not run. This rule survived five days after the file it protected stopped existing, in a file every session reads.
 - Extra models are mounted from a second drive via `ComfyUI/extra_model_paths.yaml` (`D:/ComfyUI-Models/`). A missing model may live there, not under `ComfyUI/models/`.
 - `venvs/ultravox311` is an unrelated side venv (Ultravox/TTS experiments — `teste_*.py` at root). Not part of ComfyUI.
 
@@ -91,11 +93,25 @@ Launch:
 
 **Any workflow using a Nunchaku SVDQuant loader needs `--disable-dynamic-vram`**, verified 2026-08-18 by a real generation. ComfyUI 0.33 added a Windows-only lazy `Linear` (`comfy/ops.py:520-538`, `self.weight = None` until `_load_from_state_dict`), enabled by `main.py:289`. ComfyUI-nunchaku reads `orig_attn.qkv.weight.dtype` in `patch_model` before that happens and dies with `AttributeError: 'NoneType' object has no attribute 'dtype'`. Nothing about this points at the loader or the checkpoint, and the same node called directly in-process works fine — so the error is easy to misattribute.
 
+**The LTX 2.5 workflow on this bench needs `--disable-dynamic-vram` too**, verified 2026-08-19 by a real render (executed, not traced; the run is `F:\cortiq\e2e_comfy_512.log`, timestamped 2026-08-19 21:28 -- an earlier pass of this note said 2026-08-21, which was the date it was written down, not the date it was measured). This is a second, independent reason to pass the flag — do not read it as Nunchaku-only. The `cortiq` ledger asserted the opposite for this workflow; that assertion was a trace, not a run, and the run below is what overrides it. Without the flag the render dies with:
+
+```
+Model LTXAVTEModel_ prepared for dynamic VRAM loading. 14612MB Staged.
+Model LTXAV        prepared for dynamic VRAM loading. 20484MB Staged.
+aimdo: src/hostbuf.c:283:ERROR:hostbuf_read_file_slice: device copy failed
+RuntimeError: HostBuffer.read_file_slice failed
+torch.AcceleratorError: CUDA error: out of memory
+```
+
+14612 + 20484 = 35 GB staged on a 24 GB card. PyTorch's own summary, printed alongside, says `Allocated memory 141211 KiB` and `CUDA OOMs: 0` — the allocator that overflowed was dynamic-vram's, not torch's. **The message never names the subsystem at fault** and points the reader straight at "the model is too large", on a card that had 18 GB free at the moment of failure.
+
 ```bash
 .\python_embeded\python.exe -s .\ComfyUI\main.py --windows-standalone-build --use-sage-attention --disable-dynamic-vram --listen 127.0.0.1 --port 8190
 ```
 
-Launcher notes: `run_nvidia_gpu_8190_loopback.bat` (Sage, `127.0.0.1:8190`) is the one to use. `run_nvidia_gpu_8190.bat` binds `0.0.0.0` and on this host the asyncio accept loop dies with `OSError(22, 'The specified network name is no longer available', 64)` whenever NordLynx/NordVPN reconnects — process stays alive, port stops accepting. Other launchers: `run_nvidia_gpu.bat`, `run_nvidia_gpu_fast_fp16_accumulation.bat`, `run_nvidia_gpu_8190_flash.bat` (FlashAttention), `run_cpu.bat`.
+Launcher notes: `run_nvidia_gpu_8190_loopback.bat` (Sage, `127.0.0.1:8190`) is the one to use — **but none of the `.bat` launchers passes `--disable-dynamic-vram`** (checked 2026-08-21 by grepping all seven for the flag; zero hits). For any workflow that needs it — Nunchaku SVDQuant loaders, and the LTX 2.5 workflow above — call `main.py` by hand with the flag, or use `F:\cortiq-cmf\run_e2e_comfy.ps1`, which does pass it. Following "use the loopback launcher" alone will reproduce the 35 GB staging OOM. `run_nvidia_gpu_8190.bat` binds `0.0.0.0` and on this host the asyncio accept loop dies with `OSError(22, 'The specified network name is no longer available', 64)` whenever NordLynx/NordVPN reconnects — process stays alive, port stops accepting. Other launchers: `run_nvidia_gpu.bat`, `run_nvidia_gpu_fast_fp16_accumulation.bat`, `run_nvidia_gpu_8190_flash.bat` (FlashAttention), `run_cpu.bat`.
+
+**`main.py --windows-standalone-build` re-executes itself as a child process**, verified 2026-08-19 (executed, not traced). Killing only the PID that `Start-Process` returns leaves that child running as an orphan. On this bench the orphan held **20,578 MiB of the 3090** and **16.67 GB of RAM**, invisibly: `Get-Process -Id` reported the launched PID as dead, while `nvidia-smi` still showed the VRAM occupied. Kill the process tree, not the PID.
 
 Tests (run from the root; `pytest.ini` lives in `ComfyUI/` with `pythonpath = .`).
 
