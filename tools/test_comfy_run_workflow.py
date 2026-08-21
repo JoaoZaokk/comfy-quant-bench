@@ -1,4 +1,6 @@
-"""Regression tests for `comfy_run_workflow.py`'s typed API-format model (ticket 05).
+"""Regression tests for `comfy_run_workflow.py`'s typed API-format model (ticket 05) and its
+typed conversion notes (ticket 03: unknown class / >1 widget misalignment are `Note(level=
+"fatal")`, and `main()` refuses to submit while one is outstanding, unless `--force`).
 
 No pytest in this embedded interpreter -- verified by execution, see CLAUDE.md -- so this file
 carries its own runner: `test_*` functions, bare asserts, a `main()` that calls them, PASS/FAIL
@@ -188,6 +190,126 @@ def test_no_isinstance_list_wire_test_survives_in_the_file():
 
 
 # --------------------------------------------------------------------------------------------
+# Note (ticket 03): unknown class and >1 widget misalignment are fatal; fatal blocks main()
+# --------------------------------------------------------------------------------------------
+
+def test_note_shape():
+    n = crw.Note(level="fatal", node="7", text="boom")
+    assert n.level == "fatal"
+    assert n.node == "7"
+    assert n.text == "boom"
+
+
+def test_unknown_class_is_fatal():
+    """The exact symptom this ticket is about: the node vanishes from `prompt`, AND the note
+    describing that is level='fatal', not indistinguishable free text."""
+    wf = {"nodes": [{"id": 1, "type": "TotallyUnknownNodeXYZ", "mode": 0, "inputs": [],
+                      "widgets_values": []}], "links": []}
+    prompt, notes = crw.ui_to_api(wf, object_info={})
+    assert "1" not in prompt, "the unknown node must still vanish from the prompt"
+    fatal = [n for n in notes if n.level == "fatal"]
+    assert len(fatal) == 1
+    assert fatal[0].node == "1"
+    assert "does not know class" in fatal[0].text
+
+
+def test_muted_node_is_info_not_fatal():
+    wf = {"nodes": [{"id": 1, "type": "Anything", "mode": 2, "inputs": [],
+                      "widgets_values": []}], "links": []}
+    _prompt, notes = crw.ui_to_api(wf, object_info={"Anything": {"input": {}}})
+    assert len(notes) == 1
+    assert notes[0].level == "info"
+
+
+def _defn(names: list[str]) -> dict:
+    """A minimal /object_info entry with `names` as required scalar (STRING) widgets, in order."""
+    return {
+        "input": {"required": {n: ["STRING", {}] for n in names}},
+        "input_order": {"required": names},
+    }
+
+
+def test_widget_off_by_one_missing_is_info():
+    """CLIPLoader's real shape (this file's own regression fixture): one trailing widget value
+    absent must stay level='info' and must NOT be treated as a misalignment -- this is the exact
+    case the orchestrator's ticket instructions call out by name."""
+    wf = {"nodes": [{"id": 2, "type": "N", "mode": 0, "inputs": [],
+                      "widgets_values": ["a", "b"]}], "links": []}
+    _prompt, notes = crw.ui_to_api(wf, object_info={"N": _defn(["w1", "w2", "w3"])})
+    assert len(notes) == 1
+    assert notes[0].level == "info"
+    assert "trailing ones left at server default" in notes[0].text
+
+
+def test_widget_off_by_two_missing_is_fatal():
+    """More than one widget missing is the ticket's 'desalinhamento de mais de um widget' --
+    must be fatal, not the same info-level note as off-by-one."""
+    wf = {"nodes": [{"id": 2, "type": "N", "mode": 0, "inputs": [], "widgets_values": ["a"]}],
+          "links": []}
+    _prompt, notes = crw.ui_to_api(wf, object_info={"N": _defn(["w1", "w2", "w3"])})
+    assert len(notes) == 1
+    assert notes[0].level == "fatal"
+
+
+def test_widget_extra_by_two_is_fatal():
+    wf = {"nodes": [{"id": 2, "type": "N", "mode": 0, "inputs": [],
+                      "widgets_values": ["a", "b", "c", "d"]}], "links": []}
+    _prompt, notes = crw.ui_to_api(wf, object_info={"N": _defn(["w1", "w2"])})
+    assert len(notes) == 1
+    assert notes[0].level == "fatal"
+
+
+def test_widget_extra_by_one_produces_no_note():
+    """Extra-by-one is the normal seed-node control_after_generate shape -- silent, unchanged
+    from before this ticket."""
+    wf = {"nodes": [{"id": 2, "type": "N", "mode": 0, "inputs": [],
+                      "widgets_values": ["a", "b", "c"]}], "links": []}
+    _prompt, notes = crw.ui_to_api(wf, object_info={"N": _defn(["w1", "w2"])})
+    assert notes == []
+
+
+def test_required_input_filled_from_default_is_warn():
+    wf = {"nodes": [{"id": 2, "type": "N", "mode": 0, "inputs": [], "widgets_values": []}],
+          "links": []}
+    # A required input of a non-widget type (a socket, not INT/FLOAT/STRING/...) with a
+    # 'default' in its opts -- isolates the required-fill path from the widget-count path,
+    # which is exercised separately above.
+    defn = {"input": {"required": {"w1": ["MODEL", {"default": "hi"}]}}, "input_order": {}}
+    _prompt, notes = crw.ui_to_api(wf, object_info={"N": defn})
+    assert len(notes) == 1
+    assert notes[0].level == "warn"
+    assert "filled with the server default" in notes[0].text
+
+
+def test_main_refuses_fatal_without_force_and_does_not_touch_network():
+    """The ticket's actual closing criterion, exercised on `main()` itself, not just on
+    `ui_to_api`: a fatal Note must block submission before any HTTP call. Uses
+    --object-info-file (offline, skips wait_for_server) and omits --dump-api, so if this test
+    reached the /prompt POST it would try to open a real socket to 127.0.0.1:8190 -- exactly the
+    live-network, live-server action forbidden in this environment. Reaching return 4 without an
+    exception is the proof that never happens when a fatal Note is outstanding and --force was
+    not given."""
+    import tempfile
+    wf = {"nodes": [{"id": 1, "type": "TotallyUnknownNodeXYZ", "mode": 0, "inputs": [],
+                      "widgets_values": []}], "links": []}
+    with tempfile.TemporaryDirectory() as td:
+        tdp = Path(td)
+        wf_path = tdp / "wf.json"
+        oi_path = tdp / "oi.json"
+        wf_path.write_text(json.dumps(wf), encoding="utf-8")
+        oi_path.write_text(json.dumps({}), encoding="utf-8")
+
+        saved_argv = sys.argv
+        sys.argv = ["comfy_run_workflow.py", "--workflow", str(wf_path),
+                    "--object-info-file", str(oi_path)]
+        try:
+            rc = crw.main()
+        finally:
+            sys.argv = saved_argv
+        assert rc == 4, f"expected refusal exit code 4, got {rc}"
+
+
+# --------------------------------------------------------------------------------------------
 # Golden dump: byte-identical --dump-api output, proving the refactor preserved behaviour
 # --------------------------------------------------------------------------------------------
 
@@ -230,10 +352,11 @@ def test_golden_dump_covers_a_real_wired_and_a_real_wire_free_seed_case():
 # NOT a test, deliberately not named test_*, printed by the runner instead.
 NOT_COVERED = (
     "This suite does not talk to a live ComfyUI server: it exercises ui_to_api/prompt_to_api/"
-    "Node in-process and via --dump-api only. main()'s HTTP path (/prompt POST, /history poll, "
-    "the cache-hit-vs-render heuristic around line ~344, the warning-string severity question "
-    "from ticket 03, and main() decomposition from ticket 06) is untouched here by design -- "
-    "those are other tickets' scope, not because this run verified them. "
+    "Node/Note in-process, and main() only up to the point where a fatal Note returns 4 -- never "
+    "past it. The --force-allows-submission path, the actual /prompt POST, /history poll, the "
+    "cache-hit-vs-render heuristic around line ~344, and main() decomposition from ticket 06 are "
+    "untouched here by design (that HTTP path needs a live server, which this environment does "
+    "not permit) -- those are other tickets' scope or another run's job, not verified by this one. "
     "tools/fixtures/object_info_ltx25.json reflects ComfyUI 0.33.0's schema for exactly the 16 "
     "node classes LTX25-int8-acceptance-v2.json uses; it will silently go stale if those nodes' "
     "INPUT_TYPES change upstream and nobody regenerates it -- this suite cannot detect that "

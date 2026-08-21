@@ -41,7 +41,7 @@ import urllib.request
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 # The API-format prompt has exactly one central type: a node input is EITHER a literal value
 # OR a wire to another node's output slot -- `["origin_id", slot]` in the JSON ComfyUI reads.
@@ -83,6 +83,35 @@ class Node:
         """The `{class_type, inputs}` shape ComfyUI's /prompt endpoint expects. `wired` is
         bookkeeping for this module only -- the server has never heard of it."""
         return {"class_type": self.class_type, "inputs": self.inputs}
+
+
+@dataclass
+class Note:
+    """One thing `ui_to_api` noticed about the conversion, typed instead of free text (ticket 03).
+
+    Before this, every finding -- a muted node, an unknown node class, a widget count that does
+    not line up -- was the same `str` in the same `list[str]`, so a caller could not tell "the
+    server doesn't know this class, the graph is missing a node" from "this node has one extra
+    widget value, which is normal for a seed node's control_after_generate" without parsing
+    English. That is what let a mutilated graph reach `/prompt`: the code path had no way to ask
+    "was there something serious in there", so it never asked.
+
+    `level`:
+      - `"fatal"` -- the conversion is not trustworthy. An unknown node class means the node is
+        gone from `prompt` entirely; a widget count off by more than one means more than one
+        input landed on the wrong name. Either can produce a graph that executes and returns a
+        plausible-looking wrong result -- the exact failure this ticket exists to stop.
+        `main()` refuses to submit while any `fatal` Note is outstanding, unless `--force`.
+      - `"warn"` -- a real gap, filled automatically (a required input the saved file did not
+        specify, taken from the server's own default). Worth seeing, not worth blocking on.
+      - `"info"` -- expected/benign: a node the UI itself muted or bypassed, or a widget count
+        off by exactly one, which is the ordinary shape of "a node gained one optional widget
+        since this file was saved" (see `is_widget`'s CLIPLoader `device` example).
+    """
+
+    level: Literal["info", "warn", "fatal"]
+    node: str
+    text: str
 
 
 def prompt_to_api(prompt: dict[str, Node]) -> dict[str, dict]:
@@ -191,9 +220,9 @@ def widget_names(defn: dict) -> list[str]:
     return out
 
 
-def ui_to_api(wf: dict, object_info: dict) -> tuple[dict[str, Node], list[str]]:
-    """UI-format graph -> {node_id: Node}. Returns (prompt, warnings)."""
-    warnings: list[str] = []
+def ui_to_api(wf: dict, object_info: dict) -> tuple[dict[str, Node], list[Note]]:
+    """UI-format graph -> {node_id: Node}. Returns (prompt, notes)."""
+    notes: list[Note] = []
     # link id -> (origin_node_id, origin_slot)
     links: dict[int, tuple[int, int]] = {}
     for link in wf.get("links", []) or []:
@@ -206,11 +235,20 @@ def ui_to_api(wf: dict, object_info: dict) -> tuple[dict[str, Node], list[str]]:
         ctype = node.get("type")
         nid = str(node.get("id"))
         if node.get("mode") in (2, 4):  # muted / bypassed
-            warnings.append(f"node {nid} ({ctype}) is muted/bypassed in the UI -- skipped")
+            notes.append(Note(
+                level="info", node=nid,
+                text=f"node {nid} ({ctype}) is muted/bypassed in the UI -- skipped",
+            ))
             continue
         defn = object_info.get(ctype)
         if defn is None:
-            warnings.append(f"node {nid}: server does not know class '{ctype}'")
+            # The node vanishes from `prompt` right here -- this is the exact case ticket 03
+            # is about. "fatal" is not decoration: `main()` reads this level and refuses to
+            # submit, because a graph missing a node can still execute and "succeed".
+            notes.append(Note(
+                level="fatal", node=nid,
+                text=f"node {nid}: server does not know class '{ctype}'",
+            ))
             continue
 
         inputs: dict[str, Any] = {}
@@ -227,19 +265,35 @@ def ui_to_api(wf: dict, object_info: dict) -> tuple[dict[str, Node], list[str]]:
         vals = list(node.get("widgets_values") or [])
         names = [n for n in widget_names(defn) if n not in wired]
         if len(vals) < len(names):
-            warnings.append(
-                f"node {nid} ({ctype}): {len(vals)} widget values for {len(names)} widget "
-                f"inputs {names} -- trailing ones left at server default"
-            )
+            missing = len(names) - len(vals)
+            # Off by exactly one is the ordinary shape of "a node gained one optional widget
+            # since this file was saved" -- the CLIPLoader `device` case this file's own history
+            # hit. Off by MORE than one is the failure this ticket is about: more than one input
+            # is about to silently land on the wrong name (or at a default it never asked for),
+            # which is indistinguishable on screen from a correct run -- worded differently from
+            # the benign case below so a printed FATAL line does not read like an INFO one.
+            if missing == 1:
+                notes.append(Note(
+                    level="info", node=nid,
+                    text=f"node {nid} ({ctype}): {len(vals)} widget values for {len(names)} "
+                         f"widget inputs {names} -- trailing ones left at server default",
+                ))
+            else:
+                notes.append(Note(
+                    level="fatal", node=nid,
+                    text=f"node {nid} ({ctype}): {len(vals)} widget values for {len(names)} "
+                         f"widget inputs {names} -- {missing} widgets missing, check alignment",
+                ))
         elif len(vals) > len(names):
             # Extra values are normal: seed nodes carry a UI-only
             # 'control_after_generate' that is not an input. Extras beyond one
             # are worth saying out loud, because a MIS-ALIGNMENT looks the same.
             if len(vals) - len(names) > 1:
-                warnings.append(
-                    f"node {nid} ({ctype}): {len(vals)} widget values for {len(names)} "
-                    f"inputs {names} -- {len(vals) - len(names)} extra, check alignment"
-                )
+                notes.append(Note(
+                    level="fatal", node=nid,
+                    text=f"node {nid} ({ctype}): {len(vals)} widget values for {len(names)} "
+                         f"inputs {names} -- {len(vals) - len(names)} extra, check alignment",
+                ))
         for name, val in zip(names, vals):
             inputs[name] = val
 
@@ -264,13 +318,14 @@ def ui_to_api(wf: dict, object_info: dict) -> tuple[dict[str, Node], list[str]]:
                 inputs[name] = typ[0]
             else:
                 continue
-            warnings.append(
-                f"node {nid} ({ctype}): '{name}' absent from the saved file, "
-                f"filled with the server default {inputs[name]!r}"
-            )
+            notes.append(Note(
+                level="warn", node=nid,
+                text=f"node {nid} ({ctype}): '{name}' absent from the saved file, "
+                     f"filled with the server default {inputs[name]!r}",
+            ))
 
         prompt[nid] = Node(class_type=ctype, inputs=inputs, wired=wired)
-    return prompt, warnings
+    return prompt, notes
 
 
 def main() -> int:
@@ -288,6 +343,14 @@ def main() -> int:
         "prompt, so this flag exists for testing the conversion offline, not for a real run.",
     )
     ap.add_argument("--label", default="run")
+    ap.add_argument(
+        "--force",
+        action="store_true",
+        help="submit even if ui_to_api reported a 'fatal' Note (unknown node class, or a widget "
+        "count off by more than one). Without this flag, a fatal Note refuses the submission -- "
+        "ticket 03: a graph missing a node, or with widgets landed on the wrong names, can still "
+        "execute and 'succeed' with a plausible-looking wrong result.",
+    )
     ap.add_argument(
         "--seed",
         type=int,
@@ -312,7 +375,7 @@ def main() -> int:
         object_info = http_get(args.server, "/object_info", timeout=120.0)
         print(f"/object_info: {len(object_info)} node classes")
 
-    prompt, warnings = ui_to_api(wf, object_info)
+    prompt, notes = ui_to_api(wf, object_info)
     if args.seed is not None:
         hit = 0
         for nid, node in prompt.items():
@@ -323,14 +386,24 @@ def main() -> int:
         if hit == 0:
             print("  WARN --seed given but no seed widget found -- the graph will "
                   "hit ComfyUI's node cache and time nothing")
-    for w in warnings:
-        print(f"  WARN {w}")
+    for note in notes:
+        print(f"  {note.level.upper():5} {note.text}")
     print(f"converted {len(prompt)} nodes")
 
     if args.dump_api:
         Path(args.dump_api).write_text(json.dumps(prompt_to_api(prompt), indent=2), encoding="utf-8")
         print(f"wrote {args.dump_api} -- not executed")
         return 0
+
+    fatal = [n for n in notes if n.level == "fatal"]
+    if fatal and not args.force:
+        print()
+        print(f"REFUSED to submit: {len(fatal)} fatal note(s) from ui_to_api. Submitting this "
+              "graph would run a mutilated prompt that can still execute and 'succeed' with a "
+              "plausible-looking wrong result (ticket 03). Re-run with --force to submit anyway.")
+        for n in fatal:
+            print(f"  FATAL node {n.node}: {n.text}")
+        return 4
 
     client_id = str(uuid.uuid4())
     t0 = time.time()
