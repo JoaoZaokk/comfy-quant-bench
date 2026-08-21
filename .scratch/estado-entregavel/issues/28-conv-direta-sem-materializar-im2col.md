@@ -237,3 +237,69 @@ pinada, 332,9-335,9 contra 261,4-274,0. Mas os numeros por bloco daquele ticket 
   derivou 28%. Por isso as corridas sao alternadas e por isso **so as razoes dentro da janela
   valem** — os absolutos de hoje nao sao comparaveis aos do ticket 13.
 - **`cargo test --features gpu` nao foi rodado na suite inteira** apos a mudanca; so este teste.
+
+
+## Correcao — o 1,45x nao era todo do split (2026-08-21, mais tarde)
+
+A Resolucao acima atribui **1,43-1,52x** a mudanca de dispatch. O numero esta certo e a
+atribuicao esta errada. Separando as duas parcelas, o split sozinho vale ~1,1x; o resto vem de
+onde as chamadas largas vao parar.
+
+### Como isso apareceu
+
+O dono da bancada mandou a resposta do maintainer do `cmf` no PR #1. Ele derrubou o argumento de
+acuracia daquele PR com uma medicao em A100: o caminho cooperativo do wgpu acumula GEMM f32 em
+precisao **classe-tf32**, 2,836e-4 contra f64 onde o braco escalar da 7,674e-7. Reconferido aqui
+na 3090, os numeros dele batem **nos quatro digitos**.
+
+O split deste ticket manda as chamadas largas para `gemm_nt_f32` -> `gemm_nt_coop`. **E o mesmo
+caminho.** Entao a pergunta virou: o ganho e do split ou do kernel de 10 bits de mantissa?
+
+`CMF_COOP_TRACE=1` (tracer novo em `gpu_wgpu.rs`, `#[track_caller]`) conta, numa corrida de
+decode: **451 chamadas chegam ao `gemm_nt_f32` e todas entram no COOP/tf32** -- 300 em `m=256`,
+143 em `m=512`, 3 em `m=1024`, 1 em `m=4096`, mais 4 em `m=128` que vazam durante a amostragem do
+probe. As outras ~795 do total de 1242 ficam em f32 no host. **As chamadas que o split manda para
+a placa sao exatamente as que caem no tf32** -- ganho e perda de precisao sao a mesma decisao,
+nao dois efeitos independentes.
+
+### Medicao que separa as duas parcelas
+
+Tres disposicoes **alternadas na mesma janela** (as anteriores comparavam janelas diferentes, que
+e o erro que este ticket existe para nao cometer), 3090 pinada, sob lock:
+
+| | rodada 1 | rodada 2 | faixa | GEMM |
+|---|---|---|---|---|
+| host | 248,6 s | 262,9 s | 248,6-262,9 | 144,4 / 151,9 |
+| split, `CMF_COOP=0` | 227,3 s | 229,9 s | 227,3-229,9 | 121,6 / 124,8 |
+| split, `CMF_COOP=1` | 173,6 s | 179,9 s | 173,6-179,9 | 69,8 / 74,7 |
+
+As tres faixas **nao se sobrepoem**. Pareado dentro da rodada:
+
+- **split contra host, kernel escalar: 1,09-1,14x.** Saida bate com a do host ate o nono digito
+  (`mean -0,344200472` contra `-0,344200471`, `l2 2235,355817` contra `2235,355818`). **Este e o
+  ganho do split**, e ele e de graca.
+- **kernel cooperativo por cima: mais 1,28-1,31x**, custando `l2` 4,9e-6 e `amax` 1,2e-4.
+- **Somados: 1,43-1,46x**, que e a faixa da Resolucao original.
+
+### O que muda na leitura
+
+Nada precisa ser desfeito no codigo. O que muda e o que se pode dizer dele:
+
+- **O split e correto e vale ~1,1x sem custo nenhum.** Separar as duas populacoes e a mudanca, e
+  ela se paga sozinha.
+- **Os outros ~30% sao um trade, nao um ganho**, e o botao que o expoe (`CMF_COOP=0`) e ortogonal
+  a este ticket. Quem quiser os 30% agora sabe que paga 10 bits de mantissa por eles.
+- A Resolucao original dizia que a divergencia de 4,9e-6 vinha "do braco de device". Vinha do
+  **kernel cooperativo**: com `CMF_COOP=0` o braco de device produz a saida do host. E a citacao
+  do orcamento de 5e-3 do `tests/gpu_gemm_scratch.rs` era circular -- aquele teste mede o proprio
+  caminho cooperativo.
+
+### Sem cobertura
+
+- `amax` do `split, CMF_COOP=0` variou entre as duas rodadas (1,003083467 contra 1,003083348)
+  enquanto `mean` e `l2` ficaram identicos. Sao as 4 chamadas `m=128` que vazam para a placa
+  durante a amostragem do probe, e quantas vazam nao e deterministico. Efeito na sexta casa; nao
+  investigado alem disso.
+- O corte `m=256` continua sem varredura.
+- Duas rodadas por braco.
+- Nada disto diz o que acontece com o `gemm_nt` da atencao, que divide a mesma `OpClass`.
