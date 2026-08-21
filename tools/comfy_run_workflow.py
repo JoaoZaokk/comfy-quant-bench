@@ -164,6 +164,18 @@ def wait_for_server(base: str, limit_s: float) -> float:
 
 SCALAR_TYPES = {"INT", "FLOAT", "STRING", "BOOLEAN", "COMBO"}
 
+# Ticket 04. The server's own execution_start -> execution_success span, in
+# seconds, below which "outputs came back" means "the per-node result cache
+# answered", not "this rendered". This used to be a bare `5.0` compared
+# against CLIENT wall-clock (queue POST -> /history seeing the prompt_id) --
+# a value that also includes this process's 2s poll interval and network
+# round trip, so it could not tell a genuine 4s render from a cache hit
+# either. The threshold now compares against the SERVER's own reported
+# duration (see `server_side_s` in main()), which is what the server itself
+# printed as "Prompt executed in 0.01 seconds" for the cache-hit run that
+# prompted this ticket.
+CACHE_HIT_THRESHOLD_S = 5.0
+
 
 def is_widget(typ: Any, opts: dict) -> bool:
     """Does this input render as a widget (a value in `widgets_values`)?
@@ -458,9 +470,15 @@ def main() -> int:
     if len(files) > 8:
         print(f"            ... and {len(files) - 8} more")
 
-    # Per-node execution time, if the server recorded it.
+    # Server-side execution time (ticket 04): the server's own
+    # execution_start -> execution_success span, first-class here -- not a
+    # value computed and immediately printed away. `wall` above is this
+    # CLIENT's estimate (queue POST -> /history first seeing the prompt_id,
+    # padded by the 2s poll interval); `server_side_s` is what the server
+    # itself measured, and is what cache detection below uses instead.
     msgs = entry.get("status", {}).get("messages") or []
-    starts = {}
+    starts: dict[str, float] = {}
+    server_side_s: float | None = None
     for m in msgs:
         if not (isinstance(m, (list, tuple)) and len(m) >= 2):
             continue
@@ -468,23 +486,42 @@ def main() -> int:
         if kind == "execution_start":
             starts["_t0"] = data.get("timestamp")
         elif kind == "execution_success" and "_t0" in starts and data.get("timestamp"):
-            print(f"server-side  {(data['timestamp'] - starts['_t0']) / 1000.0:.1f}s "
-                  f"(execution_start -> execution_success, excludes queue wait)")
+            server_side_s = (data["timestamp"] - starts["_t0"]) / 1000.0
+    if server_side_s is not None:
+        print(f"server-side  {server_side_s:.1f}s "
+              f"(execution_start -> execution_success, excludes queue wait)")
 
-    # A cache hit and a fast render are the same two numbers on screen.
-    if wall < 5.0 and files:
+    # A cache hit and a fast render are the same two numbers on WALL -- wall
+    # cannot tell them apart, which is why it is not used here. server_side_s
+    # is the server's own account of the same span (it is what printed
+    # "Prompt executed in 0.01 seconds" in the run that prompted this ticket).
+    cache_hit = bool(files) and server_side_s is not None and server_side_s < CACHE_HIT_THRESHOLD_S
+    if cache_hit:
         print()
         print("  *** THIS TIMED NOTHING ***")
-        print("  ComfyUI returned outputs in under 5 s. That is its per-node result")
+        print(f"  server-side execution was {server_side_s:.2f}s, under the "
+              f"{CACHE_HIT_THRESHOLD_S:.0f}s threshold. That is its per-node result")
         print("  cache answering an identical prompt, not a render. Re-run with")
         print("  --seed <different> to force execution with the weights resident.")
+    elif server_side_s is None and files:
+        print()
+        print("  WARN server sent no execution_start/execution_success messages -- cache-hit")
+        print("  detection (ticket 04) could not run; this exit code does not confirm a render.")
 
     print()
     print("NOT covered by this run:")
     print("  - fairness vs any other engine: storage, cache and load state are NOT controlled here")
     print("  - output correctness: files were written; nobody looked at them")
     print("  - cold vs warm: the first run of a server includes weight load, this does not split it")
-    return 0 if status == "success" else 1
+    if server_side_s is None:
+        print("  - cache-hit detection: server reported no execution_start/execution_success "
+              "timestamps for this prompt_id, so a cache hit could slip through as exit 0")
+
+    if status != "success":
+        return 1
+    if cache_hit:
+        return 5  # ticket 04: cache-hit is its own exit code, not folded into 0/success
+    return 0
 
 
 if __name__ == "__main__":

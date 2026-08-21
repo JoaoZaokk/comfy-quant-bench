@@ -174,10 +174,37 @@ def read_tensor(handle, start: int, size: int, dtype: str, shape: list[int]) -> 
     return torch.frombuffer(raw, dtype=TORCH_DTYPES[dtype]).reshape(shape)
 
 
+def header_dtype(tensor: torch.Tensor) -> str:
+    """Safetensors header dtype name for `tensor`.
+
+    Both fp8 formats travel as raw U8 -- matching how comfy/ops.py reads weight_s_rel and
+    weight_codebook back (module docstring above: "fp8 stored as u8"). Before this fix only
+    weight_s_rel's float8_e4m3fn got that treatment in the write loop below; a float8_e5m2
+    tensor would have hit `SAFETENSORS_DTYPE[torch.float8_e5m2]` -> KeyError, the exact gap
+    as_bytes() existed to close and was never wired in to actually close (ticket 24).
+    """
+    if tensor.dtype in (torch.float8_e4m3fn, torch.float8_e5m2):
+        return "U8"
+    return SAFETENSORS_DTYPE[tensor.dtype]
+
+
 def as_bytes(tensor: torch.Tensor) -> memoryview:
+    """Raw byte view of `tensor`, ready for a file's .write().
+
+    torch.Tensor.numpy() raises TypeError for bfloat16 and for both float8 dtypes --
+    EXECUTED against this embedded torch (2026-08-21, python_embeded, CPU, no GPU touched):
+    `torch.zeros(4, dtype=torch.bfloat16).numpy()` raises "Got unsupported ScalarType
+    BFloat16", and float8_e5m2 fails the same way; viewing through int16 (bf16) or uint8
+    (fp8) first, as done below, makes numpy() succeed. Every other dtype this converter
+    writes (I8, U8, I16, F32, F16) already supports numpy() directly. Matches header_dtype()'s
+    labelling above: fp8 -> uint8 bytes, bfloat16 keeps its own header entry but travels as
+    int16 bytes.
+    """
     tensor = tensor.detach().cpu().contiguous()
-    if tensor.dtype in (torch.float8_e4m3fn, torch.float8_e5m2, torch.bfloat16):
-        tensor = tensor.view(torch.uint8) if tensor.dtype != torch.bfloat16 else tensor.view(torch.int16)
+    if tensor.dtype in (torch.float8_e4m3fn, torch.float8_e5m2):
+        tensor = tensor.view(torch.uint8)
+    elif tensor.dtype == torch.bfloat16:
+        tensor = tensor.view(torch.int16)
     return memoryview(tensor.numpy()).cast("B")
 
 
@@ -325,12 +352,11 @@ def main() -> int:
             if entry["codebook"] is not None:
                 pieces.append((f"{base}.weight_codebook", entry["codebook"]))
             for key, tensor in pieces:
-                store = tensor.view(torch.uint8) if tensor.dtype == torch.float8_e4m3fn else tensor
-                nbytes = store.numel() * store.element_size()
-                target[key] = {"dtype": SAFETENSORS_DTYPE[store.dtype],
+                nbytes = tensor.numel() * tensor.element_size()
+                target[key] = {"dtype": header_dtype(tensor),
                                "shape": list(tensor.shape),
                                "data_offsets": [offset, offset + nbytes]}
-                plan.append(("write", store))
+                plan.append(("write", tensor))
                 offset += nbytes
         else:
             start, end = info["data_offsets"]
@@ -352,7 +378,7 @@ def main() -> int:
             body_start = out_handle.tell()
             for kind, item in plan:
                 if kind == "write":
-                    out_handle.write(memoryview(item.numpy()).cast("B"))
+                    out_handle.write(as_bytes(item))
                 else:
                     start, size = item
                     copy_range(source_handle, out_handle, data_start + start, size)

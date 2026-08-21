@@ -13,8 +13,11 @@ from pathlib import Path
 
 PORTABLE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PORTABLE_ROOT / "ComfyUI"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import torch  # noqa: E402
+
+from _native_probe import instrument  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -23,32 +26,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--log", required=True, type=Path)
     parser.add_argument("--stop-after", type=int, default=99)
     return parser.parse_args()
-
-
-def instrument():
-    import comfy_kitchen.tensor.convrot_w4a4 as convrot
-    from comfy_kitchen.registry import registry
-
-    counters = {"linear": 0, "dequant": 0, "impls": set()}
-    original_linear = convrot.convrot_w4a4_linear
-    original_dequant = convrot.TensorCoreConvRotW4A4Layout.dequantize.__func__
-
-    def counting_linear(x, qweight, wscales, bias=None, **kwargs):
-        counters["linear"] += 1
-        impl = registry.get_implementation(
-            "convrot_w4a4_linear",
-            kwargs={"x": x, "qweight": qweight, "wscales": wscales, "bias": bias, **kwargs},
-        )
-        counters["impls"].add(f"{impl.__module__}.{impl.__name__}")
-        return original_linear(x, qweight, wscales, bias=bias, **kwargs)
-
-    def counting_dequant(cls, qdata, params):
-        counters["dequant"] += 1
-        return original_dequant(cls, qdata, params)
-
-    convrot.convrot_w4a4_linear = counting_linear
-    convrot.TensorCoreConvRotW4A4Layout.dequantize = classmethod(counting_dequant)
-    return counters
 
 
 def main() -> int:
@@ -160,8 +137,12 @@ def main() -> int:
     with torch.no_grad():
         out = module(x)
     torch.cuda.synchronize()
-    step(15, f"forward ok: {tuple(out.shape)} {out.dtype}; native={counters['linear']} "
-             f"dequant={counters['dequant']} impls={sorted(counters['impls'])}")
+    # "linear_calls" -- calls to the dispatcher, not proof of CUDA (it also routes to eager).
+    # "cuda_resolved" reads the impl path instrument() recorded instead of counting the call.
+    cuda_resolved = any(".backends.cuda" in impl for impl in counters["impls"])
+    step(15, f"forward ok: {tuple(out.shape)} {out.dtype}; linear_calls={counters['native_calls']} "
+             f"dequant_calls={counters['dequant_calls']} cuda_resolved={cuda_resolved} "
+             f"impls={sorted(counters['impls'])}")
     if args.stop_after < 16:
         return 0
 

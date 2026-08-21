@@ -23,8 +23,11 @@ from pathlib import Path
 
 PORTABLE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PORTABLE_ROOT / "ComfyUI"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import torch  # noqa: E402
+
+from _native_probe import instrument  # noqa: E402
 
 QUANT_FORMATS = ("convrot_w4a4", "asym_w4a8_int8")
 
@@ -66,47 +69,6 @@ class LogCapture(logging.Handler):
 
     def emit(self, record):
         self.records.append((record.levelname, record.getMessage()))
-
-
-def instrument() -> dict:
-    """Count native quantized-linear calls against weight dequantizations, for both formats."""
-    import comfy_kitchen.tensor.convrot_w4a4 as convrot
-    import comfy_kitchen.tensor.w4a8_int8 as w4a8
-    from comfy_kitchen.registry import registry
-
-    counters = {"native_calls": 0, "dequant_calls": 0, "impls": set()}
-
-    def wrap_linear(module, name: str, arg_names: tuple[str, ...]):
-        original = getattr(module, name)
-
-        def counting(*args, **kwargs):
-            counters["native_calls"] += 1
-            if len(counters["impls"]) < 4:
-                probe = dict(zip(arg_names, args))
-                probe.update(kwargs)
-                try:
-                    impl = registry.get_implementation(name, kwargs=probe)
-                    counters["impls"].add(f"{impl.__module__}.{impl.__name__}")
-                except Exception as error:  # probing must never break generation
-                    counters["impls"].add(f"<probe failed: {type(error).__name__}>")
-            return original(*args, **kwargs)
-
-        setattr(module, name, counting)
-
-    def wrap_dequant(layout):
-        original = layout.dequantize.__func__
-
-        def counting(cls, qdata, params):
-            counters["dequant_calls"] += 1
-            return original(cls, qdata, params)
-
-        layout.dequantize = classmethod(counting)
-
-    wrap_linear(convrot, "convrot_w4a4_linear", ("x", "qweight", "wscales", "bias"))
-    wrap_linear(w4a8, "w4a8_int8_linear", ("x", "qweight", "s_rel", "s_channel"))
-    wrap_dequant(convrot.TensorCoreConvRotW4A4Layout)
-    wrap_dequant(w4a8.AsymW4A8Int8Layout)
-    return counters
 
 
 def quant_summary(model) -> dict:

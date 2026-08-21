@@ -310,6 +310,50 @@ def test_main_refuses_fatal_without_force_and_does_not_touch_network():
 
 
 # --------------------------------------------------------------------------------------------
+# Ticket 04: cache detection uses the server's own duration, not client wall, and a cache hit
+# gets its own exit code. The /prompt + /history path needs a live server (see NOT_COVERED),
+# so this is a static proof against the shipped source -- same technique as the isinstance
+# sweep above -- not a behavioural run of main() past the queue POST.
+# --------------------------------------------------------------------------------------------
+
+def test_cache_hit_threshold_is_a_named_module_constant():
+    assert crw.CACHE_HIT_THRESHOLD_S == 5.0
+    assert isinstance(crw.CACHE_HIT_THRESHOLD_S, float)
+
+
+def test_cache_detection_uses_server_side_duration_not_wall():
+    """The exact regression this ticket is about: `if wall < 5.0 and files:` must be gone from
+    main(), and the cache_hit expression must be built from `server_side_s` (the server's own
+    execution_start -> execution_success span), not from `wall` (this client's estimate)."""
+    import inspect
+    import re
+    src = inspect.getsource(crw.main)
+    assert "wall < 5.0" not in src, "the old wall-based heuristic must not survive"
+    assert "wall < CACHE_HIT_THRESHOLD_S" not in src, (
+        "the threshold moved to server_side_s, not merely renamed on wall")
+    assert "server_side_s" in src, "main() must compute a first-class server-side duration"
+    # Find the cache_hit assignment itself and check ITS right-hand side does not name `wall` --
+    # `wall` legitimately still appears elsewhere in main() (the WALL summary line), so a
+    # whole-function substring check for "wall" would false-positive on that unrelated print.
+    m = re.search(r"cache_hit\s*=\s*(.+)", src)
+    assert m, "expected a `cache_hit = ...` assignment in main()"
+    rhs = m.group(1)
+    assert "server_side_s" in rhs and "CACHE_HIT_THRESHOLD_S" in rhs
+    assert re.search(r"\bwall\b", rhs) is None, (
+        f"cache_hit must be computed from server_side_s, not wall -- got: {rhs}")
+
+
+def test_cache_hit_gets_its_own_exit_code():
+    """A cache hit must not be folded into exit 0 (success) or exit 1 (failure) -- it needs a
+    code a caller (run_e2e_comfy.ps1) can distinguish from both."""
+    import inspect
+    import re
+    src = inspect.getsource(crw.main)
+    assert re.search(r"if\s+cache_hit\s*:\s*\n\s*return\s+5", src), (
+        "expected `if cache_hit: return 5` (its own exit code) in main()")
+
+
+# --------------------------------------------------------------------------------------------
 # Golden dump: byte-identical --dump-api output, proving the refactor preserved behaviour
 # --------------------------------------------------------------------------------------------
 
@@ -353,10 +397,15 @@ def test_golden_dump_covers_a_real_wired_and_a_real_wire_free_seed_case():
 NOT_COVERED = (
     "This suite does not talk to a live ComfyUI server: it exercises ui_to_api/prompt_to_api/"
     "Node/Note in-process, and main() only up to the point where a fatal Note returns 4 -- never "
-    "past it. The --force-allows-submission path, the actual /prompt POST, /history poll, the "
-    "cache-hit-vs-render heuristic around line ~344, and main() decomposition from ticket 06 are "
-    "untouched here by design (that HTTP path needs a live server, which this environment does "
-    "not permit) -- those are other tickets' scope or another run's job, not verified by this one. "
+    "past it. The --force-allows-submission path, the actual /prompt POST, /history poll, and "
+    "main() decomposition from ticket 06 are untouched here by design (that HTTP path needs a "
+    "live server, which this environment does not permit) -- those are other tickets' scope or "
+    "another run's job, not verified by this one. Ticket 04's cache-vs-render check is covered "
+    "only STATICALLY here (source-pattern tests on main()'s shipped text: server_side_s / "
+    "CACHE_HIT_THRESHOLD_S / 'return 5' exist, 'wall < 5.0' is gone, and the cache_hit expression "
+    "does not name wall) -- whether a real /history response from a cache-hit prompt drives "
+    "server_side_s under the threshold and main() actually exits 5 against a live server was NOT "
+    "run here. "
     "tools/fixtures/object_info_ltx25.json reflects ComfyUI 0.33.0's schema for exactly the 16 "
     "node classes LTX25-int8-acceptance-v2.json uses; it will silently go stale if those nodes' "
     "INPUT_TYPES change upstream and nobody regenerates it -- this suite cannot detect that "

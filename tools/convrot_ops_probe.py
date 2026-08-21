@@ -15,8 +15,11 @@ from pathlib import Path
 
 PORTABLE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PORTABLE_ROOT / "ComfyUI"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import torch  # noqa: E402
+
+from _native_probe import instrument  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -51,32 +54,6 @@ def load_tensor(path: Path, info: dict) -> torch.Tensor:
     return torch.frombuffer(raw, dtype=dtypes[info["dtype"]]).reshape(info["shape"]).cuda()
 
 
-def instrument():
-    import comfy_kitchen.tensor.convrot_w4a4 as convrot
-    from comfy_kitchen.registry import registry
-
-    counters = {"linear": 0, "dequant": 0, "impls": set()}
-    original_linear = convrot.convrot_w4a4_linear
-    original_dequant = convrot.TensorCoreConvRotW4A4Layout.dequantize.__func__
-
-    def counting_linear(x, qweight, wscales, bias=None, **kwargs):
-        counters["linear"] += 1
-        impl = registry.get_implementation(
-            "convrot_w4a4_linear",
-            kwargs={"x": x, "qweight": qweight, "wscales": wscales, "bias": bias, **kwargs},
-        )
-        counters["impls"].add(f"{impl.__module__}.{impl.__name__}")
-        return original_linear(x, qweight, wscales, bias=bias, **kwargs)
-
-    def counting_dequant(cls, qdata, params):
-        counters["dequant"] += 1
-        return original_dequant(cls, qdata, params)
-
-    convrot.convrot_w4a4_linear = counting_linear
-    convrot.TensorCoreConvRotW4A4Layout.dequantize = classmethod(counting_dequant)
-    return counters
-
-
 def run_case(name, ops_kwargs, layer, weight_info, scale_info, model, counters, force_cast, input_dtype):
     import comfy.ops
 
@@ -94,8 +71,8 @@ def run_case(name, ops_kwargs, layer, weight_info, scale_info, model, counters, 
     module._load_from_state_dict(state_dict, "", {}, False, missing, unexpected, errors)
     module.comfy_force_cast_weights = force_cast
 
-    counters["linear"] = 0
-    counters["dequant"] = 0
+    counters["native_calls"] = 0
+    counters["dequant_calls"] = 0
     counters["impls"] = set()
     x = torch.randn((4, packed_columns * 2), device="cuda", dtype=input_dtype)
     with torch.no_grad():
@@ -110,10 +87,14 @@ def run_case(name, ops_kwargs, layer, weight_info, scale_info, model, counters, 
         "input_dtype": str(input_dtype),
         "compute_dtype": str(ops_kwargs["compute_dtype"]),
         "output_dtype": str(output.dtype),
-        "native_linear_calls": counters["linear"],
-        "weight_dequant_calls": counters["dequant"],
+        "native_linear_calls": counters["native_calls"],
+        "weight_dequant_calls": counters["dequant_calls"],
         "impls": sorted(counters["impls"]),
-        "native": counters["linear"] > 0 and counters["dequant"] == 0,
+        # Was `counters["native_calls"] > 0 and counters["dequant_calls"] == 0` -- counting a call
+        # to the DISPATCHER, which routes to CUDA or eager depending on constraint checks and
+        # COMFY_KITCHEN_FORCE_INT4_INT8_FALLBACK. That cannot tell the two apart; whether the
+        # resolved implementation path actually names the cuda backend can.
+        "native": any(".backends.cuda" in impl for impl in counters["impls"]),
     }
 
 

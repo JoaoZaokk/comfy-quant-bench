@@ -16,8 +16,11 @@ from pathlib import Path
 
 PORTABLE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PORTABLE_ROOT / "ComfyUI"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import torch  # noqa: E402
+
+from _native_probe import instrument  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -35,71 +38,6 @@ class LogCapture(logging.Handler):
 
     def emit(self, record):
         self.records.append((record.levelname, record.getMessage()))
-
-
-def instrument():
-    """Count native quantized-linear calls against weight dequantizations, across every format.
-
-    Originally this only wrapped ConvRot. A checkpoint in any other layout would then report zero
-    of both and read as "nothing ran", so all the shipped 4-bit linears are wrapped here.
-    """
-    import comfy_kitchen.tensor.base as tensor_base
-    import comfy_kitchen.tensor.convrot_w4a4 as convrot
-    import comfy_kitchen.tensor.int8 as int8
-    import comfy_kitchen.tensor.w4a8_int8 as w4a8
-    from comfy_kitchen.registry import registry
-
-    counters = {"linear": 0, "dequant": 0, "impls": set()}
-
-    def wrap_linear(module, name: str, arg_names: tuple[str, ...]):
-        original = getattr(module, name)
-
-        def counting(*args, **kwargs):
-            counters["linear"] += 1
-            probe = dict(zip(arg_names, args))
-            probe.update(kwargs)
-            try:
-                impl = registry.get_implementation(name, kwargs=probe)
-                counters["impls"].add(f"{impl.__module__}.{impl.__name__}")
-            except Exception as error:  # probing must never break the forward
-                counters["impls"].add(f"<probe failed: {type(error).__name__}>")
-            return original(*args, **kwargs)
-
-        setattr(module, name, counting)
-
-    def wrap_dequant(layout):
-        original = layout.dequantize.__func__
-
-        def counting(cls, qdata, params):
-            counters["dequant"] += 1
-            return original(cls, qdata, params)
-
-        layout.dequantize = classmethod(counting)
-
-    wrap_linear(convrot, "convrot_w4a4_linear", ("x", "qweight", "wscales", "bias"))
-    wrap_linear(w4a8, "w4a8_int8_linear", ("x", "qdata", "s_rel", "s_channel"))
-    wrap_dequant(convrot.TensorCoreConvRotW4A4Layout)
-    wrap_dequant(w4a8.AsymW4A8Int8Layout)
-
-    # INT8 was still missing, for the same reason the docstring above records for the others: an
-    # int8_tensorwise checkpoint reported zero linears and zero dequantizations, which reads as
-    # "nothing ran" rather than "this tool does not watch that layout". It cannot be wrapped the
-    # same way -- the layout calls `torch.ops.comfy_kitchen.int8_linear` directly rather than a
-    # registry function -- so the registered handler is wrapped instead.
-    wrap_dequant(int8.TensorWiseINT8Layout)
-    table = getattr(tensor_base, "_LAYOUT_DISPATCH_TABLE", {})
-    for op, by_layout in list(table.items()):
-        if int8.TensorWiseINT8Layout not in by_layout:
-            continue
-        original_handler = by_layout[int8.TensorWiseINT8Layout]
-
-        def counting_handler(qt, args, kwargs, _original=original_handler, _op=op):
-            counters["linear"] += 1
-            counters["impls"].add(f"comfy_kitchen.tensor.int8.{str(_op).split('.')[-2]}")
-            return _original(qt, args, kwargs)
-
-        by_layout[int8.TensorWiseINT8Layout] = counting_handler
-    return counters
 
 
 def main() -> int:
@@ -174,8 +112,8 @@ def main() -> int:
 
     probes = []
     for name, module, weight in quantized_modules[:4]:
-        counters["linear"] = 0
-        counters["dequant"] = 0
+        counters["native_calls"] = 0
+        counters["dequant_calls"] = 0
         counters["impls"] = set()
         x = torch.randn((1, args.tokens, module.in_features), device=device, dtype=compute_dtype)
         with torch.no_grad():
@@ -188,10 +126,13 @@ def main() -> int:
             "input_dtype": str(x.dtype),
             "weight_dtype": str(weight.dtype),
             "output_dtype": str(output.dtype),
-            "native_linear_calls": counters["linear"],
-            "weight_dequant_calls": counters["dequant"],
+            "native_linear_calls": counters["native_calls"],
+            "weight_dequant_calls": counters["dequant_calls"],
             "impls": sorted(counters["impls"]),
-            "native": counters["linear"] > 0 and counters["dequant"] == 0,
+            # Was `counters["native_calls"] > 0 and counters["dequant_calls"] == 0` -- a dispatcher
+            # call count, which does not distinguish CUDA from eager (both route through the same
+            # dispatcher). Read back which implementation actually resolved instead.
+            "native": any(".backends.cuda" in impl for impl in counters["impls"]),
         })
 
     report["probes"] = probes

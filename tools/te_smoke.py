@@ -15,8 +15,11 @@ from pathlib import Path
 
 PORTABLE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PORTABLE_ROOT / "ComfyUI"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import torch  # noqa: E402
+
+from _native_probe import instrument  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -60,34 +63,6 @@ class LogCapture(logging.Handler):
 
     def emit(self, record):
         self.records.append((record.levelname, record.getMessage()))
-
-
-def instrument():
-    """Count native ConvRot linear calls and weight dequantizations."""
-    import comfy_kitchen.tensor.convrot_w4a4 as convrot
-    from comfy_kitchen.registry import registry
-
-    counters = {"linear_calls": 0, "dequant_calls": 0, "impls": set()}
-    original_linear = convrot.convrot_w4a4_linear
-    original_dequant = convrot.TensorCoreConvRotW4A4Layout.dequantize.__func__
-
-    def counting_linear(x, qweight, wscales, bias=None, **kwargs):
-        counters["linear_calls"] += 1
-        if len(counters["impls"]) < 4:
-            impl = registry.get_implementation(
-                "convrot_w4a4_linear",
-                kwargs={"x": x, "qweight": qweight, "wscales": wscales, "bias": bias, **kwargs},
-            )
-            counters["impls"].add(f"{impl.__module__}.{impl.__name__}")
-        return original_linear(x, qweight, wscales, bias=bias, **kwargs)
-
-    def counting_dequant(cls, qdata, params):
-        counters["dequant_calls"] += 1
-        return original_dequant(cls, qdata, params)
-
-    convrot.convrot_w4a4_linear = counting_linear
-    convrot.TensorCoreConvRotW4A4Layout.dequantize = classmethod(counting_dequant)
-    return counters
 
 
 def quant_module_summary(model) -> dict:
@@ -148,7 +123,7 @@ def main() -> int:
     summary["text_projection_type"] = getattr(model, "text_projection_type", None)
 
     def encode_once():
-        counters["linear_calls"] = 0
+        counters["native_calls"] = 0
         counters["dequant_calls"] = 0
         counters["impls"] = set()
         torch.cuda.reset_peak_memory_stats()
@@ -159,7 +134,7 @@ def main() -> int:
         return conditioning[0][0], {
             "encode_seconds": round(time.perf_counter() - started, 3),
             "encode_peak_vram_bytes": torch.cuda.max_memory_allocated(),
-            "convrot_linear_calls": counters["linear_calls"],
+            "convrot_linear_calls": counters["native_calls"],
             "convrot_dequant_calls": counters["dequant_calls"],
             "convrot_impls": sorted(counters["impls"]),
         }
