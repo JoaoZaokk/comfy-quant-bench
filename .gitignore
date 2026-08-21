@@ -35,3 +35,7 @@ tools/calib/
 tools/bench/
 
 bench/quality_ladder/*.png
+
+# The local issue tracker. Ignored for four days, which meant 26 tickets and the map
+# existed only on disk -- one `git clean -xdf` from gone. Tracked now.
+!/.scratch/
