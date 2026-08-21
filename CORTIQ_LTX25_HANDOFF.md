@@ -133,6 +133,91 @@ tão visível quanto o arquivo).
 limitação do cortiq nem do formato — é desta máquina. Sai liberando ~10 GiB ou noutro
 host. Ver `run_pack_q8.ps1`, que tem watchdog e passe múltiplo.
 
+## Sessão de 2026-08-21 — o que deu certo, o que não deu
+
+Dia longo, e a divisão importa: **o que rendeu foi engenharia; o que não rendeu foi produto.**
+
+### Deu certo
+
+**O split do probe de GEMM — 1,09-1,14x no decode, de graça.** `gemm_nt` perguntava "placa ou
+CPU?" uma vez para uma classe que contém duas populações com respostas opostas: no decoder do
+LTX, as chamadas largas (`m>=512`) ganham 2,4x na placa e as estreitas (`m=128`) perdem 2,9x. Um
+veredito só levava as 882 perdedoras junto. `OpClass::GemmNtNarrow` + `gemm_nt_class(m)` separa
+as duas — o mesmo corte que a crate já fez duas vezes no mesmo enum (`MatmatWide`, `MatvecHead`),
+pelo motivo escrito nos dois docstrings. Medido alternado numa janela, faixas sem sobreposição:
+host 248,6/262,9 s contra 227,3/229,9 s, com a saída batendo com a do host **até o nono dígito**.
+`cortiq-cmf@9f6e823`. Ticket `28`.
+
+**O eixo do dispatch estava errado no plano, e a instrumentação provou.** O ticket propunha
+cortar por *volume por chamada*. `CMF_GEMM_SHAPES=1` mostrou o decoder emitindo 1242 chamadas em
+seis larguras, e **as que a placa perde são as menores** — 3,6 G MAC em `m=128` contra 58 G em
+`m=512`. Corte por volume mandaria a população perdedora para a placa. O discriminante é `m`,
+porque trabalho comprado por byte transportado escala com `m`.
+
+**O `1400x` do PR #1 era o probe alternando braços, não o padrão de acesso.** `gemm_nt` é
+arbitrado pelo probe e `gemm_dx` não é; com quatro chamadas o probe nunca decide, só alterna, e
+as três linhas onde o NT "ganhava" são exatamente aquelas em que o NT estava na CPU. Com
+`CMF_GPU_PROBE=0` a coluna `NN vs NT` vira **`0.000e0`** — mesmo produto, bit a bit. Encontrado
+pelo tracer `CMF_COOP_TRACE=1` (`#[track_caller]`), e a evidência foram as linhas de trace
+**ausentes**. `cortiq-cmf@7ebe8c9`.
+
+**O achado que sobrevive aos dois patches** é do maintainer e reproduziu aqui nos quatro dígitos:
+o kernel cooperativo acumula GEMM f32 em precisão classe-tf32 — 2,836e-4 contra f64 onde o
+escalar dá 7,674e-7. Vale para qualquer medição de f32 GEMM neste motor: **sem dizer o
+`CMF_COOP`, o número reporta duas coisas ao mesmo tempo.**
+
+**Upstream respondeu e mergeia.** Issues `#2` e `#5` fechadas com correção; `#3` e `#4`
+reproduzidas em A100 — o `#4` deu o **mesmo `9.334e3` com quatro dígitos** noutra placa, SO e
+driver, o que transformou "quirk do Windows" em erro de lógica determinístico. Resposta com as
+medições da 3090 em `PR #1`, comentário `5370423462`.
+
+**27 arquivos de teste deixaram de reportar `ok` rodando zero testes.** 20 atrás de
+`feature = "gpu"`, mais 7 atrás de `target_os` achados depois rodando a suíte inteira e olhando o
+que ainda imprimia `running 0 tests`. `#[ignore = "motivo"]` imprime a razão sem `--nocapture` —
+que era a metade que o próprio maintainer disse não ter conseguido consertar.
+
+### Não deu certo
+
+**O cortiq não é utilizável como ferramenta, e a sessão terminou com essa conclusão do dono.**
+Não é julgamento sobre o motor: é sobre a distância entre motor e produto.
+
+- **13 minutos para 2 segundos de vídeo** a 512x512x49, com `--steps 8` (o padrão).
+- **Saída em PPM.** 49 arquivos soltos que nenhum player abre. `--out` escreve YUV4MPEG2, que
+  também não. Um mp4 exige ffmpeg por fora.
+- **Metade do render é opaca.** `step N/M` durante o denoise, e depois ~250 s de silêncio no VAE
+  até a linha final. Barra de progresso honesta não existe nessa metade.
+- **Aderência de prompt fraca em composição.** `"a maserati running aside a f1 car"` produziu
+  três pessoas correndo numa estrada — coerente, temporalmente estável, e sem relação com o
+  pedido. **Não é bug**: o prompt `"a brass trumpet on a wooden table, morning light, shallow
+  depth of field"` saiu exato, e o cache de contexto foi descartado como causa (chaves distintas,
+  34,9 s de encode = miss). O modelo destilado pegou "running" e ignorou o resto.
+- **`--two-stage` existe e diz literalmente "sample the way the distilled model was trained"**, e
+  não foi usado nesse render. É a hipótese não testada mais forte para a aderência ruim; o teste
+  que separa (mesmo prompt, só ligando a flag) não foi rodado.
+
+`tools/ltx_studio.py` foi escrito para dar uma tela ao motor — página local, prompt, progresso
+real onde existe, mp4 no fim. Funciona e está commitado (`dc4cbfc`), mas não muda a conclusão:
+é casca sobre um subcomando, sem grafo, sem LoRA, sem nós. **Para trabalho de verdade nesta
+bancada o caminho continua sendo o ComfyUI.**
+
+### Erros de método cometidos aqui, e o que os pegou
+
+Quatro vezes num dia, o mesmo modo de falha com fantasias diferentes: **comparar dois braços que
+não passaram pelo mesmo caminho.** O `1400x` (probe), o lock na 3090 enquanto o trabalho rodava
+na 3080 Ti (adaptador escolhido sozinho), o teste imprimindo "host" enquanto usava a placa
+(`gpu_wgpu::selected()` devolve `true` por padrão em linux/windows), e o `1,45x` creditado ao
+split quando ~1,3x era o kernel tf32. Nenhum deu erro, warning ou número absurdo. O que pegou os
+quatro foi instrumentar o **ponto de decisão**, não o resultado.
+
+Ver a memória `ab-so-vale-se-os-dois-tomaram-o-mesmo-caminho`.
+
+### Onde ficaram as coisas
+
+- `F:\cortiq\studio\run_104851\render.mp4` — o render de 2 s, e `contact.png` ao lado. Os 49
+  PPMs foram apagados a pedido; o mp4 preserva o conteúdo.
+- `F:\cortiq\studio\trumpet_check.png` — a prova de que o motor segue prompt.
+- `F:\cortiq-cmf\run_ab_split.ps1` — o A/B ponta a ponta dos três braços, caso alguém volte.
+
 ## Ver também
 
 - `.scratch/estado-entregavel/map.md` — o plano, 17 tickets
