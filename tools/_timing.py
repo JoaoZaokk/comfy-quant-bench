@@ -22,16 +22,29 @@ The strong claim did not reproduce: **the 1.4x run-to-run disagreement in `m_cro
 a GEMM result and does not happen on attention.** Do not quote 1.4x for attention. Spread on the
 attention ratio is 1.04x.
 
-**The weak claim did reproduce, and it is worse, because it is bias rather than noise.** The
-outlier is the *first* burst -- 1.676x against a 1.610-1.625 cluster -- and five warm-up iterations
-did not settle it. `attn_bench.py` ran exactly one burst, the first one, so it did not draw
-randomly from that distribution: it reported the draw that is systematically ~3% high, every time.
+**The weak claim did reproduce: the outlier is the *first* burst** -- 1.676x against a 1.610-1.625
+cluster -- and five warm-up iterations did not settle it. `attn_bench.py` ran exactly one burst, the
+first one, so it did not draw randomly from that distribution; it reported an outlier, every time.
 Repeating the tool cannot average that away. Hence `discard_first_burst=True` by default, and hence
-the discarded value is *printed* rather than dropped silently -- a burst that is 3% off is evidence
-about the machine, and a burst that is 40% off means the warm-up was not enough and the rest of the
-table should not be believed either.
+the discarded value is *printed* rather than dropped silently -- a burst a few percent off is
+evidence about the machine, and a burst 40% off means the warm-up was not enough and the rest of
+the table should not be believed either.
 
 Concretely, on that shape: `attn_bench` printed `1.676x`. The honest answer is `1.63x [1.61-1.68]`.
+
+**CORRECTION, 2026-08-22, from the first two real sweeps this module ran.** This paragraph said the
+bias was "systematically ~3% high, every time", i.e. signed. It is not, and the overstatement lived
+here for exactly as long as it took to use the thing:
+
+    attn_bench   discarded burst FASTER than the kept median on all three paths
+                 (sdpa 202.503 vs 206.304, sage 85.515 vs 86.849, flash 131.063 vs 134.655)
+    m_crossover  discarded burst FASTER for bf16 and w4a8, SLOWER for w4a4 (1.782 vs 1.629)
+                 and w4a4/a8 -- in the same run
+
+So: the first burst is an outlier, which is the reason to discard it; the direction is not fixed,
+and it is not even fixed across the paths of one sweep. Quoting a signed percentage from a single
+A/B is the same overstatement this module exists to make impossible in a ratio, committed in the
+module's own docstring.
 
 ## 2. The lock was opt-in, so the heaviest consumers in the tree skipped it
 
@@ -218,14 +231,23 @@ def provenance(result: Result) -> str:
     """
     head = (f"{result.estimator} of {result.kept} kept burst(s) x {result.iters} iteration(s); "
             f"within a burst the reducer is median")
+    # The wording here was "3% high, in the same direction, every time", which was true of the one
+    # A/B it came from and false as a general claim -- CORRECTED 2026-08-22 by the first two runs
+    # of this primitive on real sweeps. attn_bench's discarded burst was FASTER than the kept
+    # median on all three paths (sdpa 202.503 vs 206.304, sage 85.515 vs 86.849, flash 131.063 vs
+    # 134.655), while m_crossover's was faster for bf16 and w4a8 and SLOWER for w4a4 (1.782 vs
+    # 1.629) and w4a4/a8. So the first burst is an outlier -- which is the reason to discard it --
+    # but the direction is not fixed, and quoting a signed percentage from one A/B was the same
+    # overstatement this module exists to make impossible in a ratio.
     if result.first_burst:
         shown = ", ".join(f"{k} {v:.3f}" for k, v in result.first_burst.items() if v == v)
-        head += (f"\nburst 1 discarded as warm-up-biased ({shown} ms). MEASURED 2026-08-22 on the "
-                 f"3090: the first burst of an\nSDPA-vs-Sage A/B read 1.676x against a "
-                 f"1.610-1.625 cluster -- 3% high, in the same direction, every time.")
+        head += (f"\nburst 1 discarded as warm-up-biased ({shown} ms) -- compare it against the "
+                 f"row above.\nMEASURED 2026-08-22 on the 3090 across three sweeps: the first "
+                 f"burst is an outlier by a few percent,\nbut NOT always in the same direction, "
+                 f"and not always the same way for every path in one run.")
     else:
-        head += ("\nfirst burst NOT discarded, so any warm-up bias is still in these numbers "
-                 "(measured at ~3%, directional).")
+        head += ("\nfirst burst NOT discarded, so warm-up bias is still in these numbers. Measured "
+                 "at a few percent on this bench, and not consistently signed -- see _timing.py.")
     return head
 
 

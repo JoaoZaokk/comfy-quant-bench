@@ -267,6 +267,24 @@ The owner string is what the other side reads when it is refused, and `cortiq:be
 nothing it can plan around. Work that cannot state its block in advance does not get one: it takes
 the card for a measurement, not for a session.
 
+**Since 2026-08-22 the benchmark tools take the lock themselves, so do NOT take it for them.**
+`tools/_timing.py`'s `compare()` acquires `BenchGuard`, and every timing tool now routes through it
+— `m_crossover`, `attn_bench`, `attn_dtype_ab`, both `compile_*` probes, `nunchaku_compare`,
+`fbcache_probe`, `fbcache_visual`. Taking `Assert-GpuLock` first and *then* running one of them
+makes the tool refuse its own run:
+
+```
+F:\GPU_BENCH.lock is held: owner=bench:m_crossover_regressao_primitiva pid=74572 alive=True
+Not reclaiming it. If that run is genuinely dead, delete the file by hand
+```
+
+Measured 2026-08-22, by doing exactly that. The in-process `active_guard()` lets `compare()` join a
+guard the **same process** already entered; a lock held by a separate PowerShell cannot be joined,
+and correctly is not. So: **take the lock by hand only for work that does not go through
+`_timing.compare()`** — a converter, `verify_w4a4 --kernel-smoke`, `quant_audit`, an ad-hoc probe.
+For a benchmark, just run it; it announces the acquire, the occupancy of every device, and the
+release.
+
 **Asking is `Assert-GpuLock -Owner '<repo>:<what>'`.** It throws; never `Take-GpuLock | Out-Null`,
 which returns `$false`, prints "not taking", and then runs the benchmark anyway — that happened on
 2026-08-19 against a live sibling with a 2-second-old heartbeat. If refused: **measure the card

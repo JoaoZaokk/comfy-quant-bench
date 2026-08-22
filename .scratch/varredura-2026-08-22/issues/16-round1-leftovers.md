@@ -105,3 +105,67 @@ own docstring.
 
 Both sides now read one `CHECKED_FILE_SUFFIXES` tuple, and a test asserts the validator cannot go
 back to its own literal.
+
+## The headline item, settled by execution 2026-08-22
+
+**`m_crossover` on the new primitive reproduces its own recorded numbers.** This was the highest
+value item left in the effort: a timing primitive is only worth having if it did not change what
+the tool measures, and "unchanged by reading" is not that claim.
+
+3090, `CUDA_VISIBLE_DEVICES=0`, `--repeats 3`, against part 11 of `W4A4_PROGRESS.md` (2026-08-19):
+
+| | recorded 2026-08-19 | now | |
+|---|---|---|---|
+| `[3840,3840]` M=5856 | 4,89x [4,72-5,06] | **4.93x [4.74-5.03]** | intervals overlap |
+| `[3840,3840]` M=8192 | 5,10x [4,97-5,15] | **5.04x [5.03-5.08]** | overlap |
+| `[10240,3840]` M=5856 | 5,65x [5,54-5,75] | **5.68x [5.67-5.73]** | overlap |
+| `[10240,3840]` M=8192 | 5,75x [5,68-5,76] | **5.66x [5.51-5.68]** | touching |
+| M=1 `[3840,3840]` | 1,5-2,0x slower | **1.81x slower** | inside |
+
+**The decisive column is not the timings.** The relative errors came back identical to the fourth
+decimal -- `w4a4 0.2231`, `w4a4/a8 0.1574`, `w4a8 0.0737` at M=5856 -- against exactly those values
+recorded on 2026-08-19. The refactor moved the stopwatch and did not touch the numerics.
+
+One difference worth naming rather than burying: on `[10240,3840]` the crossover reads between
+M=128 and M=256 today, where part 11 recorded between M=64 and M=128. M=128 measures
+`1.18x slower [0.88-1.83]` -- an interval that **contains 1.0**. Part 11 already said it: *"perto do
+cruzamento o vencedor nao e confiavel... abaixo de M~512 vale ler empate, nao o rotulo."* The
+bracket is what makes that readable instead of a moved verdict.
+
+`attn_bench` and `attn_dtype_ab` also ran for the first time on the primitive. Both work, both take
+the lock themselves, both print every device's occupancy, and both now show ties as ties --
+`flash_attn` bf16-vs-fp16 reads `1.08x faster [0.99-1.09]`, which without the bracket would have
+been quoted as an 8% win the data does not support.
+
+## Two defects this run exposed
+
+**1. The documented GPU protocol now collides with the tools.** `CLAUDE.md` says to
+`Assert-GpuLock` before GPU work. Do that and then run a benchmark and the benchmark refuses its
+own run -- `compare()`'s `active_guard()` can join a guard the *same process* entered, and a lock
+held by a separate PowerShell cannot be joined. Measured by doing it. CLAUDE.md corrected: take the
+lock by hand only for work that does not go through `_timing.compare()`.
+
+**2. `_timing.py` overstated its own founding measurement, in its own docstring.** It said the
+first-burst bias was "systematically ~3% high, every time" -- signed. The first two real sweeps
+contradict it:
+
+    attn_bench    discarded burst FASTER than the kept median on all three paths
+    m_crossover   FASTER for bf16 and w4a8, SLOWER for w4a4 (1.782 vs 1.629) -- same run
+
+The first burst is an outlier, which is why discarding it is right. The *direction* is not fixed,
+and is not even fixed across the paths of one sweep. Quoting a signed percentage from one A/B is
+the same overstatement this module exists to make impossible in a ratio, committed in the module's
+own docstring. Corrected, with both runs quoted.
+
+## Still open in this ticket
+
+- `tools/test_svdq_verify.py` has no owner. The `"xb"` / `written == planned` / `fsync` / `finally`
+  contract on the only writer that lacked it still has **zero re-running coverage**. Needs no GPU.
+- `_native_probe`'s recipes hardcode `bfloat16` while `quant_w4a4` quantizes at the source tensor's
+  own dtype and `HIGH_PRECISION_DTYPES` admits `F16`/`F32`.
+- `_inject`'s `stale` warning counts "loader class(es)" while the unit is now the entry; `covered`
+  is populated from the `audit_failure` branch, so the scope line can vouch for a widget nobody
+  audited.
+- `_pairs` accepting bare strings means a raw prompt `dict` iterates its keys and prints node IDs
+  as node types.
+- `ltx_studio`'s absent-`Sec-Fetch-Site` allowance -- the owner's decision, unchanged.
