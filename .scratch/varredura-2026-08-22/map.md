@@ -38,6 +38,7 @@ PowerShell **de proposito**: dado o ticket 01, esse e o unico formato que os doi
 respeitam. Solto ao fim, placa de volta a 758 MiB / 0%%, sem heartbeat orfao. O ComfyUI nunca foi
 iniciado, entao a instancia zumbi que o dono avisou nao entrou na medicao.
 
+- [01](issues/01-lock-ps-rouba-lock-python.md) **RESOLVIDO**: o conserto foi no lado Python, nao no PowerShell -- mudar o `.ps1` para JSON teria reproduzido o mesmo bug apontando para a sessao irma, que pode estar rodando codigo velho. `key=value` ja tinha dois leitores; agora tem tres. `tools/test_gpu_lock.py`, 23 checks, 23 passaram, nas duas direcoes. Junto foram CACHE-02 (pid comparado como substring) e CACHE-03 (heartbeat orfao sobrescrevia lock alheio para sempre).
 - [05](issues/05-preflight-nao-prova-kernel.md): **minha alegacao de groupsize foi refutada.** As
   quatro combinacoes (cg 64/256 x tensor dummy/real) resolvem para `comfy_kitchen.backends.cuda`,
   e as duas chamadas reais funcionam. O preflight 64/64 do `quant_w4a4.py` e desleixado, nao

@@ -1,10 +1,10 @@
 # 01 - The PowerShell lock steals a live Python-held GPU lock
 
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: -
 Severity: high
-Provenance: EXECUTED 2026-08-22
+Provenance: EXECUTED 2026-08-22 -- found by run, fixed, and the fix run
 
 ## Problem
 
@@ -76,3 +76,72 @@ it. The PowerShell side keeps the `hb` heartbeat semantics as a JSON field.
 `CACHE-02`: `GpuLock.__exit__` (`gpu_lock.py:76-85`) matches its own pid as a *substring* of the file
 text, so pid `424` would match a lock held by pid `4242`. Same fix -- parse the JSON, compare
 integers -- so do both here.
+
+## Answer -- FIXED and EXECUTED 2026-08-22
+
+### The fix went on the Python side, and the direction is the whole point
+
+The obvious move was to make `gpu_lock.ps1` read JSON. **That would have reproduced the same bug
+pointing at the sibling.** A session still running the old `.ps1` writes `key=value`; anything new
+that only spoke JSON would rob it in turn. **Format changes are not symmetric when the other party
+may be running last week's code.**
+
+`key=value` is the dialect that already has two readers: `gpu_lock.ps1`, and `gpu_lock.py`'s own
+`__exit__`, which already accepted `pid=<n>` alongside the JSON form. So `gpu_lock.py` now writes
+what everybody already reads, and **no sibling has to change anything for the theft to stop.**
+
+Changes:
+
+- **`tools/gpu_lock.py`** -- writes `key=value`, byte-compatible with `gpu_lock_beat.ps1` including
+  key order. A daemon heartbeat thread refreshes `hb=` every 15 s and **stops the moment the lock
+  stops naming our pid**. `_parse` still understands the old JSON, so a lock written by an
+  out-of-date copy is recognised as held rather than run over. `__exit__` compares pid as an
+  **integer** (CACHE-02, below). Writes go through temp + `os.replace`: a reader catching a
+  truncating rewrite sees an empty `pid=` and no `hb=`, which is exactly the state that reads as
+  stale -- the fix must not reintroduce its own bug through the heartbeat.
+- **`tools/gpu_lock.ps1`** -- `Get-GpuLockState` parses both dialects, and reports an unparseable
+  body as *held with an unknown owner* rather than as absent. `Take-GpuLock` now **refuses to
+  reclaim a lock it cannot identify**: a blank owner is the signature of a parse failure, not of a
+  crashed run, and a genuine leftover still names who wrote it. Second layer, aimed straight at the
+  observed failure.
+- **`tools/gpu_lock_beat.ps1`** -- CACHE-03. The loop rewrote the file unconditionally, forever. An
+  orphaned heartbeat would stamp its own name over whatever lock somebody legitimately took
+  afterwards, silently turning a released card into a stolen one. It now exits when the file is
+  gone or no longer names its pid, and writes via temp + `Move-Item`.
+
+### The test, which is the closing criterion
+
+`tools/test_gpu_lock.py`, 23 checks, run 2026-08-22 against **copies** of both `.ps1` files pointed
+at a throwaway path. The real `F:/GPU_BENCH.lock` was never touched and was absent before and
+after. **23 passed, 0 failed.**
+
+Criterion item by item, with what the run actually printed:
+
+1. `Get-GpuLockState` returns the real Owner and Pid, and a `StaleFor` that is not
+   `[int64]::MaxValue`:
+   `OWNER=bench:long_sweep|PID=51748|STALE=1|KIND=python`
+2. `Take-GpuLock` returns `$false` and names the real owner:
+   `lock HELD by bench:long_sweep (pid 51748 alive=True, hb 1s ago, kind python) -- not taking`
+   -- and it does **not** print "reclaiming".
+3. `Assert-GpuLock` throws:
+   `THREW: GPU lock held by bench:long_sweep (pid 51748, hb 2s ago) -- refusing to run GPU work.`
+4. The reverse direction still holds: `gpu_lock.py` raises `GpuLockBusy` against a
+   PowerShell-written lock, naming `controller:bench`.
+5. Captured as a script under `tools/`, so the next format change fails loudly instead of silently.
+
+Beyond the criterion, also proved by the run: the heartbeat refreshes (`1787391661 -> 1787391676`,
++15 s); a legacy-JSON lock with a **live** pid is refused; an unreadable lock file is treated as
+held rather than free.
+
+### CACHE-02, fixed in the same change
+
+`__exit__` tested `f"pid={os.getpid()}" not in current` -- a substring match, so pid 424 matched a
+lock held by pid 4242. Now parsed and compared as an integer. Proved: a `GpuLock` for this process,
+told to release a lock owned by pid 4242, printed `warning: refusing to release ... it is no longer
+ours` and the file survived.
+
+### What this does NOT cover
+
+The 55-second staleness path (needs a lock older than the limit with a genuinely dead pid), and two
+PowerShell sessions racing each other -- `Start-Process` plus a 2 s settle is not atomic. The test
+file says both in its own footer rather than leaving a reader to assume they were checked.

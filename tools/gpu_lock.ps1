@@ -39,19 +39,60 @@
 $script:LockPath = 'F:\GPU_BENCH.lock'
 $script:BeatPath = 'F:\COMFY_PORTABLE\tools\.gpu_lock_beat_pid'
 
+# Reads BOTH dialects. `key=value` is canonical and is what everything writes today.
+# JSON is what tools/gpu_lock.py used to write, and parsing it here is not politeness --
+# it is the direction of the 2026-08-21 defect, MEASURED:
+#
+#     Owner    :
+#     Pid      :
+#     StaleFor : 9223372036854775807
+#     lock is stale (pid  dead, hb 9223372036854775807s ago) -- reclaiming from
+#     lock TAKEN by other-session:steal-test
+#
+# Every `^$k=(.*)$` missed against a JSON body, so Owner and Pid came back empty and StaleFor
+# saturated; Take-GpuLock then read `'' -and (...)` as false and `false -or (MaxValue -lt 55)`
+# as false, skipped the held branch, and reclaimed a LIVE lock -- announcing a blank owner,
+# which reads exactly like a leftover file from a crashed run.
+#
+# gpu_lock.py now writes key=value, so this branch should never fire again. It stays because a
+# session running an out-of-date copy of that file is the one case where it must.
 function Get-GpuLockState {
     if (-not (Test-Path $script:LockPath)) { return $null }
-    $c = Get-Content $script:LockPath -EA SilentlyContinue
-    $get = {
-        param($k)
-        $m = $c | Select-String "^$k=(.*)$"
-        if ($m) { $m.Matches.Groups[1].Value.Trim() } else { '' }
+    $raw = Get-Content $script:LockPath -Raw -EA SilentlyContinue
+    if ($null -eq $raw) { return $null }
+
+    $owner = ''; $lockPid = ''; $hb = ''; $kind = ''
+    if ($raw.TrimStart().StartsWith('{')) {
+        try {
+            $j = $raw | ConvertFrom-Json
+            $owner = [string]$j.owner
+            $lockPid = [string]$j.pid
+            $kind = 'python-legacy-json'
+        } catch {
+            # Unparseable body. Report it as held with an unknown owner rather than as absent --
+            # a lock we cannot read is not a lock we may take.
+            $owner = '(unreadable lock file)'
+            $kind = 'unknown'
+        }
+    } else {
+        $c = $raw -split "`r?`n"
+        $get = {
+            param($k)
+            $m = $c | Select-String "^$k=(.*)$"
+            if ($m) { $m.Matches.Groups[1].Value.Trim() } else { '' }
+        }
+        $owner = & $get 'dono'
+        $lockPid = & $get 'pid'
+        $hb = & $get 'hb'
+        $kind = & $get 'owner_kind'
     }
-    $hb = & $get 'hb'
+
     [pscustomobject]@{
-        Owner    = & $get 'dono'
-        Pid      = & $get 'pid'
-        StaleFor = if ($hb) { [DateTimeOffset]::Now.ToUnixTimeSeconds() - [int64]$hb } else { [int64]::MaxValue }
+        Owner     = $owner
+        Pid       = $lockPid
+        Kind      = $kind
+        Unreadable = ($kind -eq 'unknown')
+        StaleFor  = if ($hb) { [DateTimeOffset]::Now.ToUnixTimeSeconds() - [int64]$hb } else { [int64]::MaxValue }
     }
 }
 
@@ -62,7 +103,17 @@ function Take-GpuLock {
     if ($s -and -not $Force) {
         $alive = $s.Pid -and (Get-Process -Id $s.Pid -EA SilentlyContinue)
         if ($alive -or $s.StaleFor -lt $StaleLimitSec) {
-            Write-Host "lock HELD by $($s.Owner) (pid $($s.Pid) alive=$([bool]$alive), hb $($s.StaleFor)s ago) -- not taking"
+            Write-Host "lock HELD by $($s.Owner) (pid $($s.Pid) alive=$([bool]$alive), hb $($s.StaleFor)s ago, kind $($s.Kind)) -- not taking"
+            return $false
+        }
+        # A lock we cannot read, or one that names nobody, is NOT a lock we may reclaim.
+        # The 2026-08-21 theft announced exactly this -- "reclaiming from " with a blank owner --
+        # and a blank owner is the signature of a parse failure, not of a crashed run. A real
+        # leftover lock still names who wrote it.
+        if ($s.Unreadable -or -not $s.Owner) {
+            Write-Host "lock file present but UNIDENTIFIABLE (owner '$($s.Owner)', kind $($s.Kind)) -- refusing to reclaim."
+            Write-Host "  A blank owner means this file was not parsed, not that the run died."
+            Write-Host "  Inspect it: Get-Content $script:LockPath"
             return $false
         }
         Write-Host "lock is stale (pid $($s.Pid) dead, hb $($s.StaleFor)s ago) -- reclaiming from $($s.Owner)"
