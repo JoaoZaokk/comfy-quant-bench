@@ -159,8 +159,19 @@ own docstring. Corrected, with both runs quoted.
 
 ## Still open in this ticket
 
-- `tools/test_svdq_verify.py` has no owner. The `"xb"` / `written == planned` / `fsync` / `finally`
-  contract on the only writer that lacked it still has **zero re-running coverage**. Needs no GPU.
+- ~~`tools/test_svdq_verify.py` has no owner~~ **DONE 2026-08-22.** The contract now has
+  `tools/test_svdq_write_contract.py` -- 21 checks, no GPU, no CUDA, no multi-GiB source. It lives
+  apart from `test_svdq_verify.py` on purpose: that file's `__main__` runs a GPU battery, so it
+  cannot host a check whose whole value is being runnable *while a sibling holds the card*.
+  Covered: an honest write round-trips byte-identically through `load_file`; a write short against
+  its plan raises `RuntimeError(length mismatch: wrote 48, planned 64)` and leaves **neither**
+  `out` nor `.partial`; a pre-existing `.partial` raises `FileExistsError` rather than being
+  clobbered; `main()` refuses a stale partial before it reaches the writer; and all seven writers
+  still carry `"xb"`.
+  Its own first version FAILED, and correctly: it searched for `write_checkpoint(src` and matched
+  the **definition** four hundred lines above the call, then reported the guard as coming after the
+  writer. The test was wrong and the code was right. Fixed by making the needle unambiguous rather
+  than by loosening the assertion until it passed.
 - `_native_probe`'s recipes hardcode `bfloat16` while `quant_w4a4` quantizes at the source tensor's
   own dtype and `HIGH_PRECISION_DTYPES` admits `F16`/`F32`.
 - `_inject`'s `stale` warning counts "loader class(es)" while the unit is now the entry; `covered`
