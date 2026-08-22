@@ -38,6 +38,62 @@ PowerShell **de proposito**: dado o ticket 01, esse e o unico formato que os doi
 respeitam. Solto ao fim, placa de volta a 758 MiB / 0%%, sem heartbeat orfao. O ComfyUI nunca foi
 iniciado, entao a instancia zumbi que o dono avisou nao entrou na medicao.
 
+### Rodada 2, 2026-08-22 -- 13 de 16 fechados
+
+Quatro tickets, quatro agentes, cada um num revisor adversarial. Os quatro vereditos voltaram
+SHIP WITH FIXES de novo. `09` e `10` foram para o **mesmo** agente de proposito: os dois mexiam em
+`nunchaku_compare.py` e em todas as ferramentas de tempo, e dois agentes brigando pelo mesmo
+arquivo e o que a particao existe para evitar.
+
+**Os revisores provaram duas coisas que os implementadores nao reivindicaram:**
+
+- **O `clip_name2` que eu adicionei a mao na rodada 1 era INERTE.** Um revisor extraiu o pacote do
+  HEAD e rodou os dois contra o mesmo registry falso: com um arquivo quantizado em nome diffusers
+  apontado para o slot 2, `RESULT[HEAD]: PASSES` / `RESULT[NEW]: BLOCKS`. Ganho real de recusa,
+  nao log mais alto.
+- O probe antigo do `verify_w4a4`, num checkpoint com `layers` vazio, montava snippet vazio,
+  obtinha `resolved = {}`, e `all([])` fazia `native_ready = True`. Agora levanta.
+
+**Tres defeitos no meu proprio conserto do lock da rodada 1, achados usando ele:**
+
+- `Take-GpuLock` dormia **2 s fixos** esperando o heartbeat. Perdeu a corrida aqui, matou o beat,
+  devolveu false -- **e deixou o arquivo de lock no disco**, nomeando o pid que tinha acabado de
+  matar. A placa ficou trancada para todo mundo ate eu remover o arquivo a mao. Agora faz polling
+  ate 20 s, e na falha remove o resto **so** se ele nomear o beat que acabou de matar. Medido
+  depois numa maquina ociosa: o beat sobe em 0,4 s -- que e exatamente por que sleep fixo e a
+  forma errada, ele passa toda vez que voce testa.
+- `_pid_alive` marcava **todo pid morto como vivo** no Windows. Pid morto nao levanta
+  `ProcessLookupError` aqui; levanta `OSError` com `winerror=87`, que caia no meu
+  `except OSError: return True`. Medido: pid 30692 morto -> `winerror=87`, `psutil.pid_exists`
+  False, e o `Get-Process` do PowerShell concordava com o psutil e nao comigo. Direcao segura --
+  lock velho gruda em vez de ser roubado -- mas a mensagem mentia, e colocava as duas metades do
+  lock de volta na mesma discordancia que o ticket 01 era.
+- `test_gpu_lock` foi de 23 para **31** checks: take que falha nao pode deixar a placa trancada,
+  nao pode apagar lock alheio, e as duas metades tem que concordar sobre liveness.
+
+**E uma coisa que eu consertei em cima da rodada 2, do mesmo formato da rodada 1:** o `scope_line`
+do preflight dizia `opened N file widget(s)` -- afirmacao sobre arquivos. O validador abre **so**
+`.safetensors`; o `MODEL_FILE_SUFFIXES` reconhece sete. Seis dos sete chegavam no balde `checked`.
+**35 dos 159 arquivos do inventario nao sao safetensors.** O teste que devia pegar variava o
+**nome** do widget e mantinha a extensao fixa -- e o da rodada 1 variava a **forma** do tensor
+enquanto a colisao vivia em formas identicas. **Teste que varia o eixo em que o bug nao esta** ja
+custou tres fixtures.
+
+**Janela de GPU**, 3090 pinada, lock tomado com o codigo consertado (o heartbeat subiu como pid
+**30692** -- o mesmo numero do orfao morto, que e por que `hb` importa ao lado de liveness):
+
+- Os tres formatos continuam verificando depois da mudanca do codebook: `int8_tensorwise` 0,0129,
+  `asym_w4a8_int8` 0,0824, `convrot_w4a4` 0,2220.
+- **Ticket 15 item 4 fechado por execucao**: `grep -c ComfyUI-Models quantization_inventory.json`
+  = **72**, nao 0. Schema 3, duas raizes, 199 arquivos, 1,01 TiB.
+- E a regeneracao revelou que **`D:` nao e um disco**: `net use` diz `D: -> \\192.168.3.68\estoque`.
+  408 GiB do conjunto de modelos chegam por SMB, de um NAS que nao e o do ERP (`.40`). Por isso
+  "a raiz D: esta offline" e estado normal, nao quebra.
+
+Abertos: `04` e `08` (decisao do dono) e `16` (que ganhou itens novos das revisoes da rodada 2 --
+o mais valioso e verificar que o `m_crossover` reescrito sobre a primitiva produz os numeros que
+produzia antes, e isso precisa da placa).
+
 ### Rodada 1, 2026-08-22 -- 10 de 16 fechados
 
 Oito tickets, oito agentes particionados por arquivo, cada um jogado num revisor adversarial.

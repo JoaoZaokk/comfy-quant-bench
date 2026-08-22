@@ -1,7 +1,7 @@
 # 09 - Four different aggregation rules across seven timing tools, and three cannot express uncertainty
 
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: -
 Severity: medium
 Provenance: TRACED, then EXECUTED 2026-08-22 on the 3090
@@ -105,3 +105,40 @@ Concretely: `attn_bench` would print `1.676x`. The honest answer is `1.63x [1.61
 
 All four items stand. Add a fifth: the primitive treats the first burst as suspect and says so in
 its output.
+
+## Closed 2026-08-22 (round 2), commit `4480337`
+
+`tools/_timing.py` exists. `compare(paths, *, iters, repeats=3, estimator=..., ...)` interleaves
+bursts **across** paths and returns per-path estimator plus the **paired** ratio's min-max.
+`tools/test_timing.py`: 41 checks, 0 failures, CPU-only.
+
+Structurally, not by convention:
+
+- `Ratio` is a frozen dataclass, not a float, and its `__format__` strips precision from a numeric
+  spec while keeping fill/align/width -- so `f"{r:>9.2f}x"` **cannot** discard the bracket.
+- Below 1.0 it inverts and names the direction (`razoes-na-direcao-certa`). `attn_bench.py:109-111`
+  used to print `{sdpa_ms/sage_ms:.2f}x` unconditionally, which below 1.0 emitted exactly the
+  forbidden form.
+- One burst renders `"1.68x faster (1 burst, no interval)"` -- the absence of an interval is
+  printed as the finding rather than as silence.
+- `compare()` acquires `BenchGuard` and cannot be called without it. That is ticket 10's move and
+  it is why these two closed together.
+
+### The first-burst bias, which is what this ticket turned out to be about
+
+The ticket quoted `m_crossover`'s 1.4x. Measured 2026-08-22 on the 3090, that **does not reproduce
+on attention**: five interleaved bursts of `attn_bench`'s own shape span 1.04x. What does hold is
+quieter and worse -- the **first** burst is the outlier (1.676x against a 1.610-1.625 cluster,
+five warmups notwithstanding) and `attn_bench` runs exactly one burst, the first. So it is
+systematically ~3% high, and repeating the tool cannot average that out.
+
+`discard_first_burst=True` is therefore the default, and `provenance()` prints the estimator, the
+burst counts and the discarded burst's values on every run.
+
+### Not verified here, and it is the item that matters most
+
+**`m_crossover` rewritten on the primitive must produce the numbers it produced before.** That
+needs the card and a real sweep; the local `timed()` was moved verbatim into `_timing.wall_ms` so
+the quantity measured is unchanged, but "unchanged by reading" is not the same claim. Settle with
+`Assert-GpuLock -Owner 'bench:m_crossover_regression'` then a matched run against the last
+recorded output.

@@ -58,3 +58,50 @@ The two marked **decision** are the owner's and do not block the rest.
 Explicitly NOT part of this ticket: re-running round 1. The suites are green
 (`gpu_lock` 23, `ltx_studio` all, `hf_parallel_get` 7/7, `quant_mixed_provenance` 9/9,
 `verify_formats` 13/13, preflight 30/0) and re-running them is not what these items need.
+
+## Round 2 status, 2026-08-22, commit `4480337`
+
+**Done:** `ltx_studio` request timeout; `hf_parallel_get`'s no-digest fail-open now returns a
+distinct "completed but unverified" signal via an `outcome` dict so a caller's summary cannot print
+a bare `OK` for it; throughput accounting; the `svdq_to_bf16` false line-number citation and its
+named coverage regression; `quant_audit`'s smaller items; the preflight scope line now names
+unchecked **widgets**.
+
+**Deliberately not touched:** `ltx_studio`'s absent-`Sec-Fetch-Site` allowance. Still the owner's
+decision, still documented in the code.
+
+### New items, from the round-2 reviews
+
+- **`scope_line`'s `opened` verb was over-claiming, and I fixed it** -- see below -- but two
+  related things remain: `_inject`'s `stale` warning still says "N loader class(es)" while the unit
+  is now the entry, and `covered` is populated from the `audit_failure` branch, which installs on
+  widget names nobody confirmed exist. So the scope line can vouch for a widget that was never
+  audited.
+- **`_pairs` accepting bare strings** means a raw prompt `dict` passed by mistake iterates its keys
+  and prints node IDs as node types. Silent nonsense rather than a raise. The trade (never raise
+  inside `validate_prompt`) is right; the dict shape was not considered.
+- **`tools/test_svdq_verify.py` has no owner.** The `"xb"` / `written == planned` / `fsync` /
+  `finally` contract on the only writer that lacked it has **zero re-running coverage**, and
+  `--limit` is no longer a cheap route to it. Needs no GPU.
+- **`_native_probe`'s recipes hardcode `bfloat16`** while `quant_w4a4` quantizes at the source
+  tensor's own dtype and `HIGH_PRECISION_DTYPES` admits `F16`/`F32`. Not a regression -- the old
+  probes hardcoded `float16` -- but not "the real kwargs the caller is about to use" either.
+- **`m_crossover` on the new primitive is unverified against its own prior numbers.** Needs a GPU
+  window. This is the highest-value remaining item in the whole effort: the primitive is only
+  worth having if it did not change what the tool measures.
+
+### What I fixed on top of round 2, and why it is the same shape as round 1
+
+`scope_line` said **`opened N file widget(s)`** -- a claim about files. `_make_validator` opens
+only `.safetensors`; `MODEL_FILE_SUFFIXES` recognises seven. So six of the seven suffixes reached
+the `checked` bucket and the line vouched for files nothing ever read. Not hypothetical: **35 of
+the 159 files in the inventory are non-safetensors** (10 `.gguf`, 14 `.pth`, 7 `.onnx`, 4 `.pt`,
+3 `.ckpt`, 1 `.bin`), and a `.gguf` UNET is a normal workflow here.
+
+The test meant to catch it varied the widget **name** and held the extension constant. Round 1's
+digest test varied tensor **shape** while the collision lived in identical shapes. **A test that
+varies the axis the bug is not on** has now cost three fixtures, and the new test says so in its
+own docstring.
+
+Both sides now read one `CHECKED_FILE_SUFFIXES` tuple, and a test asserts the validator cannot go
+back to its own literal.

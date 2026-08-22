@@ -1,7 +1,7 @@
 # 05 - Six definitions of "is the native backend ready", and the flagship converter uses the weak one
 
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: -
 Severity: medium
 Provenance: TRACED, then EXECUTED 2026-08-22 on the 3090; one sub-claim needs a GPU run
@@ -115,3 +115,52 @@ for six of them.
 Items 1-3 stand. **Item 4 is answered: no difference at 64 vs 256.** Write that into
 `_native_probe.py`'s docstring next to the code, with the date and the card, so the next session
 does not re-derive it.
+
+## Closed 2026-08-22 (round 2), commit `4480337`
+
+`grep "def normal_comfy_backend" tools/*.py` -> **0**. `def native_backend_ready` -> **1**, in
+`_native_probe.py`. Every converter and `verify_w4a4.py` call it with their own `args`, verified
+at six call sites.
+
+### Criterion item 3 is NOT met literally, and closing it anyway is the right call
+
+It asks for `grep -c "def normal_comfy_backend"` == 1. It returns 0, because item 1 renames the
+survivor to `native_backend_ready`. A literal 1 would require keeping a dead alias whose only
+purpose is to satisfy a grep. Recorded here rather than reinterpreted silently, and
+`test_native_probe.py::test_one_definition_of_the_probe_remains` mechanises the real intent --
+zero of the old name, exactly one of the new.
+
+### The round-1 question, answered by a reviewer who did not take the report's word
+
+They stubbed `subprocess.run` and drove the decision path off-GPU, then compared each caller's
+condition against the pre-change source: `quant_w4a4`, `quant_w4a8`, `quant_int8` (both the
+`--convrot` gate and the `--no-convrot` exemption), `quant_mixed` and `verify_w4a4` all evaluate
+identically. **No refusal became an acceptance.**
+
+And one fail-open **closed** that the implementer did not claim: on a checkpoint whose `layers`
+map is empty, the old `verify_w4a4.normal_comfy_backend` built an empty snippet, got
+`resolved = {}`, and `all([])` made `native_ready` **True**. `build_probe_source` now raises.
+
+### One defect I fixed on top
+
+`_recipe_w4a8_linear` read `codebook` via `config.get("codebook", True)` -- a silent default, in
+the module whose `_need` exists to forbid exactly that, and its sibling `_recipe_quantize_w4a8`
+already used `_need` for the same key. The consequence: on a `--no-codebook` file the probe
+resolved `w4a8_int8_linear` **with** a codebook while `_w4a8_smoke` twelve lines below passes
+`load(".weight_codebook", optional=True)`, i.e. `None`. Two arms, two dispatches -- the same defect
+`_int8_probe_ops` had just been rewritten to fix, one format above it in the same file.
+
+The fix needed a signature change, because codebook presence is a property of the **file**, not of
+the config: every per-layer config on this bench is `{format, convrot_groupsize, group_size}`.
+`Format.probe_ops` now takes the layer's tensor-suffix set alongside its config.
+
+**Latent, not live.** Measured 2026-08-22 across both roots: all nine w4a8 checkpoints carry
+`weight_codebook` on every w4a8 layer. That is a fact about what has been converted, not about
+what `--no-codebook` permits.
+
+### Still open, and it needs the card
+
+`_native_probe`'s recipes hardcode `bfloat16` for the probe tensors while `quant_w4a4` quantizes at
+the source tensor's own dtype and `HIGH_PRECISION_DTYPES` admits `F16` and `F32`. The old probes
+hardcoded `float16`, so this is not a regression -- but neither is "the real kwargs the caller is
+about to use", which is the criterion's own phrase. Carried to ticket 16.

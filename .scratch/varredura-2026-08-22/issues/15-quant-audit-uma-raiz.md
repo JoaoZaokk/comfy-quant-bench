@@ -80,3 +80,29 @@ no JSON.
 
 Criterion item 4 -- `grep -c "ComfyUI-Models" quantization_inventory.json` above zero -- needs a
 real regeneration over 1.03 TiB, which was not run. The tool was exercised on a synthetic tree.
+
+## Item 4 closed by execution, 2026-08-22 (round 2), commit `4480337`
+
+The one item this ticket left open needed a real regeneration over ~1 TiB, and it ran, on the 3090
+with the lock held (`stack_snapshot()` allocates on CUDA, so the inventory cannot be rebuilt while
+a sibling holds the card -- worth knowing before planning one):
+
+    Covered 2 root(s), 199 files, 1.01 TiB:
+      ComfyUI/models   164 files   622.11 GiB   F:\COMFY_PORTABLE\ComfyUI\models
+      viral_d           35 files   408.29 GiB   \\192.168.3.68\estoque\ComfyUI-Models
+
+`grep -c "ComfyUI-Models" quantization_inventory.json` -> **72**, not 0. `schema_version: 3`.
+And the footer states what it did not do: no content hash was computed, headers only, so
+identical-looking entries are not known to be identical files.
+
+### The regeneration surfaced something nobody had written down
+
+**`D:` is not a disk.** `net use` reports `D: -> \\192.168.3.68\estoque`. The audit resolved the
+declared `D:\ComfyUI-Models` to that UNC and recorded **both** the declared and the resolved path,
+which is the right shape and is how it became visible at all.
+
+So 408 GiB of the model set arrives over SMB, from a NAS that is not the one holding the ERP code
+(`192.168.3.40`). Two consequences: a full walk costs network, and **"the D: mount is offline" is a
+normal state rather than a broken one** -- which is exactly why this ticket's own regression fix
+distinguishes a declared-and-absent root (warn) from a root the operator named on the command line
+(refuse). CLAUDE.md corrected.

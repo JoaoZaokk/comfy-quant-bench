@@ -1,7 +1,7 @@
 # 10 - The heaviest GPU consumers in the tree take no lock and no occupancy guard
 
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: 01, 09
 Severity: medium
 Provenance: TRACED
@@ -59,3 +59,36 @@ Closed when:
 Item 4 also fixes `PR-08` / `PR-09` / `PR-10` in the same file: load-seconds compared across
 non-comparable paths, peak-VRAM and torch-peak measured over disjoint windows and printed adjacently,
 and the dequantization counter that exists to prove the loader did not silently dequantize.
+
+## Closed 2026-08-22 (round 2), commit `4480337`
+
+Entering the guard is no longer opt-in: `_timing.compare()` acquires `BenchGuard` and cannot run
+without one, so every tool that times something takes the lock because **taking the lock is what
+timing is**. `attn_bench`, `attn_dtype_ab`, both `compile_*` probes, `nunchaku_compare`,
+`fbcache_probe` and `fbcache_visual` all hold one now; `compile_w4a4_probe2` prints no timings and
+is docstring-exempt from `compare()` while still taking the lock.
+
+`_bench_guard` reads **every** NVML device and prints one line per device on every run, pass or
+fail. `nunchaku_compare` maps CUDA ordinal to NVML index **by UUID** and stamps `device_name` into
+every record it writes -- that stamp is what exposed the wrong-card session on 2026-08-21, and
+`report()` now treats a device mismatch as a hard-refusal key so A-on-3090 vs B-on-3080Ti stops
+being printed as a comparison.
+
+### The carve-out, and it came from running the thing
+
+The first version refused on **any** busy device. Executed, it refused every benchmark on this
+bench immediately:
+
+    nvml0 RTX 3090:    0.99 GiB idle (visible to this process)
+    nvml1 RTX 3080 Ti: 5.12 GiB BUSY (visible to this process)
+
+...over a card the run might never touch. CLAUDE.md names that failure directly -- *a check that
+blocks on a hypothesis teaches people to disable checks* -- and a guard that gets commented out
+protects nothing. So a busy device this process **cannot use** is reported loudly and does not
+refuse, and the only way to make a card invisible is `CUDA_VISIBLE_DEVICES`, which removes it from
+the run at the same moment it removes it from the guard. No bypass flag was added; that was the
+round-1 pattern.
+
+Verified in all three states: unset -> refuses naming nvml1; `=0` -> passes and still prints
+nvml1 busy; `=1` -> refuses. **Nothing that was refused before is accepted now**, and `cuda:1`
+went from invisible to guarded.
