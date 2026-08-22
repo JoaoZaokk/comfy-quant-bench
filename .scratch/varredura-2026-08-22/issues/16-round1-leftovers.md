@@ -174,9 +174,17 @@ own docstring. Corrected, with both runs quoted.
   than by loosening the assertion until it passed.
 - `_native_probe`'s recipes hardcode `bfloat16` while `quant_w4a4` quantizes at the source tensor's
   own dtype and `HIGH_PRECISION_DTYPES` admits `F16`/`F32`.
-- `_inject`'s `stale` warning counts "loader class(es)" while the unit is now the entry; `covered`
-  is populated from the `audit_failure` branch, so the scope line can vouch for a widget nobody
-  audited.
-- `_pairs` accepting bare strings means a raw prompt `dict` iterates its keys and prints node IDs
-  as node types.
+- ~~`_inject`'s `stale` warning counts "loader class(es)"~~ **DONE.** It counts table
+  **entries** now, singular/plural correct -- two renamed widgets on one class printed "2 loader
+  class(es)" where there was one class.
+- ~~`covered` is populated from the `audit_failure` branch~~ **DONE.** The classes installed on
+  unconfirmed widget names are tracked separately in `_STATUS["unaudited"]` and the scope line
+  appends `WIDGET NAMES NOT CONFIRMED against INPUT_TYPES for N: ...`. The fail-open stays --
+  declining to install would turn an unreadable class into an unchecked one -- but its cost now
+  travels into the one sentence an operator reads. Only classes present in *this* graph are named:
+  the line describes the run, not the registry.
+- ~~`_pairs` accepting bare strings~~ **DONE.** A raw prompt `dict` used to iterate its KEYS, so
+  every node id printed as a class type -- wrong and confident, which is worse than the
+  `ValueError` that function exists to avoid. `{id: {class_type, inputs}}` and a bare node object
+  are both unwrapped now, and a non-string class type is dropped rather than rendered.
 - `ltx_studio`'s absent-`Sec-Fetch-Site` allowance -- the owner's decision, unchanged.

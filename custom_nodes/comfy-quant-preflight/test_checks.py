@@ -441,6 +441,46 @@ def test_scope_line_does_not_claim_to_have_opened_a_gguf():
     assert "SAW AND DID NOT CHECK 1 file widget(s): UNETLoader.unet_name (.pth)" in line, line
 
 
+def test_a_raw_prompt_dict_does_not_become_node_ids():
+    """`_pairs` iterating a dict yields its KEYS, so every node id printed as a class type.
+
+    Wrong and confident, which is worse than the ValueError `_pairs` exists to avoid -- so the
+    prompt shape is unwrapped rather than raised on. ComfyUI's prompt is exactly
+    `{id: {class_type, inputs}}`, which is the shape a caller most plausibly passes by mistake.
+    """
+    prompt = {"3": {"class_type": "UNETLoader", "inputs": {"unet_name": "a.safetensors"}},
+              "7": {"class_type": "KSampler", "inputs": {"seed": 1}}}
+    line = checks.scope_line(prompt, covered={"UNETLoader": ("unet_name",)})
+    assert "opened 1 file widget(s): UNETLoader.unet_name" in line, line
+    assert "node types seen and not covered 1: KSampler" in line, line
+    assert '"3"' not in line and " 3," not in line and " 7," not in line, (
+        "node ids leaked into the scope line as class types")
+
+
+def test_a_class_installed_without_an_audit_is_marked_not_counted():
+    """`covered` includes classes whose widget names INPUT_TYPES could not confirm.
+
+    That fail-open is deliberate -- declining to install would turn an unreadable class into an
+    unchecked one. But if the audit failed BECAUSE upstream renamed the widget, the validator
+    reads the old name, gets None, and returns True forever, while the scope line counts it as
+    opened. The line has to say so, or it vouches instead of reporting.
+    """
+    graph = [("UNETLoader", {"unet_name": "a.safetensors"})]
+    plain = checks.scope_line(graph, covered={"UNETLoader": ("unet_name",)})
+    assert "NOT CONFIRMED" not in plain, plain
+
+    marked = checks.scope_line(graph, covered={"UNETLoader": ("unet_name",)},
+                               unaudited=("UNETLoader",))
+    assert "opened 1 file widget(s): UNETLoader.unet_name" in marked, marked
+    assert "WIDGET NAMES NOT CONFIRMED against INPUT_TYPES for 1: UNETLoader" in marked, marked
+
+    # A class that is unaudited but absent from THIS graph must not be named: the line describes
+    # the run, not the registry.
+    elsewhere = checks.scope_line(graph, covered={"UNETLoader": ("unet_name",)},
+                                  unaudited=("CLIPLoader",))
+    assert "NOT CONFIRMED" not in elsewhere, elsewhere
+
+
 def test_the_validator_and_the_coverage_line_read_one_tuple():
     """They were two literals and they drifted. This is the assertion that they cannot again."""
     import __init__ as pkg  # noqa: F401 -- imported for the side effect of being importable

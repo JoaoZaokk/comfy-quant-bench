@@ -76,6 +76,7 @@ _STATUS: dict = {
     "covered": {},          # {loader class: (widget, ...)} carrying a live injected validator
     "file_checks": "not installed yet",
     "graph_checks": "not installed yet",
+    "unaudited": (),        # covered, but on widget names INPUT_TYPES could not confirm
 }
 
 
@@ -190,7 +191,7 @@ def _inject() -> None:
         grouped.setdefault(class_name, []).append((file_widget, folder, dtype_widget))
 
     injected: dict[str, tuple[str, ...]] = {}
-    live_entries, missing, stale, deferred = 0, [], [], []
+    live_entries, missing, stale, deferred, unaudited = 0, [], [], [], []
     for class_name, entries in grouped.items():
         node_class = nodes.NODE_CLASS_MAPPINGS.get(class_name)
         if node_class is None:
@@ -210,6 +211,15 @@ def _inject() -> None:
         if audit_failure:
             logger.warning("quant-preflight: %s", audit_failure[1])
             live = list(entries)
+            # Installed on widget names NOBODY CONFIRMED EXIST. That is the deliberate fail-open
+            # above -- refusing to install because we could not read INPUT_TYPES would turn an
+            # unreadable class into an unchecked one, which is worse. But the consequence has to
+            # travel: `injected[class]` feeds `_STATUS["covered"]`, and the per-run scope line
+            # then says it OPENED those widgets. If the audit failed because upstream renamed
+            # them, the validator reads `kwargs.get(<old name>)`, gets None, returns True forever
+            # -- and the scope line vouches for it. So the class is named here as vouched-for-but-
+            # unaudited, and the scope line marks it rather than counting it silently.
+            unaudited.append(class_name)
         elif widgets:
             live = []
             for file_widget, folder, dtype_widget in entries:
@@ -239,6 +249,10 @@ def _inject() -> None:
         live_entries += len(live)
 
     _STATUS["covered"] = injected
+    # Classes whose widget names were installed WITHOUT being audited. Kept out of "covered"
+    # so nothing has to remember to subtract them, and read by the scope line, which is the
+    # one sentence an operator reads to decide whether to look further.
+    _STATUS["unaudited"] = tuple(unaudited)
     _STATUS["file_checks"] = (
         f"{live_entries} of {len(LOADER_TABLE)} table entries live" if injected
         else "NO loader is checked")
@@ -260,8 +274,15 @@ def _inject() -> None:
         if names:
             # Loud on purpose. A silently-absent check is the failure mode this package exists to
             # prevent, so it must not be the failure mode of the package itself.
-            logger.warning("quant-preflight: %d loader class(es) %s and therefore UNCHECKED: %s. "
-                           "%s.", len(names), label, ", ".join(names), why)
+            #
+            # "entr(y|ies)", not "loader class(es)": these lists became per-ENTRY when a class
+            # stopped being all-or-nothing, so two renamed widgets on one class print two names
+            # that are both `DualCLIPLoader(...)`. Counting them as classes reported 2 where there
+            # was 1, in a warning -- a count that misstates its own unit, in the line whose job is
+            # to be believed.
+            unit = "entry" if len(names) == 1 else "entries"
+            logger.warning("quant-preflight: %d table %s %s and therefore UNCHECKED: %s. "
+                           "%s.", len(names), unit, label, ", ".join(names), why)
 
     # The classes in LOADER_TABLE are not the loaders that exist. Everything else in the registry
     # that looks like a loader is out of scope, and until this line existed a workflow built on
@@ -347,7 +368,8 @@ def _wrap_validate_prompt() -> None:
 
         # Every run states its own scope, pass or fail. A green light from a package that looked at
         # two of a workflow's twenty nodes is worth exactly as much as the list of the eighteen.
-        logger.info("quant-preflight: %s", checks.scope_line(graph_nodes, _STATUS["covered"]))
+        logger.info("quant-preflight: %s", checks.scope_line(
+            graph_nodes, _STATUS["covered"], _STATUS.get("unaudited", ())))
         note(checks.check_uncovered_loaders(class_types, _STATUS["covered"], graph_nodes))
         if not _STATUS["covered"]:
             note((checks.WARN,

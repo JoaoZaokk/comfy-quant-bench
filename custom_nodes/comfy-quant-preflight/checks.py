@@ -431,13 +431,30 @@ def _pairs(nodes) -> list[tuple[str, dict]]:
     the package would go from "states its scope" to "no prompt validates at all". A preflight that
     can break the server is worse than one that under-reports, every time.
     """
+    # A raw prompt dict is the one shape that iterates into silent nonsense rather than into
+    # nothing: `for node in {"3": {...}, "7": {...}}` yields the KEYS, so every node id gets
+    # reported as a class type and the scope line names "3" and "7" as node types nobody covers.
+    # Wrong and confident, which is worse than the ValueError this function exists to avoid --
+    # so it is unwrapped here rather than raised. ComfyUI's prompt is exactly {id: {class_type,
+    # inputs}}, and that is the shape a caller most plausibly passes by mistake.
+    if isinstance(nodes, dict):
+        nodes = [(n.get("class_type"), n.get("inputs")) for n in nodes.values()
+                 if isinstance(n, dict)]
+
     normalised = []
     for node in nodes:
         if isinstance(node, str):
             normalised.append((node, {}))
+        elif isinstance(node, dict):
+            # A single node object, or one plucked out of a prompt. Same reasoning as above.
+            class_type = node.get("class_type")
+            if isinstance(class_type, str):
+                inputs = node.get("inputs")
+                normalised.append((class_type, inputs if isinstance(inputs, dict) else {}))
         elif isinstance(node, (tuple, list)) and len(node) == 2:
             class_type, inputs = node
-            normalised.append((class_type, inputs if isinstance(inputs, dict) else {}))
+            if isinstance(class_type, str):
+                normalised.append((class_type, inputs if isinstance(inputs, dict) else {}))
     return normalised
 
 
@@ -540,7 +557,7 @@ def check_uncovered_loaders(class_types, covered, nodes=()) -> tuple | None:
     return (WARN, " ".join(parts))
 
 
-def scope_line(nodes, covered) -> str:
+def scope_line(nodes, covered, unaudited=()) -> str:
     """One line stating what a pass covered, for the log, on every run.
 
     `nodes` is an iterable of (class_type, inputs) pairs from the submitted prompt.
@@ -560,9 +577,23 @@ def scope_line(nodes, covered) -> str:
     covered_here = sorted(set(present) & set(_live_widgets(covered)))
     uncovered = [c for c in present if c not in set(covered_here)]
     checked, skipped = split_file_widgets(nodes, covered)
-    return ("opened {nw} file widget(s): {cw} | SAW AND DID NOT CHECK {mw} file widget(s): {uw} "
+    line = ("opened {nw} file widget(s): {cw} | SAW AND DID NOT CHECK {mw} file widget(s): {uw} "
             "| node types checked {n}: {c} | node types seen and not covered {m}: {u}".format(
                 nw=len(checked), cw=", ".join(checked) or "none",
                 mw=len(skipped), uw=", ".join(skipped) or "none",
                 n=len(covered_here), c=", ".join(covered_here) or "none",
                 m=len(uncovered), u=", ".join(uncovered) or "none"))
+
+    # A class reaches `covered` even when `INPUT_TYPES` could not be read -- `_inject` installs on
+    # the table's widget names rather than declining, because declining would turn an unreadable
+    # class into an unchecked one. That is the right trade and it has a cost that has to travel:
+    # if the audit failed *because* upstream renamed the widget, the validator reads
+    # `kwargs.get(<old name>)`, gets None, and returns True forever -- and every word above would
+    # count it as opened. Naming it here is the difference between a coverage line that reports
+    # and one that vouches.
+    unverified = sorted(set(unaudited) & set(present))
+    if unverified:
+        line += (" | WIDGET NAMES NOT CONFIRMED against INPUT_TYPES for {k}: {v}"
+                 " -- counted as opened above, but nothing proved those widgets exist"
+                 .format(k=len(unverified), v=", ".join(unverified)))
+    return line
