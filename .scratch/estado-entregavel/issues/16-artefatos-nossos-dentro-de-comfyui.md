@@ -43,6 +43,25 @@ Levantamento completo em
 [`../artefatos-em-comfyui.md`](../artefatos-em-comfyui.md). Nenhum arquivo foi movido — a decisão
 de mover é do dono, conforme o critério permite.
 
+**O que "resolved" aqui não quer dizer, escrito em 2026-08-22 porque um leitor só deste ticket não
+tinha como saber.** `resolved` significa que a lista existe e cada item tem decisão escrita. **Não**
+significa que os órfãos deixaram de ser órfãos. O de maior risco continua exatamente onde estava:
+
+`ComfyUI/custom_nodes/comfy_convrot_native/` — 2 arquivos (`__init__.py`, `compile_support.py`),
+o código do nó **ConvRot W4A4 Native (Text Encoder)** de `W4A4_PROGRESS.md:202`. Conferido por
+execução em 2026-08-22, os dois lados:
+
+```bash
+git ls-files | grep -i convrot_native                 # nada: fora do repo da bancada
+git -C ComfyUI ls-files | grep -i convrot_native      # nada: fora do checkout upstream
+ls -a ComfyUI/custom_nodes/comfy_convrot_native       # sem .git próprio
+```
+
+Órfão dos três. `../artefatos-em-comfyui.md` já o classifica como "risco alto, é código de um
+achado central" — e o critério de fechamento deste ticket permite fechar assim, desde que o risco
+de perda esteja escrito, que está. Mas fechar com o risco aceito não é o mesmo que fechar com o
+risco eliminado, e essa distinção precisava estar no ticket, não só no levantamento.
+
 O que mudou: nada em `ComfyUI/`. Foi criado o arquivo de levantamento acima.
 
 Comando que provou cada afirmação central (todos executados, não só lidos):

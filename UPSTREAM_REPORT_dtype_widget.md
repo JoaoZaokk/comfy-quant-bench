@@ -3,7 +3,15 @@
 **Status: written, NOT published.** No remote is configured on this repository, and opening an
 issue or a PR against ComfyUI is an action directed outside this machine. It waits for the user.
 
-ComfyUI `v0.33.0-19-gc1739380`, Windows 11, RTX 3090, torch 2.13.0+cu130, comfy-kitchen 0.2.23.
+ComfyUI `v0.33.0-19-gc1739380`, Windows 11, RTX 3090, torch 2.13.0+cu130, comfy-kitchen **0.2.31**.
+
+This line said `0.2.23` until 2026-08-22 — eight releases behind, and on an unpublished report a
+wrong version line is what earns a "cannot reproduce". Corrected by reading
+`python_embeded/Lib/site-packages/comfy_kitchen-0.2.31.dist-info/METADATA` (`Version: 0.2.31`);
+that dist-info is the only one present and is stamped 2026-08-16 14:53, which predates the
+2026-08-19 measurement below, so the run was under 0.2.31 and only the prose was wrong. That is
+filesystem evidence, not an install log — if this goes upstream, re-read the version at the moment
+of filing rather than trusting this line.
 
 ---
 

@@ -117,7 +117,11 @@ def parse_args() -> argparse.Namespace:
                              "disables. Bias suppression is checked on every layer either way, "
                              "because it costs one forward on zeros and a failure there is "
                              "wrong everywhere at once.")
-    parser.add_argument("--limit", type=int, default=0, help="stop after N layers (debugging)")
+    parser.add_argument("--limit", type=int, default=0,
+                        help="smoke mode: recover only the first N layers, print the "
+                             "diagnostics, and write NOTHING. It cannot write, because the "
+                             "layers past N would keep their raw SVDQuant tensors while the "
+                             "metadata declared the whole file dequantized.")
     parser.add_argument("--keep-fused", action="store_true",
                         help="write the kernel's fused layers as they are, instead of splitting "
                              "them back into to_q/to_k/to_v and w3/w1. The fused form is what "
@@ -476,6 +480,63 @@ def check_recovery(layer, weight: torch.Tensor, device: str, dtype: torch.dtype,
     return None
 
 
+def write_checkpoint(src: Path, data_start: int, out: Path, partial: Path,
+                     entries: list, blob: bytes, planned: int) -> None:
+    """Stream the planned file out, and refuse to hand over anything that is not the plan.
+
+    This was the only writer in `tools/` without the contract the other six share -- compare
+    `quant_w4a4.py:285-327`, `quant_w4a8.py:373-393`, `quant_int8.py:270-289`,
+    `quant_w4a4_smooth.py:294-312`, `quant_mixed.py:637-657`, `to_native.py:200-227`. It opened
+    the partial `"wb"` (clobbering a crashed run's leftover), never compared bytes written
+    against bytes planned, never `fsync`ed, and had no `try/finally`, so a failure left the
+    partial behind for the next run to overwrite.
+
+    That gap is worse here than in any of the six, for two reasons. A safetensors header is
+    self-describing, so a file short by one tensor still parses and still *loads* -- the tail
+    tensors come back as garbage and the model produces a wrong image instead of an exception.
+    And this is the one converter whose output has no BF16 original to fall back on; that is the
+    whole reason the tool exists (see the module docstring).
+
+    Hence: `"xb"`, so the partial must not already exist; `written == planned` checked before
+    the file is allowed to become `out`; `flush` + `fsync` before `os.replace`; and the partial
+    unlinked in `finally` on every exit path, success or not.
+
+    Provenance: EXECUTED, but not on a real checkpoint. On a hand-built temp-dir safetensors
+    (two copied tensors plus one written one, 44 planned bytes) an honest write round-trips
+    through `load_file`; a payload truncated after planning raises
+    `RuntimeError(length mismatch: wrote 28, planned 44)` and leaves neither `out` nor
+    `.partial`; a pre-existing `.partial` raises `FileExistsError`. Never run at full scale
+    since this change -- that needs CUDA and an 11 GiB source.
+    """
+    try:
+        with open(partial, "xb") as dst, open(src, "rb") as source:
+            dst.write(struct.pack("<Q", len(blob)))
+            dst.write(blob)
+            body_start = dst.tell()
+            for key, _, (kind, payload) in entries:
+                if kind == "copy":
+                    start, end = payload["data_offsets"]
+                    source.seek(data_start + start)
+                    remaining = end - start
+                    while remaining:
+                        chunk = source.read(min(COPY_CHUNK, remaining))
+                        if not chunk:
+                            raise RuntimeError(f"source ended early while copying {key}")
+                        dst.write(chunk)
+                        remaining -= len(chunk)
+                else:
+                    dst.write(payload.contiguous().view(torch.uint8).numpy().tobytes())
+            written = dst.tell() - body_start
+            if written != planned:
+                raise RuntimeError(f"length mismatch: wrote {written}, planned {planned}")
+            dst.flush()
+            os.fsync(dst.fileno())
+        os.replace(partial, out)
+    finally:
+        if partial.exists():
+            partial.unlink()
+
+
 def main() -> int:
     args = parse_args()
     if not torch.cuda.is_available():
@@ -486,8 +547,15 @@ def main() -> int:
 
     src = resolve(args.input)
     out = Path(args.output)
+    partial = out.with_suffix(out.suffix + ".partial")
     if out.exists():
         print(f"{out} already exists; refusing to overwrite")
+        return 1
+    # Refused here, not at the write, which is hours of kernel time later. The other six
+    # converters all refuse a stale partial before starting work; this one used to open it
+    # "wb" at the very end and clobber a crashed run's leftover without a word.
+    if partial.exists():
+        print(f"refusing to overwrite stale partial output: {partial}")
         return 1
 
     header, data_start = read_header(src)
@@ -640,6 +708,23 @@ def main() -> int:
         for name in unmatched[:5]:
             print(f"  {name}")
 
+    # --limit used to write a FULL output file. The layers past N never entered `stem_set`, so
+    # their raw SVDQuant tensors (qweight, wscales, proj_up/proj_down, the smooth factors) rode
+    # through the passthrough list untouched while the metadata declared the whole file
+    # dequantized -- a `--limit 4` smoke run produced something that looks like a finished
+    # checkpoint and is not one.
+    #
+    # It refuses to write rather than writing a file whose metadata marks it partial: nothing
+    # would read that mark. There is no verifier for this tool's output -- `verify_w4a4.py` and
+    # its siblings check W4A4 checkpoints, not dequantized BF16 ones -- and a partial-flag that
+    # no gate enforces is the exact shape of claim this bench keeps getting burned by. A mode
+    # that writes nothing cannot be misread.
+    if args.limit:
+        print(f"\n--limit {args.limit}: smoke mode, nothing written. {len(recovered)} tensor(s) "
+              f"were recovered and discarded.")
+        print(f"Re-run without --limit to write {out}.")
+        return 0
+
     # Header first, then stream: the recovered weights alone are several times the size of the
     # input, and building the whole file in memory before writing is how a conversion turns into
     # an OOM on a machine that shares RAM with other work.
@@ -671,25 +756,8 @@ def main() -> int:
     blob = json.dumps(out_header, separators=(",", ":")).encode("utf-8")
     blob += b" " * ((8 - len(blob) % 8) % 8)
 
-    partial = out.with_suffix(out.suffix + ".partial")
     print(f"writing {out.name} ({(offset + len(blob) + 8) / 2**30:.2f} GiB)", flush=True)
-    with open(partial, "wb") as dst, open(src, "rb") as source:
-        dst.write(struct.pack("<Q", len(blob)))
-        dst.write(blob)
-        for key, _, (kind, payload) in entries:
-            if kind == "copy":
-                start, end = payload["data_offsets"]
-                source.seek(data_start + start)
-                remaining = end - start
-                while remaining:
-                    chunk = source.read(min(COPY_CHUNK, remaining))
-                    if not chunk:
-                        raise SystemExit(f"source ended early while copying {key}")
-                    dst.write(chunk)
-                    remaining -= len(chunk)
-            else:
-                dst.write(payload.contiguous().view(torch.uint8).numpy().tobytes())
-    os.replace(partial, out)
+    write_checkpoint(src, data_start, out, partial, entries, blob, offset)
     print(f"done: {out}")
     print("reminder: this carries INT4 quality at BF16 size. It is only worth keeping for a "
           "model you do not have a BF16 original of.")

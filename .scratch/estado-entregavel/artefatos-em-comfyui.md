@@ -124,8 +124,20 @@ git ls-files | grep -i preflight
   -> custom_nodes/comfy-quant-preflight/test_checks.py       FORA de ComfyUI\ desde sempre)
 
 find ComfyUI/custom_nodes/comfy-quant-preflight -type f
-  -> só __init__.py (8 945 bytes) + __pycache__ (compilado, irrelevante)
+  -> só __init__.py + __pycache__ (compilado, irrelevante)
+
+stat -c '%s %n' custom_nodes/comfy-quant-preflight/__init__.py \
+                ComfyUI/custom_nodes/comfy-quant-preflight/__init__.py   # 2026-08-22
+  -> 8945 custom_nodes/comfy-quant-preflight/__init__.py            (o pacote, 207 linhas)
+  -> 1471 ComfyUI/custom_nodes/comfy-quant-preflight/__init__.py    (o stub, 34 linhas)
 ```
+
+Correção de 2026-08-22, medida: esta linha dizia que o arquivo **dentro** do `ComfyUI/` tinha
+**8 945 bytes**. Não tem — 8 945 é o tamanho do `__init__.py` **rastreado, fora** do `ComfyUI/`.
+O que está dentro tem 1 471 bytes. Os dois números foram trocados, e trocados exatamente na
+direção que apaga a conclusão desta seção: o parágrafo abaixo diz que o de dentro é um stub de 34
+linhas, e 8 945 bytes em 34 linhas não fecha. É o mesmo modo de falha que já custou uma auditoria
+aqui — afirmar a partir do arquivo plausível em vez do arquivo do caminho.
 
 Os três arquivos "rastreados" que o ticket viu no grep de 88 arquivos **já moram fora de
 `ComfyUI/`**, em `F:\COMFY_PORTABLE\custom_nodes\comfy-quant-preflight\`, rastreados pela bancada.

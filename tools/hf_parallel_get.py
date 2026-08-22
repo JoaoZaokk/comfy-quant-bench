@@ -13,6 +13,10 @@ The CDN URL that huggingface.co redirects to is signed and expires, so it is res
 while it works, and re-resolved on 401/403. The Authorization header is sent only to
 huggingface.co, never to the CDN, because forwarding it there breaks the signature.
 
+What landed is checked against a content digest from Hugging Face -- the API's `lfs.sha256` when
+the file is an LFS blob, otherwise the `ETag` -- and that check runs *before* the `.parts.json`
+sidecar is removed, so a failure leaves the resume state on disk.
+
     python tools/hf_parallel_get.py --repo Lightricks/LTX-2.5 \\
         --file diffusion_models/ltx-2.5-22b-dev-transformer-bf16.safetensors \\
         --dest D:/ComfyUI-Models --connections 8
@@ -21,17 +25,36 @@ huggingface.co, never to the CDN, because forwarding it there breaks the signatu
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import httpx
-from huggingface_hub import get_token
+from huggingface_hub import HfApi, get_token
 
 RETRY_STATUS = {408, 425, 429, 500, 502, 503, 504}
+REDIRECT_STATUS = (301, 302, 303, 307, 308)
+MAX_REDIRECTS = 5
+
+# The only host the bearer token is ever sent to. Exact hostnames, not prefixes: the previous
+# `target.startswith("https://huggingface.co")` test is passed by `https://huggingface.co.evil.
+# example/` and by `https://huggingface.co@evil.example/`, neither of which is huggingface.co.
+# `urlsplit().hostname` lowercases, drops the port and drops any `user:pass@` userinfo, so both
+# of those resolve to `evil.example` and get nothing. Keep this set to exactly the one host the
+# prefix test used to admit -- `www.huggingface.co` did not match it and must not start matching.
+TOKEN_HOSTS = frozenset({"huggingface.co"})
+
+# Everything after the `?` of a URL. On the CDN that query string *is* the signature, so a
+# traceback pasted into a chat used to carry a working pre-signed download link.
+SIGNED_QUERY = re.compile(r"(https?://[^\s'\"?]+)\?[^\s'\"]*")
+
+HEX = frozenset("0123456789abcdef")
 
 
 def parse_args() -> argparse.Namespace:
@@ -57,12 +80,58 @@ def human(size: float) -> str:
     raise AssertionError
 
 
+def is_token_host(url: str) -> bool:
+    """True only for an https URL whose host is exactly huggingface.co."""
+    parts = urlsplit(url)
+    # Scheme is part of the test because the prefix it replaces included `https://`; without it
+    # a `http://huggingface.co/...` redirect would newly get the token in cleartext.
+    return parts.scheme == "https" and (parts.hostname or "") in TOKEN_HOSTS
+
+
+def redact(text: str) -> str:
+    return SIGNED_QUERY.sub(r"\1?<redacted>", text)
+
+
+def raise_for_status_redacted(response: httpx.Response) -> None:
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as error:
+        # `from None` drops the chained original, whose own message carries the unredacted URL.
+        raise httpx.HTTPStatusError(redact(str(error)), request=error.request,
+                                    response=error.response) from None
+
+
+def normalize_etag(value: str | None) -> str:
+    tag = (value or "").strip()
+    if tag.startswith(("W/", "w/")):
+        tag = tag[2:].strip()
+    return tag.strip('"').lower()
+
+
+def file_digest(path: Path, algorithm: str) -> str:
+    """sha256, or the git blob sha1 that a non-LFS file's ETag carries."""
+    if algorithm == "sha256":
+        hasher = hashlib.sha256()
+    else:
+        hasher = hashlib.sha1()
+        # git hashes `blob <bytes>\0` before the content; verified here against `git hash-object`.
+        hasher.update(f"blob {path.stat().st_size}\0".encode())
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(8 * 1024 * 1024), b""):
+            hasher.update(block)
+    return hasher.hexdigest()
+
+
 class Source:
     """Resolves and re-resolves the signed CDN URL behind a hf.co resolve link."""
 
     def __init__(self, repo: str, filename: str, revision: str):
+        self.repo = repo
+        self.filename = filename
+        self.revision = revision
         self.origin = f"https://huggingface.co/{repo}/resolve/{revision}/{filename}"
         self.token = get_token()
+        self.etag: str | None = None
         self._url: str | None = None
         self._lock = threading.Lock()
 
@@ -76,26 +145,74 @@ class Source:
             with httpx.Client(follow_redirects=False, timeout=30) as client:
                 response = client.get(self.origin, headers={**self._headers(),
                                                             "Range": "bytes=0-0"})
-                while response.status_code in (301, 302, 303, 307, 308):
+                # Take the ETag off huggingface.co's own response. Further down the chain it is
+                # the CDN object's id, which is not the blob's content hash.
+                #
+                # TRACED, not confirmed against a live response: that `x-linked-etag` on
+                # huggingface.co's own reply carries the blob's content hash is read off the
+                # spec, not measured here. Nothing in the test suite makes a network request.
+                if self.etag is None:
+                    self.etag = (response.headers.get("x-linked-etag")
+                                 or response.headers.get("etag"))
+                redirects = 0
+                while response.status_code in REDIRECT_STATUS:
+                    redirects += 1
+                    if redirects > MAX_REDIRECTS:
+                        # A cycle used to spin here with no bound and no timeout.
+                        raise RuntimeError(f"more than {MAX_REDIRECTS} redirects from "
+                                           f"{self.origin}")
                     target = response.headers["location"]
-                    # Only hf.co gets the token; the CDN link is already signed.
+                    # Only huggingface.co gets the token; the CDN link is already signed, and
+                    # forwarding a bearer there breaks the signature.
                     headers = {"Range": "bytes=0-0"}
-                    if target.startswith("https://huggingface.co"):
+                    if is_token_host(target):
                         headers.update(self._headers())
                     response = client.get(target, headers=headers)
                     self._url = target
-                response.raise_for_status()
+                raise_for_status_redacted(response)
             if self._url is None:
                 self._url = self.origin
             return self._url
 
     def size(self) -> int:
         url = self.resolve()
-        headers = self._headers() if url.startswith("https://huggingface.co") else {}
+        headers = self._headers() if is_token_host(url) else {}
         with httpx.Client(follow_redirects=True, timeout=30) as client:
             response = client.get(url, headers={**headers, "Range": "bytes=0-0"})
-            response.raise_for_status()
+            raise_for_status_redacted(response)
             return int(response.headers["content-range"].split("/")[-1])
+
+    def expected_digest(self) -> tuple[str, str, str] | None:
+        """`(algorithm, hex, where it came from)`, or None if HF offered neither.
+
+        Order is the ticket's: the API's `lfs.sha256` first, because that is the content hash
+        git-lfs itself stores for the blob, then the `ETag`.
+
+        **TRACED FROM THE git-lfs AND HUGGING FACE SPECS, NOT CONFIRMED AGAINST A LIVE RESPONSE.**
+        The claim that an LFS blob's ETag is that same sha256, and that a plain git blob's is the
+        sha1 of `blob <len>\\0<content>`, has never been run here -- no test in
+        `tools/test_hf_parallel_get.py` touches the network. If the ETag turns out to be something
+        else for some repo, the `algorithm` returned for that file is wrong and the verification
+        below compares the right bytes against the wrong kind of digest. Settle it by pointing
+        this at one small LFS file and one small non-LFS file and printing what came back.
+        """
+        try:
+            entries = HfApi().get_paths_info(self.repo, self.filename, revision=self.revision,
+                                             token=self.token)
+            for entry in entries:
+                lfs = getattr(entry, "lfs", None)
+                if getattr(entry, "path", None) == self.filename and lfs is not None:
+                    return ("sha256", lfs.sha256.lower(), "HF API lfs.sha256")
+        except Exception as error:
+            print(f"  (HF API file metadata unavailable: {type(error).__name__}: "
+                  f"{redact(str(error))[:120]})", flush=True)
+
+        tag = normalize_etag(self.etag)
+        if set(tag) <= HEX and len(tag) == 64:
+            return ("sha256", tag, "ETag")
+        if set(tag) <= HEX and len(tag) == 40:
+            return ("git-blob-sha1", tag, "ETag")
+        return None
 
 
 def fetch_chunk(source: Source, dest: Path, index: int, start: int, end: int,
@@ -104,7 +221,7 @@ def fetch_chunk(source: Source, dest: Path, index: int, start: int, end: int,
         try:
             url = source.resolve()
             headers = {"Range": f"bytes={start}-{end}"}
-            if url.startswith("https://huggingface.co") and source.token:
+            if is_token_host(url) and source.token:
                 headers["Authorization"] = f"Bearer {source.token}"
             with httpx.Client(follow_redirects=True, timeout=httpx.Timeout(60, read=180)) as client:
                 with client.stream("GET", url, headers=headers) as response:
@@ -115,25 +232,27 @@ def fetch_chunk(source: Source, dest: Path, index: int, start: int, end: int,
                     if response.status_code in RETRY_STATUS:
                         raise httpx.HTTPStatusError("retryable", request=response.request,
                                                     response=response)
-                    response.raise_for_status()
+                    raise_for_status_redacted(response)
                     written = 0
                     with dest.open("r+b") as handle:
                         handle.seek(start)
                         for block in response.iter_bytes(1024 * 1024):
                             handle.write(block)
                             written += len(block)
-                            with lock:
-                                progress["done"] += len(block)
             expected = end - start + 1
             if written != expected:
                 raise OSError(f"chunk {index}: got {written} bytes, expected {expected}")
+            # Count bytes only once the chunk is whole. The old code added every block as it
+            # arrived and tried to undo that with a `partial_<index>` key nothing ever wrote to,
+            # so a retried chunk's abandoned first attempt stayed in the total and the MiB/s and
+            # ETA came out optimistic by exactly the amount that had to be fetched twice.
+            with lock:
+                progress["done"] += written
             return index
         except Exception as error:
-            with lock:
-                progress["done"] -= progress.get(f"partial_{index}", 0)
-                progress[f"partial_{index}"] = 0
             if attempt == retries - 1:
-                raise
+                raise RuntimeError(redact(f"chunk {index}: {type(error).__name__}: "
+                                          f"{error}")) from None
             time.sleep(min(2 ** attempt, 30))
     raise AssertionError
 
@@ -146,8 +265,8 @@ def download(repo: str, file: str, dest_dir: Path, *, revision: str = "main",
     instead of shelling out. Returns 0 on success, 130 if interrupted (matching the CLI's own exit
     code for Ctrl-C) -- the caller must check the return value, since interruption does NOT raise
     here (see the `except KeyboardInterrupt` below, unchanged from the original `main()`).
-    Raises SystemExit on a server/expected-size mismatch or a short final file, exactly as the CLI
-    did when run as a subprocess -- callers must catch `SystemExit`, not just `Exception`.
+    Raises SystemExit on a server/expected-size mismatch, a short final file, or a digest that
+    disagrees with Hugging Face's -- callers must catch `SystemExit`, not just `Exception`.
     """
     dest = (dest_dir / file).resolve()
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -225,6 +344,28 @@ def download(repo: str, file: str, dest_dir: Path, *, revision: str = "main",
     actual = dest.stat().st_size
     if actual != total:
         raise SystemExit(f"size mismatch after download: {actual} != {total}")
+
+    # Byte count used to be the only completeness signal, and it is the one signal a
+    # multi-connection resumable downloader cannot lean on: every chunk can be exactly the right
+    # length and one of them still hold the wrong 256 MiB. Verify before `state_path.unlink()`,
+    # so a mismatch leaves the sidecar on disk instead of discarding the resume state along with
+    # the bad file.
+    digest = source.expected_digest()
+    if digest is None:
+        print("  WARNING: Hugging Face returned no lfs.sha256 and no hex ETag for this file; "
+              "only the byte count was checked, the content was NOT verified", flush=True)
+    else:
+        algorithm, expected_hex, provenance = digest
+        print(f"  verifying {algorithm} from {provenance} ...", flush=True)
+        actual_hex = file_digest(dest, algorithm)
+        if actual_hex != expected_hex:
+            raise SystemExit(
+                f"{algorithm} mismatch: got {actual_hex}, {provenance} says {expected_hex}. "
+                f"The file is wrong; {state_path.name} was kept so a rerun resumes, but a digest "
+                f"mismatch means at least one chunk recorded as done is bad -- delete that "
+                f"sidecar to force a full refetch.")
+        print(f"  {algorithm} OK  {actual_hex}", flush=True)
+
     state_path.unlink(missing_ok=True)
     elapsed = time.perf_counter() - started
     print(f"\nOK  {dest}")

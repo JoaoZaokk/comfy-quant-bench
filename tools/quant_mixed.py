@@ -34,6 +34,12 @@ its output and replaces atomically; and refuses to run at all unless every kerne
 resolves to comfy-kitchen's CUDA backend, because the eager backend declares the same
 capabilities and would produce numbers that describe dequantized math.
 
+Provenance is checked by the sha256 of the source's safetensors header, not by its filename, and
+a calibration or analysis missing any provenance key is refused rather than skipped. Files
+written before those keys existed (anything in calib/ from before 2026-08-22) must be
+re-measured; there is no flag that waives a missing key, because "nothing to check" was exactly
+how the old guard passed.
+
     python_embeded\\python.exe -s tools/quant_mixed.py \\
         --input ComfyUI/models/diffusion_models/beyond-reality-zimage-v2_bf16.safetensors \\
         --calibration calib/zimage_v2.calib.pt --promote-error 0.15 --dry-run
@@ -44,6 +50,7 @@ from __future__ import annotations
 import argparse
 import importlib.metadata
 import json
+import math
 import os
 import shutil
 import struct
@@ -60,7 +67,30 @@ import psutil  # noqa: E402
 import torch  # noqa: E402
 import torch.nn.functional as F  # noqa: E402
 
-from calibrate_activations import PROFILE_FILE_PATTERNS, PROFILE_PATTERNS  # noqa: E402,F401
+from calibrate_activations import (  # noqa: E402,F401
+    PROFILE_FILE_PATTERNS,
+    PROFILE_PATTERNS,
+    safetensors_identity_digest,
+)
+
+# The error measurement runs at bf16, always, and never at the checkpoint's dtype.
+#
+# The incident, recorded in CLAUDE.md and in Reservoir.__init__: Z-Image's
+# `layers.0.feed_forward.w2` is handed channel magnitudes up to 344064. fp16 caps at 65504. The
+# calibration reservoir is bf16 for exactly that reason -- bf16 carries fp32's exponent range --
+# but this file then wrote `x = entry["sample"].to(dtype=weight.dtype)`, which on an fp16
+# checkpoint pushes the sample straight back through 65504 to inf. Every error for that layer
+# comes back nan, `nan > --promote-error` is False, and the layer with the largest activations
+# in the model is assigned the *cheapest* format. The reservoir closed that door from one end;
+# taking the dtype from the checkpoint at measurement time re-opened it from the other.
+#
+# So the dtype is a constant here rather than a property of the input, `measure_layer` asserts on
+# it rather than casting, and the value is written into the analysis so a reused measurement
+# cannot claim to describe a run this one would not reproduce. The float32 reference stays
+# float32; bf16 is what the kernels take and what `err_bf16` is defined against.
+MEASURE_DTYPE = torch.bfloat16
+
+ERROR_METRICS = ("err_bf16", "err_w4a4", "err_w4a8")
 
 SAFETENSORS_DTYPE = {
     torch.int8: "I8", torch.uint8: "U8", torch.float32: "F32",
@@ -183,15 +213,73 @@ def relative(reference: torch.Tensor, got: torch.Tensor) -> float:
                  / reference.float().norm().clamp(min=1e-12))
 
 
-def measure_layer(weight: torch.Tensor, x: torch.Tensor, ck,
+def finite(layer: str, metric: str, value) -> float:
+    """A non-finite error metric ends the run, naming the layer. It never becomes a number.
+
+    `nan > threshold` is False and `nan < threshold` is False, so a nan that reaches the decision
+    does not look like an error -- it looks like a layer whose cheap format was good enough, and
+    the layer it happens to is the one with the largest activations in the model. This is the
+    failure the whole ticket is about, and the only reliable place to stop it is before the value
+    is allowed to exist as a float that something can compare.
+    """
+    if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value):
+        raise SystemExit(
+            f"{layer}: {metric} is {value!r}, not a finite number. This is not routed to "
+            "--uncalibrated and it is not skipped: a non-finite error means the measurement did "
+            "not describe this layer, and a decision made from it would be arbitrary. Check the "
+            "calibration sample for this layer (an inf there is the fp16 65504 overflow -- the "
+            "reservoir must be bf16), then re-measure.")
+    return float(value)
+
+
+def validate_analysis_rows(rows, origin: str) -> None:
+    """Every calibrated row must carry a shape and three finite errors, whoever produced it.
+
+    The measurement branch already cannot emit a non-finite metric (`measure_layer` refuses), but
+    an `--analysis` file is not necessarily one this tool wrote: `json.loads` accepts the bare
+    tokens `NaN`, `Infinity` and `-Infinity`, so a hand-edited or hand-merged analysis can carry
+    a nan into the comparison without ever passing through the measurement path. This runs on
+    both branches, once, immediately before the errors are used for anything -- including the
+    "worst layers" table, which sorts on `err_w4a4`.
+    """
+    if not isinstance(rows, list) or not rows:
+        raise SystemExit(f"{origin} has no 'layers' rows")
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict) or "layer" not in row:
+            raise SystemExit(f"{origin}: row {index} has no 'layer' name")
+        layer = row["layer"]
+        if not row.get("shape"):
+            raise SystemExit(
+                f"{origin}: {layer} has no 'shape'. The shape is what proves the analysis and "
+                "the input hold the same weights; a row without one cannot be checked.")
+        if not row.get("calibrated"):
+            continue
+        for metric in ERROR_METRICS:
+            if metric not in row:
+                raise SystemExit(
+                    f"{origin}: {layer} is marked calibrated but has no {metric!r}.")
+            finite(f"{origin}: {layer}", metric, row[metric])
+
+
+def measure_layer(layer: str, weight: torch.Tensor, x: torch.Tensor, ck,
                   group_size: int, convrot_groupsize: int) -> dict:
-    """Relative L2 of each format against a float32 reference, on this layer's real input."""
+    """Relative L2 of each format against a float32 reference, on this layer's real input.
+
+    Both operands must already be MEASURE_DTYPE; this function casts neither, because the cast it
+    used to do -- the activation to the checkpoint's dtype -- is the bug. See MEASURE_DTYPE.
+    """
+    if weight.dtype is not MEASURE_DTYPE or x.dtype is not MEASURE_DTYPE:
+        raise SystemExit(
+            f"{layer}: the error measurement must run at {MEASURE_DTYPE}, got "
+            f"weight={weight.dtype} x={x.dtype}. Taking the dtype from the checkpoint is the "
+            "344064-vs-65504 overflow described at MEASURE_DTYPE; cast to MEASURE_DTYPE at the "
+            "read, not here.")
     reference = F.linear(x.float(), weight.float())
-    result = {"err_bf16": relative(reference, F.linear(x, weight))}
+    result = {"err_bf16": finite(layer, "err_bf16", relative(reference, F.linear(x, weight)))}
 
     qdata4, wscales4 = ck.quantize_convrot_w4a4_weight(weight, convrot_groupsize, 64)
     got4 = ck.convrot_w4a4_linear(x, qdata4, wscales4, None, convrot_groupsize, 64)
-    result["err_w4a4"] = relative(reference, got4)
+    result["err_w4a4"] = finite(layer, "err_w4a4", relative(reference, got4))
     del qdata4, wscales4, got4
 
     qdata8, s_rel, s_channel, correction, codebook = ck.quantize_w4a8_int8_weight(
@@ -203,9 +291,27 @@ def measure_layer(weight: torch.Tensor, x: torch.Tensor, ck,
     got8 = ck.w4a8_int8_linear(x, qdata8, s_rel, s_channel, codebook=codebook,
                                correction=None, bias=None, group_size=group_size,
                                convrot_groupsize=convrot_groupsize, out_dtype=x.dtype)
-    result["err_w4a8"] = relative(reference, got8)
+    result["err_w4a8"] = finite(layer, "err_w4a8", relative(reference, got8))
     del qdata8, s_rel, s_channel, codebook, got8, reference
     return result
+
+
+def required(mapping: dict, key: str, origin: str):
+    """A provenance key that is absent is a refusal, not a skip.
+
+    Every check in the --analysis branch used to read `recorded = analysis.get(field)` and then
+    `if recorded is not None and recorded != current`. That made the guard strongest on complete
+    files and absent on exactly the hand-edited, hand-merged or older ones it existed to catch: a
+    file with fewer keys passed every check by having nothing to check.
+    """
+    value = mapping.get(key)
+    if value is None:
+        raise SystemExit(
+            f"{origin} carries no {key!r}. Provenance keys are required, not optional -- "
+            "'nothing to check' is not 'checked'. Re-run the tool that produced this file "
+            "(tools/calibrate_activations.py, or this tool with --save-analysis); files written "
+            "before the provenance keys existed cannot be verified against this input.")
+    return value
 
 
 def parse_args() -> argparse.Namespace:
@@ -281,10 +387,19 @@ def main() -> int:
             "keys). ComfyUI fuses those into 'attention.qkv' at load and does not carry the "
             "quantization scales across. Run tools/to_native.py first and quantize its output.")
 
+    # Identity of the checkpoint being converted, computed once. A basename does not identify a
+    # checkpoint on this bench -- outputs are written beside their source and a second model tree
+    # is mounted from D:/ComfyUI-Models -- so every provenance comparison below is against this,
+    # and the names only appear in the messages. See safetensors_identity_digest for the incident,
+    # and for the follow-up measurement showing that the header ALONE is not an identity either --
+    # four groups of checkpoints in this install share a header byte for byte.
+    source_digest = safetensors_identity_digest(source)
+
     analysis = None
     if args.analysis:
+        origin = f"analysis {args.analysis}"
         analysis = json.loads(args.analysis.read_text(encoding="utf-8"))
-        profile = args.profile or analysis["profile"]
+        profile = args.profile or required(analysis, "profile", origin)
         calibration_meta = analysis.get("calibration", {})
         activations = None
         # The measurement branch refuses a calibration captured from a different checkpoint. The
@@ -292,35 +407,57 @@ def main() -> int:
         # another model, or with different group sizes than it was measured under, and the
         # per-layer errors would silently describe a different computation than the one being
         # written.
-        recorded_source = Path(analysis.get("source", "")).name
-        if recorded_source and recorded_source != source.name and not args.foreign_analysis:
+        recorded_source = Path(required(analysis, "source", origin)).name
+        recorded_digest = required(analysis, "source_identity_sha256", origin)
+        # ORed, not swapped. The digest samples the body and is strictly better than a basename at
+        # telling two *different* files apart -- but it is still a sample, and the check it
+        # replaced was already refusing every pairing later measured to collide. Keeping both
+        # means the weaker signal can only ever ADD a refusal, never remove one. A legitimate
+        # rename or copy still passes, through --foreign-analysis, which is a flag and not a wall.
+        foreign = recorded_digest != source_digest or recorded_source != source.name
+        if foreign and not args.foreign_analysis:
             raise SystemExit(
-                f"The analysis was measured on {recorded_source!r} but the input is "
-                f"{source.name!r}. Re-measure with --calibration, or pass --foreign-analysis if "
-                f"the two are the same architecture -- see its help text for what that buys and "
-                f"what it costs.")
-        if recorded_source and recorded_source != source.name:
+                f"The analysis was measured on {recorded_source!r} (identity "
+                f"{recorded_digest[:16]}) but the input is {source.name!r} "
+                f"({source_digest[:16]}). These are not the same checkpoint even if the names "
+                f"match. Re-measure with --calibration, or pass --foreign-analysis if the two "
+                f"are the same architecture -- see its help text for what that buys and what it "
+                f"costs.")
+        if foreign:
             # Loud, every run. The whole risk of this flag is that someone forgets which
             # measurement produced the file they are shipping.
-            print(f"--foreign-analysis: promoting layers of {source.name!r} using errors measured "
-                  f"on {recorded_source!r}.")
+            print(f"--foreign-analysis: promoting layers of {source.name!r} "
+                  f"({source_digest[:16]}) using errors measured on {recorded_source!r} "
+                  f"({recorded_digest[:16]}).")
+        # Required, not `is not None`: the whole point of item 2 of this ticket is that an
+        # analysis missing the field it would be checked on used to pass by having nothing to
+        # check.
         for field, current in (("group_size", args.group_size),
                                ("convrot_groupsize", args.convrot_groupsize)):
-            recorded = analysis.get(field)
-            if recorded is not None and recorded != current:
+            recorded = required(analysis, field, origin)
+            if recorded != current:
                 raise SystemExit(
                     f"The analysis was measured with {field}={recorded} but this run uses "
                     f"{current}. The per-layer errors would not describe what gets written; "
                     f"pass --{field.replace('_', '-')} {recorded} or re-measure.")
-        shapes = {row["layer"]: tuple(row["shape"]) for row in analysis.get("layers", [])
-                  if row.get("shape")}
+        # No flag to reconcile this one: a measurement taken at the checkpoint's dtype -- which
+        # is what this tool did before MEASURE_DTYPE existed -- is not reusable at any setting,
+        # because on an fp16 checkpoint it is the 344064-vs-65504 overflow.
+        recorded_dtype = required(analysis, "measure_dtype", origin)
+        if recorded_dtype != str(MEASURE_DTYPE):
+            raise SystemExit(
+                f"The analysis was measured at {recorded_dtype} and this tool measures at "
+                f"{MEASURE_DTYPE}. Re-measure with --calibration; see MEASURE_DTYPE for why the "
+                "measurement dtype is not negotiable.")
+        validate_analysis_rows(analysis.get("layers"), origin)
+        shapes = {row["layer"]: tuple(row["shape"]) for row in analysis["layers"]}
         for name, info in header.items():
             stem = name.removesuffix(".weight")
             if stem in shapes and tuple(info["shape"]) != shapes[stem]:
                 raise SystemExit(
                     f"{stem}: the analysis recorded shape {list(shapes[stem])} but the input has "
                     f"{info['shape']}. These are not the same weights.")
-        if recorded_source and recorded_source != source.name:
+        if foreign:
             # Same shapes where both have a layer is not enough when the analysis comes from
             # another file: a layer the analysis never measured would fall to --uncalibrated
             # handling silently, and a layer the analysis has but the input lacks means the two
@@ -337,17 +474,33 @@ def main() -> int:
                     f"(e.g. {missing[:2]}), {len(extra)} the other way (e.g. {extra[:2]}). "
                     f"These are different architectures; measure this one.")
     else:
+        origin = f"calibration {args.calibration}"
         blob = torch.load(args.calibration, map_location="cpu", weights_only=False)
         calibration_meta = blob["meta"]
         activations = blob["layers"]
-        profile = args.profile or calibration_meta["profile"]
-        if Path(calibration_meta["source"]).name != source.name:
+        profile = args.profile or required(calibration_meta, "profile", origin)
+        recorded_source = Path(required(calibration_meta, "source", origin)).name
+        recorded_digest = required(calibration_meta, "source_identity_sha256", origin)
+        if recorded_digest != source_digest or recorded_source != source.name:
             # Calibrating on one checkpoint and converting another produces a file that looks
-            # fine and is tuned for the wrong activations. Refuse rather than warn.
+            # fine and is tuned for the wrong activations. Refuse rather than warn. This compared
+            # basenames until 2026-08-22, and a basename is not an identity here: outputs are
+            # written beside their source and D:/ComfyUI-Models is mounted alongside
+            # ComfyUI/models, so the same name in two directories is the normal case, not a
+            # corner one.
+            #
+            # But the digest did not REPLACE the basename, it was ORed with it, and that is the
+            # correction of 2026-08-22 rather than the change: a header-only digest let three
+            # different Z-Image checkpoints -- and the two halves of a Wan i2v pair, and the two
+            # passes of one conversion -- compare equal, so for those the basename check being
+            # dropped turned a refusal into a silent acceptance. The digest now samples the body
+            # too, but it is still a sample, and a weaker signal ORed in can only ever add a
+            # refusal. See safetensors_identity_digest for the measurement.
             raise SystemExit(
-                f"Calibration was captured from {Path(calibration_meta['source']).name!r} but "
-                f"the input is {source.name!r}. Recalibrate, or pass --analysis if you know "
-                "these are the same weights under different names.")
+                f"Calibration was captured from {recorded_source!r} (identity "
+                f"{recorded_digest[:16]}) but the input is {source.name!r} "
+                f"({source_digest[:16]}). Even with the same filename these are different "
+                f"checkpoints. Recalibrate against this file.")
 
     selected = selected_layers(header, profile, args.convrot_groupsize)
     if not selected:
@@ -392,26 +545,24 @@ def main() -> int:
                 if entry is None or entry["sample"].shape[0] == 0:
                     rows.append({"layer": stem, "shape": info["shape"], "calibrated": False})
                     continue
+                # Both operands are cast to MEASURE_DTYPE at the read. The activation used to be
+                # cast to `weight.dtype`, i.e. the checkpoint's -- read MEASURE_DTYPE for what
+                # that does to a layer whose activations reach 344064 on an fp16 checkpoint.
                 weight = read_tensor(handle, data_start + start, end - start,
-                                     info["dtype"], info["shape"]).to("cuda")
-                x = entry["sample"].to(device="cuda", dtype=weight.dtype)
+                                     info["dtype"], info["shape"]).to(device="cuda",
+                                                                      dtype=MEASURE_DTYPE)
+                x = entry["sample"].to(device="cuda", dtype=MEASURE_DTYPE)
                 if not torch.isfinite(x).all():
-                    # A non-finite sample makes every error nan, and `nan > threshold` is False,
-                    # so the layer would quietly take the cheapest format. Treat it as
-                    # uncalibrated instead, which routes it through --uncalibrated.
-                    rows.append({"layer": stem, "shape": info["shape"], "calibrated": False,
-                                 "reason": "calibration sample contains inf or nan"})
-                    del weight, x
-                    torch.cuda.empty_cache()
-                    continue
-                measured = measure_layer(weight, x, ck, args.group_size, args.convrot_groupsize)
-                if not all(v == v for v in (measured["err_bf16"], measured["err_w4a4"],
-                                            measured["err_w4a8"])):
-                    rows.append({"layer": stem, "shape": info["shape"], "calibrated": False,
-                                 "reason": f"non-finite error {measured}"})
-                    del weight, x
-                    torch.cuda.empty_cache()
-                    continue
+                    # A calibration that already contains inf/nan is a broken calibration, not a
+                    # layer with an interesting error: routing it to --uncalibrated would hide a
+                    # capture bug behind a per-layer format choice. Name the layer and stop.
+                    raise SystemExit(
+                        f"{stem}: the calibration sample contains inf or nan. The reservoir is "
+                        "bf16 precisely so real activations (up to 344064 on Z-Image) cannot "
+                        "overflow the way fp16's 65504 does, so this is a capture bug, not a "
+                        f"property of the layer. Recapture with tools/calibrate_activations.py.")
+                measured = measure_layer(stem, weight, x, ck,
+                                         args.group_size, args.convrot_groupsize)
                 measured.update({"layer": stem, "shape": info["shape"], "calibrated": True,
                                  "rows": int(entry["rows"]),
                                  "crest_p99": float(entry["crest_p99"])})
@@ -422,6 +573,11 @@ def main() -> int:
                     print(f"[{index}/{len(selected)}] measured", flush=True)
         analysis = {
             "profile": profile, "source": str(source),
+            # Written so a reused analysis can be checked against the checkpoint it describes
+            # instead of against a filename, and so the sidecar of any file built from it can
+            # carry the same identity forward. Both are what item 1 of the ticket is for.
+            "source_identity_sha256": source_digest,
+            "measure_dtype": str(MEASURE_DTYPE),
             "calibration": calibration_meta,
             "group_size": args.group_size, "convrot_groupsize": args.convrot_groupsize,
             "seconds": round(time.perf_counter() - started, 2),
@@ -431,6 +587,11 @@ def main() -> int:
             args.save_analysis.parent.mkdir(parents=True, exist_ok=True)
             args.save_analysis.write_text(json.dumps(analysis, indent=2), encoding="utf-8")
             print(f"wrote analysis to {args.save_analysis}")
+
+    # Both branches land here, and nothing downstream reads an error metric before this line.
+    # The measurement branch cannot produce a non-finite one (`measure_layer` refuses), but a
+    # reused --analysis file is not necessarily one this tool wrote.
+    validate_analysis_rows(analysis["layers"], "analysis")
 
     by_layer = {row["layer"]: row for row in analysis["layers"]}
 
@@ -659,6 +820,13 @@ def main() -> int:
     elapsed = time.perf_counter() - started
     manifest = {
         "source": str(source), "source_size": source.stat().st_size,
+        # The ticket's actual complaint: given only a produced checkpoint there was no way to
+        # tell whether the analysis it was built from described that checkpoint. These three
+        # answer it -- `analysis_source_identity_sha256` differs from `source_identity_sha256` only
+        # under --foreign-analysis, and then it names which measurement was borrowed.
+        "source_identity_sha256": source_digest,
+        "analysis_source_identity_sha256": analysis.get("source_identity_sha256"),
+        "measure_dtype": str(MEASURE_DTYPE),
         "output": str(output), "output_size": output.stat().st_size,
         "architecture": profile,
         "quantization": "mixed convrot_w4a4 / asym_w4a8_int8",

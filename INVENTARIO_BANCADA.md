@@ -81,34 +81,43 @@ próprio `CLAUDE.md` já faz para a DLL.
 
 ## 2. NODES
 
-### 2.1 Contagem — `[EXECUTADO]` agora, recontada, não copiada de `CLAUDE.md`
+### 2.1 Contagem — não copie daqui, rode os comandos
 
-`ls ComfyUI/custom_nodes/` (sem `-a`) dá **66 entradas / 64 diretórios** — bate exatamente com o
-que `CLAUDE.md` afirma. Mas `find` (que enxerga ocultos) acha uma **67ª entrada**: `.disabled/`,
-um diretório vazio e oculto que `ls` sem `-a` não mostra. `CLAUDE.md` não erra o número que
-declara — só não menciona esse diretório oculto, porque não usou `-a`. Registrando aqui porque
-"recontar na hora" pegou algo que a contagem anterior não tinha como pegar do jeito que foi feita.
+**Esta seção deixou de publicar as contagens como fato corrente.** Ela dizia "66 entradas / 64
+diretórios / 63 pacotes / 67ª entrada oculta", medido em 2026-08-21. Recontado em **2026-08-22**:
+`ls -A` dá **90 entradas, 88 diretórios** — comparado com o mesmo `ls -A` de ontem (67), são **23
+entradas em um dia**. Esse é o mesmo número que já
+errou três vezes dentro do `CLAUDE.md` e que o `CLAUDE.md` por isso parou de citar — o valor
+tinha simplesmente mudado de arquivo. Aqui ele para também.
 
-Dos 67:
-- **65 diretórios** (incluindo `.disabled/` vazio e `__pycache__/`, que não são pacotes de nó).
-- **2 arquivos soltos**: `example_node.py.example` (template, não é nó ativo) e
-  `websocket_image_save.py` (nó de exemplo que o próprio ComfyUI distribui, ativo).
-- Descontando `.disabled/` e `__pycache__/`, sobram **63 diretórios que são pacotes de nó de
-  fato**.
+O que continua valendo é a **aritmética**, que não muda com o número:
 
-### 2.2 Quantos têm `.git` próprio — `[EXECUTADO]` agora, checagem direta, não assumida de `CLAUDE.md`
+```bash
+ls    ComfyUI/custom_nodes | wc -l   # entradas visíveis
+ls -A ComfyUI/custom_nodes | wc -l   # + as ocultas; a diferença é o .disabled/
+find  ComfyUI/custom_nodes -mindepth 1 -maxdepth 1 -type d | wc -l   # diretórios
+find  ComfyUI/custom_nodes -mindepth 1 -maxdepth 1 -type f          # arquivos soltos
+```
 
-`CLAUDE.md` afirma "Each of the 66 entries ... is its own repo". Testei isso agora
-(`test -d <pacote>/.git` para os 63 diretórios de pacote):
+Para chegar em "pacotes de nó de fato", desconte do total de diretórios: `.disabled/` (oculto e
+vazio — `ls` sem `-a` não mostra, e foi ele que a contagem original de 2026-08-21 quase perdeu) e
+`__pycache__/`. Os dois arquivos soltos, `example_node.py.example` (template, inativo) e
+`websocket_image_save.py` (nó de exemplo do próprio ComfyUI, ativo), não são pacotes: em
+2026-08-22 os dois continuam sendo exatamente esses.
 
-- **31 têm `.git` próprio** (são de fato repos git independentes).
-- **32 não têm** `.git` — são diretórios simples, instalados por outro caminho (zip, cópia manual,
-  ou `.git` removido depois do clone). Entre os 32 sem `.git`: `comfy-quant-preflight` (nosso, ver
-  2.3), `comfy_convrot_native`, `rgthree-comfy`, `comfyui-impact-pack`, `ComfyUI-WanVideoWrapper`,
-  `whiterabbit`, `comfyui-rogala`, e outros 25.
+### 2.2 Quantos têm `.git` próprio — a proporção, não o número
 
-Ou seja: a afirmação "cada entrada é seu próprio repo" está errada para quase metade dos pacotes
-instalados nesta bancada. Isso é uma correção a `CLAUDE.md`, não deste ticket — deixo registrado
+`CLAUDE.md` já afirmou "Each of the 66 entries ... is its own repo". **Isso é falso**, e é o
+achado que importa aqui, porque muda o que alguém faz: quem tentar `git -C <pacote>` num diretório
+sem `.git` toma erro. Em 2026-08-21 eram 31 com `.git`; recontado em 2026-08-22, **40** — cerca de
+metade, nas duas medições. A proporção sobreviveu; o número não.
+
+```bash
+find ComfyUI/custom_nodes -maxdepth 2 -name .git | wc -l
+```
+
+Entre os que não têm `.git`: `comfy-quant-preflight` (nosso, ver 2.3) e `comfy_convrot_native`.
+A correção da frase do `CLAUDE.md` não é deste ticket — deixo registrado
 aqui e não editei `CLAUDE.md` (fora do escopo de arquivos permitidos desta rodada).
 
 ### 2.3 Quais são nossos — `[EXECUTADO]`, `git -C . ls-files | grep custom_nodes`, agora

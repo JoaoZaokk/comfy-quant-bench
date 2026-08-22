@@ -18,6 +18,15 @@ Levantar e escrever:
   não sobem.
 - **Nodes**: 66 pacotes instalados. Quais são nossos (três arquivos estão nos 88
   rastreados), quais estão órfãos, quais o workflow de aceitação realmente usa.
+
+  > **Os números deste enunciado são de quando o ticket foi escrito e dois deles estavam
+  > errados.** Ficam aqui como estão, porque reescrever o enunciado apaga o motivo do ticket —
+  > mas ninguém deve agir sobre eles. Corrigido em 2026-08-22: comfy-kitchen é **0.2.31**
+  > (lido do `dist-info`, que está no disco desde 2026-08-16), e a `cudart64_12.dll` **não
+  > existe mais e não deve ser restaurada** — `_check_accel.py` rodou na RTX 3090 em
+  > 2026-08-22 e deu ALL GOOD sem ela (`sageattention` mean|d| 0,0006; `flash_attn` 0,0000).
+  > As contagens de pacote e de arquivo rastreado agora se contam, não se citam: ver
+  > `../../../INVENTARIO_BANCADA.md` seção 2.1 e `../triagem-89.md`.
 - **Modelos convertidos**: quais existem, **qual conversor produziu cada um** e com
   que parâmetros. Hoje há `int8_convrot`, `w4a8`, `nvfp4`, `int8` do LTX 2.5 em `D:`,
   e a procedência de cada um não está num lugar só.

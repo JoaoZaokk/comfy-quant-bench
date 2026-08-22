@@ -26,11 +26,38 @@ off within a week.
 from __future__ import annotations
 
 import json
+import logging
 import struct
 from pathlib import Path
 
+logger = logging.getLogger("quant-preflight")
+
 ERROR = "error"
 WARN = "warn"
+
+# Distinguishes "the attribute is absent" from "the attribute is falsy". `getattr(x, n, False)`
+# collapses those two, and for a flag whose False value means "everything is fine" that collapse
+# is a fail-open with a rename as its trigger.
+_MISSING = object()
+
+
+def unresolved(symbol: str, exc: BaseException, consequence: str) -> tuple:
+    """The WARN a check emits when it could not run at all.
+
+    Every fail-open in this package had the same shape: an `except` returned None, None meant
+    "nothing found", and "nothing found" reached the user as a green light. A check that could not
+    execute is not a check that passed, so the difference has to survive into the message the user
+    reads -- naming the symbol, because the usual cause is an upstream rename and the person
+    reading the log is the person who has to update the table.
+
+    WARN and not ERROR on purpose: an unresolvable symbol is this package being broken, and this
+    package breaking must not stop the user's workflow. It must only stop the user believing they
+    were checked.
+    """
+    return (WARN,
+            f"{symbol} could not be resolved ({type(exc).__name__}: {exc}), so {consequence} DID "
+            "NOT RUN. This is a missing check, not a clean result -- most likely an upstream "
+            "rename that this package has not caught up with.")
 
 # Formats whose weights carry their own per-layer precision. For these the file has already
 # decided, so a dtype widget is at best redundant.
@@ -71,8 +98,15 @@ def quant_layers(tensors: dict, metadata: dict) -> dict[str, dict]:
     if raw:
         try:
             layers.update(json.loads(raw).get("layers", {}) or {})
-        except (TypeError, ValueError):
-            pass
+        except (TypeError, ValueError) as exc:
+            # Swallowing this used to mean a file with malformed quantization metadata came back
+            # as "no layers", which every caller below reads as "not quantized" -- the dtype-widget
+            # ERROR and the LoRA WARN both go silent on the one file most likely to need them.
+            # The parse still degrades to the inline scan; it just no longer does so quietly.
+            logger.warning(
+                "quant-preflight: _quantization_metadata did not parse (%s: %s); falling back to "
+                "inline .comfy_quant markers only, so any layer declared ONLY in __metadata__ is "
+                "invisible to every check below.", type(exc).__name__, exc)
     for name in tensors:
         if name.endswith(".comfy_quant"):
             layers.setdefault(name[: -len(".comfy_quant")], {})
@@ -139,6 +173,12 @@ def check_inert_full_precision_flag(tensors: dict, metadata: dict, layers: dict)
 
     WARN, not ERROR: nothing is corrupted, the intent is simply not honoured -- and the finding
     has not been confirmed by execution.
+
+    The message below says "not confirmed by execution" in the message itself, and states the
+    consequence as *would*, not *does*. It said it as fact once, and a fact in a WARN is how an
+    audit hypothesis becomes repo lore: the person who reads it in the UI does not have this
+    docstring in front of them, and the caveat that lives only next to the source is a caveat that
+    does not travel.
     """
     flagged = [name for name, conf in layers.items()
                if conf.get("full_precision_matrix_mult")
@@ -146,10 +186,12 @@ def check_inert_full_precision_flag(tensors: dict, metadata: dict, layers: dict)
     if not flagged:
         return None
     return (WARN,
-            f"{len(flagged)} layer(s) request full_precision_matrix_mult, but for "
-            f"{'/'.join(sorted(WEIGHT_ONLY_FORMATS))} that flag does not keep the layer in BF16 "
-            "-- the quantized kernel runs regardless. The file's own intent is not being "
-            "honoured. (Audit finding, not yet confirmed by execution.)")
+            f"{len(flagged)} layer(s) request full_precision_matrix_mult. Reading ops.py:1373, "
+            f"for {'/'.join(sorted(WEIGHT_ONLY_FORMATS))} that flag would not keep the layer in "
+            "BF16 -- the weight stays a QuantizedTensor and the quantized kernel would run "
+            "regardless, so the file's own intent would not be honoured. Audit finding, not "
+            "confirmed by execution: nothing has been run with the flag set. "
+            "tools/dispatch_census.py on such a file would settle it.")
 
 
 FILE_CHECKS = (
@@ -164,10 +206,16 @@ def check_file(path: Path) -> list[tuple]:
     try:
         tensors, metadata = read_header(path)
     except Exception as exc:
-        # A file we cannot parse is not a file we should block on: GGUF, .pt and friends come
-        # through here too. Say nothing rather than invent a verdict.
-        del exc
-        return []
+        # A file we cannot parse is still not a file to block on: GGUF, .pt and friends come
+        # through here too, and inventing a verdict for them would get this package uninstalled.
+        # But returning [] said "checked, clean" for a file on which nothing was checked, and the
+        # caller cannot tell those apart. WARN keeps it non-blocking and stops it reading green.
+        # In practice VALIDATE_INPUTS filters to .safetensors before calling this, so a GGUF only
+        # reaches here through a direct call.
+        return [(WARN,
+                 f"could not read the safetensors header of {path.name} "
+                 f"({type(exc).__name__}: {exc}), so NONE of the file-level checks ran on it. "
+                 "Not a clean result -- an unchecked one.")]
     layers = quant_layers(tensors, metadata)
     found = []
     for check in FILE_CHECKS:
@@ -222,8 +270,13 @@ def check_dtype_widget(path: Path, weight_dtype: str) -> tuple | None:
         return None
     try:
         tensors, metadata = read_header(path)
-    except Exception:
-        return None
+    except Exception as exc:
+        # This one mattered more than the check_file twin: the user has explicitly set a widget,
+        # and a silent None told them the setting was fine on a file whose header was never read.
+        return (WARN,
+                f"weight_dtype={weight_dtype} was NOT checked against {path.name}: its "
+                f"safetensors header did not read ({type(exc).__name__}: {exc}). If that file is "
+                "quantized, the contradiction this check exists to catch is still there.")
     layers = quant_layers(tensors, metadata)
     if not layers:
         return None            # BF16/fp16 source: the widget is doing its job.
@@ -259,15 +312,30 @@ def check_nunchaku_needs_disable_dynamic_vram(class_types: list[str]) -> tuple |
 
     Both halves are readable here: the graph says whether a Nunchaku loader is present, and
     `aimdo_enabled` is a module-level flag set only by main.py.
+
+    The second half used to be `getattr(mod, "aimdo_enabled", False)`, which made a renamed flag
+    indistinguishable from a flag that is off -- and the "off" reading is the one that returns a
+    clean pass on exactly the workflow this check exists for. Absence is now its own answer,
+    because in this checkout the name is unconditional: `memory_management.py:173` is a bare
+    `aimdo_enabled = False` at module scope (traced by grep 2026-08-22, not executed), so it is
+    present whether dynamic VRAM is on or off. If it is missing, upstream renamed it.
     """
     nunchaku = [c for c in class_types if any(m in c for m in NUNCHAKU_LOADER_MARKERS)]
     if not nunchaku:
         return None
     try:
         import comfy.memory_management
-        if not getattr(comfy.memory_management, "aimdo_enabled", False):
-            return None
-    except Exception:
+    except Exception as exc:
+        return unresolved("comfy.memory_management", exc,
+                          "the dynamic-VRAM half of the Nunchaku check")
+    flag = getattr(comfy.memory_management, "aimdo_enabled", _MISSING)
+    if flag is _MISSING:
+        return (WARN,
+                "this workflow uses "
+                f"{', '.join(sorted(set(nunchaku)))}, but comfy.memory_management.aimdo_enabled "
+                "no longer exists, so the dynamic-VRAM check DID NOT RUN. Upstream renamed the "
+                "flag; until this package is updated, confirm --disable-dynamic-vram yourself.")
+    if not flag:
         return None
     return (ERROR,
             f"this workflow uses {', '.join(sorted(set(nunchaku)))} and the server is running "
@@ -309,3 +377,55 @@ def check_lora_over_quantized(class_types: list[str], quantized_files: int) -> t
             "with the LoRA applied and in effect. What remains unverified is whether the LoRA "
             "delta costs accuracy once the weight is already 4-bit -- that was not measured. "
             "Check your output, not your throughput.")
+
+
+# --------------------------------------------------------------------------------------------
+# Scope. What a pass from this package does and does not mean.
+# --------------------------------------------------------------------------------------------
+#
+# The table in __init__ covers four loader classes. ComfyUI's own nodes.py defines fifteen classes
+# whose name ends in "Loader" (grep, 2026-08-22, not executed), and the custom_nodes tree adds
+# more. A workflow built on any of the others got a completely clean preflight, which is
+# indistinguishable from a workflow that was checked and found sound. Naming the gap on every run
+# is the cheapest way to keep those two apart, and it costs one log line.
+
+LOADER_CLASS_HINT = "Loader"
+
+
+def uncovered_loader_classes(class_types, covered) -> list[str]:
+    """Loader-shaped class names that this package does not check.
+
+    The name is the only signal available without importing ComfyUI, and it is a heuristic: it
+    misses a loader called something else, which is why the caller also prints the full uncovered
+    list and not just this subset. A heuristic that under-reports is acceptable here only because
+    it never decides anything -- it just makes a line louder.
+    """
+    covered = set(covered)
+    return sorted({c for c in class_types
+                   if isinstance(c, str) and LOADER_CLASS_HINT in c and c not in covered})
+
+
+def check_uncovered_loaders(class_types, covered) -> tuple | None:
+    """WARN naming loader-shaped nodes in this graph that no check looked at."""
+    skipped = uncovered_loader_classes(class_types, covered)
+    if not skipped:
+        return None
+    return (WARN,
+            f"{len(skipped)} loader-shaped node(s) in this workflow are OUTSIDE this package's "
+            f"scope and were not checked at all: {', '.join(skipped)}. A pass here says nothing "
+            "about the files they load. Extend LOADER_TABLE in this package's __init__ to cover "
+            "one.")
+
+
+def scope_line(class_types, covered) -> str:
+    """One line stating what a pass covered, for the log, on every run.
+
+    Deliberately prints the whole uncovered list rather than a count. A count is the same
+    reassurance a silent pass gives, in a smaller font.
+    """
+    present = sorted({c for c in class_types if isinstance(c, str)})
+    covered_here = sorted(set(present) & set(covered))
+    uncovered = [c for c in present if c not in set(covered_here)]
+    return ("checked {n} node type(s): {c} | SAW AND DID NOT CHECK {m}: {u}".format(
+        n=len(covered_here), c=", ".join(covered_here) or "none",
+        m=len(uncovered), u=", ".join(uncovered) or "none"))

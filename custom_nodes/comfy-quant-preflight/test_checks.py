@@ -1,17 +1,30 @@
 """CPU tests for the preflight checks, run against the real files on this machine.
 
-    python_embeded\\python.exe -s ComfyUI\\custom_nodes\\comfy-quant-preflight\\test_checks.py
+    python_embeded\\python.exe -s custom_nodes\\comfy-quant-preflight\\test_checks.py
+
+(That is the tracked package at the portable root, not the three-line loader stub under
+ComfyUI\\custom_nodes\\. Editing the tracked copy is what changes what runs.)
 
 Synthetic headers are built for the cases no file here exhibits (a weight_correction tensor, an
 inert full-precision flag), because "we have no example" is not evidence that a check works.
+
+Nothing here imports torch, ComfyUI, or `nodes`. The tests that need ComfyUI to exist fake it --
+see `fake_comfyui` -- for two reasons: importing the real `nodes` pulls in torch and initialises a
+CUDA context on a card this bench shares, and a fake registry is the only way to exercise the
+upstream-rename paths, which by definition do not occur in the checkout as it stands today.
 """
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import importlib.util
 import json
+import logging
 import struct
 import sys
 import tempfile
+import types
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -26,6 +39,144 @@ import checks  # noqa: E402
 # reporting PASS.
 ROOT = Path(__file__).resolve().parents[2]
 MODELS = ROOT / "ComfyUI" / "models" / "diffusion_models"
+PACKAGE = Path(__file__).resolve().parent
+
+
+# --------------------------------------------------------------------------------------------
+# Harness. Every fail-open below is triggered by something upstream changing, so the tests have to
+# be able to change it.
+# --------------------------------------------------------------------------------------------
+
+class Captured(logging.Handler):
+    """Collects the package's log records so a test can assert a WARN was actually emitted.
+
+    Asserting on a return value is not enough for these: half the fail-opens are paths whose whole
+    correct behaviour is "return the same harmless thing, but say so". The saying-so is the fix, so
+    the saying-so is what gets asserted.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record):
+        self.records.append(record)
+
+    def messages(self, level=logging.WARNING) -> list[str]:
+        return [r.getMessage() for r in self.records if r.levelno >= level]
+
+
+@contextlib.contextmanager
+def capture_logs():
+    logger = logging.getLogger("quant-preflight")
+    handler = Captured()
+    previous, previous_propagate = logger.level, logger.propagate
+    logger.setLevel(logging.DEBUG)      # the scope line is INFO; the default root level eats it
+    logger.propagate = False            # keep the test output readable
+    logger.addHandler(handler)
+    try:
+        yield handler
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(previous)
+        logger.propagate = previous_propagate
+
+
+class FakeUNETLoader:
+    """Stands in for ComfyUI's UNETLoader, with the widget names it has in 0.33."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"unet_name": (["m.safetensors"],), "weight_dtype": (["default"],)}}
+
+
+class RenamedUNETLoader:
+    """The same class after a hypothetical upstream rename of the file widget."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"model_name": (["m.safetensors"],), "weight_dtype": (["default"],)}}
+
+
+@contextlib.contextmanager
+def fake_comfyui(node_classes=None, get_full_path=None, break_nodes=False, prompt_ok=True):
+    """Import the package against a fake ComfyUI. Yields (module, nodes, execution).
+
+    The package installs itself at import time, so the only way to observe what it installs is to
+    control what it installs into. `break_nodes` makes `import nodes` fail, which is how the
+    "one half failed to install" path is reached without breaking anything real.
+    """
+    keys = ("nodes", "execution", "folder_paths",
+            "comfy_quant_preflight", "comfy_quant_preflight.checks")
+    saved = {key: sys.modules.get(key) for key in keys}
+
+    nodes_mod = types.ModuleType("nodes")
+    nodes_mod.NODE_CLASS_MAPPINGS = dict(node_classes or {})
+
+    execution_mod = types.ModuleType("execution")
+
+    async def validate_prompt(prompt_id, prompt, partial_execution_list=None):
+        return (True, None, [], {}) if prompt_ok else (False, {"type": "other"}, [], {})
+
+    execution_mod.validate_prompt = validate_prompt
+
+    folder_paths_mod = types.ModuleType("folder_paths")
+    folder_paths_mod.get_full_path = get_full_path or (lambda folder, name: None)
+
+    sys.modules["nodes"] = None if break_nodes else nodes_mod
+    sys.modules["execution"] = execution_mod
+    sys.modules["folder_paths"] = folder_paths_mod
+    for key in ("comfy_quant_preflight", "comfy_quant_preflight.checks"):
+        sys.modules.pop(key, None)
+
+    spec = importlib.util.spec_from_file_location(
+        "comfy_quant_preflight", PACKAGE / "__init__.py",
+        submodule_search_locations=[str(PACKAGE)])
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["comfy_quant_preflight"] = module
+    # Injection mutates the class object, and these fakes are module-level and shared. Without
+    # this the second test to use one would find a VALIDATE_INPUTS already there, take the
+    # "someone else got here first" branch, and fail for a reason that has nothing to do with what
+    # it was testing.
+    already = {name: getattr(cls, "VALIDATE_INPUTS", None)
+               for name, cls in (node_classes or {}).items()}
+    try:
+        spec.loader.exec_module(module)
+        yield module, nodes_mod, execution_mod
+    finally:
+        for name, cls in (node_classes or {}).items():
+            if already[name] is None and "VALIDATE_INPUTS" in cls.__dict__:
+                delattr(cls, "VALIDATE_INPUTS")
+        for key, value in saved.items():
+            if value is None:
+                sys.modules.pop(key, None)
+            else:
+                sys.modules[key] = value
+
+
+@contextlib.contextmanager
+def fake_memory_management(**attributes):
+    """A stand-in `comfy.memory_management`. Pass no attributes to simulate the flag being gone.
+
+    `break_import=True` puts None in sys.modules, which is what makes `import` itself fail.
+    """
+    break_import = attributes.pop("break_import", False)
+    saved = {key: sys.modules.get(key) for key in ("comfy", "comfy.memory_management")}
+    comfy_mod = types.ModuleType("comfy")
+    mm_mod = types.ModuleType("comfy.memory_management")
+    for name, value in attributes.items():
+        setattr(mm_mod, name, value)
+    comfy_mod.memory_management = mm_mod
+    sys.modules["comfy"] = comfy_mod
+    sys.modules["comfy.memory_management"] = None if break_import else mm_mod
+    try:
+        yield
+    finally:
+        for key, value in saved.items():
+            if value is None:
+                sys.modules.pop(key, None)
+            else:
+                sys.modules[key] = value
 
 
 def write_safetensors(entries: dict, metadata: dict | None = None) -> Path:
@@ -124,12 +275,108 @@ def test_dtype_widget_on_quantized_file_is_an_error():
     assert "convrot_w4a4" in result[1]
 
 
-def test_unparseable_file_says_nothing():
-    """GGUF and .pt come through the same call. Inventing a verdict for them is worse than
-    staying quiet."""
+def test_full_precision_message_says_it_was_not_confirmed_by_execution():
+    """The caveat has to be in the message, not only in the docstring beside it.
+
+    It drifted out once. The user reading this WARN in the ComfyUI log has the message and nothing
+    else, and an audit hypothesis stated as fact in a UI string is how it becomes repo lore.
+    """
+    path = write_safetensors(
+        {"layers.0.mlp.weight": ("I8", [8, 4])},
+        {"_quantization_metadata": json.dumps({"layers": {"layers.0.mlp": {
+            "format": "convrot_w4a4", "full_precision_matrix_mult": True}}})})
+    found = checks.check_file(path)
+    message = next(m for s, m in found if "full_precision" in m)
+    assert "not confirmed by execution" in message.lower(), message
+    assert "dispatch_census" in message, "name the thing that would settle it"
+
+
+def test_unparseable_file_warns_that_nothing_was_checked():
+    """GGUF and .pt come through the same call. Inventing a verdict for them is still worse than
+    staying quiet -- but returning [] said 'checked, clean' about a file nothing was read from,
+    and the caller could not tell that from a real pass."""
     path = Path(tempfile.mkdtemp()) / "not.safetensors"
     path.write_bytes(b"this is not a safetensors file at all")
-    assert checks.check_file(path) == []
+    found = checks.check_file(path)
+    assert found, "a file that could not be read must not come back as a clean pass"
+    assert all(s == checks.WARN for s, _ in found), f"must not block: {found}"
+    assert "NONE of the file-level checks ran" in found[0][1], found
+
+
+def test_dtype_widget_warns_when_the_header_cannot_be_read():
+    """The user set the widget explicitly here, so silence is a direct answer to a direct
+    question -- and it was the wrong one."""
+    path = Path(tempfile.mkdtemp()) / "broken.safetensors"
+    path.write_bytes(b"\x08\x00\x00\x00\x00\x00\x00\x00not json")
+    result = checks.check_dtype_widget(path, "fp8_e4m3fn")
+    assert result and result[0] == checks.WARN, result
+    assert "NOT checked" in result[1], result
+
+
+def test_malformed_quantization_metadata_is_logged_not_swallowed():
+    """A file whose metadata does not parse looks exactly like an unquantized file to every check
+    downstream, which is the one file most likely to need them."""
+    path = write_safetensors({"layers.0.mlp.weight": ("I8", [8, 4])},
+                             {"_quantization_metadata": "{not json at all"})
+    with capture_logs() as log:
+        tensors, metadata = checks.read_header(path)
+        assert checks.quant_layers(tensors, metadata) == {}
+    assert any("did not parse" in m for m in log.messages()), log.messages()
+    assert any("JSONDecodeError" in m or "ValueError" in m for m in log.messages()), \
+        "the WARN must name the exception"
+
+
+def test_nunchaku_check_warns_when_the_upstream_flag_is_gone():
+    """A renamed flag used to be indistinguishable from a flag that is off, and 'off' is the
+    reading that returns a clean pass on exactly the workflow this check exists for."""
+    with fake_memory_management():          # module present, aimdo_enabled absent
+        found = checks.check_nunchaku_needs_disable_dynamic_vram(["NunchakuFluxDiTLoader"])
+    assert found and found[0] == checks.WARN, found
+    assert "aimdo_enabled" in found[1] and "DID NOT RUN" in found[1], found
+
+
+def test_nunchaku_check_warns_when_the_upstream_module_is_gone():
+    with fake_memory_management(break_import=True):
+        found = checks.check_nunchaku_needs_disable_dynamic_vram(["NunchakuFluxDiTLoader"])
+    assert found and found[0] == checks.WARN, found
+    assert "comfy.memory_management" in found[1] and "DID NOT RUN" in found[1], found
+
+
+def test_nunchaku_check_still_blocks_when_the_flag_is_actually_on():
+    """The WARN paths above must not have cost the ERROR this check exists for."""
+    with fake_memory_management(aimdo_enabled=True):
+        found = checks.check_nunchaku_needs_disable_dynamic_vram(["NunchakuFluxDiTLoader"])
+    assert found and found[0] == checks.ERROR, found
+    assert "--disable-dynamic-vram" in found[1]
+
+
+def test_nunchaku_check_is_silent_when_the_flag_is_genuinely_off():
+    with fake_memory_management(aimdo_enabled=False):
+        assert checks.check_nunchaku_needs_disable_dynamic_vram(["NunchakuFluxDiTLoader"]) is None
+
+
+def test_uncovered_loaders_are_named_not_counted():
+    found = checks.check_uncovered_loaders(
+        ["UNETLoader", "KSampler", "GGUFLoader", "NunchakuTextEncoderLoader"],
+        covered=["UNETLoader"])
+    assert found and found[0] == checks.WARN, found
+    assert "GGUFLoader" in found[1] and "NunchakuTextEncoderLoader" in found[1], found
+    assert "UNETLoader," not in found[1], "a covered loader must not be listed as skipped"
+
+
+def test_scope_line_lists_what_was_not_checked():
+    line = checks.scope_line(["UNETLoader", "KSampler", "VAELoader"], covered=["UNETLoader"])
+    assert "SAW AND DID NOT CHECK 2" in line, line
+    assert "KSampler" in line and "VAELoader" in line, line
+
+
+def test_unresolved_names_the_symbol_and_the_exception():
+    finding = checks.unresolved("folder_paths.get_full_path", KeyError("diffusion_models"),
+                                "every file-level check")
+    assert finding[0] == checks.WARN
+    assert "folder_paths.get_full_path" in finding[1]
+    assert "KeyError" in finding[1]
+    assert "DID NOT RUN" in finding[1]
 
 
 def test_nunchaku_check_is_silent_without_a_nunchaku_loader():
@@ -145,6 +392,103 @@ def test_lora_check_needs_both_halves():
     # What survives is the unmeasured half -- accuracy of a LoRA delta over a 4-bit weight.
     assert found and found[0] == checks.WARN, "a refuted finding must not block either"
     assert "did not reproduce" in found[1], "the message must carry the measurement, not the fear"
+
+
+# --------------------------------------------------------------------------------------------
+# Installation-time fail-opens. These need a registry to inject into, so they get a fake one.
+# --------------------------------------------------------------------------------------------
+
+def test_injection_refuses_a_loader_whose_widget_was_renamed():
+    """The class surviving an upgrade is not the same as its widget surviving one.
+
+    A validator keyed on a widget that no longer exists reads None out of kwargs and returns True
+    on every workflow forever -- installed, counted as injected, and structurally unable to fire.
+    """
+    with capture_logs() as log:
+        with fake_comfyui({"UNETLoader": RenamedUNETLoader}) as (module, nodes_mod, _):
+            assert getattr(RenamedUNETLoader, "VALIDATE_INPUTS", None) is None, \
+                "a check that could never fire must not be installed"
+            assert "UNETLoader" not in module._STATUS["covered"]
+    assert any("WIDGET RENAMED" in m and "unet_name" in m for m in log.messages()), log.messages()
+
+
+def test_a_loader_class_that_vanished_is_named():
+    with capture_logs() as log:
+        with fake_comfyui({}) as (module, _, _e):
+            assert module._STATUS["covered"] == ()
+    warnings = log.messages()
+    assert any("NOT FOUND" in m and "UNETLoader" in m for m in warnings), warnings
+
+
+def test_out_of_scope_loaders_are_named_at_boot():
+    """The table covers four. ComfyUI's own nodes.py defines fifteen classes ending in 'Loader'
+    and custom_nodes adds more; a workflow on any of them got a clean pass that meant nothing."""
+    with capture_logs() as log:
+        with fake_comfyui({"UNETLoader": FakeUNETLoader,
+                           "GGUFLoader": FakeUNETLoader}) as (module, _, _e):
+            assert module._STATUS["covered"] == ("UNETLoader",)
+    assert any("OUT OF SCOPE" in m and "GGUFLoader" in m for m in log.messages()), log.messages()
+
+
+def test_resolve_failure_warns_instead_of_passing_the_node_clean():
+    """`folder_paths` changing shape used to return None, and None meant 'no file to check'."""
+    def broken(folder, name):
+        raise RuntimeError("folder_paths moved")
+
+    # capture_logs wraps the import too, so the boot lines land in the handler instead of on
+    # stderr, where a reader scanning for FAIL sees a wall of warnings and assumes the worst.
+    with capture_logs() as log:
+        with fake_comfyui({"UNETLoader": FakeUNETLoader}, get_full_path=broken):
+            result = FakeUNETLoader.VALIDATE_INPUTS(unet_name="whatever.safetensors",
+                                                    weight_dtype="fp8_e4m3fn")
+    assert result is True, "an unresolvable path must not block the user's run"
+    assert any("DID NOT RUN" in m and "RuntimeError" in m for m in log.messages()), log.messages()
+
+
+def test_every_run_states_which_node_types_it_did_not_check():
+    prompt = {"1": {"class_type": "UNETLoader", "inputs": {"unet_name": "m.safetensors"}},
+              "2": {"class_type": "KSampler", "inputs": {}},
+              "3": {"class_type": "GGUFLoader", "inputs": {}}}
+    with capture_logs() as log:
+        with fake_comfyui({"UNETLoader": FakeUNETLoader}) as (module, _, execution_mod):
+            result = asyncio.run(execution_mod.validate_prompt("p", prompt))
+    assert result[0] is True, "stating scope must not block anything"
+    scope = [m for m in log.messages(logging.INFO) if "SAW AND DID NOT CHECK" in m]
+    assert scope, log.messages(logging.INFO)
+    assert "KSampler" in scope[0] and "GGUFLoader" in scope[0], scope
+    assert any("OUTSIDE this package's scope" in m and "GGUFLoader" in m
+               for m in log.messages()), log.messages()
+
+
+def test_scope_is_stated_even_when_the_run_already_failed_elsewhere():
+    """Otherwise the only runs that admit what was skipped are the ones that got far enough to
+    pass, and the criterion is 'every run'."""
+    with capture_logs() as log:
+        with fake_comfyui({"UNETLoader": FakeUNETLoader},
+                          prompt_ok=False) as (module, _, execution_mod):
+            result = asyncio.run(execution_mod.validate_prompt(
+                "p", {"1": {"class_type": "KSampler", "inputs": {}}}))
+    assert result[0] is False, "our wrapper must not rescue a run that failed upstream"
+    assert any("SAW AND DID NOT CHECK" in m and "KSampler" in m
+               for m in log.messages(logging.INFO)), log.messages(logging.INFO)
+
+
+def test_one_half_failing_to_install_does_not_cancel_the_other():
+    """A single try around both meant a broken _inject() also skipped the graph wrapper, leaving a
+    server with no preflight at all and one boot line as the only evidence."""
+    with capture_logs() as log:
+        with fake_comfyui({"UNETLoader": FakeUNETLoader}, break_nodes=True) as (module, _, _e):
+            assert module._STATUS["file_checks"].startswith("FAILED"), module._STATUS
+            assert module._STATUS["graph_checks"].startswith("installed"), module._STATUS
+    assert any("NOT RUNNING" in m for m in log.messages()), log.messages()
+
+
+def test_a_run_with_no_file_checks_installed_says_so_on_that_run():
+    with capture_logs() as log:
+        with fake_comfyui({}) as (module, _, execution_mod):
+            asyncio.run(execution_mod.validate_prompt(
+                "p", {"1": {"class_type": "KSampler", "inputs": {}}}))
+    assert any("no per-file check is installed" in m for m in log.messages()), log.messages()
 
 
 def test_against_the_real_checkpoints_on_this_machine():
@@ -196,4 +540,9 @@ if __name__ == "__main__":
           "over an already-4-bit weight may cost quality that no count would show.")
     print("  * Only ConvRot W4A4 and AsymW4A8Int8 have been exercised on a real model. The other "
           "five formats in QUANT_ALGOS have not.")
+    print("  * The injection and graph-wrapper tests run against a FAKE `nodes` and `execution`. "
+          "They prove the package's own logic, not that ComfyUI 0.33 still calls VALIDATE_INPUTS "
+          "the way this package assumes -- that needs a real boot and a real prompt submission.")
+    print("  * The rename paths are simulated. No upstream rename has actually occurred here; "
+          "what is tested is what this package does when told one has.")
     raise SystemExit(1 if failures else 0)

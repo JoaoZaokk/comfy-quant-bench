@@ -12,22 +12,64 @@ This is the live ComfyUI Portable installation at `F:\COMFY_PORTABLE`. Always us
 - nunchaku 1.2.1 (built for torch 2.11, running under 2.13), spas_sage_attn 0.1.0 (SpargeAttn)
 - No `pytest` in the embedded interpreter. The pytest commands in CLAUDE.md do not run as
   written; test files under `tools/` and in the WaveSpeed fork carry their own runner.
-- comfy-kitchen 0.2.23
+- comfy-kitchen **0.2.31**, read from `python_embeded/Lib/site-packages/comfy_kitchen-*.dist-info/METADATA`
+  on 2026-08-22. This line said `0.2.23` for eight releases; it is the registry that decides whether
+  `convrot_w4a4_linear` resolves to a CUDA backend, so recheck it rather than quoting this line.
 - ComfyUI version `0.33.0` (`v0.33.0-19-gc1739380`). It was `0.29.0`/`42d2aa55` earlier in this
   project's life; anything in this file that assumes 0.29 behaviour is suspect.
 - GPUs: RTX 3090 24 GB (`cuda:0`) and RTX 3080 Ti 12 GB (`cuda:1`)
 - Only the Torch/vision/audio trio was replaced, using embedded pip, same versions, `--no-deps`. Pre-change freeze: `_pip_freeze_before_w4a4_cu130_20260816.txt`.
 - `pip check` passes.
 
-The existing SageAttention wheel initially failed because it needs `cudart64_12.dll`. No Sage update was required. A pre-existing local CUDA 12.6 runtime DLL was copied without overwrite to:
+~~The existing SageAttention wheel initially failed because it needs `cudart64_12.dll`, so a
+pre-existing local CUDA 12.6 runtime DLL was copied into
+`python_embeded\Lib\site-packages\torch\lib\cudart64_12.dll`.~~
 
-`python_embeded\Lib\site-packages\torch\lib\cudart64_12.dll`
+**OBSOLETE. The file is gone, and it must not be put back.** This paragraph told a reader to
+restore a DLL that the stack no longer needs, which is the most expensive kind of stale doc —
+following it would reintroduce a CUDA 12.6 runtime beside a cu130 Torch. The accel wheels were
+reinstalled as cu130 builds on 2026-08-16 and link `torch_cuda.dll`, not `cudart64_12.dll`.
 
-Source: `venvs\ultravox311\Lib\site-packages\torch\lib\cudart64_12.dll`; size 556,544 bytes; SHA-256 `D954CA542B3B6BCF03CC2B798A7D00051501CF734CA751050E986AF505CF9DAD`. Sage import, a real RTX 3090 kernel comparison, both FlashVSR nodes, and full `--use-sage-attention` server startup passed.
+This is settled by **execution, not by import success** — an import only proves DLL resolution; a
+forward pass proves the kernel runs. `_check_accel.py` was run on the **RTX 3090 on 2026-08-22**
+and returned ALL GOOD: triton v3.7.1 compiled and ran; `sageattention` mean|d| = 0.0006 against
+SDPA; `flash_attn` mean|d| = 0.0000.
+
+**Correction, same day, and it is worth more than the fact it corrects.** The line above first
+read "the file is gone", citing `find python_embeded -iname "cudart64*.dll"` → only
+`cudart64_13.dll`. **That pattern cannot match a name ending in `.disabled`**, so the evidence was
+blind by construction. Dropping the `.dll`:
+
+```
+python_embeded/Lib/site-packages/torch/lib/cudart64_12.dll.disabled   556,544 bytes
+  sha256 d954ca542b3b6bcf03cc2b798a7d00051501cf734ca751050e986af505cf9dad
+```
+
+The file was **renamed, not deleted** — which `W4A4_PROGRESS.md:339-340` already recorded, from a
+run. Windows will not load a `.dll.disabled`, so "do not put it back" stands; **"it is gone" does
+not.** Keep the sha256: the file is still in `torch/lib/` unlabelled and the hash is the only
+thing that identifies it. It is byte-identical to the copy at
+`venvs/ultravox311/Lib/site-packages/torchvision/cudart64_12.dll`, which belongs to the unrelated
+Ultravox venv — leave that one alone too.
+
+Absence in a glob is not absence on disk. This repo's own rule, broken twice in one day by two
+different writers, in the two documents that state it.
+
+If anyone doubts it again, re-settle it the same way instead of copying the DLL back:
+
+```powershell
+.\python_embeded\python.exe -s .\_check_accel.py
+```
+
+That needs the card — read the GPU-window rules in `CLAUDE.md` before taking it.
 
 ## Audit and tools
 
-- Inventory: `quantization_inventory.json` and `quantization_inventory.md` (157 files, 608.56 GiB before the new output).
+- Inventory: `quantization_inventory.json` and `quantization_inventory.md`. **Do not quote a file
+  count or a total size from here.** This line said "157 files, 608.56 GiB"; the generated JSON
+  (stamped 2026-08-19) says 159 entries and 609.61 GiB, and it moves every time a model lands.
+  Read it from the artifact instead — `python_embeded\python.exe -s -c "import json;d=json.load(open('quantization_inventory.json'));print(len(d['models']), d['total_size_bytes']/1024**3)"`
+  — and rerun `tools\quant_audit.py` if the `generated_at` in that file is older than the last output.
 - Continuous report: `W4A4_PROGRESS.md`.
 - Tools:
   - `tools\quant_audit.py`
@@ -165,7 +207,7 @@ medidos deterministicos entre processos (latente bit-identico, mesmo arquivo, me
 | [#828](https://github.com/nunchaku-ai/ComfyUI-nunchaku/pull/828) | nunchaku-tech/ComfyUI-nunchaku | same eager-default in `fuse_linears` |
 
 The last two are siblings and **neither alone fixes the crash**: the traceback lands in
-`nunchaku/linear.py:152` but `ComfyUI-nunchaku/models/zimage.py:62` carries the same pattern on
+`nunchaku/models/linear.py:152` but `ComfyUI-nunchaku/models/zimage.py:62` carries the same pattern on
 another path. Each PR points at the other. Until they land, this installation needs
 `--disable-dynamic-vram` for any SVDQuant workflow.
 
@@ -178,9 +220,18 @@ modified.
 
 ## Estado em 2026-08-19
 
-**O repositorio existe.** A raiz virou repo git com `.gitignore` em allowlist. Rastreia `tools/`,
-`custom_nodes/`, os `.md` da raiz e dois scripts. **`git add -An --dry-run` antes de qualquer
-`git add`** — um denylist que erra uma entrada tenta commitar um safetensors de 42 GiB.
+**O repositorio existe.** A raiz virou repo git com `.gitignore` em allowlist. **Nao decore o
+conjunto rastreado — liste.** Esta frase dizia "`tools/`, `custom_nodes/`, os `.md` da raiz e dois
+scripts", e desde entao entraram `docs/`, `.scratch/` (o issue tracker local) e `calib/`. Em
+2026-08-22 o conjunto e:
+
+```bash
+git ls-files | wc -l                                    # quantos
+git ls-files | awk -F/ 'NF==1{print "raiz"} NF>1{print $1"/"}' | sort | uniq -c   # onde
+```
+
+**`git add -An --dry-run` antes de qualquer `git add`** — um denylist que erra uma entrada tenta
+commitar um safetensors de 42 GiB.
 `ComfyUI/` e checkout aninhado com remote proprio e git nao desce nele; nada la dentro pode ser
 rastreado daqui.
 
@@ -285,7 +336,10 @@ esta identificada e a correcao **nao foi testada** — a GPU passou para a sessa
 - **`type` do CLIPLoader tem de ser `ltxv`.** Qualquer outro valor nao da erro: cai no fallback
   STABLE_DIFFUSION (`nodes.py:1024`), fareja o state dict e monta um Gemma3-12B puro, cuja saida e
   4-D. O sintoma final e `RuntimeError: Tensors must have same number of dimensions: got 4 and 3`
-  no `embeddings_connector.py:290`, a tres camadas de distancia da causa. O sinal barato no log e
+  no `comfy/ldm/lightricks/embeddings_connector.py:290`, a tres camadas de distancia da causa.
+  O caminho completo importa: ha **tres** `embeddings_connector.py` nesta arvore (mais dois em
+  `custom_nodes/ComfyUI-LTXVideo/` e `custom_nodes/ComfyUI_LTX2_SM/`), e so o do `comfy/ldm/` tem
+  o `torch.cat` que estoura. O sinal barato no log e
   `clip missing: ['vision_model...']`.
 - **Nenhum no MultiGPU, e nada fora de `cuda:0`.** `ComfyUI-MultiGPU/p2p_registry.py:20` faz
   `ctypes.CDLL("libcudart.so")` sem ramo Windows, e o chamador nao captura. Como o pacote

@@ -8,8 +8,13 @@ property of the model running, not of any tensor on disk.
 
 This runs the real model through real sampling steps and keeps, per candidate Linear:
 
-  * `sample`         a reservoir of real input rows, fp16 on CPU -- the tensors the layer was
-                     actually handed, not a Gaussian stand-in
+  * `sample`         a reservoir of real input rows, **bfloat16** on CPU -- the tensors the layer
+                     was actually handed, not a Gaussian stand-in. It says bf16 because it is
+                     bf16: this line said "fp16" for as long as `Reservoir.__init__` stored
+                     bf16, and "the sample is fp16" is the exact statement the 344064-vs-65504
+                     incident was about. A docstring that still describes the bug is how the bug
+                     gets reintroduced downstream -- and it was, in `quant_mixed.py`, which read
+                     this and cast the sample back to the checkpoint dtype before measuring.
   * `channel_absmax` running per-channel max|x| over every row seen, not just the sampled ones
   * `crest`          per-token max|x| / rms(x), summarised as mean/p50/p99/max. Kept as a
                      diagnostic, NOT as a predictor: measured across 170 Z-Image layers its
@@ -42,8 +47,10 @@ deciding needs the weights and the kernels, and that belongs in the converter.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
+import struct
 import sys
 import time
 import zlib
@@ -53,6 +60,97 @@ PORTABLE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PORTABLE_ROOT / "ComfyUI"))
 
 import torch  # noqa: E402
+
+# Safetensors header size cap from the format's own spec. A .ckpt or a truncated download read
+# through this function otherwise asks for an arbitrary allocation from the first eight bytes.
+MAX_SAFETENSORS_HEADER = 100_000_000
+
+
+# Body sampling for the identity digest. Eight chunks rather than the two obvious ones (head and
+# tail) because head+tail alone still could not separate two of the colliding pairs measured
+# below; eight separates all 45 checkpoints on this bench. 2 MiB total, eight seeks, O(1) in model
+# size -- the cost is the same for a 400 MiB VAE and a 14 GiB transformer.
+IDENTITY_SAMPLE_CHUNKS = 8
+IDENTITY_SAMPLE_BYTES = 256 * 1024
+
+
+def safetensors_identity_digest(path: Path) -> str:
+    """sha256 over the safetensors header plus a bounded sample of the body.
+
+    Lives here, next to the profile tables, because `quant_mixed.py` already imports this module
+    and the alternative is the same digest defined twice -- which is how two definitions drift and
+    stop agreeing about what "the same checkpoint" means.
+
+    ## What it distinguishes, and what it does not
+
+    **It is a sample, not a hash of the file.** Two checkpoints that agree on the header and on
+    all eight sampled windows collide, and nothing here would notice. It is chosen to be strong
+    enough for the question actually asked -- *is this analysis about this checkpoint?* -- at a
+    cost that does not scale with a 14 GiB model. A real content identity means reading the whole
+    file, which this bench cannot afford per invocation and which `tools/model_audit.py` already
+    provides for the cases that need it.
+
+    ## Why the body is sampled at all -- MEASURED 2026-08-22, not argued
+
+    Provenance was originally checked by BASENAME. That was replaced with a sha256 of the raw
+    header alone, on the stated reasoning that "the header alone identifies a checkpoint -- every
+    tensor name, dtype, shape and offset is in it". Every clause of that is true and the
+    conclusion does not follow: the header describes the **layout**, and two models of the same
+    architecture have identical layouts and different weights.
+
+    Over the 45 `.safetensors` in `ComfyUI/models/diffusion_models`, `ComfyUI/models/unet` and
+    `D:/ComfyUI-Models/diffusion_models`, header-only produced **four colliding groups covering
+    nine files**, each group also identical in byte size:
+
+        e36743d8e80c9cef  453 keys   beyond-reality-zimage-v2_native / z_image_de_turbo_v1_bf16
+                                     / z_image_turbo_bf16
+        bced9dae1b9a4c0c  521 keys   beyond-reality-zimage-v2_bf16 / beyond-reality-recovered-bf16
+        c78d89e7215f3a98 1024 keys   void_pass2 / void_pass1
+        a904e26816259491 1908 keys   wan2.2_i2v_high_noise_14B_fp8_scaled / ..._low_noise_...
+
+    The first group is *the three checkpoints `--foreign-analysis`'s own help text names as
+    different models*. The third is two passes of one conversion. The fourth is the two halves of
+    a Wan i2v pair. For every one of these the basename differs, so the check being replaced
+    would have **refused** the pairing and the header-only digest **accepted** it -- the guard
+    became weaker than the one it replaced, on exactly the model family this bench converts.
+
+    With the body sampled: 45 distinct digests, zero collisions. Re-run the measurement with
+    `tools/probe_backend_resolution.py`'s sibling, or by hashing the two ways and grouping.
+
+    ## Why a basename check still runs alongside this
+
+    See `quant_mixed.py`'s `foreign` computation. A false accept here assigns per-layer precision
+    from the wrong model's activations and produces a file that looks fine; a false refuse costs a
+    flag. The two checks are therefore ORed, not swapped.
+    """
+    with path.open("rb") as handle:
+        raw_size = handle.read(8)
+        if len(raw_size) != 8:
+            raise SystemExit(f"{path}: too short to be a safetensors file")
+        size = struct.unpack("<Q", raw_size)[0]
+        if size == 0 or size > MAX_SAFETENSORS_HEADER:
+            raise SystemExit(
+                f"{path}: safetensors header length reads as {size} bytes, which is not a "
+                "safetensors header. Is this file a .ckpt, or truncated?")
+        header = handle.read(size)
+        if len(header) != size:
+            raise SystemExit(
+                f"{path}: header claims {size} bytes, only {len(header)} are present")
+    # Header first, then the sample. Hashing the header alone is what this function used to do
+    # and is preserved as the prefix, so a layout difference still shows up even if the sampled
+    # windows happen to agree.
+    digest = hashlib.sha256(header)
+    body_start = 8 + size
+    total = path.stat().st_size
+    span = total - body_start
+    if span >= IDENTITY_SAMPLE_BYTES:
+        with path.open("rb") as handle:
+            last = IDENTITY_SAMPLE_CHUNKS - 1
+            for index in range(IDENTITY_SAMPLE_CHUNKS):
+                offset = body_start + (span - IDENTITY_SAMPLE_BYTES) * index // max(last, 1)
+                handle.seek(max(body_start, min(offset, total - IDENTITY_SAMPLE_BYTES)))
+                digest.update(handle.read(IDENTITY_SAMPLE_BYTES))
+    return digest.hexdigest()
 
 # Kept identical to the converter's, and imported by it, so a layer can never be calibrated under
 # one definition and quantized under another.
@@ -365,6 +463,10 @@ def main() -> int:
     candidate = Path(args.model)
     path = str(candidate) if candidate.is_file() else \
         folder_paths.get_full_path_or_raise("diffusion_models", args.model)
+    # Taken before the model loads, so a file that cannot be identified costs a seek rather than
+    # a five-minute sampling run. This is what `quant_mixed.py` refuses on; the basename it used
+    # to compare is kept in `meta["source"]` for humans only.
+    source_digest = safetensors_identity_digest(Path(path))
     print(f"loading {path}", flush=True)
     model = comfy.sd.load_diffusion_model(path)
     diffusion_model = model.get_model_object("diffusion_model")
@@ -467,6 +569,8 @@ def main() -> int:
                          f"{len(payload)}; MODULE_TO_FILE for profile {args.profile!r} is wrong")
     meta = {
         "source": str(path),
+        "source_identity_sha256": source_digest,
+        "sample_dtype": str(torch.bfloat16),
         "profile": args.profile,
         "prompts": len(prompts),
         "seeds": args.seeds,

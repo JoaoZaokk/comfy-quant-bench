@@ -75,7 +75,18 @@ gets fixed too, not just the sentence.
 
 Non-obvious environment facts:
 
-- ~~The cu130 Torch wheel ships only `cudart64_13.dll`, but the installed SageAttention 2.2.0 binary extensions link `cudart64_12.dll`, so a CUDA 12.6 runtime DLL was copied side-by-side into `torch\lib\cudart64_12.dll`. **Do not remove it.**~~ **OBSOLETE, and the file is already gone.** Checked 2026-08-21: `find python_embeded -iname "cudart64*.dll"` returns only `cudart64_13.dll`, and `sageattention._qattn_sm80`, `sageattention._fused`, `spas_sage_attn._qattn_sm80` and `flash_attn` **all import successfully** without it — that is the Windows loader resolving the whole DLL chain, not a grep. The accel stack was reinstalled on 2026-08-16 with cu130 builds (`sageattention 2.2.0+cu130torch2.10.0andhigher.post6`, installed 15:01; `cudart64_13.dll` timestamped 15:34) which link `torch_cuda.dll` rather than cudart directly. **Do not "restore" the 12.6 DLL.** Caveat that travels with this: an import proves DLL resolution, **not kernel execution** — `_check_accel.py` does the forward-and-compare and needs the card, and was not run. This rule survived five days after the file it protected stopped existing, in a file every session reads.
+- ~~The cu130 Torch wheel ships only `cudart64_13.dll`, but the installed SageAttention 2.2.0 binary extensions link `cudart64_12.dll`, so a CUDA 12.6 runtime DLL was copied side-by-side into `torch\lib\cudart64_12.dll`. **Do not remove it.**~~ **OBSOLETE — but the file is NOT gone, and the sentence that said it was is a lesson.** From 2026-08-21 to 2026-08-22 this paragraph read *"the file is already gone"* and offered as proof: `find python_embeded -iname "cudart64*.dll"` returns only `cudart64_13.dll`. That command **cannot match a name ending in `.disabled`**, so it was blind by construction and returned a clean-looking result. Drop the `.dll` from the pattern and:
+
+```
+python_embeded/Lib/site-packages/torch/lib/cudart64_12.dll.disabled   556,544 bytes
+  sha256 d954ca542b3b6bcf03cc2b798a7d00051501cf734ca751050e986af505cf9dad
+```
+
+It was **renamed, not deleted** — which `W4A4_PROGRESS.md:339-340` already recorded, executed, and this file contradicted for a day without either of them noticing. Windows will not load a `.dll.disabled`, so the runtime conclusion below stands unchanged; the *record* was wrong. **Keep the sha256**: the file is still sitting there unlabelled, and the hash is the only thing that identifies it. Leave it disabled.
+
+This is the memory `arquivo-plausivel-nao-e-o-caminho` and this file's own rule — *absence in a grep is never absence in the system* — broken by the file that states it. The mechanical fix is the one already applied elsewhere here: **do not quote a command's output as proof without checking the command can see what it claims to rule out.**
+
+What remains true, and is the part that matters: `sageattention._qattn_sm80`, `sageattention._fused`, `spas_sage_attn._qattn_sm80` and `flash_attn` **all import successfully** with the 12.6 DLL disabled — that is the Windows loader resolving the whole DLL chain, not a grep. The accel stack was reinstalled on 2026-08-16 with cu130 builds (`sageattention 2.2.0+cu130torch2.10.0andhigher.post6`, installed 15:01; `cudart64_13.dll` timestamped 15:34) which link `torch_cuda.dll` rather than cudart directly. **Do not "restore" the 12.6 DLL.** The caveat that used to travel with this — *an import proves DLL resolution, not kernel execution* — is **closed**. `_check_accel.py` was executed on the 3090 on 2026-08-22 with `CUDA_VISIBLE_DEVICES=0`: `triton v3.7.1 kernel compiled+ran`, `sageattention mean|d|=0.0006 vs SDPA`, `flash_attn mean|d|=0.0000`, xformers not installed. **ALL GOOD.** The accel stack runs kernels without the 12.6 DLL, and that is now a measurement rather than an inference. This rule survived five days after the file it protected stopped existing, in a file every session reads.
 - Extra models are mounted from a second drive via `ComfyUI/extra_model_paths.yaml` (`D:/ComfyUI-Models/`). A missing model may live there, not under `ComfyUI/models/`.
 - `venvs/ultravox311` is an unrelated side venv (Ultravox/TTS experiments — `teste_*.py` at root). Not part of ComfyUI.
 
@@ -203,7 +214,11 @@ with the W4A4 error is **+0.10**. What correlates is the W4A8 error (+0.978).
 
 - **Native-backend preflight.** Before touching a single tensor, `normal_comfy_backend()` spawns a subprocess that imports `comfy.quant_ops` and asks `comfy_kitchen.registry` which implementation would be selected. If either `quantize_convrot_w4a4_weight` or `convrot_w4a4_linear` does not resolve to `comfy_kitchen.backends.cuda.*`, the conversion **hard-refuses**. Keep this — it is the guard against silently producing a checkpoint that only ever runs dequantized.
 
-  This paragraph used to claim "`verify_w4a4.py` runs the same check". It does not, verified 2026-08-18: `verify_w4a4.py:64` resolves only `convrot_w4a4_linear`, while `quant_w4a4.py:93-94` resolves both. Two more converters run **no** preflight at all — `quant_w4a4_smooth.py` (which writes the same `convrot_w4a4` format) and `quant_int8.py`. Do not treat "the tool ran" as proof the CUDA backend was used; check the `backend` field in the sidecar, and note that `quant_w4a4_smooth.py` does not write one. See [AUDITORIA_2026-08-18.md](AUDITORIA_2026-08-18.md) items 8 and 17.
+  **This paragraph has now been wrong twice, in opposite directions, and the second time is the instructive one.** It first claimed `verify_w4a4.py` ran the same check; it did not. It was corrected on 2026-08-18 to say that `quant_w4a4_smooth.py` and `quant_int8.py` run **no** preflight and that smooth writes no `backend` sidecar field. All three of those became false in `d14ae48` and the paragraph did not follow — so for four days this file told readers that two converters were **less safe than they are**, which is the direction that gets acted on. Re-read against the tree on 2026-08-22: `quant_w4a4_smooth.py:182-191` imports `normal_comfy_backend` and hard-refuses, `:328-330` writes `backend` and `backend_linear`, and `quant_int8.py:187-198` preflights when `--device cuda --convrot` and prints why the `--no-convrot` path is exempt instead of pretending to.
+
+  What is still true, and is the part worth keeping: **the converters do not all resolve the same thing.** `verify_w4a4.py` resolves only `convrot_w4a4_linear` while `quant_w4a4.py` resolves both ops — and there are **six** definitions of `normal_comfy_backend` in the tree with four different answers to "is the backend ready". Line numbers are deliberately absent here: they were `:64` and `:93-94` in this sentence and are `:70` and `:98-99` today. Grep for `def normal_comfy_backend` and count. Do not treat "the tool ran" as proof the CUDA backend was used; check the `backend` field in the sidecar. See [AUDITORIA_2026-08-18.md](AUDITORIA_2026-08-18.md) items 8 and 17, and `.scratch/varredura-2026-08-22/issues/05`.
+
+  **Measured 2026-08-22, on the 3090, so nobody re-derives it:** the resolved implementation is *invariant* to `convrot_groupsize` and to dummy-vs-real probe tensors. All four combinations — cg 64 and 256, `torch.empty` and real quantized tensors — resolve to `comfy_kitchen.backends.cuda`, and both real calls succeed. So `quant_w4a4.py`'s hardcoded 64/64 preflight against a 256 conversion is untidy, **not** wrong; and `_native_probe.py`'s own docstring claim that dummy kwargs let the check pass where a real call would not **did not reproduce** for these two ops on this build. That is "did not reproduce under the only conditions anyone has tried", not "is false" — the mechanism at `registry.py:246` may still bite elsewhere. `tools/probe_backend_resolution.py` re-runs it.
 - **Streaming writes, never mmap.** Output header offsets are computed up front, then tensors are streamed: quantized layers are read by byte range → CUDA → `ck.quantize_convrot_w4a4_weight` → written; everything else is `copy_range`'d verbatim in 16 MiB chunks. **Do not reintroduce `safe_open` / mmap for large sources.** On this Windows host mapping the 21.93 GiB Gemma source failed with `os error 1455` and twice crashed `torch_cpu.dll` with `0xc0000005`.
 - **Atomic output.** Writes go to `<output>.partial`, then `os.replace`. Refuses stale partials, refuses existing outputs/sidecars, refuses a source that already has `_quantization_metadata`.
 - **Profiles are strict allowlists**, not heuristics. `PROFILE_PATTERNS` matches only `model.layers.N.self_attn.{q,k,v,o}_proj.weight` and `model.layers.N.mlp.{gate,up,down}_proj.weight`; embeddings, norms, `lm_head`, and vision towers are excluded. Only `gemma` and `qwen` exist today. **Do not extend a profile to a new architecture without confirming that architecture's loader and layer config** — Flux, Hunyuan, SeedVR2, and Z-Image each need their own recipe.
@@ -212,6 +227,8 @@ with the W4A4 error is **+0.10**. What correlates is the W4A8 error (+0.978).
 ### Output format
 
 Standard Safetensors. Per quantized layer: `<layer>.weight` as `I8` of shape `[rows, cols/2]` (INT8 container holding signed INT4), plus `<layer>.weight_scale` as `F32` of shape `[rows]`. Everything else preserved byte-for-byte. `__metadata__` carries `_quantization_metadata` (`format_version` 1.0 + per-layer `{format: convrot_w4a4, convrot_groupsize: 256}`) and `quantization: "ConvRot W4A4"`. See [ComfyUI/QUANTIZATION.md](ComfyUI/QUANTIZATION.md) for the upstream `QuantizedTensor` / `Layout` / `MixedPrecisionOps` model this format plugs into.
+
+**Does `.backends.cuda` in `__module__` prove the native path ran? Measured 2026-08-22: yes, here.** The whole preflight rests on that string match, and the test that settles it is cheap: W4A4 quantizes the **activation** to 4 bits too, so a dequantized-weight fallback (`F.linear(x, W_deq)`, which is what `comfy_kitchen/tensor/convrot_w4a4.py:237` does under one condition) must agree with a real call. It does not — `native` vs `W4-only` is **1.43e-1**, not 1e-6, on a `[1024, 1024]` bf16 weight at cg=256. The A4 half is real. Re-run with `tools/probe_backend_resolution.py`.
 
 `verify_w4a4.py` checks, in order: metadata structure and per-layer dtype/shape → packed shape vs source shape → **byte-identical comparison of every preserved tensor against the source** → native backend resolution → optional real-kernel smoke against `F.linear` on the BF16 source. The smoke's relative RMSE on random inputs (~0.25 for Gemma) is a liveness signal, **not** a quality metric.
 
@@ -277,6 +294,22 @@ So for any cortiq measurement: **pin the card** with `CMF_GPU_ADAPTER=3090` (ind
 `cortiq gpu`, or a case-insensitive substring of the adapter name), and confirm it afterwards by
 pointing `CMF_PROBE_CACHE` at a file and reading which adapter it names. A lock on the wrong card
 protects nothing and reads as protection.
+
+**The lock itself was broken until 2026-08-22, in one direction only.** `gpu_lock.py` wrote
+JSON; `gpu_lock.ps1` parses `key=value`. Every regex missed, so `Get-GpuLockState` returned an
+empty owner and `StaleFor = [int64]::MaxValue`, and `Take-GpuLock` **reclaimed a live lock** while
+printing `reclaiming from ` with a blank owner — which is indistinguishable from a leftover file
+and is the one situation where reclaiming is correct. The reverse direction always worked
+(`open(path, "x")` refuses correctly), and **that asymmetry is why it survived**: one direction was
+perfect, so nobody had a reason to test the other.
+
+Fixed on the **Python** side deliberately. Teaching the `.ps1` to read JSON would have reproduced
+the same theft pointing at a sibling still running the old script — a format change is not
+symmetric when the other party may be running last week's code. `key=value` already had two
+readers, so it won, and no sibling has to update anything. `tools/test_gpu_lock.py` drives each
+implementation against a lock the *other* one wrote (23 checks, all passing), because reading
+either half alone never reveals a format disagreement — which is the general lesson, not a detail
+about this lock.
 
 **Provenance of this section:** agreed with the bench owner on 2026-08-21, when only one session
 held the card ("gpu liberada, so tem voce agora"). It is therefore **one side's protocol written

@@ -19,6 +19,7 @@ Every phase boundary below is a line the binary actually prints; none of them is
 """
 from __future__ import annotations
 
+import dataclasses
 import http.server
 import json
 import re
@@ -44,6 +45,88 @@ LINE_CONTEXT = re.compile(r"prompt:\s+(\d+) tokens .* in ([\d.]+)s")
 LINE_DENOISED = re.compile(r"denoised in ([\d.]+)s")
 LINE_DECODED = re.compile(r"decoded (\d+) frames of (\d+)x(\d+) in ([\d.]+)s")
 LINE_TOTAL = re.compile(r"^total ([\d.]+)s")
+
+
+@dataclasses.dataclass(frozen=True)
+class RenderRequest:
+    """The page's form, after it has been checked -- and it is checked before anything moves.
+
+    `Job.start` used to take the decoded JSON straight from the wire: it set `running = True`
+    and *then* read `opts["fps"]`. A missing key raised `KeyError`, which sailed past the only
+    `except RuntimeError` in `do_POST`, so nothing cleared the flag and no worker thread had
+    been started. Every later render answered 409 and `/progress` reported
+    `running: true, phase: "starting"` for the life of the process -- no attacker needed,
+    just a renamed field in the page above.
+
+    Bounds are here because every one of these values ends up on a subprocess command line.
+    They are deliberately loose: this rejects nonsense, it does not encode what the model
+    supports.
+    """
+
+    prompt: str
+    width: int
+    height: int
+    frames: int
+    fps: int
+    seed: int
+    steps: int
+    audio: bool
+    two_stage: bool
+    coop: bool
+    split: bool
+    adapter: int
+
+    @staticmethod
+    def parse(raw: object) -> "RenderRequest":
+        """Raise ValueError with a message the page can show, or return a usable record."""
+        if not isinstance(raw, dict):
+            raise ValueError("body must be a JSON object")
+
+        def whole(key: str, low: int, high: int) -> int:
+            if key not in raw:
+                raise ValueError(f"{key} is missing")
+            value = raw[key]
+            # JSON `true` arrives as a Python bool, and bool is a subclass of int -- without
+            # this line `{"width": true}` would be accepted as width 1.
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise ValueError(f"{key} must be a whole number")
+            if not low <= value <= high:
+                raise ValueError(f"{key} must be between {low} and {high}")
+            return value
+
+        def flag(key: str) -> bool:
+            value = raw.get(key, False)
+            if not isinstance(value, bool):
+                raise ValueError(f"{key} must be true or false")
+            return value
+
+        prompt = raw.get("prompt")
+        if not isinstance(prompt, str) or not prompt.strip():
+            raise ValueError("prompt is missing or empty")
+        if len(prompt) > 4000:
+            raise ValueError("prompt is longer than 4000 characters")
+        # A control byte in an argv entry is not a prompt; it is a paste accident or a
+        # transport bug, and this bench has already had backslashes turn into TAB and 0x0F
+        # in generated strings four separate times.
+        if any(ord(c) < 0x20 for c in prompt):
+            raise ValueError("prompt contains control characters")
+
+        return RenderRequest(
+            prompt=prompt,
+            width=whole("width", 64, 4096),
+            height=whole("height", 64, 4096),
+            frames=whole("frames", 1, 2048),
+            fps=whole("fps", 1, 240),
+            # Wide on purpose: a seed carries no meaning here beyond fitting a 64-bit
+            # argument, so the only thing worth rejecting is something that is not one.
+            seed=whole("seed", -(2**63), 2**63 - 1),
+            steps=whole("steps", 1, 200),
+            audio=flag("audio"),
+            two_stage=flag("two_stage"),
+            coop=flag("coop"),
+            split=flag("split"),
+            adapter=whole("adapter", 0, 15),
+        )
 
 
 class Job:
@@ -93,48 +176,70 @@ class Job:
         self.phase = phase
         self.phase_started = time.time()
 
-    def start(self, opts: dict) -> None:
+    def current_outdir(self) -> Path | None:
+        """EP-15: both file routes read `JOB.outdir` with no lock, while the next render's
+        `start` could be reassigning it."""
+        with self.lock:
+            return self.outdir
+
+    def start(self, req: RenderRequest) -> None:
         with self.lock:
             if self.running:
                 raise RuntimeError("a render is already running")
             self.reset()
             self.running = True
+        try:
+            self._launch(req)
+        except BaseException as exc:
+            # Anything at all past the flag, not just RuntimeError. The wedge this repairs
+            # was a KeyError on `opts["fps"]` three lines after `running = True`: the flag
+            # stayed set, no worker thread existed to clear it, and the tool answered 409
+            # to every render for the rest of the process's life.
+            with self.lock:
+                self.running = False
+                self.error = f"could not start: {type(exc).__name__}: {exc}"
+                self._set_phase("failed")
+            raise
+
+    def _launch(self, req: RenderRequest) -> None:
+        with self.lock:
             self.started = time.time()
             self._set_phase("starting")
             stamp = time.strftime("%H%M%S")
             self.outdir = OUTROOT / f"run_{stamp}"
-            self.fps = opts["fps"]
+            self.fps = req.fps
             self.outdir.mkdir(parents=True, exist_ok=True)
+            outdir = self.outdir
 
         argv = [
             str(CORTIQ), "ltx-video",
             "--model", str(MODEL),
-            "--prompt", opts["prompt"],
-            "--height", str(opts["height"]),
-            "--width", str(opts["width"]),
-            "--frames", str(opts["frames"]),
-            "--fps", str(opts["fps"]),
-            "--seed", str(opts["seed"]),
-            "--steps", str(opts["steps"]),
-            "--out-dir", str(self.outdir),
+            "--prompt", req.prompt,
+            "--height", str(req.height),
+            "--width", str(req.width),
+            "--frames", str(req.frames),
+            "--fps", str(req.fps),
+            "--seed", str(req.seed),
+            "--steps", str(req.steps),
+            "--out-dir", str(outdir),
         ]
-        if opts.get("audio"):
-            argv += ["--out-audio", str(self.outdir / "audio.wav")]
-        if opts.get("two_stage"):
+        if req.audio:
+            argv += ["--out-audio", str(outdir / "audio.wav")]
+        if req.two_stage:
             argv.append("--two-stage")
         env = {
             "CMF_GPU": "wgpu",
             # Pin the card. Without this wgpu picks its own "best" adapter and on this host that
             # is the 3080 Ti, not the 3090 -- nine measurement runs went to the wrong card that
             # way on 2026-08-21. `cortiq gpu` prints the indices.
-            "CMF_GPU_ADAPTER": str(opts["adapter"]),
+            "CMF_GPU_ADAPTER": str(req.adapter),
             # The cooperative-matrix kernel accumulates f32 GEMMs at tf32-class precision:
             # ~14% off the wall clock of a render, measured, at 4.9e-6 relative in the decoded
             # pixels. Off means the device arm reproduces the host arm to nine digits.
-            "CMF_COOP": "1" if opts["coop"] else "0",
+            "CMF_COOP": "1" if req.coop else "0",
             # 0 puts every blocked GEMM back in one probe class -- the behaviour before the
             # narrow/wide split. 256 is the split.
-            "CMF_GEMM_NT_M": "256" if opts["split"] else "0",
+            "CMF_GEMM_NT_M": "256" if req.split else "0",
         }
         with self.lock:
             self.cmd = " ".join(f"{k}={v}" for k, v in env.items()) + "  " + shlex.join(argv)
@@ -232,6 +337,40 @@ class Job:
 
 
 JOB = Job()
+
+
+def resolve_output(name: str, suffix: str) -> Path | None:
+    """Map the tail of `/frame/<name>` or `/video/<name>` onto a real file, or return None.
+
+    Two independent gates, because neither one alone is enough.
+
+    The character gate is what stops `GET /frame/C:/Users/joaoz/x.ppm`. `pathlib`'s join lets a
+    right-hand operand carrying a drive *replace* the base entirely, so that name walked out of
+    `JOB.outdir` without containing a single `..` -- which is why a browser's URL normalizer
+    passed it through untouched and why grepping for `..` would never have found it.
+
+    The resolve() gate is what stops whatever the character list did not think of: a symlink or
+    junction inside the run directory, an 8.3 short name, a colon-in-stream form that some later
+    edit stops rejecting. It is checked against OUTROOT rather than the run directory so that a
+    stale name from the previous render still 404s instead of escaping.
+
+    There is deliberately no `unquote` here. `BaseHTTPRequestHandler` does not percent-decode the
+    request target, so nothing arrives encoded -- and decoding would hand `%2e%2e` and `%5c` a
+    way back in past the gate above.
+    """
+    if not name or name in (".", "..") or Path(name).name != name:
+        return None
+    if any(c in name for c in "/\\:") or any(ord(c) < 0x20 for c in name):
+        return None
+    outdir = JOB.current_outdir()
+    if outdir is None:
+        return None
+    candidate = (outdir / name).resolve()
+    if not candidate.is_relative_to(OUTROOT.resolve()):
+        return None
+    if candidate.suffix != suffix or not candidate.is_file():
+        return None
+    return candidate
 
 
 def ppm_to_png(path: Path) -> bytes:
@@ -395,25 +534,33 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _route(self) -> str:
+        """The path with the query and fragment cut off.
+
+        A name is a file name, and `?` starts something that is not part of it. Without this
+        `/frame/frame_0000.ppm?v=2` reached the file gate as a name ending in `2`, and the
+        fixed-path comparisons below (`/`, `/progress`) missed on any URL carrying a cache
+        buster.
+        """
+        return self.path.split("?", 1)[0].split("#", 1)[0]
+
     def do_GET(self) -> None:
-        if self.path == "/":
+        route = self._route()
+        if route == "/":
             self._send(200, PAGE.encode("utf-8"), "text/html; charset=utf-8")
-        elif self.path == "/progress":
+        elif route == "/progress":
             self._send(200, json.dumps(JOB.snapshot()).encode(), "application/json")
-        elif self.path.startswith("/video/"):
-            name = self.path[len("/video/"):]
-            path = (JOB.outdir / name) if JOB.outdir else None
-            if path and path.is_file() and path.suffix == ".mp4":
+        elif route.startswith("/video/"):
+            path = resolve_output(route[len("/video/"):], ".mp4")
+            if path is not None:
                 self._send(200, path.read_bytes(), "video/mp4")
             else:
                 self._send(404, b"no video", "text/plain")
-        elif self.path.startswith("/frame/"):
-            name = self.path[len("/frame/"):]
-            outdir = JOB.snapshot() and JOB.outdir
-            path = (outdir / name) if outdir else None
+        elif route.startswith("/frame/"):
             # Frames come out as PPM. The browser will not render one, so convert on demand
             # rather than writing a second copy of every frame to disk.
-            if path and path.is_file() and path.suffix == ".ppm":
+            path = resolve_output(route[len("/frame/"):], ".ppm")
+            if path is not None:
                 self._send(200, ppm_to_png(path), "image/png")
             else:
                 self._send(404, b"no such frame", "text/plain")
@@ -421,15 +568,61 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send(404, b"not found", "text/plain")
 
     def do_POST(self) -> None:
-        if self.path != "/render":
+        if self._route() != "/render":
             self._send(404, b"not found", "text/plain")
             return
-        length = int(self.headers.get("Content-Length", "0"))
-        opts = json.loads(self.rfile.read(length))
+        # There is no auth here and none is wanted on a loopback bench -- but the page posts
+        # without a Content-Type, which makes this a CORS-simple request: no preflight, so any
+        # page open in the owner's browser could start a render on the locked card. ComfyUI
+        # carries a mitigation for exactly this shape (`create_origin_only_middleware`,
+        # ComfyUI/server.py); this is the same idea in two headers.
+        #
+        # Sec-Fetch-Site is what the browser volunteers about who asked. Host is what still
+        # holds under DNS rebinding, where the browser genuinely believes it is same-origin
+        # and stamps Sec-Fetch-Site: same-origin truthfully.
+        #
+        # A MISSING Sec-Fetch-Site is allowed on purpose: curl sends none, and neither does any
+        # browser older than Chrome 76 / Firefox 90 / Safari 16.4. On those, the Host check is
+        # the only arm left standing -- stated rather than papered over.
         try:
-            JOB.start(opts)
+            length = int(self.headers.get("Content-Length", ""))
+        except ValueError:
+            self._send(400, b"Content-Length required", "text/plain")
+            return
+        if not 0 <= length <= 64 * 1024:
+            self._send(400, b"body is missing or too large", "text/plain")
+            return
+        # Drain the body before answering, even when the answer is a refusal. Windows closes a
+        # socket that still has unread bytes in its receive queue with RST, and the client then
+        # reports a connection error instead of the 403 or 400 it was actually sent -- the
+        # refusal becomes invisible to exactly the person who needs to read it.
+        raw_body = self.rfile.read(length)
+
+        site = self.headers.get("Sec-Fetch-Site")
+        if site is not None and site not in ("same-origin", "none"):
+            self._send(403, b"cross-site render requests are refused", "text/plain")
+            return
+        # Casefolded. Hostnames are case-insensitive, and the exact-match version 403'd a render
+        # from `http://LOCALHOST:8123` while the page itself loaded fine -- which reads as a broken
+        # button, not as a security control, and a security control that looks like a bug is one
+        # somebody switches off.
+        if self.headers.get("Host", "").lower() not in (f"127.0.0.1:{PORT}", f"localhost:{PORT}"):
+            self._send(403, b"unexpected Host header", "text/plain")
+            return
+        # Validated into a record before `JOB.start` is called at all, so a malformed body
+        # cannot reach the flag, the run directory, or the cortiq subprocess.
+        try:
+            req = RenderRequest.parse(json.loads(raw_body or b"null"))
+        except (ValueError, UnicodeDecodeError) as exc:
+            self._send(400, str(exc).encode("utf-8", "replace"), "text/plain")
+            return
+        try:
+            JOB.start(req)
         except RuntimeError as exc:
             self._send(409, str(exc).encode(), "text/plain")
+            return
+        except Exception as exc:  # start() has already cleared `running` and said why
+            self._send(500, f"{type(exc).__name__}: {exc}".encode(), "text/plain")
             return
         self._send(200, b"{}", "application/json")
 
@@ -459,6 +652,9 @@ def main() -> int:
     print("             ComfyUI is still the tool for those. Progress is real only during")
     print("             denoise; the VAE decode is silent until it finishes, and on a")
     print("             512x512x49 render that is about half the wall clock.")
+    print("             /render checks Sec-Fetch-Site and Host; the GET routes check neither,")
+    print("             so they are readable by any local process and confined to")
+    print(f"             {OUTROOT} rather than authenticated.")
     with Server(("127.0.0.1", PORT), Handler) as httpd:
         try:
             httpd.serve_forever()

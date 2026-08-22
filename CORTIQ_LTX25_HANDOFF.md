@@ -5,8 +5,16 @@ Investigação do `infosave/LTX-2.5-cmf` (container `.cmf` de 20,6 GiB rodado pe
 que resta quando o contexto da sessão some.
 
 **O plano do que fazer a seguir NÃO está aqui.** Está em
-[`.scratch/estado-entregavel/map.md`](.scratch/estado-entregavel/map.md), com 17
-tickets. Aqui está só o que ficou *estabelecido*.
+[`.scratch/estado-entregavel/map.md`](.scratch/estado-entregavel/map.md). Aqui está só o que ficou
+*estabelecido*.
+
+Esta linha dizia "com 17 tickets" e o mapa fechou com 29 — **não copie a contagem, conte**, que é
+o que o `CLAUDE.md` já faz com o número de arquivos rastreados e de `custom_nodes` depois de cada
+um errar três vezes:
+
+```bash
+ls .scratch/estado-entregavel/issues | wc -l
+```
 
 ## Onde as coisas estão
 

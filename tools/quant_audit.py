@@ -35,12 +35,142 @@ ROLE_BY_DIRECTORY = {
 }
 
 
+# This tool reads Safetensors/GGUF headers and never a tensor byte, so two files with the same
+# size and shape are indistinguishable in its output. That has to be said in the output itself:
+# an inventory that lists 505 files and says nothing about identity reads as "these were
+# compared", and the whole of the "do we already have a compatible variant" question downstream
+# depends on knowing it was not. `tools/model_audit.py:111-126` is the tool that hashes.
+NO_HASH_NOTE = (
+    "No content hash was computed. This inventory reads container headers only, never tensor "
+    "bytes, so identical-looking entries are NOT known to be identical files. Use "
+    "tools/model_audit.py for identity/dedup (size -> blake2b of first+last 1 MiB -> full "
+    "sha256 only on collision)."
+)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--models-root", type=Path, default=Path("ComfyUI/models"))
+    parser.add_argument(
+        "--models-root", type=Path, action="append", default=[], dest="models_root",
+        help="root directory to walk; repeatable. When given at all, these REPLACE the default "
+             "set (ComfyUI/models plus every root declared in extra_model_paths.yaml) and the "
+             "YAML is not consulted.",
+    )
+    parser.add_argument(
+        "--extra-model-paths", type=Path, default=None,
+        help="extra_model_paths.yaml to read roots from; defaults to the one beside main.py. "
+             "Ignored when --models-root is given.",
+    )
     parser.add_argument("--json", type=Path, default=Path("quantization_inventory.json"))
     parser.add_argument("--markdown", type=Path, default=Path("quantization_inventory.md"))
     return parser.parse_args()
+
+
+def yaml_roots(yaml_path: Path) -> list[tuple[str, Path]]:
+    """Roots declared by extra_model_paths.yaml: each block's base_path, plus strays outside it.
+
+    Read straight off the YAML rather than through `folder_paths.get_folder_paths()`, for three
+    reasons found by reading ComfyUI 0.33.0's own source on 2026-08-22 (traced, not executed):
+
+      - `folder_paths.map_legacy` (:112-115) rewrites `unet` -> `diffusion_models` and
+        `clip` -> `text_encoders`, and this bench's YAML lists BOTH members of each pair, so a
+        naive folder_paths reader visits the same directories twice.
+      - six of this YAML's keys (ipadapter, pulid, insightface, inpaint, ultralytics, gguf) are
+        not built-in categories, so they get an EMPTY extension set at :388-389, and
+        `filter_files_extensions` (:436-437) passes EVERYTHING when the set is empty -- those
+        categories would list .json and .md as models.
+      - roughly 45 of the 72 top-level directories under ComfyUI/models are custom-node-owned
+        (BiRefNet, sam2, sam3, matanyone, reactor, liveportrait, ...) and folder_paths does not
+        know them at all.
+
+    Walking `base_path` itself sidesteps all three: one walk per drive, filtered by
+    MODEL_EXTENSIONS, covering the directories no category names.
+
+    Path resolution mirrors `ComfyUI/utils/extra_config.py:14-32` -- expandvars, expanduser, and
+    relative paths anchored at the YAML's own directory -- so this agrees with what ComfyUI
+    actually mounts.
+    """
+    import yaml  # third-party; ComfyUI requires it, but keep the failure local to this function
+
+    with yaml_path.open("r", encoding="utf-8") as handle:
+        config = yaml.safe_load(handle) or {}
+    yaml_dir = yaml_path.resolve().parent
+
+    found: list[tuple[str, Path]] = []
+    for block_name, conf in config.items():
+        if not isinstance(conf, dict):
+            continue
+        base_path = None
+        if conf.get("base_path"):
+            expanded = os.path.expandvars(os.path.expanduser(str(conf["base_path"])))
+            base_path = Path(expanded) if os.path.isabs(expanded) else (yaml_dir / expanded)
+            base_path = Path(os.path.normpath(base_path))
+            found.append((str(block_name), base_path))
+        for key, value in conf.items():
+            if key in {"base_path", "is_default"} or not isinstance(value, str):
+                continue
+            for line in value.split("\n"):
+                if not line:
+                    continue
+                candidate = base_path / line if base_path else Path(line)
+                if not candidate.is_absolute():
+                    candidate = yaml_dir / candidate
+                found.append((f"{block_name}:{key}", Path(os.path.normpath(candidate))))
+    return found
+
+
+def discover_roots(portable_root: Path, yaml_path: Path | None,
+                   explicit: list[Path]) -> tuple[list[dict], list[dict]]:
+    """Roots to walk and roots declared-but-absent, as (kept, missing).
+
+    `missing` is returned rather than dropped because a declared root that is not there is the
+    same silent hole this whole change exists to close. Measured 2026-08-22: the `viral_d` block
+    resolves to `\\\\192.168.3.68\\estoque\\ComfyUI-Models` -- a NAS share, not the local disk the
+    YAML's `D:/ComfyUI-Models/` reads like -- so the day that share is offline, this root simply
+    would not exist, and an inventory that just omitted it would look exactly like a complete one.
+
+    Nesting matters here and case matters more. `Path.resolve()` on Windows normalizes the drive
+    letter and follows a mapped drive to its UNC, but does not normalize directory-name case, so
+    `os.path.normcase` is what makes the dedup actually dedup. Dropping a root that lives inside
+    another kept root is what stops a block's seventeen category directories from being walked
+    once as themselves and once as part of base_path.
+    """
+    if explicit:
+        candidates = [(str(root), root) for root in explicit]
+    else:
+        candidates = [("ComfyUI/models", portable_root / "ComfyUI" / "models")]
+        if yaml_path is not None and yaml_path.is_file():
+            candidates += yaml_roots(yaml_path)
+
+    resolved = [(label, str(root), Path(root).resolve())
+                for label, root in candidates if root.is_dir()]
+
+    def covered(path: str, prefixes: list[str]) -> bool:
+        key = os.path.normcase(path)
+        return any(key == prefix or key.startswith(prefix + os.sep) for prefix in prefixes)
+
+    kept: list[dict] = []
+    prefixes: list[str] = []
+    for label, declared, root in sorted(resolved, key=lambda item: len(str(item[2]))):
+        if covered(str(root), prefixes):
+            continue
+        kept.append({"label": label, "path": root, "declared": declared})
+        # Both spellings: a category is written relative to the drive letter (`D:\...\clip`)
+        # while the root it lives in resolves to a UNC, and only the declared form will match it.
+        prefixes += [os.path.normcase(str(root)), os.path.normcase(declared)]
+
+    # An absent category directory under a root that IS being walked is not a hole -- the walk
+    # covers it, empty or not. Reporting those made the real bench print eleven "missing" lines
+    # for `D:\ComfyUI-Models\clip` and friends, which is how a warning stops being read. Only a
+    # declared path no walked root reaches is a hole, and only the shallowest one is worth saying.
+    missing: list[dict] = []
+    for label, root in sorted((c for c in candidates if not c[1].is_dir()),
+                              key=lambda item: len(str(item[1]))):
+        if covered(str(root), prefixes):
+            continue
+        missing.append({"label": label, "declared": str(root)})
+        prefixes.append(os.path.normcase(str(root)))
+    return kept, missing
 
 
 def human_size(size: int) -> str:
@@ -475,11 +605,18 @@ def assess_model(model: dict) -> None:
     model["effective_weight_bits"] = effective_weight_bits(model["quant_formats"], dtype_bytes)
 
 
-def inspect_model(path: Path, models_root: Path) -> dict:
-    relative = path.relative_to(models_root)
+def inspect_model(path: Path, root: Path, root_label: str) -> dict:
+    relative = path.relative_to(root)
     model = {
         "path": str(path.resolve()),
+        # `relative_path` stayed relative to its own root for continuity with schema 2, which
+        # makes it ambiguous the moment two roots both hold `diffusion_models/x.safetensors`.
+        # `root` disambiguates it and `display_path` is what every table prints, so no rendered
+        # row can be read against the wrong drive.
+        "root": str(root),
+        "root_label": root_label,
         "relative_path": relative.as_posix(),
+        "display_path": f"{root_label}/{relative.as_posix()}",
         "name": path.name,
         "size_bytes": path.stat().st_size,
         "size_human": human_size(path.stat().st_size),
@@ -572,8 +709,31 @@ def markdown_report(inventory: dict) -> str:
         "# Quantization Inventory",
         "",
         f"Generated: `{inventory['generated_at']}`  ",
-        f"Models root: `{inventory['models_root']}`  ",
         f"Files: **{len(models)}**; total size: **{human_size(inventory['total_size_bytes'])}**",
+        "",
+        "## Scope: roots covered",
+        "",
+        "Until 2026-08-22 this tool walked one root and said nothing about it, so the inventory "
+        "described 623 GiB of a 1.03 TiB bench and read as complete. The table below is the "
+        "scope statement; anything not under one of these roots is **not in this file**.",
+        "",
+        "| Root | Path walked | Files | Size |",
+        "|---|---|---:|---:|",
+    ]
+    for root in inventory["roots"]:
+        # `declared` is shown when it differs from the path actually walked, because on this
+        # bench they differ in a way nobody expects: the YAML says `D:/ComfyUI-Models/` and that
+        # resolves to a NAS share, `\\192.168.3.68\estoque\ComfyUI-Models`.
+        declared = root.get("declared")
+        shown = f"`{root['path']}`"
+        if declared and os.path.normcase(declared) != os.path.normcase(root["path"]):
+            shown += f"<br>declared as `{declared}`"
+        lines.append(f"| `{root['label']}` | {shown} | {root['file_count']} | {root['size_human']} |")
+    for root in inventory.get("roots_declared_but_missing", []):
+        lines.append(f"| `{root['label']}` | `{root['declared']}` | **DECLARED BUT NOT FOUND** | - |")
+    lines.extend([
+        "",
+        f"> {inventory['content_hashing']}",
         "",
         "## Reading this file",
         "",
@@ -605,7 +765,7 @@ def markdown_report(inventory: dict) -> str:
         "",
         "## Candidate Ranking",
         "",
-    ]
+    ])
     if not stack["native_convrot_ready"]:
         lines.append("> Conversion is blocked: normal ComfyUI startup selects the eager ConvRot implementation, not the CUDA Tensor Core backend.")
         lines.append("")
@@ -613,7 +773,7 @@ def markdown_report(inventory: dict) -> str:
                   "|---:|---|---:|---|---:|---|---|---|"])
     for rank, model in enumerate(candidates, 1):
         lines.append(
-            f"| {rank} | `{model['relative_path']}` | {model['size_human']} | {model['current_precision']} | "
+            f"| {rank} | `{model['display_path']}` | {model['size_human']} | {model['current_precision']} | "
             f"{bits_cell(model)} | {model['role']} | {model['architecture']} | {model['w4a4_assessment']} |"
         )
     lines.extend(["", "## Full Inventory (size descending)", "",
@@ -622,41 +782,115 @@ def markdown_report(inventory: dict) -> str:
     for model in models:
         note = model.get("inspection_error", model["w4a4_assessment"])
         lines.append(
-            f"| `{model['relative_path']}` | {model['size_human']} | {model['format']} | {model['current_precision']} | "
+            f"| `{model['display_path']}` | {model['size_human']} | {model['format']} | {model['current_precision']} | "
             f"{bits_cell(model)} | {model['role']} | {model['architecture']} | {note} |"
         )
     return "\n".join(lines) + "\n"
 
 
+def collect_models(roots: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Inspect every model file under every root; returns (models, per-root summaries).
+
+    A file reached through two roots is inspected once and counted against the first root that
+    reached it. Split out of main() so the walk can be exercised on a synthetic tree without
+    calling stack_snapshot(), which allocates on CUDA and must not run on a shared card.
+    """
+    found: list[tuple[str, Path, Path]] = []
+    summaries: list[dict] = []
+    seen: set[str] = set()
+    for entry in roots:
+        label, root = entry["label"], entry["path"]
+        root_files = []
+        for path in root.rglob("*"):
+            key = os.path.normcase(str(path))
+            if key in seen or not path.is_file() or path.suffix.lower() not in MODEL_EXTENSIONS:
+                continue
+            seen.add(key)
+            root_files.append(path)
+        size = sum(path.stat().st_size for path in root_files)
+        summaries.append({
+            "label": label,
+            "path": str(root),
+            "declared": entry["declared"],
+            "file_count": len(root_files),
+            "size_bytes": size,
+            "size_human": human_size(size),
+        })
+        found += [(label, root, path) for path in root_files]
+
+    found.sort(key=lambda item: item[2].stat().st_size, reverse=True)
+    models = []
+    for index, (label, root, path) in enumerate(found, 1):
+        print(f"[{index}/{len(found)}] {label}/{path.relative_to(root).as_posix()}", flush=True)
+        models.append(inspect_model(path, root, label))
+    return models, summaries
+
+
 def main() -> int:
     args = parse_args()
-    models_root = args.models_root.resolve()
-    if not models_root.is_dir():
-        raise SystemExit(f"Models root not found: {models_root}")
-    portable_root = models_root.parent.parent
-    paths = sorted(
-        (path for path in models_root.rglob("*") if path.is_file() and path.suffix.lower() in MODEL_EXTENSIONS),
-        key=lambda path: path.stat().st_size,
-        reverse=True,
-    )
-    models = []
-    for index, path in enumerate(paths, 1):
-        print(f"[{index}/{len(paths)}] {path.relative_to(models_root)}", flush=True)
-        models.append(inspect_model(path, models_root))
+    portable_root = Path(__file__).resolve().parents[1]
+    yaml_path = args.extra_model_paths or (portable_root / "ComfyUI" / "extra_model_paths.yaml")
+    roots, missing = discover_roots(
+        portable_root, yaml_path, [root.resolve() for root in args.models_root])
+    if not roots:
+        raise SystemExit(f"No model root found (looked under {portable_root} and {yaml_path})")
+
+    # An explicitly requested root that is not there is a REFUSAL, not a warning, and the two
+    # cases are not the same shape:
+    #
+    #   --models-root <typo>       the operator asked for this path by name. Continuing writes a
+    #                              partial inventory over quantization_inventory.json -- the
+    #                              default output, and a tracked artifact -- and exits 0.
+    #   a root declared in the     the D: mount may simply be offline. Naming it and carrying on
+    #   extra_model_paths.yaml     is right; the summary and the JSON both record the gap.
+    #
+    # This distinction was lost when the tool went multi-root: the old code raised on
+    # `not models_root.is_dir()` and the new code refused only when EVERY root was missing. On a
+    # default run with the NAS down that regenerates exactly the single-root inventory this tool
+    # was changed to stop producing -- exit 0, checked-in file replaced.
+    requested = {str(root.resolve()) for root in args.models_root}
+    absent_and_requested = [e for e in missing if str(Path(e["declared"]).resolve()) in requested]
+    if absent_and_requested:
+        raise SystemExit(
+            "Refusing: --models-root was given a path that does not exist -- "
+            + ", ".join(e["declared"] for e in absent_and_requested)
+            + ". Continuing would overwrite the inventory with a partial walk and exit 0. "
+              "Fix the path, or drop the flag to use the roots declared in extra_model_paths.yaml.")
+
+    for entry in roots:
+        print(f"root {entry['label']}: {entry['path']}", flush=True)
+    for entry in missing:
+        print(f"root {entry['label']}: DECLARED BUT NOT FOUND: {entry['declared']}", flush=True)
+
+    models, root_summaries = collect_models(roots)
     inventory = {
         # 2: added quant_declared and effective_weight_bits, and taught the reader the
         # nunchaku and modelspec metadata dialects. dtype_counts/dtype_bytes unchanged.
-        "schema_version": 2,
+        # 3: multi-root. `models_root` is GONE, deliberately -- keeping a singular key while
+        # walking several roots is the exact misreading this schema bump exists to end. Its
+        # replacements are `roots` (scope + per-root counts) and per-model `root`/`root_label`.
+        "schema_version": 3,
         "generated_at": datetime.now(timezone.utc).astimezone().isoformat(),
         "portable_root": str(portable_root),
-        "models_root": str(models_root),
+        "roots": root_summaries,
+        "roots_declared_but_missing": missing,
+        "content_hashing": NO_HASH_NOTE,
         "total_size_bytes": sum(model["size_bytes"] for model in models),
         "stack": stack_snapshot(portable_root),
         "models": models,
     }
     args.json.write_text(json.dumps(inventory, indent=2, ensure_ascii=False), encoding="utf-8")
     args.markdown.write_text(markdown_report(inventory), encoding="utf-8")
+    # The scope statement goes to stdout too, not only into the artifacts: the previous version
+    # of this tool ended with a bare "Wrote ..." line, and a run that names nothing is what let
+    # a one-root inventory be pasted around as the inventory of the bench.
     print(f"Wrote {args.json} and {args.markdown}")
+    print(f"Covered {len(inventory['roots'])} root(s), "
+          f"{len(models)} files, {human_size(inventory['total_size_bytes'])}:")
+    for summary in inventory["roots"]:
+        print(f"  {summary['label']:<24} {summary['file_count']:>6} files  "
+              f"{summary['size_human']:>12}  {summary['path']}")
+    print(NO_HASH_NOTE)
     return 0
 
 

@@ -6,9 +6,12 @@ em 2026-08-21, não 88 nem 89 — contado agora, não copiado do título do tick
 estava errado e foi corrigido nele). Ver detalhamento abaixo.
 
 ```
-$ git -C F:\COMFY_PORTABLE ls-files | wc -l
+$ git -C F:\COMFY_PORTABLE ls-files | wc -l    # 2026-08-21
 93
 ```
+
+**93 era o número daquele dia, e já não é.** Em 2026-08-22 o mesmo comando dá 157. Ver
+"Contagem final" no fim deste arquivo para o que isso faz com a cobertura da triagem.
 
 Repartição:
 
@@ -171,7 +174,35 @@ execução — nenhum destes rodou hoje.
 
 ## Contagem final
 
-93 arquivos, 93 linhas de classificação, cada arquivo em exatamente uma linha (14 raiz + 8 calib
+> **Esta triagem é um retrato datado, não um invariante.** A frase abaixo dizia "93 arquivos, 93
+> linhas de classificação", sem dizer *de quando* — e lida hoje ela afirma que todo arquivo
+> rastreado tem classificação, o que é falso. Conferido em **2026-08-22, por execução**:
+> `git ls-files | wc -l` dá **157**, e **63** desses não aparecem em lugar nenhum deste documento
+> (teste generoso: procurei o *basename* em qualquer lugar do arquivo, não só nas tabelas).
+> As 93 linhas continuam corretas para os 93 arquivos que cobrem — nenhum deles sumiu da árvore,
+> também conferido. O que caducou é a cobertura, não a classificação.
+>
+> Os 63 descobertos são, quase todos, arquivos que nasceram *depois* da triagem: os tickets de
+> `.scratch/estado-entregavel/` e `.scratch/varredura-2026-08-22/`, o `.scratch/comfylite/`,
+> `docs/agents/`, `INVENTARIO_BANCADA.md`, `ComfyLite_Project_Handoff.md` e cinco `tools/*.py`
+> novos (`_native_probe.py`, `ltx_studio.py`, `probe_backend_resolution.py`,
+> `probe_groupsize_and_spread.py`, `test_gpu_lock.py`). **Só esses cinco `tools/` são código sem
+> triagem** — o resto é documento ou ticket, que não é o que este documento classifica.
+>
+> Recontar em vez de citar, que é o que o `CLAUDE.md` já faz com esse mesmo número:
+>
+> ```bash
+> git ls-files | wc -l
+> git ls-files | while read f; do
+>   grep -qF "$(basename "$f")" .scratch/estado-entregavel/triagem-89.md || echo "sem linha: $f"
+> done
+> ```
+>
+> Reabrir a triagem para os cinco `tools/` novos é decisão do dono: o critério de fechamento do
+> ticket 02 foi escrito sobre o conjunto de então e não pede cobertura perpétua.
+
+Retrato de 2026-08-21 — 93 arquivos, 93 linhas de classificação, cada arquivo em exatamente uma
+linha (14 raiz + 8 calib
 + 3 custom_nodes + 68 tools). Dentro de `tools/`: 8 já cobertos por ticket existente (01, 03, 04,
 05, 06, 12, sem duplicar), 15 `suspeito` graduados em 9 tickets novos (18-26), 45 `saudável`.
 0 `morto` confirmado, 0 `morto?` (todo candidato tinha `argparse`/`__main__` e cai na regra
