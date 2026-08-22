@@ -284,6 +284,29 @@ down, in force until contested** — not a negotiated settlement between two liv
 mechanism it describes (`tools/gpu_lock.ps1`, the detached heartbeat, the 55 s staleness limit) was
 executed; the *agreement* is a decision, not a measurement.
 
+## Agent skills
+
+Written by `/setup-matt-pocock-skills` on 2026-08-22. These three files are what the engineering
+skills read as input; edit them directly rather than re-running the setup.
+
+### Issue tracker
+
+Local markdown under `.scratch/`, one file per ticket — this repo has **no git remote**, so there
+are no GitHub issues and `gh` has nowhere to write. Every debt ticket carries its closing criterion,
+written before anyone looked at the result. See [docs/agents/issue-tracker.md](docs/agents/issue-tracker.md).
+
+### Triage labels
+
+The five canonical roles, unchanged, recorded as a `Status:` line in each ticket file.
+`ready-for-human` is load-bearing here: package installs, GPU windows and anything touching WSL are
+the owner's call and cannot be delegated. See [docs/agents/triage-labels.md](docs/agents/triage-labels.md).
+
+### Domain docs
+
+Single-context — one `CONTEXT.md` + `docs/adr/` at the root, both created lazily. The provenance
+rule extends to them: a glossary entry derived from reading rather than running says so in the
+entry. See [docs/agents/domain.md](docs/agents/domain.md).
+
 ## Memory gotchas
 
 Conversions check free disk (`estimate + 1 GiB`) and free RAM (`3 × largest selected tensor + 2 GiB`) and exit rather than thrash. If it refuses, the fix is to close memory-heavy WSL/worker processes **manually** — never change the pagefile or kill processes automatically.

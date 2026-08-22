@@ -12,6 +12,12 @@
 !/inspect_quant.py
 !/_check_accel.py
 
+# Written by /setup-matt-pocock-skills: where issues live, the triage vocabulary, and the domain-doc
+# rules. Text only, and the skills read them as input on every run -- so untracked here means every
+# fresh clone silently loses the conventions and reaches for `gh issue create` against a repo that
+# has no remote.
+!/docs/
+
 # The per-layer measurements themselves, and only those. A `.analysis.json` is ~60 KiB and is the
 # expensive part of this project to reproduce -- it costs a calibration run on a GPU that is
 # shared with another session. The `.calib.pt` files beside them are the raw activation samples,
