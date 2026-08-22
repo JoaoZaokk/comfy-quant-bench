@@ -4,7 +4,7 @@ Type: grilling
 Status: ready-for-human
 Blocked by: 05, 07
 Severity: medium
-Provenance: TRACED
+Provenance: TRACED, then EXECUTED 2026-08-22 on the 3090
 
 ## Question
 
@@ -90,3 +90,35 @@ This ticket closes on a **decision**, not on code: the owner says core / no core
 reason is written here. If "core", it spawns implementation tickets and does not itself close until
 `grep -c "def write_streamed_checkpoint" tools/*.py` returns 1 and every converter's guard set is the
 same set.
+
+## Answer to the one sub-question that needed the card -- EXECUTED 2026-08-22, RTX 3090
+
+**The `quant_mixed.py` dtype gap is latent, not live, on this build.**
+
+`ck.quantize_w4a8_int8_weight(w, group_size=16, convrot_groupsize=256, symmetric=True,
+scale_dtype=torch.float8_e4m3fn, codebook=True, codebook_tensor=None, stochastic_rounding=0)`
+on a bf16 `[256, 256]` returns:
+
+    [0] torch.int8            (256, 128)
+    [1] torch.float8_e4m3fn   (256, 16)
+    [2] torch.float32         (256,)
+    [3] NoneType              -
+    [4] torch.float32         (16,)
+
+Nothing here is `bfloat16` or `float8_e5m2`, so `quant_mixed.py:618` does not `KeyError` and
+`:645`'s `.numpy()` does not raise. **The crash-after-a-full-quantization-pass scenario cannot
+happen with these arguments today.**
+
+What that does and does not mean:
+
+- It **lowers the urgency** of the "cheapest immediate fix" (`from quant_w4a8 import as_bytes,
+  header_dtype`). Do it anyway -- it is three lines -- but it is not on fire.
+- It **does not weaken the ticket.** The reason `quant_w4a8.py` grew `header_dtype()`/`as_bytes()`
+  at `:177-208` in the first place was a real failure with an EXECUTED note attached, under
+  different arguments. `quant_mixed.py` calls the same op and would not survive them. The divergence
+  is real; it is the *trigger* that is currently absent.
+- It is exactly the shape of thing a converter core makes impossible to have: one writer, one dtype
+  table, and the question never arises per-file.
+
+**Caveat that travels with this:** one call, one argument set, one build. `scale_dtype` is a
+parameter -- pass `float8_e5m2` and the answer may change. Not tested.

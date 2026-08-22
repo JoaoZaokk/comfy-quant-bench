@@ -4,7 +4,7 @@ Type: task
 Status: ready-for-agent
 Blocked by: -
 Severity: medium
-Provenance: TRACED; one sub-claim needs a GPU run
+Provenance: TRACED, then EXECUTED 2026-08-22 on the 3090; one sub-claim needs a GPU run
 
 ## Problem
 
@@ -59,3 +59,59 @@ the answer stops the next session re-deriving it.
 `K10`: `convrot_ops_probe.py:141` exits 0 if *any one* of five dispatch cases went native.
 `CI-01`: `_native_probe.instrument()` (`:169`) silently no-ops its INT8 branch if a private
 comfy_kitchen table moves. `CACHE-13`: `instrument` has no undo and caps distinct impls at 4.
+
+## Answer, partial -- EXECUTED 2026-08-22 on the RTX 3090, GPU lock held
+
+Two of the three questions in this ticket are now settled, and **one of my claims is refuted.**
+
+### The groupsize claim was WRONG. Resolution is invariant.
+
+I wrote: *"the constraint validation runs against a configuration the conversion does not use...
+If the CUDA backend's constraint set is groupsize-sensitive, a conversion at 256 is preflighted at
+64 and the answer means nothing."* Measured, all four combinations:
+
+    config          quantize impl                  linear impl
+    cg=64  real     comfy_kitchen.backends.cuda    comfy_kitchen.backends.cuda
+    cg=64  dummy    comfy_kitchen.backends.cuda    comfy_kitchen.backends.cuda
+    cg=256 real     comfy_kitchen.backends.cuda    comfy_kitchen.backends.cuda
+    cg=256 dummy    comfy_kitchen.backends.cuda    comfy_kitchen.backends.cuda
+
+One distinct implementation across all four. And the real calls succeed at both groupsizes --
+`cg=64` and `cg=256` both produce finite bf16 output of the right shape.
+
+**So `quant_w4a4.py`'s 64/64 preflight is untidy, not wrong.** The ticket's severity drops from
+medium to low on this axis.
+
+### The dummy-vs-real claim is ALSO not demonstrated -- and it is in `_native_probe.py`'s docstring
+
+`_native_probe.py:9-15` asserts that dummy kwargs let the check pass while a real call would drop
+to eager, citing `comfy_kitchen/registry.py:246` (empty/None kwargs skip constraint validation).
+Measured here: **`torch.empty` and real quantized tensors resolve identically**, for both ops, at
+both groupsizes.
+
+State this carefully, because it is the exact shape of error this repo keeps making: I tested
+**two ops, two groupsizes, one build, one card**. That is not "the claim is false" -- it is "the
+claim did not reproduce under the only conditions anyone has tried." The mechanism in
+`registry.py:246` may still be real for other ops or other constraint sets. **The docstring should
+say the claim is a reading of `registry.py`, not a measurement**, which is what it currently
+implies.
+
+### `_native_probe.native_backend_ready()` was executed for the first time, and it works
+
+Its own docstring says *"neither function below has been executed by it -- only `py_compile` and
+import-without-CUDA-op were run."* It has now been run. It returns
+`native_ready: true`, resolving both ops to `comfy_kitchen.backends.cuda`, and lists the backend's
+op set. **The shared probe is not vapourware.** Update its docstring.
+
+### What is still open, and is the real content of this ticket
+
+Six definitions remain, and **no converter imports the shared one**. That is unchanged and is why
+this ticket stays open. The argument for consolidating is now *simpler*, not weaker: since
+resolution is invariant to the things the six copies disagree about, there is no defensible reason
+for six of them.
+
+### Closing criterion, revised
+
+Items 1-3 stand. **Item 4 is answered: no difference at 64 vs 256.** Write that into
+`_native_probe.py`'s docstring next to the code, with the date and the card, so the next session
+does not re-derive it.

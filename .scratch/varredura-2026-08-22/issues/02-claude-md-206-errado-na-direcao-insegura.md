@@ -60,3 +60,53 @@ Closed when a single commit does all three, and none before the others:
 3. the preflight WARN text is re-read and either restored or the doc corrected.
 
 Do not close by editing the doc alone if the fix is to make the tool honest -- pick one and say which.
+
+## Answer to the second claim -- EXECUTED 2026-08-22, RTX 3090
+
+**CLAUDE.md's "`verify_w4a4.py` ends its output with what it did not cover, on every run" is false,
+and now measured rather than grepped.**
+
+Full stdout of a real run against `zimage-v2-w4a4.safetensors` (170 layers, cg=256), with
+`--kernel-smoke`, GPU lock held:
+
+    Structural verification: PASS (170 ConvRot W4A4 layers)
+    Source comparison: PASS
+    Normal ComfyUI backend: comfy_kitchen.backends.cuda
+    {
+      "layer": "context_refiner.0.attention.out",
+      "backend": "comfy_kitchen.backends.cuda.convrot_w4a4_linear",
+      "output_dtype": "torch.bfloat16",
+      "relative_rmse": 0.24021309614181519,
+      "max_abs_error": 51.375
+    }
+
+That is the whole output. Two PASS lines and a JSON object. Nothing states what was not covered --
+and what was not covered is substantial: one layer of 170 was smoked, the byte-identity check
+covers only preserved tensors, and (per ticket 06) the whole tool refuses any format but
+`convrot_w4a4`.
+
+This is the exact shape CLAUDE.md itself warns about: *"a column of PASS lines otherwise reads as
+verified."*
+
+### And a third CLAUDE.md claim, closed in the other direction
+
+CLAUDE.md's environment section says of the removed `cudart64_12.dll`: *"an import proves DLL
+resolution, **not kernel execution** -- `_check_accel.py` does the forward-and-compare and needs
+the card, and **was not run**."*
+
+**It has now been run**, on the 3090, with `CUDA_VISIBLE_DEVICES=0`:
+
+    [OK  ] triton         v3.7.1 kernel compiled+ran
+    [OK  ] sageattention  mean|d|=0.0006 vs SDPA (INT8 approx)
+    [OK  ] flash_attn     mean|d|=0.0000 (causal 0.0000) vs SDPA
+    [SKIP] xformers       not installed (bonus)
+    RESULT: ALL GOOD
+
+So the accel stack executes kernels without the CUDA 12.6 DLL. That caveat can be replaced with
+the measurement and its date. **Ticket 13's "fix `W4A4_HANDOFF.md:22` first" becomes unambiguous:
+that document tells a reader to restore a DLL that is now measurably unnecessary.**
+
+### Closing criterion, revised
+
+Item 2's fork is now decidable with evidence: `verify_w4a4.py` does **not** print the caveat, so
+either add it or correct the sentence -- but the sentence as written is false and cannot stay.

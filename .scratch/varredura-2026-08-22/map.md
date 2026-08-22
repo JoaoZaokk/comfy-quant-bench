@@ -31,7 +31,33 @@ verifiers killed findings mostly by **correcting severity**, not by rejecting th
 
 ## Decisions so far
 
-<!-- one line per closed ticket -->
+<!-- one line per closed ticket, and per sub-question a run settled -->
+
+Janela de GPU de 2026-08-22, 3090 pinada com `CUDA_VISIBLE_DEVICES=0`, lock tomado em formato
+PowerShell **de proposito**: dado o ticket 01, esse e o unico formato que os dois leitores
+respeitam. Solto ao fim, placa de volta a 758 MiB / 0%%, sem heartbeat orfao. O ComfyUI nunca foi
+iniciado, entao a instancia zumbi que o dono avisou nao entrou na medicao.
+
+- [05](issues/05-preflight-nao-prova-kernel.md): **minha alegacao de groupsize foi refutada.** As
+  quatro combinacoes (cg 64/256 x tensor dummy/real) resolvem para `comfy_kitchen.backends.cuda`,
+  e as duas chamadas reais funcionam. O preflight 64/64 do `quant_w4a4.py` e desleixado, nao
+  errado. E `_native_probe.native_backend_ready()` **rodou pela primeira vez** e funciona.
+- [06](issues/06-verify-cobre-1-de-5.md): mismatch de groupsize **falha alto** (RMSE 1.023 contra
+  teto 0.9), nao produz PASS falso -- mas a folga e de 14%%. As partes (b) e (c) confirmadas em
+  checkpoint real: o `zimage-v2-mixed.safetensors` (115 w4a4 + 55 w4a8) e rejeitado camada por
+  camada, e a saida do `verify_w4a4.py` termina em JSON sem nenhuma ressalva.
+- [09](issues/09-medicao-sem-spread.md): **o 1,4x nao reproduz em attention.** Spread de 1,04x em
+  cinco rajadas intercaladas. Mas a primeira rajada e a outlier (1,676x contra cluster 1,610-1,625)
+  e o `attn_bench` roda exatamente uma -- entao ele erra ~3%% **na mesma direcao**, sempre. Vies,
+  nao ruido.
+- [08](issues/08-converter-core.md): a divergencia de dtype do `quant_mixed.py` e **latente, nao
+  viva** neste build -- `quantize_w4a8_int8_weight` devolve int8/fp8_e4m3fn/f32/None/f32, nada que
+  o `.numpy()` recuse.
+- [02](issues/02-claude-md-206-errado-na-direcao-insegura.md): a alegacao de que o
+  `verify_w4a4.py` imprime o que nao cobriu e **falsa, agora medida**. E a divida do proprio
+  CLAUDE.md sobre o `_check_accel.py` "was not run" esta **fechada**: rodou na 3090, Triton
+  compila, Sage `mean|d|=0.0006`, FlashAttention `0.0000`, ALL GOOD. A `cudart64_12.dll` e
+  medidamente desnecessaria, o que torna o `W4A4_HANDOFF.md:22` inequivocamente errado.
 
 ## Not yet specified
 

@@ -4,7 +4,7 @@ Type: task
 Status: ready-for-agent
 Blocked by: -
 Severity: medium
-Provenance: TRACED
+Provenance: TRACED, then EXECUTED 2026-08-22 on the 3090
 
 ## Problem
 
@@ -63,3 +63,45 @@ Closed when:
 
 `nunchaku_compare.py`'s `min` may stay if the owner wants "fastest of N" -- but then the primitive
 must offer it explicitly and the output must say which estimator it used.
+
+## Answer, partial -- EXECUTED 2026-08-22 on the RTX 3090, GPU lock held
+
+**My strong claim did not reproduce. The weak one did, and it has a mechanism.**
+
+Five interleaved bursts, `attn_bench`'s own shape (B=2 H=24 S=4096 D=64, bf16), SDPA against
+SageAttention, median of 20 CUDA-event timings per burst:
+
+    path     per-burst medians (ms)                     median   spread
+    sdpa       3.971   4.007   3.972   3.970   3.974      3.972    1.01x
+    sage       2.370   2.466   2.466   2.446   2.446      2.446    1.04x
+
+    the ratio attn_bench.py:101 prints, once per burst:
+       1.676x  1.625x  1.610x  1.623x  1.625x
+
+**The 1.4x disagreement `m_crossover`'s docstring records does not happen here.** Spread on the
+ratio is 1.04x. On this shape, on this card, `attn_bench`'s single burst is roughly right.
+
+**But look at which burst is the outlier.** It is the first: 1.676x against a 1.610-1.625 cluster.
+Five warmup iterations did not settle it. And `attn_bench` runs **exactly one burst -- the first
+one.** So it does not report a random draw from that distribution; it reports the one that is
+**systematically 3% high.** That is bias, not noise, and it is worse than noise because repeating
+the tool does not average it away.
+
+Concretely: `attn_bench` would print `1.676x`. The honest answer is `1.63x [1.61-1.68]`.
+
+### What this changes in the ticket
+
+- The framing "three of ~fifteen tools can express uncertainty" stands -- that is a count, not a
+  claim about magnitude.
+- **The magnitude claim is now bounded, not asserted**: on one DiT-like attention shape the cost
+  of one burst is ~3% and it is directional. It is NOT the 1.4x that `m_crossover` measured on GEMM
+  shapes. Do not quote 1.4x for attention.
+- The third decimal in `attn_bench.py:101` is noise under any reading. The second is the bias.
+- **The strongest argument for `_timing.compare()` is now the warmup bias, not the spread.** A
+  primitive that always discards the first burst -- or reports it separately -- fixes something a
+  human reviewer would not have thought to check.
+
+### Closing criterion, unchanged
+
+All four items stand. Add a fifth: the primitive treats the first burst as suspect and says so in
+its output.
