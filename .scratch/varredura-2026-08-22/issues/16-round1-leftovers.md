@@ -83,9 +83,14 @@ decision, still documented in the code.
 - **`tools/test_svdq_verify.py` has no owner.** The `"xb"` / `written == planned` / `fsync` /
   `finally` contract on the only writer that lacked it has **zero re-running coverage**, and
   `--limit` is no longer a cheap route to it. Needs no GPU.
-- **`_native_probe`'s recipes hardcode `bfloat16`** while `quant_w4a4` quantizes at the source
-  tensor's own dtype and `HIGH_PRECISION_DTYPES` admits `F16`/`F32`. Not a regression -- the old
-  probes hardcoded `float16` -- but not "the real kwargs the caller is about to use" either.
+- ~~`_native_probe`'s recipes hardcode `bfloat16`~~ **SETTLED 2026-08-22 on the 3090, lock held.**
+  Resolution is INVARIANT to it. `bfloat16` / `float16` / `float32` all resolve both convrot ops
+  AND `w4a8_int8_linear` to `comfy_kitchen.backends.cuda`, and all three real convrot calls
+  succeed with rel L2 against an fp32 reference of **0.1916 / 0.1896 / 0.1911**.
+  So the code stays and the **promise** was what was wrong: the module claims to probe what the
+  caller will run, and on this one axis it probes a stand-in. The literals now route through a
+  `PROBE_DTYPE` constant carrying the measurement, so the stand-in is defensible and labelled
+  instead of silent. NOT covered: one groupsize pair, three dtypes, one build.
 - **`m_crossover` on the new primitive is unverified against its own prior numbers.** Needs a GPU
   window. This is the highest-value remaining item in the whole effort: the primitive is only
   worth having if it did not change what the tool measures.

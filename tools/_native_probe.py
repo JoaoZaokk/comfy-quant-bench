@@ -123,6 +123,27 @@ def _need(config: dict, op: str, key: str):
     return config[key]
 
 
+# The probe tensors' dtype, and the one argument here that is NOT "the real kwargs the caller is
+# about to use" -- `quant_w4a4` quantizes at the source tensor's own dtype and
+# `HIGH_PRECISION_DTYPES` admits F16 and F32, while `kernel_smoke` builds `x` at `weight.dtype`.
+#
+# MEASURED 2026-08-22 on the RTX 3090, GPU lock held, cg=256 / gs=64 and 16:
+#
+#   convrot_w4a4    bfloat16 / float16 / float32  ->  all three resolve BOTH ops to
+#                   comfy_kitchen.backends.cuda, and all three real calls succeed with
+#                   rel L2 vs an fp32 reference of 0.1916 / 0.1896 / 0.1911
+#   asym_w4a8_int8  same three dtypes             ->  all resolve to backends.cuda
+#
+# So resolution is INVARIANT to this one, and the constant stays rather than being threaded
+# through every recipe for an argument nothing was measured to care about. What was wrong was the
+# promise, not the code: this module claims to probe what the caller will run, and on this axis it
+# probes a stand-in. Now it says so, with the run that makes the stand-in defensible.
+#
+# NOT covered by that run: one groupsize pair, three dtypes, one build. A fourth dtype or another
+# groupsize is unmeasured -- re-run the probe rather than assuming.
+PROBE_DTYPE = "torch.bfloat16"
+
+
 def _shape(*groupsizes: int) -> tuple[int, int]:
     """[N, K] for a probe weight, with K a multiple of every groupsize the op will use.
 
@@ -140,7 +161,7 @@ def _recipe_quantize_w4a4(tag: str, config: dict) -> tuple[str, str]:
     op = "quantize_convrot_w4a4_weight"
     cg = int(_need(config, op, "convrot_groupsize"))
     rows, cols = _shape(cg)
-    setup = f"w{tag} = torch.randn({rows}, {cols}, device='cuda', dtype=torch.bfloat16)\n"
+    setup = f"w{tag} = torch.randn({rows}, {cols}, device='cuda', dtype={PROBE_DTYPE})\n"
     return setup, (f"{{'weight': w{tag}, 'convrot_groupsize': {cg}, "
                    f"'quant_group_size': {LOADER_QUANT_GROUP_SIZE}, 'stochastic_rounding': 0}}")
 
@@ -154,8 +175,8 @@ def _recipe_w4a4_linear(tag: str, config: dict) -> tuple[str, str]:
     # `torch.empty`. Two reasons, only one of them measured: (a) it is what the conversion is
     # about to hand the kernel, and (b) it means the probe also fails when the quantizer itself
     # raises at that groupsize. Measured 2026-08-22: the call succeeds at cg=64 and cg=256.
-    setup = (f"w{tag} = torch.randn({rows}, {cols}, device='cuda', dtype=torch.bfloat16)\n"
-             f"x{tag} = torch.randn(64, {cols}, device='cuda', dtype=torch.bfloat16)\n"
+    setup = (f"w{tag} = torch.randn({rows}, {cols}, device='cuda', dtype={PROBE_DTYPE})\n"
+             f"x{tag} = torch.randn(64, {cols}, device='cuda', dtype={PROBE_DTYPE})\n"
              f"q{tag}, s{tag} = ck.quantize_convrot_w4a4_weight("
              f"w{tag}, {cg}, {LOADER_QUANT_GROUP_SIZE})\n")
     return setup, (f"{{'x': x{tag}, 'qweight': q{tag}, 'wscales': s{tag}, 'bias': None, "
@@ -171,7 +192,7 @@ def _recipe_quantize_w4a8(tag: str, config: dict) -> tuple[str, str]:
     # constant. Every copy of this probe hardcoded True.
     codebook = bool(_need(config, op, "codebook"))
     rows, cols = _shape(cg, gs)
-    setup = f"w{tag} = torch.randn({rows}, {cols}, device='cuda', dtype=torch.bfloat16)\n"
+    setup = f"w{tag} = torch.randn({rows}, {cols}, device='cuda', dtype={PROBE_DTYPE})\n"
     return setup, (f"{{'weight': w{tag}, 'group_size': {gs}, 'convrot_groupsize': {cg}, "
                    f"'symmetric': True, 'scale_dtype': torch.float8_e4m3fn, "
                    f"'codebook': {codebook}, 'codebook_tensor': None, 'stochastic_rounding': 0}}")
@@ -188,15 +209,15 @@ def _recipe_w4a8_linear(tag: str, config: dict) -> tuple[str, str]:
     rows, cols = _shape(cg, gs)
     # `symmetric=True` is not a caller knob: both writers refuse asymmetric weights outright,
     # because comfy/ops.py drops the `correction` tensor, so nothing downstream could decode one.
-    setup = (f"w{tag} = torch.randn({rows}, {cols}, device='cuda', dtype=torch.bfloat16)\n"
-             f"x{tag} = torch.randn(64, {cols}, device='cuda', dtype=torch.bfloat16)\n"
+    setup = (f"w{tag} = torch.randn({rows}, {cols}, device='cuda', dtype={PROBE_DTYPE})\n"
+             f"x{tag} = torch.randn(64, {cols}, device='cuda', dtype={PROBE_DTYPE})\n"
              f"p{tag} = ck.quantize_w4a8_int8_weight(w{tag}, group_size={gs}, "
              f"convrot_groupsize={cg}, symmetric=True, scale_dtype=torch.float8_e4m3fn, "
              f"codebook={codebook}, codebook_tensor=None, stochastic_rounding=0)\n")
     return setup, (f"{{'x': x{tag}, 'qdata': p{tag}[0], 's_rel': p{tag}[1], "
                    f"'s_channel': p{tag}[2], 'codebook': p{tag}[4], 'correction': p{tag}[3], "
                    f"'bias': None, 'group_size': {gs}, 'convrot_groupsize': {cg}, "
-                   f"'out_dtype': torch.bfloat16}}")
+                   f"'out_dtype': {PROBE_DTYPE}}}")
 
 
 def _recipe_quantize_int8_convrot(tag: str, config: dict) -> tuple[str, str]:
@@ -206,7 +227,7 @@ def _recipe_quantize_int8_convrot(tag: str, config: dict) -> tuple[str, str]:
     # this one, rather than being a second independent knob.
     cg = int(_need(config, op, "convrot_groupsize"))
     rows, cols = _shape(cg)
-    setup = f"w{tag} = torch.randn({rows}, {cols}, device='cuda', dtype=torch.bfloat16)\n"
+    setup = f"w{tag} = torch.randn({rows}, {cols}, device='cuda', dtype={PROBE_DTYPE})\n"
     return setup, f"{{'weight': w{tag}, 'group_size': {cg}}}"
 
 
@@ -226,9 +247,9 @@ def _recipe_int8_linear(tag: str, config: dict) -> tuple[str, str]:
     # that fails on the contents of stale VRAM is a flake, not a refusal.
     setup = (f"w{tag} = torch.zeros(({rows}, {cols}), device='cuda', dtype=torch.int8)\n"
              f"s{tag} = torch.zeros(({rows}, 1), device='cuda', dtype=torch.float32)\n"
-             f"x{tag} = torch.zeros((64, {cols}), device='cuda', dtype=torch.bfloat16)\n")
+             f"x{tag} = torch.zeros((64, {cols}), device='cuda', dtype={PROBE_DTYPE})\n")
     return setup, (f"{{'x': x{tag}, 'weight': w{tag}, 'weight_scale': s{tag}, 'bias': None, "
-                   f"'out_dtype': torch.bfloat16, 'convrot': {convrot}, "
+                   f"'out_dtype': {PROBE_DTYPE}, 'convrot': {convrot}, "
                    f"'convrot_groupsize': {cg}, 'input_act': None}}")
 
 

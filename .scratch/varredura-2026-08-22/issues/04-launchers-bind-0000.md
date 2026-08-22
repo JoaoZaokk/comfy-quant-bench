@@ -1,7 +1,7 @@
 # 04 - Three launchers bind ComfyUI to 0.0.0.0 with no authentication
 
 Type: task
-Status: ready-for-human
+Status: resolved
 Blocked by: -
 Severity: medium
 Provenance: EXECUTED 2026-08-22 (grepped all nine .bat)
@@ -99,3 +99,30 @@ prefer loopback on this host: bound to `0.0.0.0`, the asyncio accept loop dies w
 `OSError(22, 'The specified network name is no longer available', 64)` whenever NordLynx/NordVPN
 reconnects -- the process stays alive and the port stops accepting. Given `NordLynx` and
 `OpenVPN Data Channel Offload for NordVPN` both hold addresses above, that is not hypothetical.
+
+## Decided by the bench owner, 2026-08-22: keep `0.0.0.0`
+
+Asked and answered. The three launchers stay as they are. Nothing to change.
+
+Recorded here so nobody re-opens it, and so the next reader knows the exposure is **chosen**
+rather than overlooked:
+
+- `0.0.0.0` on this host reaches six IPv4 interfaces, and two are worth naming: `CloudflareWARP`
+  sits on the **Public** profile with Internet connectivity, and `vEthernet (WSL)` is how the ERP
+  containers reach the host.
+- ComfyUI's `/prompt` and `/upload/image` have **no authentication**. Anything that reaches the
+  port can queue work on the 3090 and write files into `ComfyUI/input`. That is a property of the
+  application and does not change with the bind.
+- Whether inbound actually arrives was **not measured** -- reading the firewall rules needs
+  elevation and returned `Access is denied`. All three profiles are Enabled with
+  `DefaultInboundAction: NotConfigured`. The settling command, for whoever elevates:
+
+      Get-NetFirewallRule -Direction Inbound -Enabled True |
+        Get-NetFirewallPortFilter | Where-Object LocalPort -in 8188,8190
+
+- Unrelated to security and still true: bound to `0.0.0.0` the asyncio accept loop dies with
+  `OSError(22, 'The specified network name is no longer available', 64)` whenever NordLynx
+  reconnects -- process alive, port deaf. Recorded in `run_nvidia_gpu_8190_loopback.bat:6-11`. If
+  the port ever goes silent while the process looks fine, this is the first thing to check.
+
+**Do not "fix" this in a later pass.** It is a decision, not a leftover.
