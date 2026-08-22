@@ -1,7 +1,7 @@
 # 06 - verify_w4a4 smoke-tests a rotation the file may not use, and covers one of five output formats
 
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: 05
 Severity: medium
 Provenance: TRACED, then EXECUTED 2026-08-22 on the 3090
@@ -117,3 +117,47 @@ which is itself worth knowing next time someone wants to test this without a 3 G
 
 All four items stand. Item 3 (corrupt a preserved tensor and see it caught) is now the *only*
 untested one, and it is the most important: on the mixed file that check does not run at all.
+
+## Closed 2026-08-22, commit `13fbd8c` -- and two regressions caught before it landed
+
+**All four criterion items met, three of them against real checkpoints rather than fixtures.**
+
+- (a) `kernel_smoke` reads `convrot_groupsize` from the layer's own metadata and raises if absent.
+- (b) `zimage-v2-mixed.safetensors` (115 `convrot_w4a4` + 55 `asym_w4a8_int8`) now returns
+  `Structural verification: PASS` and `Source comparison: PASS` -- the byte-identical
+  preserved-tensor comparison runs on it for the first time. `int8_tensorwise` and `asym_w4a8_int8`
+  each gained a Format adapter.
+- (c) A corrupted preserved byte is caught: the reviewer flipped bit 0 of byte 81703 inside
+  `cap_embedder.0.weight` on a copy and got exit 1 with exactly one error naming the right tensor.
+- (d) Every run ends with a statement of scope.
+
+**Then the GPU window, 3090, lock held.** All three formats execute, one layer each, random input
+at M=2:
+
+    int8_tensorwise   0.0127   ltx-2.5-22b-distilled-transformer-bf16_int8_convrot  1440 layers
+    asym_w4a8_int8    0.0701   zimage-v2-mixed                                        55 layers
+    convrot_w4a4      0.2333   zimage-v2-mixed                                       115 layers
+
+A liveness bound per format, not a quality ranking -- but monotone in the direction the formats
+predict, which is a cheap independent cross-check on `quant_mixed.py`'s assignment. The w4a8 and
+int8 smoke paths had **never been executed at all** before this.
+
+### Two regressions the review caught, both fixed before the commit
+
+1. **The verifier was made stricter than the runtime.** The first pass required
+   `quant_group_size` from the metadata. `ComfyUI/comfy/ops.py:1201` sets it as a **literal 64**
+   with no metadata lookup, and no converter writes it -- every produced file's per-layer config
+   is `{format, convrot_groupsize}`. So `--kernel-smoke` refused 100% of existing `convrot_w4a4`
+   checkpoints, including the invocation printed in CLAUDE.md. The agent's own `--help` text
+   admitted this and shipped a workaround flag rather than checking what the loader does. Pinned
+   to `LOADER_QUANT_GROUP_SIZE = 64` with the citation; the flag deleted.
+2. **A fail-open.** A config missing `group_size` made the `weight_s_rel` shape check return `[]`,
+   under a comment saying the missing key was "reported separately". It was reported nowhere --
+   `group_size` was required only on the GPU path, which is the path this ticket made optional. A
+   `weight_s_rel` of `[8, 3]` against a packed `[8, 128]` returned zero errors. Fails closed now.
+
+### Still not covered
+
+Numerical quality against the source model. And the caveat block that used to say the w4a8/int8
+probes had never run was **removed** rather than left standing -- a caveat that overstates teaches
+the reader to skim the block, which costs the same as one that understates.

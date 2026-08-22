@@ -1,7 +1,7 @@
 # 02 - CLAUDE.md's preflight paragraph asserts three defects the code already fixed
 
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: -
 Severity: medium
 Provenance: EXECUTED 2026-08-22 (read the current files)
@@ -110,3 +110,31 @@ that document tells a reader to restore a DLL that is now measurably unnecessary
 
 Item 2's fork is now decidable with evidence: `verify_w4a4.py` does **not** print the caveat, so
 either add it or correct the sentence -- but the sentence as written is false and cannot stay.
+
+## Closed 2026-08-22 -- all three parts in one commit, `13fbd8c`, as the criterion required
+
+1. **The preflight paragraph** now says what the three converters actually do, with the line
+   numbers deliberately absent (they had already drifted twice) and a `grep` named instead.
+2. **The `verify_w4a4.py` fork resolved in the tool's favour, not the doc's.** It now prints a
+   caveat block, EXECUTED against the real `zimage-v2-w4a4.safetensors` on the 3090 -- three lines
+   naming that one layer of 170 was smoked, that backend resolution is a registry lookup on dummy
+   tensors, and that nothing here compares images. So CLAUDE.md's *"tools print what they did not
+   cover"* became true rather than being watered down.
+3. **The WARN text.** `check_full_precision_matrix_mult` carries "not confirmed by execution" in
+   the message itself again. The *other* audit-derived check turned out not to need it:
+   `check_lora_over_quantized`'s hypothesis was measured on 2026-08-19 and **did not reproduce**
+   (680/680 dispatches native with the LoRA in effect), so it is now a WARN about what is still
+   genuinely unknown -- accuracy, not dispatch. CLAUDE.md's sentence about "two audit-derived
+   checks" was corrected to say that, since the label is supposed to change when a measurement
+   arrives.
+
+### And a fourth thing this ticket did not ask for, which is the most important one
+
+CLAUDE.md's environment section said the `cudart64_12.dll` was **gone**, citing
+`find python_embeded -iname "cudart64*.dll"`. That pattern cannot match a name ending in
+`.disabled`. The file is at `torch/lib/cudart64_12.dll.disabled`, 556,544 bytes, sha256
+`d954ca54...cf9dad` -- renamed, not deleted, which `W4A4_PROGRESS.md:339-340` already recorded
+from a run. Two documents in this repo carried the false claim, both citing the same blind
+command, and one of them is the file that states the rule *absence in a grep is never absence in
+the system*. Both corrected; the sha256 restored, because the file is still sitting there
+unlabelled and the hash is the only thing that identifies it.

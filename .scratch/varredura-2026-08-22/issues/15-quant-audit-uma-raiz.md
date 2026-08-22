@@ -1,7 +1,7 @@
 # 15 - quant_audit covers one of the two model roots, so the checked-in inventory is missing 409 GiB
 
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: -
 Severity: medium
 Provenance: OBSERVED 2026-08-22
@@ -50,3 +50,33 @@ Closed when:
 
 Item 3 alone is what stops this recurring: an inventory that names its own scope cannot be misread as
 complete.
+
+## Closed 2026-08-22, commit `13fbd8c` -- with one refusal restored
+
+Multi-root, roots read from `extra_model_paths.yaml` by default, every record carrying its root,
+and the output stating the roots it covered with a count per root. Item 3 -- an inventory that
+names its own scope -- is the one that stops this recurring, and it is done.
+
+### The regression: a hard refusal became a warning
+
+Going multi-root replaced `if not models_root.is_dir(): raise SystemExit(...)` with a check that
+fired only when **every** root was missing. So a typo'd `--models-root` landed in
+`roots_declared_but_missing` and the run continued -- overwriting `quantization_inventory.json`,
+the default output and a tracked artifact, with a partial walk, at exit 0. On a default run with
+the D: mount offline that regenerates exactly the 623-of-1030-GiB single-root inventory this
+ticket exists to eliminate.
+
+Restored, and the two cases separated, because they are not the same shape:
+
+- **a path the operator named on the command line and that does not exist** -> refuse. They asked
+  for it by name; continuing silently substitutes a different question.
+- **a root declared in the YAML that is not there** -> warn, and record it in stdout, the JSON and
+  the markdown. The D: mount may simply be offline.
+
+Verified: `--models-root <typo>` alongside a good root now exits 1 with the path named, and writes
+no JSON.
+
+### Still open
+
+Criterion item 4 -- `grep -c "ComfyUI-Models" quantization_inventory.json` above zero -- needs a
+real regeneration over 1.03 TiB, which was not run. The tool was exercised on a synthetic tree.

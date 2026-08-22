@@ -38,6 +38,42 @@ PowerShell **de proposito**: dado o ticket 01, esse e o unico formato que os doi
 respeitam. Solto ao fim, placa de volta a 758 MiB / 0%%, sem heartbeat orfao. O ComfyUI nunca foi
 iniciado, entao a instancia zumbi que o dono avisou nao entrou na medicao.
 
+### Rodada 1, 2026-08-22 -- 10 de 16 fechados
+
+Oito tickets, oito agentes particionados por arquivo, cada um jogado num revisor adversarial.
+**Todos os oito vereditos voltaram SHIP WITH FIXES**, e essa uniformidade era exatamente o que
+desconfiar: rodei as seis suites eu mesmo e conferi os diffs contra os criterios, nao contra os
+relatorios.
+
+**Cinco correcoes foram regressoes que a propria rodada introduziu**, e quatro delas nas categorias
+que este repo define como defeito:
+
+- `quant_mixed` trocou comparacao de basename por sha256 do header, alegando que "o header sozinho
+  identifica um checkpoint". Verdade sobre layout, falso sobre conteudo: **quatro grupos colidindo,
+  nove arquivos** -- entre eles os tres Z-Image que o `--foreign-analysis` nomeia como modelos
+  diferentes, as duas metades de um par Wan, e os dois passes de uma conversao. Recusa virou
+  aceitacao. O digest agora amostra o corpo (45/45 distintos) e e ORado com o basename, entao o
+  sinal mais fraco so pode acrescentar recusa.
+- `verify_w4a4` passou a exigir `quant_group_size` do metadata. `ComfyUI/comfy/ops.py:1201` e um
+  **literal 64** -- o verificador ficou mais estrito que o runtime que ele verifica e recusou 100%
+  dos checkpoints existentes, inclusive o comando impresso no CLAUDE.md.
+- `quant_audit` transformou recusa em aviso: um `--models-root` com typo sobrescrevia o inventario
+  rastreado com uma varredura parcial e saia 0.
+- `comfy-quant-preflight` listava so `clip_name1` do `DualCLIPLoader`, entao um encoder no slot 2
+  passava sem check **com a classe reportada como coberta**.
+- E a `cudart64_12.dll` **nao sumiu**: esta em `torch/lib/cudart64_12.dll.disabled`, 556.544 bytes,
+  sha256 `d954ca54...cf9dad`. O comando citado como prova nos dois documentos nao consegue casar um
+  nome terminado em `.disabled`. Um deles e o arquivo que enuncia a regra *ausencia num grep nunca
+  vira ausencia no sistema*.
+
+Janela de GPU depois disso: **os tres formatos executam**, primeira vez para w4a8 e int8 --
+`int8_tensorwise` 0,0127, `asym_w4a8_int8` 0,0701, `convrot_w4a4` 0,2333, um layer cada, entrada
+aleatoria em M=2. Escada monotona na direcao que os formatos preveem, o que e uma conferencia
+independente barata sobre a atribuicao do `quant_mixed`.
+
+Abertos: `09` (primitiva de medicao) e `10` (BenchGuard, que depende dela), `05` (consolidar seis
+probes num), `04` e `08` (decisao do dono), e `16` (o que os revisores pediram e eu nao fiz).
+
 - [01](issues/01-lock-ps-rouba-lock-python.md) **RESOLVIDO**: o conserto foi no lado Python, nao no PowerShell -- mudar o `.ps1` para JSON teria reproduzido o mesmo bug apontando para a sessao irma, que pode estar rodando codigo velho. `key=value` ja tinha dois leitores; agora tem tres. `tools/test_gpu_lock.py`, 23 checks, 23 passaram, nas duas direcoes. Junto foram CACHE-02 (pid comparado como substring) e CACHE-03 (heartbeat orfao sobrescrevia lock alheio para sempre).
 - [05](issues/05-preflight-nao-prova-kernel.md): **minha alegacao de groupsize foi refutada.** As
   quatro combinacoes (cg 64/256 x tensor dummy/real) resolvem para `comfy_kitchen.backends.cuda`,

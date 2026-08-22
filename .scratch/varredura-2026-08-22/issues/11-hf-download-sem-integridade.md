@@ -1,7 +1,7 @@
 # 11 - hf_parallel_get resumes across restarts and verifies nothing but byte count
 
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: -
 Severity: medium
 Provenance: TRACED
@@ -52,3 +52,24 @@ Closed when:
 5. the signed URL is redacted from exception text.
 
 Item 3 is the one that closes the ticket on its own if the others slip.
+
+## Closed 2026-08-22, commit `13fbd8c`
+
+The criterion items are met, including item 3 -- the one that closes this ticket on its own:
+verification runs **before** the `.parts.json` sidecar is removed, so a failed check leaves the
+resume state intact rather than forcing a fresh multi-GiB download.
+
+The redirect guard is now `urlsplit().hostname` against an exact host set. The reviewer hunted
+specifically for anything the new guard *admits* that the old prefix test refused, and found two:
+`https://HUGGINGFACE.CO/x` and `https://user:pw@huggingface.co/x`. Both resolve to the genuine
+`huggingface.co`, so the bearer still reaches only the host it was always meant for.
+
+One correction applied after review, and it is a house-rule fix rather than a criterion one: two
+comments asserted ETag semantics **as fact** -- that an LFS blob's ETag is the sha256, that a plain
+git blob's is the sha1 of `blob <len>\0<content>`, that `x-linked-etag` off huggingface.co carries
+the content hash. Nothing in the test suite makes a network request, so none of that has ever been
+run. Both now carry "traced from the spec, not confirmed against a live response" inline, because
+the report is gone next session and the file is what survives.
+
+Two items carried to ticket 16: the throughput display oscillation, and the no-digest fail-open
+where `fetch_ltx25`'s summary table prints `OK` for a file nothing verified.

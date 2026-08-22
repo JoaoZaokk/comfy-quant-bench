@@ -1,7 +1,7 @@
 # 07 - svdq_to_bf16 writes 700 lines of recovered weights with none of the atomic-write contract
 
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: -
 Severity: medium
 Provenance: TRACED (direct reading of the write path)
@@ -50,3 +50,19 @@ Closed when:
 2. `--limit` either refuses to write at all (smoke mode prints and exits) or writes a file whose
    metadata says it is partial and which `verify_*` rejects;
 3. an artificially truncated write -- inject a short tensor -- raises instead of producing a file.
+
+## Closed 2026-08-22, commit `13fbd8c`
+
+All three criterion items met, and the reviewer produced more executed evidence than the
+implementer did.
+
+The write path now matches the contract the other six writers already obey -- `"xb"`,
+stale-partial refusal, bytes-written == bytes-planned, `flush` + `fsync`, `os.replace`, and a
+`finally` that unlinks. A deliberately truncated write raises instead of producing a file.
+
+One improvement beyond exit-code cosmetics: `SystemExit` -> `RuntimeError` at `:520`. The old
+`SystemExit` fired inside `open(partial, "wb")` with no `finally`, so it left the partial on disk
+-- the failure path was itself creating the stale partial the next run would clobber.
+
+Two smaller items the reviewer raised (an already-false line-number citation, and a coverage
+regression) are carried to ticket 16.

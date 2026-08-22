@@ -1,7 +1,7 @@
 # 13 - Nine documents carry numbers, versions or ticket counts that no longer match the tree
 
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: 02
 Severity: low
 Provenance: TRACED
@@ -41,3 +41,35 @@ that produces it**, following the precedent CLAUDE.md already set for the tracke
 written down a second time.
 
 Specifically: `W4A4_HANDOFF.md:22` no longer tells anyone to restore `cudart64_12.dll`.
+
+## Closed 2026-08-22, commit `13fbd8c` -- and the priority item was fixed the wrong way first
+
+Counts recounted or replaced with the command that produces them, following the precedent CLAUDE.md
+set for the tracked-file count. The two UPSTREAM_REPORT files carry the installed comfy-kitchen
+version, read from site-packages.
+
+### The `W4A4_HANDOFF.md:22` item, and why it is worth reading twice
+
+It was the priority item, and the first fix **replaced one false statement with another**. The new
+text read *"OBSOLETE. The file is gone, and it must not be put back"*, evidenced by
+`find python_embeded -iname "cudart64*.dll"` returning only `cudart64_13.dll`.
+
+**That pattern cannot match a name ending in `.disabled`.** The file is at
+`torch/lib/cudart64_12.dll.disabled`, 556,544 bytes, sha256 `d954ca54...cf9dad`, byte-identical to
+the copy in the unrelated Ultravox venv. It was **renamed, not deleted** -- which
+`W4A4_PROGRESS.md:339-340` had already recorded, from a run, in this same repository.
+
+Three things follow, and they are the content of this ticket rather than a footnote to it:
+
+1. The evidence command was **blind by construction**, and nobody checked that it could see what
+   it was being used to rule out. This is `arquivo-plausivel-nao-e-o-caminho` and CLAUDE.md's own
+   rule, broken in the two documents that state it.
+2. The correct fact was **already written down here**, executed, and the change overwrote it
+   without reconciling the two.
+3. The sha256 was deleted on the reasoning that a hash under a "do not restore" heading is an
+   invitation. Backwards: restoring is a one-command rename either way, and the hash was the only
+   thing identifying the unlabelled artifact still sitting in `torch/lib/`. Restored.
+
+The runtime advice was right the whole time -- Windows will not load a `.dll.disabled`, and
+`_check_accel.py` returns ALL GOOD on the 3090 with it disabled. It was the **record** that was
+wrong, which is the harder kind to notice.

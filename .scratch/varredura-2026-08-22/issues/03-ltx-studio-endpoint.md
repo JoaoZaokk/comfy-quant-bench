@@ -1,7 +1,7 @@
 # 03 - ltx_studio serves any file by URL, wedges on a bad POST, and takes no origin check
 
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: -
 Severity: medium
 Provenance: TRACED, with one item needing a run
@@ -60,3 +60,31 @@ ever spawned.
 collide. `CACHE-08`: the `cortiq` child is never owned or terminated, so closing the server orphans a
 GPU process -- and CLAUDE.md already records a 20,578 MiB orphan on this bench. `EP-15`: `JOB.outdir`
 is read outside the lock in both file routes.
+
+## Closed 2026-08-22, commit `13fbd8c`
+
+All four criterion items met and independently re-run by the reviewer with the real
+`C:/Windows/System32/curl.exe` against a live server.
+
+- **Traversal:** eleven escape names refused, including `C:/Windows/win.ini`,
+  `C:\Windows\win.ini`, `\\server\share\x.ppm`, `frame_0000.ppm:$DATA` and a NUL-bearing name;
+  seven traversal targets 404 over HTTP while a legitimate frame returns 200; `?v=2` still 200,
+  so the query strip works. The premise was confirmed separately by execution:
+  `Path(r'F:/cortiq/studio/run_120000') / 'C:/Windows/win.ini'` evaluates to `C:\Windows\win.ini`
+  with `.is_file() == True` -- on Windows a drive letter needs no `..` to escape, which is why the
+  fix rejects separators and colons outright rather than reaching for `unquote()`.
+- **The wedge:** `RenderRequest.parse` runs before any state is touched, and `Job.start` clears
+  `running` on `BaseException`, not `RuntimeError` -- the wedge was a `KeyError` and the next one
+  will be something else. Five malformed bodies returned 400 and the `cortiq` spawn recorder was
+  called **zero** times, so the refusal happens before a child could exist.
+- **Origin:** `cross-site` / `same-site` / nonsense -> 403; `Host: evil.example` and bare
+  `127.0.0.1` -> 403.
+
+One correction applied after review: `Host` was compared case-sensitively, so
+`http://LOCALHOST:8123` returned 403 on render while the page itself loaded. A control that reads
+as a broken button is one somebody switches off. Casefolded.
+
+One item is a **decision, not a defect**, and it is the owner's: an *absent* `Sec-Fetch-Site` is
+allowed. Rejecting it would make criterion 4's plain-`curl` `POST {}` return 403 instead of the 400
+the criterion asks for, so items 3 and 4 only reconcile if absent means allowed. Carried to
+ticket 16.

@@ -1,7 +1,7 @@
 # 14 - comfy-quant-preflight covers four loader widgets and fails open on every upstream rename
 
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: -
 Severity: low
 Provenance: TRACED
@@ -36,3 +36,23 @@ Closed when:
    silent pass;
 4. `checks.py:148` carries "not confirmed by execution" in the message itself, matching ticket 02;
 5. `test_checks.py` gains a case per fail-open path, asserting the WARN is emitted.
+
+## Closed 2026-08-22, commit `13fbd8c`
+
+Every fail-open in the ticket closed: the package states its own scope on every run, no `except`
+swallows without a WARN naming the exception, an unresolvable upstream symbol produces a WARN that
+says the check did not run, and `test_checks.py` gained a case per path (30 PASS, 0 FAIL).
+
+Criterion item 4 met: `check_full_precision_matrix_mult` carries "not confirmed by execution" in
+the message itself and states the consequence as *would*, not *does*. The docstring says why, and
+it is the general rule rather than a note about this check: *the person who reads it in the UI does
+not have this docstring in front of them, and a caveat that lives only next to the source is a
+caveat that does not travel.*
+
+One correction applied after review, and the change had **created** it: `DualCLIPLoader` has two
+file widgets and only `clip_name1` was listed, so a quantized encoder in slot 2 went unchecked
+while the class was reported as covered. A fail-open the coverage line actively concealed, which
+is worse than one it merely misses. Second entry added.
+
+Carried to ticket 16: `scope_line` should name unchecked **widgets**, not unchecked classes. That
+is the general form of the same bug, and the general form is what stops the next one.

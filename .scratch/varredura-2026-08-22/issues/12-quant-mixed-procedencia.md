@@ -1,7 +1,7 @@
 # 12 - quant_mixed matches calibration to checkpoint by basename, and downcasts the reservoir it was told not to
 
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: -
 Severity: medium
 Provenance: TRACED
@@ -45,3 +45,40 @@ Closed when:
    participates in a comparison.
 
 Item 5 is the one that matters most and is the cheapest.
+
+## Closed 2026-08-22, commit `13fbd8c` -- with the round's worst regression caught and reversed
+
+Items 2, 3, 4 and 5 met and independently verified. Item 5 -- a `nan`/`inf` in any per-layer error
+metric is a hard failure naming the layer -- is guarded at production *and* at ingestion *and*
+again on the merged path before the decision loop.
+
+### Item 1 shipped a guard WEAKER than the one it replaced. Measured.
+
+The basename comparison was replaced by a sha256 of the safetensors header, on the stated
+reasoning that *"the header alone identifies a checkpoint -- every tensor name, dtype, shape and
+offset is in it"*. Every clause true; the conclusion false. The header describes the **layout**,
+and two models of one architecture have identical layouts and different weights.
+
+Over the 45 `.safetensors` in `ComfyUI/models/diffusion_models`, `ComfyUI/models/unet` and
+`D:/ComfyUI-Models/diffusion_models` -- **four colliding groups covering nine files**, each group
+also identical in byte size:
+
+    e36743d8e80c9cef   beyond-reality-zimage-v2_native / z_image_de_turbo_v1_bf16 / z_image_turbo_bf16
+    bced9dae1b9a4c0c   beyond-reality-zimage-v2_bf16 / beyond-reality-recovered-bf16
+    c78d89e7215f3a98   void_pass2 / void_pass1
+    a904e26816259491   wan2.2_i2v_high_noise_14B_fp8_scaled / wan2.2_i2v_low_noise_14B_fp8_scaled
+
+The first group is *the three checkpoints `--foreign-analysis`'s own help text names as different
+models*. The third is two passes of one conversion. The fourth is the two halves of a Wan pair.
+Every basename differs -- so the check being replaced **refused** these pairings and the new one
+**accepted** them, silently, on the model family this bench actually converts.
+
+**Fixed.** The digest samples the body: 8 windows of 256 KiB spread across the data block, 2 MiB
+total, still O(1) in model size. 45 files, 45 distinct digests, zero collisions. And `foreign` is
+now `digest differs OR basename differs`, so the weaker signal can only ever add a refusal, never
+remove one. Field renamed `source_identity_sha256` -- a field called `source_header_sha256` that
+is not a header sha256 is how the next reader concludes the wrong thing.
+
+A regression test was added, because the existing one could not see this: it varies the tensor
+SHAPE, so the two files get different headers and a header-only digest separates them. The new
+case builds two 4 KiB files with **byte-identical headers** and different weights.

@@ -52,9 +52,15 @@ is gone by then.
   repeats interleaved and prints the ratio's own min-max, because a two-decimal number from one
   burst claims a precision this bench does not have. Anything quoted from here needs a repeat
   behind it and the spread beside it.
-- An unverified finding stays labelled unverified all the way into the file that acts on it. The
-  preflight package's two audit-derived checks are WARN and say "not confirmed by execution" in
-  the message itself, because a check that blocks on a hypothesis teaches people to disable checks.
+- An unverified finding stays labelled unverified all the way into the file that acts on it, and
+  **the label changes when the measurement arrives** — in both directions. The preflight package
+  started with two audit-derived WARNs. `check_full_precision_matrix_mult` still says "not
+  confirmed by execution" in the message itself, because a check that blocks on a hypothesis
+  teaches people to disable checks. `check_lora_over_quantized` no longer says it: the hypothesis
+  was **measured on 2026-08-19 and did not reproduce** — 680 of 680 dispatches stayed on the
+  native kernel with the LoRA applied and in effect (latent norm moved 747.06 → 728.99, so it was
+  genuinely applied). It is still a WARN, narrowed to what is actually still unknown: whether the
+  delta costs *accuracy* once the weight is already 4-bit, which nobody asked.
 - **No upstream PR from a trace.** Only from something run here. `AUDITORIA_2026-08-18.md` lists
   three PR candidates; only one has been proved, and the other two wait for the GPU.
 
