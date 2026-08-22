@@ -19,8 +19,13 @@ from pathlib import Path
 
 PORTABLE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PORTABLE_ROOT / "ComfyUI"))
+# The embedded interpreter's `python313._pth` suppresses the script-directory entry, so the two
+# sibling imports below need this (`m_crossover.py:49-52`).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import torch  # noqa: E402
+
+from _timing import compare, cuda_event_ms, provenance  # noqa: E402
 
 DTYPES = {"I8": torch.int8, "F32": torch.float32, "BF16": torch.bfloat16, "F16": torch.float16}
 
@@ -110,23 +115,15 @@ def build_module(model: Path):
     return module, layer, packed_columns * 2
 
 
-def timed(fn, iters=30, warmup=10):
-    for _ in range(warmup):
-        fn()
-    torch.cuda.synchronize()
-    start, end = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
-    start.record()
-    for _ in range(iters):
-        fn()
-    end.record()
-    torch.cuda.synchronize()
-    return start.elapsed_time(end) / iters
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("model", type=Path)
     parser.add_argument("--tokens", type=int, default=4096)
+    parser.add_argument("--iters", type=int, default=30,
+                        help="timed iterations inside one burst")
+    parser.add_argument("--repeats", type=int, default=3,
+                        help="interleaved bursts KEPT; one more is run and discarded as "
+                             "warm-up-biased")
     args = parser.parse_args()
 
     install_custom_op()
@@ -138,26 +135,47 @@ def main() -> int:
     with torch.no_grad():
         eager_out = module(x)
         torch.cuda.synchronize()
-        eager_ms = timed(lambda: module(x))
     print(f"layer {layer}  shape {tuple(x.shape)}")
-    print(f"eager     : {eager_ms:.3f} ms  out {tuple(eager_out.shape)} {eager_out.dtype}")
+    print(f"eager     : out {tuple(eager_out.shape)} {eager_out.dtype}")
 
     torch._dynamo.reset()
+    compiled = None
     try:
         compiled = torch.compile(module)
         with torch.no_grad():
             compiled_out = compiled(x)
             torch.cuda.synchronize()
-            compiled_ms = timed(lambda: compiled(x))
         diff = (compiled_out.float() - eager_out.float()).abs().max().item()
-        print(f"compiled  : {compiled_ms:.3f} ms  speedup {eager_ms / compiled_ms:.2f}x  max_abs_diff {diff:.6f}")
-        print("RESULT: torch.compile WORKS on ConvRot W4A4 once the kernel is an opaque custom op")
     except Exception as error:
         print(f"compiled  : STILL FAILS -> {type(error).__name__}")
         print("".join(traceback.format_exception_only(type(error), error))[:1200])
         print("RESULT: the opaque custom op alone is not sufficient")
+        return 0
+
+    # Interleaved, and only after the compilation is finished. Timing eager, then compiling, then
+    # timing compiled puts an Inductor build -- minutes of CPU and a busy card -- between the two
+    # halves of the comparison, so any clock or allocator drift over it lands entirely on the
+    # compiled arm and reads as a speedup. The old form also took the mean of a single CUDA-event
+    # span, which cannot express a spread at all.
+    with torch.no_grad():
+        result = compare({"eager": lambda: module(x), "compiled": lambda: compiled(x)},
+                         iters=args.iters, repeats=args.repeats, baseline="eager",
+                         timer=cuda_event_ms, owner="comfy_portable:compile_w4a4_fix_poc")
+    print(f"eager     : {result.times['eager']:.3f} ms")
+    print(f"compiled  : {result.times['compiled']:.3f} ms  "
+          f"speedup {result.ratios['compiled']}  max_abs_diff {diff:.6f}")
+    print("RESULT: torch.compile WORKS on ConvRot W4A4 once the kernel is an opaque custom op")
+    print(f"\n{provenance(result)}")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # Held across the load and the Inductor compilation as well as the timing; `compare()` would
+    # take it anyway, but only around the bursts, and the compilation is the longer occupation.
+    from _bench_guard import BenchGuard
+
+    with BenchGuard("comfy_portable:compile_w4a4_fix_poc") as _guard:
+        if _guard.refused:
+            print(_guard.refused)
+            raise SystemExit(1)
+        raise SystemExit(main())

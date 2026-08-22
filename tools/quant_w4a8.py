@@ -28,13 +28,16 @@ import os
 import re
 import shutil
 import struct
-import subprocess
 import sys
 import time
 from pathlib import Path
 
 import psutil
 import torch
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _native_probe import native_backend_ready  # noqa: E402
 
 PROFILE_PATTERNS = {
     # Derived from Lightricks' own ltx-2.5-...-comfy-int8-convrot checkpoint rather than guessed:
@@ -94,24 +97,26 @@ def human_size(size: int) -> str:
     raise AssertionError
 
 
-def normal_comfy_backend(portable_root: Path) -> dict:
-    code = f"""
-import json, sys, torch, comfy_kitchen as ck
-sys.path.insert(0, {str(portable_root / 'ComfyUI')!r})
-import comfy.quant_ops
-w = torch.empty((64, 256), device='cuda', dtype=torch.bfloat16)
-impl = ck.registry.get_implementation('quantize_w4a8_int8_weight', kwargs={{
-    'weight': w, 'group_size': 16, 'convrot_groupsize': 256, 'symmetric': True,
-    'scale_dtype': torch.float8_e4m3fn, 'codebook': True, 'codebook_tensor': None,
-    'stochastic_rounding': 0}})
-print(json.dumps({{'quantizer': impl.__module__, 'backends': ck.list_backends()}}))
-"""
-    result = subprocess.run([sys.executable, "-c", code], cwd=portable_root, text=True,
-                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
-    payload = json.loads(result.stdout.strip().splitlines()[-1])
-    payload["warning"] = result.stderr.strip()
-    payload["native_ready"] = ".backends.cuda" in payload["quantizer"]
-    return payload
+def w4a8_probe_ops(args: argparse.Namespace) -> dict:
+    """The op this converter dispatches, under the flags this run is about to use.
+
+    One op, not two, and deliberately unchanged: this file has only ever preflighted
+    `quantize_w4a8_int8_weight`, and widening it to `w4a8_int8_linear` -- the op ComfyUI will
+    execute the resulting checkpoint with -- is a new refusal, outside ticket 05's closing
+    criterion, which is about *which configuration* each probe asks about and not about which ops.
+    Flagged rather than done. `quant_mixed.py` does check all four, so the gap is visible.
+
+    What did change: `group_size`, `convrot_groupsize` and `codebook` now come from the caller.
+    The old private copy hardcoded 16 / 256 / True, so `--group-size 32`, `--convrot-groupsize 64`
+    and `--no-codebook` were all preflighted as though they had not been passed.
+    """
+    return {
+        "quantize_w4a8_int8_weight": {
+            "group_size": args.group_size,
+            "convrot_groupsize": args.convrot_groupsize,
+            "codebook": not args.no_codebook,
+        },
+    }
 
 
 def read_header(path: Path) -> tuple[dict, dict[str, str]]:
@@ -264,9 +269,11 @@ def main() -> int:
             print(f"  ... {len(selected) - 10} more")
         return 0
 
-    backend = normal_comfy_backend(portable_root)
+    backend = native_backend_ready(portable_root, w4a8_probe_ops(args))
     if not backend["native_ready"]:
-        raise SystemExit(f"Refusing: normal ComfyUI resolves W4A8 to {backend['quantizer']}, not a CUDA backend")
+        raise SystemExit("Refusing: normal ComfyUI resolves W4A8 to "
+                         f"{backend['resolved']['quantize_w4a8_int8_weight']}, "
+                         "not a CUDA backend")
     if not torch.cuda.is_available():
         raise SystemExit("CUDA is unavailable")
 
@@ -397,7 +404,8 @@ def main() -> int:
         "source": str(source), "source_size": source.stat().st_size,
         "output": str(output), "output_size": output.stat().st_size,
         "architecture": profile, "quantization": "asym_w4a8_int8",
-        "layout": "AsymW4A8Int8Layout", "backend": backend["quantizer"],
+        "layout": "AsymW4A8Int8Layout",
+        "backend": backend["resolved"]["quantize_w4a8_int8_weight"],
         "group_size": args.group_size, "convrot_groupsize": args.convrot_groupsize,
         "symmetric": True, "codebook": not args.no_codebook,
         "quantized_tensors": len(selected), "preserved_tensors": len(header) - len(selected),

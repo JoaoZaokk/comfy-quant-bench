@@ -17,6 +17,12 @@ What landed is checked against a content digest from Hugging Face -- the API's `
 the file is an LFS blob, otherwise the `ETag` -- and that check runs *before* the `.parts.json`
 sidecar is removed, so a failure leaves the resume state on disk.
 
+When Hugging Face offers neither, the file is kept and the run still returns 0. That is on
+purpose, but it means the return code alone cannot tell a verified file from an unverified one:
+pass a dict as `download(..., outcome={})` and it comes back carrying `verified` and a
+`verification` phrase, so a caller's summary table can render the difference instead of printing
+one `OK` for both.
+
     python tools/hf_parallel_get.py --repo Lightricks/LTX-2.5 \\
         --file diffusion_models/ltx-2.5-22b-dev-transformer-bf16.safetensors \\
         --dest D:/ComfyUI-Models --connections 8
@@ -218,6 +224,11 @@ class Source:
 def fetch_chunk(source: Source, dest: Path, index: int, start: int, end: int,
                 retries: int, progress: dict, lock: threading.Lock) -> int:
     for attempt in range(retries):
+        # Clear this chunk's live counter before the attempt rather than at its first block: a
+        # retry sleeps up to 30 s, and without this the abandoned attempt's bytes sit in the
+        # readout for that whole sleep, claiming progress that is being refetched.
+        with lock:
+            progress["inflight"][index] = 0
         try:
             url = source.resolve()
             headers = {"Range": f"bytes={start}-{end}"}
@@ -239,18 +250,27 @@ def fetch_chunk(source: Source, dest: Path, index: int, start: int, end: int,
                         for block in response.iter_bytes(1024 * 1024):
                             handle.write(block)
                             written += len(block)
+                            # `written` counts this attempt only, and the entry is *assigned*,
+                            # never added to, so a retry of the same range replaces its own
+                            # earlier figure instead of stacking on it. That stacking is what
+                            # the deleted `partial_<index>` bookkeeping got wrong; deleting it
+                            # fixed the double count and left the readout with nothing to say
+                            # between chunk completions -- see the progress line in download().
+                            with lock:
+                                progress["inflight"][index] = written
             expected = end - start + 1
             if written != expected:
                 raise OSError(f"chunk {index}: got {written} bytes, expected {expected}")
-            # Count bytes only once the chunk is whole. The old code added every block as it
-            # arrived and tried to undo that with a `partial_<index>` key nothing ever wrote to,
-            # so a retried chunk's abandoned first attempt stayed in the total and the MiB/s and
-            # ETA came out optimistic by exactly the amount that had to be fetched twice.
+            # Whole chunks move from `inflight` to `done` in one acquisition, so a reader under
+            # the same lock never sees the bytes twice and never sees them missing.
             with lock:
                 progress["done"] += written
+                progress["inflight"].pop(index, None)
             return index
         except Exception as error:
             if attempt == retries - 1:
+                with lock:
+                    progress["inflight"].pop(index, None)
                 raise RuntimeError(redact(f"chunk {index}: {type(error).__name__}: "
                                           f"{error}")) from None
             time.sleep(min(2 ** attempt, 30))
@@ -259,7 +279,7 @@ def fetch_chunk(source: Source, dest: Path, index: int, start: int, end: int,
 
 def download(repo: str, file: str, dest_dir: Path, *, revision: str = "main",
             connections: int = 8, chunk_mb: int = 256, retries: int = 6,
-            expected_size: int | None = None) -> int:
+            expected_size: int | None = None, outcome: dict | None = None) -> int:
     """Library entry point for the CLI above -- same body `main()` used to run inline against
     `args.*`, now against explicit parameters so a caller (e.g. `fetch_ltx25.py`) can import this
     instead of shelling out. Returns 0 on success, 130 if interrupted (matching the CLI's own exit
@@ -267,7 +287,22 @@ def download(repo: str, file: str, dest_dir: Path, *, revision: str = "main",
     here (see the `except KeyboardInterrupt` below, unchanged from the original `main()`).
     Raises SystemExit on a server/expected-size mismatch, a short final file, or a digest that
     disagrees with Hugging Face's -- callers must catch `SystemExit`, not just `Exception`.
+
+    Pass a dict as `outcome` to be told **whether the content was verified**, which the return
+    code does not carry: rc 0 covers both "sha256 matched" and "Hugging Face offered no digest,
+    so only the byte count was checked". Keys, always present once the call returns:
+    `verified` (bool), `verification` (a phrase for a summary line), `bytes`, `path`.
     """
+    # This record exists because a caller that prints OK on rc == 0 prints OK for a file nothing
+    # verified: the WARNING below is loud in *this* function's output and invisible in the
+    # caller's summary table. It is deliberately not a refusal and not a new return code --
+    # whether an unverified download is acceptable is the owner's policy, and a new non-zero exit
+    # would turn every `if rc:` in a wrapper into a failure for a file that is on disk and
+    # probably fine. The fail-open stays open; it just stops being silent one level up.
+    report = outcome if outcome is not None else {}
+    report.update({"verified": False, "verification": "did not finish", "bytes": None,
+                   "path": None})
+
     dest = (dest_dir / file).resolve()
     dest.parent.mkdir(parents=True, exist_ok=True)
     state_path = dest.with_suffix(dest.suffix + ".parts.json")
@@ -277,6 +312,10 @@ def download(repo: str, file: str, dest_dir: Path, *, revision: str = "main",
     if expected_size and total != expected_size:
         raise SystemExit(f"server reports {total} bytes, expected {expected_size}")
     if dest.is_file() and dest.stat().st_size == total and not state_path.exists():
+        # This path has never hashed anything -- it returns on size alone, and did so before the
+        # digest check existed. Saying "verified" here would be the same lie one level down.
+        report.update({"verification": "not rechecked (already present at the expected size)",
+                       "bytes": total, "path": str(dest)})
         print(f"already complete: {dest} ({human(total)})")
         return 0
 
@@ -312,7 +351,9 @@ def download(repo: str, file: str, dest_dir: Path, *, revision: str = "main",
     print(f"  {human(total)} in {len(ranges)} chunks of {chunk_mb} MiB, "
           f"{len(done)} already done, {connections} connections\n", flush=True)
 
-    progress = {"done": 0}
+    # `done` is whole chunks; `inflight` is {chunk index: bytes of the current attempt already
+    # written to disk}. Both are needed for a rate that does not lie -- see the progress line.
+    progress: dict = {"done": 0, "inflight": {}}
     lock = threading.Lock()
     started = time.perf_counter()
     completed = len(done)
@@ -331,13 +372,30 @@ def download(repo: str, file: str, dest_dir: Path, *, revision: str = "main",
                 completed += 1
                 save()
                 elapsed = time.perf_counter() - started
-                rate = progress["done"] / elapsed / 1024**2 if elapsed else 0
-                remaining = (len(ranges) - completed) * chunk
+                # Counting only whole chunks made this number swing about 2x between prints:
+                # with 8 connections and 256 MiB chunks, up to 2 GiB is on disk and uncounted at
+                # any moment, so the rate sagged as `elapsed` grew and jumped back on each
+                # completion. (0.53x-1.00x, reported by the round-1 review of ticket 11; not
+                # re-measured here, since the shape needs a real multi-GiB fetch on the link.)
+                # In-flight bytes are already written to disk, so adding them measures bytes
+                # landed rather than bytes promised.
+                #
+                # Under the lock because `sum(...values())` iterates: a worker inserting a new
+                # chunk key mid-iteration raises "dictionary changed size during iteration",
+                # which would kill the download from inside its own progress line.
+                with lock:
+                    inflight = sum(progress["inflight"].values())
+                    landed = progress["done"] + inflight
+                rate = landed / elapsed / 1024**2 if elapsed else 0
+                remaining = max((len(ranges) - completed) * chunk - inflight, 0)
                 eta = remaining / (rate * 1024**2) / 60 if rate else 0
-                print(f"  {completed}/{len(ranges)} chunks  {rate:6.1f} MiB/s  "
+                # "avg", not an instantaneous rate: it is this run's bytes over this run's wall
+                # clock, so it converges rather than tracking the link.
+                print(f"  {completed}/{len(ranges)} chunks  {rate:6.1f} MiB/s avg  "
                       f"eta {eta:5.1f} min", flush=True)
     except KeyboardInterrupt:
         save()
+        report["verification"] = "incomplete (interrupted)"
         print("\ninterrupted; rerun the same command to resume")
         return 130
 
@@ -350,8 +408,10 @@ def download(repo: str, file: str, dest_dir: Path, *, revision: str = "main",
     # length and one of them still hold the wrong 256 MiB. Verify before `state_path.unlink()`,
     # so a mismatch leaves the sidecar on disk instead of discarding the resume state along with
     # the bad file.
+    report.update({"bytes": total, "path": str(dest)})
     digest = source.expected_digest()
     if digest is None:
+        report["verification"] = "NOT VERIFIED (no lfs.sha256 and no hex ETag from HF)"
         print("  WARNING: Hugging Face returned no lfs.sha256 and no hex ETag for this file; "
               "only the byte count was checked, the content was NOT verified", flush=True)
     else:
@@ -359,16 +419,21 @@ def download(repo: str, file: str, dest_dir: Path, *, revision: str = "main",
         print(f"  verifying {algorithm} from {provenance} ...", flush=True)
         actual_hex = file_digest(dest, algorithm)
         if actual_hex != expected_hex:
+            report["verification"] = f"{algorithm} MISMATCH against {provenance}"
             raise SystemExit(
                 f"{algorithm} mismatch: got {actual_hex}, {provenance} says {expected_hex}. "
                 f"The file is wrong; {state_path.name} was kept so a rerun resumes, but a digest "
                 f"mismatch means at least one chunk recorded as done is bad -- delete that "
                 f"sidecar to force a full refetch.")
+        report.update({"verified": True, "verification": f"{algorithm} from {provenance}"})
         print(f"  {algorithm} OK  {actual_hex}", flush=True)
 
     state_path.unlink(missing_ok=True)
     elapsed = time.perf_counter() - started
-    print(f"\nOK  {dest}")
+    # A bare "OK" for a file whose content nothing checked is the same sentence as an "OK" for
+    # one whose sha256 matched, and a log is read long after the WARNING has scrolled away.
+    print(f"\nOK  {dest}" if report["verified"]
+          else f"\nOK (bytes only, {report['verification']})  {dest}")
     print(f"    {human(total)} in {elapsed / 60:.1f} min "
           f"({progress['done'] / elapsed / 1024**2:.1f} MiB/s this run)")
     return 0

@@ -98,6 +98,21 @@ class RenamedUNETLoader:
         return {"required": {"model_name": (["m.safetensors"],), "weight_dtype": (["default"],)}}
 
 
+class FakeDualCLIPLoader:
+    """Two file widgets on one class -- the shape LOADER_TABLE has five entries for four classes.
+
+    ComfyUI's DualCLIPLoader in 0.33 (traced, not executed). The point of the fake is that both
+    widgets are present, so a validator that reads only one of them is visible as a miss rather
+    than as an absent widget.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"clip_name1": (["a.safetensors"],),
+                             "clip_name2": (["b.safetensors"],),
+                             "type": (["flux"],)}}
+
+
 @contextlib.contextmanager
 def fake_comfyui(node_classes=None, get_full_path=None, break_nodes=False, prompt_ok=True):
     """Import the package against a fake ComfyUI. Yields (module, nodes, execution).
@@ -365,9 +380,105 @@ def test_uncovered_loaders_are_named_not_counted():
 
 
 def test_scope_line_lists_what_was_not_checked():
-    line = checks.scope_line(["UNETLoader", "KSampler", "VAELoader"], covered=["UNETLoader"])
-    assert "SAW AND DID NOT CHECK 2" in line, line
+    line = checks.scope_line(
+        [("UNETLoader", {"unet_name": "m.safetensors"}), ("KSampler", {"seed": 1}),
+         ("VAELoader", {"vae_name": "v.safetensors"})],
+        covered={"UNETLoader": ("unet_name", "weight_dtype")})
+    assert "node types seen and not covered 2" in line, line
     assert "KSampler" in line and "VAELoader" in line, line
+
+
+def test_scope_line_names_an_unchecked_widget_on_a_covered_class():
+    """The general form of the DualCLIPLoader hole, and the thing the class unit cannot say.
+
+    `DualCLIPLoader` is covered -- for clip_name1. A line that stops at the class prints that as a
+    pass. The widget clause is what makes the second slot visible without anyone already knowing
+    to look for it.
+    """
+    line = checks.scope_line(
+        [("DualCLIPLoader", {"clip_name1": "a.safetensors", "clip_name2": "b.safetensors"})],
+        covered={"DualCLIPLoader": ("clip_name1",)})
+    assert "SAW AND DID NOT CHECK 1 file widget(s): DualCLIPLoader.clip_name2" in line, line
+    assert "opened 1 file widget(s): DualCLIPLoader.clip_name1" in line, line
+
+
+def test_scope_line_does_not_claim_to_have_opened_a_gguf():
+    """The blind spot in the test above, and it is the third instance of one shape.
+
+    The test above varies the widget NAME and holds the extension constant, so it cannot see a
+    widget that is fully covered and still never opened. `_make_validator` opens only
+    `.safetensors`; `MODEL_FILE_SUFFIXES` recognises seven. So six of the seven reached the
+    `checked` bucket -- the line said `opened` about files nothing ever read.
+
+    Not hypothetical on this bench: 35 of the 159 files in `quantization_inventory.json` are
+    non-safetensors (10 .gguf, 14 .pth, 7 .onnx, 4 .pt, 3 .ckpt, 1 .bin), and a .gguf UNET is a
+    normal workflow here.
+
+    The shape to notice, because it has now cost three fixtures: **a test that varies the axis the
+    bug is not on.** An earlier one varied tensor shape while the collision lived in identical
+    shapes; this one varied the widget name while the hole lived in the suffix. Vary the other
+    axis, and say which axis you varied.
+    """
+    line = checks.scope_line(
+        [("UNETLoader", {"unet_name": "flux-q4.gguf"})],
+        covered={"UNETLoader": ("unet_name",)})
+    assert "opened 0 file widget(s)" in line, line
+    assert "SAW AND DID NOT CHECK 1 file widget(s): UNETLoader.unet_name (.gguf)" in line, line
+
+    # ...and a covered widget carrying a file it DOES open is still reported as opened, so the
+    # fix narrows the claim rather than emptying it.
+    line = checks.scope_line(
+        [("UNETLoader", {"unet_name": "model.safetensors"})],
+        covered={"UNETLoader": ("unet_name",)})
+    assert "opened 1 file widget(s): UNETLoader.unet_name" in line, line
+
+    # One widget, two nodes, two extensions: genuinely two coverage situations, reported as two.
+    line = checks.scope_line(
+        [("UNETLoader", {"unet_name": "a.safetensors"}),
+         ("UNETLoader", {"unet_name": "b.pth"})],
+        covered={"UNETLoader": ("unet_name",)})
+    assert "opened 1 file widget(s): UNETLoader.unet_name" in line, line
+    assert "SAW AND DID NOT CHECK 1 file widget(s): UNETLoader.unet_name (.pth)" in line, line
+
+
+def test_the_validator_and_the_coverage_line_read_one_tuple():
+    """They were two literals and they drifted. This is the assertion that they cannot again."""
+    import __init__ as pkg  # noqa: F401 -- imported for the side effect of being importable
+    source = (PACKAGE / "__init__.py").read_text(encoding="utf-8")
+    assert "checks.CHECKED_FILE_SUFFIXES" in source, (
+        "the validator must read the same tuple the coverage line does, not its own literal")
+    assert '.suffix.lower() != ".safetensors"' not in source, (
+        "the old literal is back; the log will start claiming `opened` about files it skips")
+
+
+def test_scope_line_survives_a_bare_class_name_list():
+    """It must degrade, not raise. `scope_line` runs inside the wrapped `execution.validate_prompt`
+    where nothing catches an exception, so a shape it does not expect must cost the widget clause
+    and not every prompt validation on the server."""
+    line = checks.scope_line(["UNETLoader", "KSampler"], covered={"UNETLoader": ("unet_name",)})
+    assert "node types checked 1: UNETLoader" in line, line
+    assert "SAW AND DID NOT CHECK 0 file widget(s)" in line, line
+
+
+def test_scope_line_treats_a_bare_class_list_as_covering_no_widget():
+    """An older `covered` shape must read as a gap, not as coverage.
+
+    This is the fail direction that matters: if the widget map is ever lost or half-populated,
+    the line has to say the files were not opened, not stay quiet about them.
+    """
+    line = checks.scope_line([("UNETLoader", {"unet_name": "m.safetensors"})],
+                             covered=["UNETLoader"])
+    assert "SAW AND DID NOT CHECK 1 file widget(s): UNETLoader.unet_name" in line, line
+
+
+def test_uncovered_loaders_warns_about_a_widget_on_a_covered_class():
+    found = checks.check_uncovered_loaders(
+        ["DualCLIPLoader"], covered={"DualCLIPLoader": ("clip_name1",)},
+        nodes=[("DualCLIPLoader", {"clip_name1": "a.safetensors",
+                                   "clip_name2": "b.safetensors"})])
+    assert found and found[0] == checks.WARN, found
+    assert "DualCLIPLoader.clip_name2" in found[1], found
+    assert "DualCLIPLoader.clip_name1" not in found[1], "a checked widget must not be listed"
 
 
 def test_unresolved_names_the_symbol_and_the_exception():
@@ -415,19 +526,72 @@ def test_injection_refuses_a_loader_whose_widget_was_renamed():
 def test_a_loader_class_that_vanished_is_named():
     with capture_logs() as log:
         with fake_comfyui({}) as (module, _, _e):
-            assert module._STATUS["covered"] == ()
+            assert module._STATUS["covered"] == {}
     warnings = log.messages()
     assert any("NOT FOUND" in m and "UNETLoader" in m for m in warnings), warnings
 
 
 def test_out_of_scope_loaders_are_named_at_boot():
-    """The table covers four. ComfyUI's own nodes.py defines fifteen classes ending in 'Loader'
-    and custom_nodes adds more; a workflow on any of them got a clean pass that meant nothing."""
+    """The table covers four classes. ComfyUI's own nodes.py defines fifteen classes ending in
+    'Loader' and custom_nodes adds more; a workflow on any of them got a clean pass that meant
+    nothing."""
     with capture_logs() as log:
         with fake_comfyui({"UNETLoader": FakeUNETLoader,
                            "GGUFLoader": FakeUNETLoader}) as (module, _, _e):
-            assert module._STATUS["covered"] == ("UNETLoader",)
+            assert module._STATUS["covered"] == {
+                "UNETLoader": ("unet_name", "weight_dtype")}, module._STATUS["covered"]
     assert any("OUT OF SCOPE" in m and "GGUFLoader" in m for m in log.messages()), log.messages()
+
+
+def test_both_widgets_of_a_two_widget_loader_are_actually_checked():
+    """The regression test for the fix that was not one.
+
+    LOADER_TABLE gained a `DualCLIPLoader.clip_name2` row and the hole stayed open: injection ran
+    per table entry, so the second row found the VALIDATE_INPUTS the first row had just installed,
+    took the "another package got there first" branch, and clip_name2 was never resolved -- while
+    the class read as covered. Measured before the fix: get_full_path called once.
+
+    Asserts on the RESOLUTIONS, not on the return value. A validator that silently skipped a
+    widget would return True here exactly like one that checked it and found nothing.
+    """
+    resolved = []
+
+    def spy(folder, name):
+        resolved.append((folder, name))
+        return None
+
+    with capture_logs() as log:
+        with fake_comfyui({"DualCLIPLoader": FakeDualCLIPLoader},
+                          get_full_path=spy) as (module, _, _e):
+            assert module._STATUS["covered"] == {
+                "DualCLIPLoader": ("clip_name1", "clip_name2")}, module._STATUS["covered"]
+            FakeDualCLIPLoader.VALIDATE_INPUTS(clip_name1="a.safetensors",
+                                               clip_name2="b.safetensors")
+    assert resolved == [("text_encoders", "a.safetensors"),
+                        ("text_encoders", "b.safetensors")], resolved
+    assert not any("ALREADY VALIDATED" in m for m in log.messages()), \
+        "the package must not report its own validator as another package's"
+
+
+def test_a_dead_widget_costs_its_own_check_and_not_its_siblings():
+    """One renamed widget on a two-widget class used to drop that entry; grouping must not turn
+    that into dropping the class, and must not turn it into pretending the dead one is covered."""
+    class HalfRenamedDualCLIPLoader:
+        @classmethod
+        def INPUT_TYPES(cls):
+            return {"required": {"clip_name1": (["a.safetensors"],), "type": (["flux"],)}}
+
+    with capture_logs() as log:
+        with fake_comfyui({"DualCLIPLoader": HalfRenamedDualCLIPLoader}) as (module, _, _e):
+            assert module._STATUS["covered"] == {
+                "DualCLIPLoader": ("clip_name1",)}, module._STATUS["covered"]
+            line = checks.scope_line(
+                [("DualCLIPLoader", {"clip_name1": "a.safetensors",
+                                     "clip_name2": "b.safetensors"})],
+                module._STATUS["covered"])
+    assert "DualCLIPLoader.clip_name2" in line and "SAW AND DID NOT CHECK 1" in line, line
+    assert any("WIDGET RENAMED" in m and "clip_name2" in m for m in log.messages()), \
+        log.messages()
 
 
 def test_resolve_failure_warns_instead_of_passing_the_node_clean():
@@ -453,9 +617,10 @@ def test_every_run_states_which_node_types_it_did_not_check():
         with fake_comfyui({"UNETLoader": FakeUNETLoader}) as (module, _, execution_mod):
             result = asyncio.run(execution_mod.validate_prompt("p", prompt))
     assert result[0] is True, "stating scope must not block anything"
-    scope = [m for m in log.messages(logging.INFO) if "SAW AND DID NOT CHECK" in m]
+    scope = [m for m in log.messages(logging.INFO) if "node types seen and not covered" in m]
     assert scope, log.messages(logging.INFO)
     assert "KSampler" in scope[0] and "GGUFLoader" in scope[0], scope
+    assert "opened 1 file widget(s): UNETLoader.unet_name" in scope[0], scope
     assert any("OUTSIDE this package's scope" in m and "GGUFLoader" in m
                for m in log.messages()), log.messages()
 
@@ -469,7 +634,7 @@ def test_scope_is_stated_even_when_the_run_already_failed_elsewhere():
             result = asyncio.run(execution_mod.validate_prompt(
                 "p", {"1": {"class_type": "KSampler", "inputs": {}}}))
     assert result[0] is False, "our wrapper must not rescue a run that failed upstream"
-    assert any("SAW AND DID NOT CHECK" in m and "KSampler" in m
+    assert any("node types seen and not covered" in m and "KSampler" in m
                for m in log.messages(logging.INFO)), log.messages(logging.INFO)
 
 
@@ -545,4 +710,9 @@ if __name__ == "__main__":
           "the way this package assumes -- that needs a real boot and a real prompt submission.")
     print("  * The rename paths are simulated. No upstream rename has actually occurred here; "
           "what is tested is what this package does when told one has.")
+    print("  * The widget scope line finds file widgets by the SUFFIX of the value in the graph "
+          "(MODEL_FILE_SUFFIXES). A loader whose widget holds a bare name, a directory, or an "
+          "extension not in that tuple is invisible to it -- so the line under-reports the gap "
+          "rather than over-reporting it, and no test here exercises such a loader because none "
+          "of the four in LOADER_TABLE behaves that way in ComfyUI 0.33.")
     raise SystemExit(1 if failures else 0)

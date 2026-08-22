@@ -12,6 +12,15 @@ text encoder: the question here is whether the patched forward survives a real s
 correctly shaped tensors, and a random context answers that at a fraction of the cost. Output
 quality is meaningless with random conditioning -- for that, rerun with a real encoder.
 
+**Exempt from `_timing.compare()`; NOT exempt from the lock.** `compare()` interleaves N bursts
+per path, and one burst here is a whole sampling run -- minutes, on a model too large to stay
+resident. Four thresholds at three kept bursts plus a discard would be sixteen renders to answer a
+question this file already controls for a better way: it measures the *unpatched* baseline twice,
+first and last, and refuses to call anything a speedup when the two disagree by more than 10%.
+That catches the same drift interleaving catches, at 2 extra renders instead of 12. It did take no
+GPU lock at all, which is a separate problem and is fixed at the bottom of this file; and its
+`speedup` column went through `_timing.Ratio` so a regression can no longer print as "0.81x".
+
     python tools/fbcache_probe.py --model hunyuanvideo1.5_720p_t2v_fp16.safetensors \
         --steps 4 --frames 9 --size 256
 """
@@ -26,8 +35,13 @@ from pathlib import Path
 
 PORTABLE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PORTABLE_ROOT / "ComfyUI"))
+# `python313._pth` suppresses the script-directory entry, so the sibling imports below need this
+# (`m_crossover.py:49-52` records the guard being written but never running for want of it).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import torch  # noqa: E402
+
+from _timing import ratio_of  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -304,12 +318,15 @@ def main() -> int:
     # see how much of any speedup is really just the reference being cold.
     reference = min(base[1], base2[1]) if base2 else base[1]
     drift = abs(base[1] - base2[1]) / max(base[1], base2[1]) if base2 else 0.0
-    print(f"{'threshold':>10}  {'seconds':>9}  {'speedup':>8}  {'hits':>9}  {'relL2':>8}")
-    print(f"{'baseline':>10}  {base[1]:9.2f}  {'1.00x':>8}  {'-':>9}  {'-':>8}")
+    print(f"{'threshold':>10}  {'seconds':>9}  {'speedup':>34}  {'hits':>9}  {'relL2':>8}")
+    print(f"{'baseline':>10}  {base[1]:9.2f}  {'(the reference)':>34}  {'-':>9}  {'-':>8}")
     if base2:
         drift_note = "same run, unpatched both times"
-        print(f"{'baseline2':>10}  {base2[1]:9.2f}  {base[1] / base2[1]:7.2f}x  "
-              f"{'-':>9}  {'-':>8}   {drift_note}")
+        # Through Ratio like every other ratio in the tree: the second baseline being *slower*
+        # than the first is a real outcome here and used to print as "0.87x", which reads as a
+        # speedup at a glance. It now reads "1.15x slower", which is what it means.
+        print(f"{'baseline2':>10}  {base2[1]:9.2f}  "
+              f"{ratio_of(base[1], base2[1]):>34}  {'-':>9}  {'-':>8}   {drift_note}")
     failed = 0
     for label, threshold in (runs[1:-1] if base2 else runs[1:]):
         entry = results.get(label)
@@ -317,9 +334,10 @@ def main() -> int:
             print(f"{threshold:>10g}  {'FAILED -- this model does not fit the selected path':<40}")
             failed += 1
             continue
-        speedup = reference / entry[1] if entry[1] else float("nan")
+        factor = reference / entry[1] if entry[1] else float("nan")
+        speedup = ratio_of(reference, entry[1]) if entry[1] else ratio_of(float("nan"), 1.0)
         diff = ((entry[0] - base[0]).norm() / base[0].norm().clamp(min=1e-12)).item()
-        print(f"{threshold:>10g}  {entry[1]:9.2f}  {speedup:7.2f}x  "
+        print(f"{threshold:>10g}  {entry[1]:9.2f}  {speedup:>34}  "
               f"{entry[3]:4d}/{entry[2]:<4d}  {diff:8.4f}")
         # These counters wrap CachedTransformerBlocks, which only the generic route uses. On the
         # unet and flux routes there is nothing here to count, so a zero in this column means
@@ -331,7 +349,7 @@ def main() -> int:
             print(f"           (this column does not instrument the {info['route'].split()[0]} "
                   f"route -- see the [WaveSpeed] FBCache line above for the node's own hit count; "
                   f"relL2 {'> 0 also shows the cache fired' if diff > 1e-6 else '== 0 shows it did not'})")
-        elif entry[3] == 0 and speedup > 1.05:
+        elif entry[3] == 0 and factor > 1.05:
             print("           WARNING: zero cache hits, so this speedup is noise, not FBCache")
     if base2 and drift > 0.10:
         print(f"\n!! The two unpatched runs disagree by {drift * 100:.0f}%. Nothing above is a "
@@ -348,4 +366,15 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # No lock at all before this. Every number this file has ever produced was measured with no
+    # evidence about whether the card was contended -- and, worse for the other side, with no lock
+    # file, so a sibling's `Assert-GpuLock` would have been granted mid-render. Contention is not
+    # a rounding error here: same code, same day, `im2col 74.4 s` quiet against `87.0 s` loaded is
+    # 17%, and the FBCache effect this file measures is often smaller than that.
+    from _bench_guard import BenchGuard
+
+    with BenchGuard("comfy_portable:fbcache_probe") as _guard:
+        if _guard.refused:
+            print(_guard.refused)
+            raise SystemExit(1)
+        raise SystemExit(main())

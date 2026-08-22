@@ -23,6 +23,14 @@ quality columns meaningless -- a random context is not a prompt -- and the speed
 columns valid, which is what is being asked. Latents are saved so the two runs can be compared
 numerically, not looked at.
 
+**Exempt from `_timing.compare()`, and not from the lock.** `compare()` interleaves two paths in
+one process, and the whole design here is one model per process -- there is no second path in this
+interpreter to interleave against, and putting one there is the allocator measurement the first
+paragraph refuses. What this file takes from `_timing` instead is `summarize()` (so the estimator
+it uses is recorded in the file rather than described in a sentence) and `ratio_of()` (so every
+ratio it prints carries its direction and its interval). It does take `BenchGuard`; see the bottom
+of the file for why that was not optional.
+
     python tools/nunchaku_compare.py --model z_image_turbo_bf16.safetensors --loader comfy \
         --out bf16.pt
     python tools/nunchaku_compare.py --model svdq-int4_r32-z-image-turbo.safetensors \
@@ -44,6 +52,37 @@ PORTABLE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PORTABLE_ROOT / "ComfyUI"))
 
 import torch  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _timing import ratio_of, summarize  # noqa: E402
+
+
+def _nvml_index_for_cuda(pynvml, ordinal: int) -> tuple[int, str]:
+    """Map a CUDA ordinal to an NVML index by UUID. Returns (index, how it was resolved).
+
+    Torch and NVML both report a `GPU-<uuid>` string for the same physical card, and that string
+    is the only thing the two enumerations agree on -- the indices do not, whenever
+    `CUDA_VISIBLE_DEVICES` is set or the driver orders devices differently from the runtime.
+
+    Falls back to `ordinal` when torch cannot produce a UUID (older builds do not expose
+    `properties.uuid`), and the fallback is **named in the return value** rather than silently
+    assumed, so the result file records that this run's VRAM figure rests on an assumption. That
+    is the round-1 lesson in this repo: a check that quietly degrades reads exactly like one that
+    passed.
+    """
+    try:
+        wanted = str(torch.cuda.get_device_properties(ordinal).uuid).lower().replace("gpu-", "")
+    except Exception:
+        return ordinal, "assumed ordinal == nvml index (torch reports no UUID)"
+    for index in range(pynvml.nvmlDeviceGetCount()):
+        handle = pynvml.nvmlDeviceGetHandleByIndex(index)
+        raw = pynvml.nvmlDeviceGetUUID(handle)
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8", "replace")
+        if raw.lower().replace("gpu-", "").strip() == wanted:
+            return index, "matched by UUID"
+    return ordinal, "assumed ordinal == nvml index (no UUID match found)"
 
 
 class DevicePeak:
@@ -84,18 +123,39 @@ class DevicePeak:
     """
 
     def __init__(self, index: int = 0, interval: float = 0.05):
+        """`index` is a **CUDA ordinal**, and it is resolved to an NVML index by UUID.
+
+        It used to be passed straight to `nvmlDeviceGetHandleByIndex`, which is only correct when
+        the two numbering schemes happen to agree. Under `CUDA_VISIBLE_DEVICES=1` the CUDA ordinal
+        is 0 and the NVML index is 1, so every VRAM figure in the result file would have described
+        the *other* card while naming this one -- a silent, plausible number, which is the worst
+        kind. There are two cards in this box (3090 on nvml0, 3080 Ti on nvml1) and CLAUDE.md
+        records a whole measurement session that ran on the 3080 Ti while the lock sat on an idle
+        3090, found only because the probe cache stamped the adapter name into every line.
+
+        So: match on UUID, and record `device_name` and `device_match` in every record this file
+        writes. Stamping the name is the cheapest insurance there is, and it is what exposed the
+        wrong-card session in the sibling repo.
+        """
         self.interval = interval
         self.baseline = 0
         self.peak = 0
         self.min_after_peak = 0
         self.other_processes = -1
+        self.name = None
+        self.nvml_index = None
+        self.match = "not resolved"
         self._stop = threading.Event()
         self._thread = None
         try:
             import pynvml
             pynvml.nvmlInit()
             self._nvml = pynvml
-            self._handle = pynvml.nvmlDeviceGetHandleByIndex(index)
+            self.nvml_index, self.match = _nvml_index_for_cuda(pynvml, index)
+            self._handle = pynvml.nvmlDeviceGetHandleByIndex(self.nvml_index)
+            name = pynvml.nvmlDeviceGetName(self._handle)
+            self.name = name.decode("utf-8", "replace") if isinstance(name, bytes) else name
+            print(f"NVML: cuda:{index} -> nvml{self.nvml_index} {self.name} ({self.match})")
         except Exception as exc:
             print(f"NVML unavailable ({type(exc).__name__}: {exc}). Peak VRAM will come from "
                   f"the torch allocator alone, which undercounts any extension that calls "
@@ -156,8 +216,16 @@ class DevicePeak:
 
     def summary(self) -> dict:
         if not self.available:
+            # `device_name` is still emitted, from torch, even with no NVML: which card a run used
+            # is the fact that has to survive into the record file no matter what else failed.
+            try:
+                fallback = torch.cuda.get_device_name(torch.cuda.current_device())
+            except Exception:
+                fallback = None
             return {"device_peak_gib": None, "device_baseline_gib": None,
-                    "device_released_gib": None, "other_gpu_processes": None}
+                    "device_released_gib": None, "other_gpu_processes": None,
+                    "device_name": fallback, "nvml_index": None,
+                    "device_match": "NVML unavailable; name read from torch"}
         # Explicitly a number, never omitted: `peak - min_after_peak` is 0.0 when nothing was
         # freed after the peak sample, and 0.0 is a real, measured result -- not the same thing
         # as "release was not measured" (which is `None`, the NVML-unavailable case above). A
@@ -169,6 +237,9 @@ class DevicePeak:
             "device_released_gib": (self.peak - self.min_after_peak) / 2**30,
             "other_gpu_processes": self.other_processes,
             "per_process_attribution": self.per_process_available,
+            "device_name": self.name,
+            "nvml_index": self.nvml_index,
+            "device_match": self.match,
         }
 
 
@@ -235,7 +306,14 @@ def report(a_path: str, b_path: str) -> int:
 
     # Same prompt string is not enough: two runs can tokenize identically and still differ if
     # one of them fell back to synthetic conditioning. Compare the norm of the encoded tensor.
-    for key in ("shape", "steps", "seed", "cfg", "context", "prompt", "cond_norm"):
+    #
+    # `device_name` joins that list because two runs on two different cards are not a comparison
+    # of two checkpoints, and this box has a 3090 and a 3080 Ti in it. CLAUDE.md records a whole
+    # sibling session whose work landed on the 3080 Ti while the lock sat on an idle 3090; a
+    # result file that does not say which card it used cannot rule that out afterwards. Files
+    # written before this key existed simply skip the check (the `not in` guard below), so old
+    # comparisons still work -- they just cannot prove they were on one card.
+    for key in ("shape", "steps", "seed", "cfg", "context", "prompt", "cond_norm", "device_name"):
         if key not in a["meta"] or key not in b["meta"]:
             continue
         if a["meta"][key] != b["meta"][key]:
@@ -256,24 +334,33 @@ def report(a_path: str, b_path: str) -> int:
         print(f"{'mean blocks skipped':<26}{str(a['meta'].get('mean_sparsity')):>14}"
               f"{str(b['meta'].get('mean_sparsity')):>14}")
 
-    def row(label, ka, kb, fmt="{:.2f}", ratio=True, lower_is_better=False):
+    def row(label, ka, kb, fmt="{:.2f}", ratio=True, lower_is_better=False, spread=None,
+            exact=False):
         # Disk and VRAM are better when smaller, so B/A reads backwards: a genuine 3.4x saving
         # printed as "0.29x" looks like a regression at a glance. Those rows report how many
         # times LIGHTER B is, and say so, rather than leaving the reader to invert it.
+        #
+        # The direction logic itself now lives in `_timing.Ratio`, which is the only place in the
+        # tree that formats a ratio: `exact=True` marks a quantity with no burst-to-burst spread
+        # (bytes on disk do not vary between passes) so that it is not given a fictitious
+        # interval, and `spread=` supplies a real one where there is one.
         va, vb = ka, kb
         cell = f"{fmt.format(va):>14}{fmt.format(vb):>14}"
         if ratio and va and vb:
+            # Both directions, spelled out. "0.81x less" for a row where B got WORSE would be a
+            # lie dressed as a saving, so a regression is reported as "1.24x more".
             if lower_is_better:
-                # Both directions, spelled out. "0.81x less" for a row where B got WORSE would
-                # be a lie dressed as a saving, so a regression is reported as "1.24x more".
-                cell += (f"{va / vb:>9.2f}x less" if vb <= va
-                         else f"{vb / va:>9.2f}x more")
+                cell += f"{ratio_of(va, vb, better='less', worse='more', series=spread, exact=exact):>26}"
             else:
-                cell += f"{vb / va:>11.2f}x"
+                cell += f"{ratio_of(vb, va, better='higher', worse='lower', series=spread, exact=exact):>26}"
         print(f"{label:<26}{cell}")
 
+    # `exact=True` on disk alone: a file size is the same on every pass, so a bracket on it would
+    # be invented. Every other row below is a measurement taken once and gets "(1 burst, no
+    # interval)" instead -- which is the honest thing to print about load time, a quantity this
+    # tool measures exactly once per process and never repeats.
     row("disk GiB", a["meta"]["disk"] / 2**30, b["meta"]["disk"] / 2**30,
-        lower_is_better=True)
+        lower_is_better=True, exact=True)
     row("load seconds", a["meta"]["load_s"], b["meta"]["load_s"], lower_is_better=True)
     # A run measured with NVML and a run measured with the torch allocator are not the same
     # quantity, and putting them in one ratio is how the original 0.21 GiB got believed. Files
@@ -310,19 +397,30 @@ def report(a_path: str, b_path: str) -> int:
     if any(o for o in others if o and o > 0):
         print(f"  !! other GPU processes during measurement: A={others[0]}, B={others[1]}. "
               f"The VRAM row includes them.")
+    # A **bound**, not a paired spread. `_timing.compare()` can pair a ratio burst by burst
+    # because it interleaves both paths in one process; A and B here are two separate processes
+    # measured minutes apart -- one model per process, on purpose, because loading a 12.3 GiB BF16
+    # and a 3.6 GiB INT4 into one interpreter measures the allocator instead of the models. So the
+    # widest and narrowest ratios consistent with the two pass sets are what can honestly be
+    # shown, and they are wider than a paired interval would be.
+    passes_a, passes_b = a["meta"].get("passes") or [], b["meta"].get("passes") or []
+    speed_spread = None
+    if len(passes_a) > 1 and len(passes_b) > 1:
+        speed_spread = [min(passes_a) / max(passes_b), max(passes_a) / min(passes_b)]
     row("seconds / sampling pass", a["meta"]["best_s"], b["meta"]["best_s"],
-        lower_is_better=True)
+        lower_is_better=True, spread=speed_spread)
     row("seconds / step", a["meta"]["best_s"] / a["meta"]["steps"],
-        b["meta"]["best_s"] / b["meta"]["steps"], "{:.4f}", lower_is_better=True)
+        b["meta"]["best_s"] / b["meta"]["steps"], "{:.4f}", lower_is_better=True,
+        spread=speed_spread)
     # Same fact as the row above, and it used to be printed as a raw a/b ratio: a B that is 24%
-    # slower came out as "speedup 0.81x", which reads as a saving. `row(lower_is_better=True)`
-    # exists precisely to stop that, so this line goes through the same direction logic.
-    speed_a, speed_b = a["meta"]["best_s"], b["meta"]["best_s"]
-    if speed_b <= speed_a:
-        verdict = f"{speed_a / speed_b:.2f}x faster"
-    else:
-        verdict = f"{speed_b / speed_a:.2f}x slower"
+    # slower came out as "speedup 0.81x", which reads as a saving. The direction rule lives in
+    # `_timing.Ratio` now, so this line and the rows above cannot drift apart again.
+    verdict = ratio_of(a["meta"]["best_s"], b["meta"]["best_s"], series=speed_spread,
+                       better="faster", worse="slower")
     print(f"{'B vs A overall':<26}{'':>14}{'':>14}{verdict:>20}")
+    if speed_spread:
+        print("  (that interval is a BOUND from the two pass sets, not a paired per-burst spread: "
+              "A and B\n   ran in separate processes and cannot be interleaved)")
 
     la, lb = a["latent"].float(), b["latent"].float()
     if la.shape == lb.shape:
@@ -345,14 +443,35 @@ def report(a_path: str, b_path: str) -> int:
     else:
         print(f"\nlatent shapes differ: {list(la.shape)} vs {list(lb.shape)} -- not comparable")
 
-    print(f"\nAll timings are the fastest of {a['meta']['repeats']} passes after a discarded "
-          f"warm-up.")
+    # The estimator, named. Three other timing tools in `tools/` reduce with a median and this one
+    # reduces with `min`, which is a defensible choice for a whole-model sampling run -- the floor
+    # is "nothing else on the card" and there is no ceiling -- but a table that mixes the two
+    # without saying so cannot be read as one measurement. `_timing.ESTIMATORS` carries both and
+    # this line says which was used, on every run.
+    est_a = a["meta"].get("estimator", "min")
+    est_b = b["meta"].get("estimator", "min")
+    print(f"\nESTIMATOR: {est_a} of {a['meta']['repeats']} passes after a discarded warm-up "
+          f"(B: {est_b}). Not a median -- the other timing tools in tools/ use one, and these "
+          f"columns are not\ninterchangeable with theirs.")
+    if est_a != est_b:
+        print(f"!! A and B were reduced differently ({est_a} vs {est_b}). The ratio above divides "
+              f"two different estimators.")
     per = a["meta"]["passes"], b["meta"]["passes"]
+    for tag, side in (("A", a), ("B", b)):
+        print(f"{tag} device: {side['meta'].get('device_name', 'not recorded')} "
+              f"({side['meta'].get('device_match', 'no mapping recorded')})")
     print(f"A passes: {', '.join(f'{x:.2f}' for x in per[0])}")
     print(f"B passes: {', '.join(f'{x:.2f}' for x in per[1])}")
     spread = [max(p) / min(p) for p in per if p and min(p)]
     if spread and max(spread) > 1.15:
-        print(f"!! the passes within one run spread by {max(spread):.2f}x, which is large enough "
+        # A dispersion factor, not a comparison: it is max/min of one run's own passes, always
+        # >= 1, and there is no "faster"/"slower" to name. It still goes through `Ratio` --
+        # `exact=True`, both direction words blank -- so that grepping `tools/` for a bare
+        # `:.2f}x` finds every hit inside `_timing.py` and nowhere else. That grep is the
+        # closing check for this rule and a mechanical check is the only kind that survives the
+        # next session.
+        worst = ratio_of(max(spread), 1.0, better="", worse="", exact=True)
+        print(f"!! the passes within one run spread by {worst}, which is large enough "
               f"to compete\n   with the difference being measured. Treat the comparison as "
               f"indicative only.")
     return 0
@@ -680,9 +799,15 @@ def main() -> int:
     if peak_gib is None:
         peak_gib = torch_peak_gib
 
+    # `best_s` and the recorded estimator come from the same call, so a future change to one
+    # cannot leave the other describing a reduction that no longer happens. `min` is kept
+    # deliberately -- see the ESTIMATOR line in `report()` for why -- but it is now named in the
+    # file rather than only in a sentence at the bottom of the output.
+    best_s, _passes_lo, _passes_hi = summarize(passes, estimator="min")
     meta = {
         "model": args.model, "loader": args.loader, "disk": path.stat().st_size,
-        "load_s": load_s, "peak_gib": peak_gib, "passes": passes, "best_s": min(passes),
+        "load_s": load_s, "peak_gib": peak_gib, "passes": passes, "best_s": best_s,
+        "estimator": "min",
         "peak_source": "nvml device-wide minus baseline" if device["device_peak_gib"] is not None
                        else "torch caching allocator (undercounts CUDA extensions)",
         "torch_peak_gib": torch_peak_gib, **device,
@@ -731,7 +856,8 @@ def main() -> int:
         meta["png"] = args.png
 
     torch.save({"latent": out.float().cpu(), "meta": meta}, args.out)
-    print(f"\nbest {min(passes):.2f}s, peak VRAM {peak_gib:.2f} GiB "
+    print(f"\nbest {best_s:.2f}s (estimator: min of {len(passes)} passes), "
+          f"peak VRAM {peak_gib:.2f} GiB "
           f"({meta['peak_source']}) -> {args.out}")
     if device["device_peak_gib"] is not None:
         # Printing both is the point. On the comfy path they should be within a few hundred MiB
@@ -754,4 +880,19 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    from _bench_guard import BenchGuard
+
+    # `--compare` only reads two .pt files off disk and touches no GPU, so it does not take the
+    # lock. Everything else here loads a diffusion model and samples it, and this file is the
+    # single largest GPU consumer in tools/ -- 757 lines, two models, minutes of sampling -- and
+    # it took no lock at all. That is worse for the sibling session than for this one: with no
+    # lock file present their `Assert-GpuLock` would have been granted while this was running,
+    # which is exactly the "20.49 GiB resident with the lock file absent" case `_bench_guard.py`
+    # was written for.
+    if "--compare" in sys.argv:
+        raise SystemExit(main())
+    with BenchGuard("comfy_portable:nunchaku_compare") as _guard:
+        if _guard.refused:
+            print(_guard.refused)
+            raise SystemExit(1)
+        raise SystemExit(main())

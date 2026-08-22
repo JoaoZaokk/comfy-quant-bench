@@ -33,7 +33,6 @@ import json
 import os
 import shutil
 import struct
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -43,6 +42,7 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from _native_probe import native_backend_ready  # noqa: E402
 from quant_w4a8 import (  # noqa: E402
     HIGH_PRECISION_DTYPES,
     PROFILE_PATTERNS,
@@ -99,41 +99,21 @@ def quantize(weight: torch.Tensor, convrot: bool, groupsize: int):
     return eager.quantize_int8_rowwise(weight)
 
 
-def normal_comfy_backend(portable_root: Path, groupsize: int) -> dict:
-    """Ask a subprocess which implementation `ck.registry` resolves `quantize_int8_convrot_weight`
-    to, the same subprocess-probe idiom quant_w4a4.py:89 and quant_w4a8.py:97 use before touching
-    any real tensor -- a fresh interpreter so this process's own comfy_kitchen import (if any)
-    can't have already cached a stale registry state.
+def int8_probe_ops(groupsize: int) -> dict:
+    """The one op this converter dispatches through `ck.registry`, at its real rotation groupsize.
 
-    Not a copy-paste of either: this converter's registry-dispatched op is
-    `quantize_int8_convrot_weight` (see quantize() above), not W4A4's `quantize_convrot_w4a4_weight`
-    / `convrot_w4a4_linear` pair or W4A8's `quantize_w4a8_int8_weight` -- reusing either of those
-    checks verbatim would resolve the wrong op and pass or fail for the wrong reason. This is
-    scoped to the `--convrot` path on purpose: `--no-convrot` calls `eager.quantize_int8_rowwise`
-    directly (see quantize() above), bypassing `ck.registry` entirely, so there is no native
-    backend for it to resolve to, on any device -- that is this file's declared CPU-first design
-    (module docstring above), not a silent fallback this check exists to catch.
+    Not the W4A4 pair and not W4A8's quantizer: this converter's registry-dispatched op is
+    `quantize_int8_convrot_weight` (see quantize() above), and resolving anyone else's op would
+    pass or fail for the wrong reason. That distinction is why `native_backend_ready` takes the op
+    names instead of assuming them -- of the six private probes it replaced, this was the only one
+    already passing the caller's own groupsize through rather than a hardcoded literal.
 
-    NOT EXECUTED as part of writing this function: resolving the real implementation needs CUDA
-    and comfy_kitchen, which this session was not permitted to touch. Checked instead by
-    py_compile and by reading this side by side with quant_w4a4.py's and quant_w4a8.py's versions
-    -- see the ticket-24 resolution note for the exact commands.
+    Still scoped to the `--convrot` path, and the caller below is what enforces that:
+    `--no-convrot` calls `eager.quantize_int8_rowwise` directly, bypassing `ck.registry` entirely,
+    so there is no native backend for it to resolve to on any device. That is this file's declared
+    CPU-first design (module docstring), not a silent fallback a check should catch.
     """
-    code = f"""
-import json, sys, torch, comfy_kitchen as ck
-sys.path.insert(0, {str(portable_root / 'ComfyUI')!r})
-import comfy.quant_ops
-w = torch.empty(({groupsize}, {groupsize}), device='cuda', dtype=torch.bfloat16)
-impl = ck.registry.get_implementation('quantize_int8_convrot_weight', kwargs={{
-    'weight': w, 'group_size': {groupsize}}})
-print(json.dumps({{'quantizer': impl.__module__, 'backends': ck.list_backends()}}))
-"""
-    result = subprocess.run([sys.executable, "-c", code], cwd=portable_root, text=True,
-                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
-    payload = json.loads(result.stdout.strip().splitlines()[-1])
-    payload["warning"] = result.stderr.strip()
-    payload["native_ready"] = ".backends.cuda" in payload["quantizer"]
-    return payload
+    return {"quantize_int8_convrot_weight": {"convrot_groupsize": groupsize}}
 
 
 def main() -> int:
@@ -181,17 +161,21 @@ def main() -> int:
     # not that comfy_kitchen's registry actually resolves the quantizer to a CUDA backend --
     # a card being present says nothing about whether normal ComfyUI would run this kernel
     # natively or fall back silently. `--convrot` is the only mode that goes through the
-    # registry at all (see quantize() and normal_comfy_backend() above), so that is what gets
+    # registry at all (see quantize() and int8_probe_ops() above), so that is what gets
     # checked; `--no-convrot` is unconditionally eager by this file's own design and prints why
-    # instead of pretending to preflight a path that never touches the registry.
+    # instead of pretending to preflight a path that never touches the registry. Both branches
+    # below are unchanged by the ticket-05 consolidation: the exemption is deliberate and stays
+    # an exemption, and the `--convrot` branch keeps refusing on exactly the same condition.
     backend = None
     if args.device == "cuda":
         if args.convrot:
-            backend = normal_comfy_backend(portable_root, args.convrot_groupsize)
+            backend = native_backend_ready(portable_root,
+                                           int8_probe_ops(args.convrot_groupsize))
             if not backend["native_ready"]:
                 raise SystemExit(
                     "Refusing: normal ComfyUI resolves int8 ConvRot quantization to "
-                    f"{backend['quantizer']}, not a CUDA backend")
+                    f"{backend['resolved']['quantize_int8_convrot_weight']}, "
+                    "not a CUDA backend")
         else:
             print("--no-convrot always calls comfy-kitchen's eager backend directly, on any "
                   "device (quantize() bypasses ck.registry for this path) -- no native-backend "
@@ -297,7 +281,8 @@ def main() -> int:
         "convrot": args.convrot, "convrot_groupsize": args.convrot_groupsize,
         "quantized_tensors": len(selected), "preserved_tensors": len(header) - len(selected),
         "quantized_on": args.device,
-        "backend": backend["quantizer"] if backend else None,
+        # None on the CPU path and on --no-convrot, both of which skip the probe by design.
+        "backend": backend["resolved"]["quantize_int8_convrot_weight"] if backend else None,
         "comfy_kitchen_version": importlib.metadata.version("comfy-kitchen"),
         "torch_version": torch.__version__,
         "conversion_seconds": round(elapsed, 3),

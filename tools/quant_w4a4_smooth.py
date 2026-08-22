@@ -177,18 +177,25 @@ def main() -> int:
     # structurally identical -- same packed int4 container, same per-row f32 scales -- so neither
     # verify_w4a4.py nor inspect_quant.py can tell the two apart afterwards. A checkpoint
     # quantized by eager and believed to be CUDA is exactly the failure the whole preflight
-    # exists to prevent. Imported from quant_w4a4 rather than copied: the audit found 8 diverging
-    # copies of this probe with 3 different definitions of "ready".
-    from quant_w4a4 import normal_comfy_backend
+    # exists to prevent. Imported rather than copied: the audit found 6 diverging copies of this
+    # probe. `w4a4_probe_ops` still comes from quant_w4a4 because "which ops the convrot_w4a4
+    # format dispatches" is that converter's fact; only the probe machinery is shared.
+    #
+    # This passed `--convrot-groupsize` nowhere before -- it inherited quant_w4a4's hardcoded
+    # 64/64 while quantizing at args.convrot_groupsize. Measured 2026-08-22 on the 3090: same
+    # resolution either way, so this is tidying, not a repair.
+    from _native_probe import native_backend_ready
+    from quant_w4a4 import w4a4_probe_ops
 
-    backend = normal_comfy_backend(PORTABLE_ROOT)
+    backend = native_backend_ready(PORTABLE_ROOT, w4a4_probe_ops(args.convrot_groupsize))
     if not backend.get("native_ready"):
         raise SystemExit(
-            f"Refusing: normal ComfyUI resolves the ConvRot ops to "
-            f"{backend.get('quantizer')} / {backend.get('linear')}, not a CUDA backend. "
-            "Producing convrot_w4a4 from the eager path yields a file nothing downstream can "
-            "distinguish from a real one.")
-    print(f"Backend: {backend.get('quantizer')}")
+            "Refusing: normal ComfyUI resolves the ConvRot ops to "
+            + ", ".join(f"{op}={module}"
+                        for op, module in sorted(backend["resolved"].items()))
+            + ", not a CUDA backend. Producing convrot_w4a4 from the eager path yields a file "
+              "nothing downstream can distinguish from a real one.")
+    print(f"Backend: {backend['resolved']['quantize_convrot_w4a4_weight']}")
 
     stats = calibrate(args)
     if len(stats) != len(norm_keys):
@@ -326,8 +333,8 @@ def main() -> int:
         "convrot_groupsize": args.convrot_groupsize,
         # quant_w4a4.py records this and this file did not, so its outputs were the only
         # convrot_w4a4 checkpoints in the project with no record of which backend produced them.
-        "backend": backend.get("quantizer"),
-        "backend_linear": backend.get("linear"),
+        "backend": backend["resolved"]["quantize_convrot_w4a4_weight"],
+        "backend_linear": backend["resolved"]["convrot_w4a4_linear"],
         "comfy_kitchen_version": importlib.metadata.version("comfy-kitchen"),
         "torch_version": torch.__version__, "gpu": torch.cuda.get_device_name(0),
         "conversion_seconds": round(elapsed, 3),

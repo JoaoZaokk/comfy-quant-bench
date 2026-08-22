@@ -14,6 +14,12 @@
 
 comfy_kitchen's QuantizedTensor implements __tensor_flatten__/__tensor_unflatten__, so it was
 built to be traceable. This finds out what actually fails, and whether any backend/mode works.
+
+**Exempt from `_timing.compare()`, and only from that.** This file prints no timing at all: every
+row is "did it raise, and does the output match eager". There is nothing here for an estimator or
+an interval to be about. It is *not* exempt from the GPU lock -- it loads a real layer, runs
+forwards and drives Dynamo/Inductor through five configurations, and it took no lock, which meant
+a sibling's `Assert-GpuLock` would have been granted while it ran. `BenchGuard` is taken below.
 """
 
 from __future__ import annotations
@@ -27,6 +33,10 @@ from pathlib import Path
 
 PORTABLE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PORTABLE_ROOT / "ComfyUI"))
+# The embedded interpreter's `python313._pth` suppresses the script-directory entry, so
+# `from _bench_guard import ...` needs this. `m_crossover.py:49-52` records the guard being
+# written but never running because the line was missing.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import torch  # noqa: E402
 
@@ -139,4 +149,10 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    from _bench_guard import BenchGuard
+
+    with BenchGuard("comfy_portable:compile_w4a4_probe2") as _guard:
+        if _guard.refused:
+            print(_guard.refused)
+            raise SystemExit(1)
+        raise SystemExit(main())

@@ -13,6 +13,14 @@ a question that means something.
 The text encoders are unloaded before the transformer is loaded: together they do not fit
 alongside a 16.6 GB fp16 transformer on a 24 GB card.
 
+**Exempt from `_timing.compare()`; NOT exempt from the lock.** The deliverable here is the decoded
+frames, and the seconds column is a by-product -- the file's own closing line says to look at the
+contact sheets before calling anything acceptable. One burst is one full render at 33 frames, so
+interleaving three kept bursts plus a discard across four configurations is sixteen renders for a
+number nobody is quoting. What it does take from `_timing` is `ratio_of`, so the speedup column
+carries its direction and admits it is a single shot. The GPU lock is not optional and is taken at
+the bottom of this file: this samples a 16.6 GB transformer several times over and took none.
+
     python tools/fbcache_visual.py --threshold 0.12 0.2 --steps 20 --frames 33
 """
 
@@ -25,8 +33,12 @@ from pathlib import Path
 
 PORTABLE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PORTABLE_ROOT / "ComfyUI"))
+# `python313._pth` suppresses the script-directory entry, so the sibling imports below need this.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import torch  # noqa: E402
+
+from _timing import ratio_of  # noqa: E402
 
 PROMPT = ("a red apple on a wooden table, soft daylight, shallow depth of field, "
           "slow camera push in")
@@ -199,17 +211,21 @@ def main() -> int:
           f"{args.steps} steps, cfg {args.cfg}, seed {args.seed}")
     print(f'prompt: "{args.prompt}"\n')
     base = results["baseline"]
-    print(f"{'threshold':>10}  {'seconds':>9}  {'speedup':>8}  {'hits':>10}  "
+    print(f"{'threshold':>10}  {'seconds':>9}  {'speedup':>34}  {'hits':>10}  "
           f"{'pixel relL2':>12}  {'max px diff':>12}")
-    print(f"{'baseline':>10}  {base['seconds']:9.1f}  {'1.00x':>8}  {'-':>10}  "
+    print(f"{'baseline':>10}  {base['seconds']:9.1f}  {'(the reference)':>34}  {'-':>10}  "
           f"{'-':>12}  {'-':>12}")
     for label, entry in results.items():
         if label == "baseline":
             continue
         diff = entry["images"] - base["images"]
         rel = (diff.norm() / base["images"].norm().clamp(min=1e-12)).item()
+        # Through Ratio: a threshold that makes the render *slower* -- which happens, the cache
+        # has bookkeeping of its own -- used to print as "0.94x" here, the one form
+        # `razoes-na-direcao-certa` forbids. It now reads "1.06x slower". The "(1 burst, no
+        # interval)" it also prints is not decoration: this is one render per configuration.
         print(f"{entry['threshold']:>10g}  {entry['seconds']:9.1f}  "
-              f"{base['seconds'] / entry['seconds']:7.2f}x  "
+              f"{ratio_of(base['seconds'], entry['seconds']):>34}  "
               f"{entry['hits']:>4d}/{entry['calls']:<5d}  {rel:12.4f}  "
               f"{diff.abs().max().item():12.4f}")
     print(f"\nframes written to {args.out}")
@@ -219,4 +235,14 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # Took no lock, and this is one of the heaviest things in tools/: a 16.6 GB transformer, two
+    # text encoders, N full renders and a VAE decode. With no lock file present a sibling's
+    # `Assert-GpuLock` would have been granted while it ran, which is the case `_bench_guard.py`
+    # records as "20.49 GiB resident with the lock file absent".
+    from _bench_guard import BenchGuard
+
+    with BenchGuard("comfy_portable:fbcache_visual") as _guard:
+        if _guard.refused:
+            print(_guard.refused)
+            raise SystemExit(1)
+        raise SystemExit(main())

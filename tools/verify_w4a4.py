@@ -42,11 +42,18 @@ from __future__ import annotations
 import argparse
 import json
 import struct
-import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _native_probe import (  # noqa: E402
+    LOADER_LINEAR_DTYPE,
+    LOADER_QUANT_GROUP_SIZE,
+    native_backend_ready,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -108,8 +115,15 @@ class Format:
     tensors: Callable[[str, dict], dict[str, TensorSpec]]
     # comfy-kitchen op that executes this format, used both by the backend probe and the smoke.
     linear_op: str
-    # source for a subprocess that resolves `linear_op` against ck.registry.
-    probe_snippet: str
+    # (a layer's own metadata config, the set of tensor suffixes that layer actually has in the
+    # header) -> {op name: the kwargs config to resolve it under}, handed straight to
+    # `_native_probe.native_backend_ready`. The second argument exists because at least one kwarg
+    # -- w4a8's `codebook` -- is a property of the file rather than of the config. Was a literal snippet of subprocess source
+    # per format, with the groupsizes baked in; six files carried a version of that snippet and
+    # they disagreed. See `_native_probe.py`'s docstring for what a 2026-08-22 run said about the
+    # disagreement (short version: it changed no answer, which is why this is consolidation and
+    # not a bug fix).
+    probe_ops: Callable[[dict], dict]
     # (layer, config, load, x, options) -> kwargs for `linear_op`
     smoke_kwargs: Callable[..., dict]
 
@@ -156,27 +170,23 @@ def _w4a4_tensors(layer: str, config: dict) -> dict[str, TensorSpec]:
     }
 
 
-# The loader's own value, and the reason it is a literal here rather than a metadata read.
-#
-# `ComfyUI/comfy/ops.py:1195-1203` builds the convrot_w4a4 kwargs like this:
-#
-#     "convrot_groupsize": int(layer_conf.get("convrot_groupsize",
-#                              params_conf.get("convrot_groupsize", 256))),
-#     "quant_group_size": 64,
-#     "linear_dtype": layer_conf.get("linear_dtype", params_conf.get("linear_dtype", "int4")),
-#
-# Two of the three are read from the file. **`quant_group_size` is a literal with no metadata
-# lookup at all**, so it is not a property of a checkpoint, cannot vary at execution time, and is
-# written by no converter -- confirmed 2026-08-22 by reading the headers of the produced files,
-# whose per-layer configs are exactly `{format, convrot_groupsize}` (plus `group_size` on w4a8
-# layers).
-#
-# So requiring it from the metadata makes this verifier STRICTER THAN THE RUNTIME IT VERIFIES,
-# and the cost is not theoretical: it refuses --kernel-smoke on 100% of existing convrot_w4a4
-# checkpoints, including the invocation printed in CLAUDE.md. The point of this smoke is to
-# reproduce what the loader does; where the loader hardcodes, reproducing it means hardcoding the
-# same value and citing where it came from.
-LOADER_QUANT_GROUP_SIZE = 64
+# `LOADER_QUANT_GROUP_SIZE` and `LOADER_LINEAR_DTYPE` now live in `_native_probe.py`, imported
+# above, with the ops.py citation and the round-1 incident that produced them. They moved there
+# because the backend probe needs the same two values and this file no longer builds its own
+# probe: one fact, one definition.
+
+
+def _w4a4_probe_ops(config: dict, present: frozenset[str]) -> dict:  # noqa: ARG001
+    """Resolve the W4A4 linear op under the groupsize THIS file was written at.
+
+    `config.get(..., 256)`, not `_require(...)`: `comfy/ops.py:1195` falls back to 256 when the
+    key is absent, and a probe that refuses where the loader would happily run is the round-1
+    regression that made this verifier stricter than the runtime it verifies. The smoke below
+    still refuses, because there a wrong groupsize changes the number it prints.
+    """
+    return {"convrot_w4a4_linear": {
+        "convrot_groupsize": int(config.get("convrot_groupsize", 256)),
+        "linear_dtype": config.get("linear_dtype", LOADER_LINEAR_DTYPE)}}
 
 
 def _w4a4_smoke(layer, config, load, x, options) -> dict:
@@ -239,6 +249,33 @@ def _w4a8_tensors(layer: str, config: dict) -> dict[str, TensorSpec]:
     }
 
 
+def _w4a8_probe_ops(config: dict, present: frozenset[str]) -> dict:
+    """Resolve `w4a8_int8_linear` with the file's own codebook state, not a hardcoded True.
+
+    `config["group_size"]` cannot KeyError here: `_w4a8_tensors` above hard-refuses a w4a8 layer
+    without it, and validate_structure runs to completion before any probe. Indexing rather than
+    `.get(..., 16)` on purpose -- a default would be a guess about a shape this file just proved
+    it can compute.
+
+    The codebook is a different kind of fact and that is why it arrives separately. It is not in
+    the per-layer config at all -- every file on this bench carries exactly
+    `{format, convrot_groupsize, group_size}` -- it is the presence of `<layer>.weight_codebook`
+    in the header, which `_w4a8_tensors` already declares `required=False` because
+    `quant_w4a8.py --no-codebook` omits it.
+
+    Why it matters even though it is latent here: the probe hardcoded `codebook: True` while
+    `_w4a8_smoke` twelve lines below passes `load(".weight_codebook", optional=True)`, i.e. `None`
+    on such a file. The probe would then report which implementation the registry picks for a call
+    the smoke is not about to make. That is the same defect `_int8_probe_ops` below was rewritten
+    to fix, in the same file. Measured 2026-08-22: all nine w4a8 checkpoints on both drives carry
+    a codebook on every w4a8 layer, so nothing on disk trips it today.
+    """
+    return {"w4a8_int8_linear": {
+        "convrot_groupsize": int(config.get("convrot_groupsize", 256)),
+        "group_size": int(config["group_size"]),
+        "codebook": ".weight_codebook" in present}}
+
+
 def _w4a8_smoke(layer, config, load, x, options) -> dict:
     group_size = _require(config, layer, "group_size")
     convrot_groupsize = _require(config, layer, "convrot_groupsize")
@@ -275,6 +312,22 @@ def _int8_tensors(layer: str, config: dict) -> dict[str, TensorSpec]:
     }
 
 
+def _int8_probe_ops(config: dict, present: frozenset[str]) -> dict:  # noqa: ARG001
+    """Resolve `int8_linear` with the file's own `convrot`, not a hardcoded False.
+
+    The old snippet always probed `convrot: False` while `_int8_smoke` below runs the file's real
+    value, so on a `_int8_convrot` checkpoint the probe and the smoke asked the registry two
+    different questions -- the "an A/B only counts if both arms took the same dispatch" failure
+    this bench hit four times in one day. Both arms resolved to `comfy_kitchen.backends.cuda` on
+    the one file where they have been run side by side (ltx-2.5-22b ..._int8_convrot, 1440 layers,
+    2026-08-22 on the 3090), so this is not known to change any verdict; whether they can ever
+    disagree is unmeasured.
+    """
+    return {"int8_linear": {
+        "convrot": bool(config.get("convrot", False)),
+        "convrot_groupsize": int(config.get("convrot_groupsize", 256))}}
+
+
 def _int8_smoke(layer, config, load, x, options) -> dict:
     convrot = bool(config.get("convrot", False))
     # `input_act` is not optional in the kwargs dict even though it is optional in the signature:
@@ -298,39 +351,13 @@ def _int8_smoke(layer, config, load, x, options) -> dict:
     }
 
 
-# The convrot_w4a4 snippet is byte-for-byte the probe that has been in this file since it was
-# written and whose output the ticket records ("comfy_kitchen.backends.cuda"). The other two are
-# modelled on quant_w4a8.py:97 and quant_int8.py:102 and HAVE NOT BEEN EXECUTED -- both were
-# written on a session forbidden the GPU. `tools/probe_backend_resolution.py` would settle them.
-_PROBE_W4A4 = """
-q = torch.empty((64, 32), device='cuda', dtype=torch.int8)
-s = torch.empty((64,), device='cuda', dtype=torch.float32)
-x = torch.empty((2, 64), device='cuda', dtype=torch.float16)
-resolved['convrot_w4a4_linear'] = ck.registry.get_implementation('convrot_w4a4_linear', kwargs={'x': x, 'qweight': q, 'wscales': s, 'bias': None, 'convrot_groupsize': 64, 'quant_group_size': 64, 'linear_dtype': 'int4'}).__module__
-"""
-
-_PROBE_W4A8 = """
-w = torch.empty((64, 256), device='cuda', dtype=torch.bfloat16)
-p8 = ck.quantize_w4a8_int8_weight(w, group_size=16, convrot_groupsize=256, symmetric=True, scale_dtype=torch.float8_e4m3fn, codebook=True, codebook_tensor=None, stochastic_rounding=0)
-x8 = torch.empty((2, 256), device='cuda', dtype=torch.bfloat16)
-resolved['w4a8_int8_linear'] = ck.registry.get_implementation('w4a8_int8_linear', kwargs={'x': x8, 'qdata': p8[0], 's_rel': p8[1], 's_channel': p8[2], 'codebook': p8[4], 'correction': p8[3], 'bias': None, 'group_size': 16, 'convrot_groupsize': 256, 'out_dtype': torch.bfloat16}).__module__
-"""
-
-_PROBE_INT8 = """
-wi = torch.empty((64, 256), device='cuda', dtype=torch.int8)
-si = torch.empty((64, 1), device='cuda', dtype=torch.float32)
-xi = torch.empty((2, 256), device='cuda', dtype=torch.bfloat16)
-resolved['int8_linear'] = ck.registry.get_implementation('int8_linear', kwargs={'x': xi, 'weight': wi, 'weight_scale': si, 'bias': None, 'out_dtype': torch.bfloat16, 'convrot': False, 'convrot_groupsize': 256, 'input_act': None}).__module__
-"""
-
-
 FORMATS: dict[str, Format] = {
     "convrot_w4a4": Format(
         name="convrot_w4a4",
         packed_shape=lambda shape: [shape[0], shape[1] // 2],
         tensors=_w4a4_tensors,
         linear_op="convrot_w4a4_linear",
-        probe_snippet=_PROBE_W4A4,
+        probe_ops=_w4a4_probe_ops,
         smoke_kwargs=_w4a4_smoke,
     ),
     "asym_w4a8_int8": Format(
@@ -338,7 +365,7 @@ FORMATS: dict[str, Format] = {
         packed_shape=lambda shape: [shape[0], shape[1] // 2],
         tensors=_w4a8_tensors,
         linear_op="w4a8_int8_linear",
-        probe_snippet=_PROBE_W4A8,
+        probe_ops=_w4a8_probe_ops,
         smoke_kwargs=_w4a8_smoke,
     ),
     "int8_tensorwise": Format(
@@ -346,7 +373,7 @@ FORMATS: dict[str, Format] = {
         packed_shape=lambda shape: list(shape),
         tensors=_int8_tensors,
         linear_op="int8_linear",
-        probe_snippet=_PROBE_INT8,
+        probe_ops=_int8_probe_ops,
         smoke_kwargs=_int8_smoke,
     ),
 }
@@ -391,33 +418,24 @@ def load_tensor_cuda(path: Path, info: dict, view: str | None = None):
     return tensor
 
 
-def normal_comfy_backend(portable_root: Path, formats: list[Format]) -> dict:
-    """Ask a fresh interpreter which implementation ck.registry picks for each format present.
+def probe_ops_for(layers: dict, first_layer: dict[str, str], header: dict) -> dict:
+    """Union the per-format probe configurations for the formats this checkpoint actually has.
 
-    Format-aware on purpose. This used to resolve `convrot_w4a4_linear` unconditionally, which was
-    fine while the tool only understood one format and became actively misleading the moment it
-    understood three: printing a CUDA implementation of the W4A4 op says nothing about whether
-    `w4a8_int8_linear` or `int8_linear` resolve natively, and quant_int8.py:108 already carries
-    the same warning in its own words.
+    Format-aware on purpose, and it stays that way: this file once resolved `convrot_w4a4_linear`
+    unconditionally, which was fine while it understood one format and became actively misleading
+    the moment it understood three -- printing a CUDA implementation of the W4A4 op says nothing
+    about whether `w4a8_int8_linear` or `int8_linear` resolve natively.
+
+    One layer per format, the SAME layer the smoke will use, so the probe and the smoke cannot
+    describe two different configurations. The subprocess and the resolution itself now come from
+    `_native_probe.native_backend_ready`, which every converter here also calls.
     """
-    body = "".join(fmt.probe_snippet for fmt in formats)
-    code = (
-        "import json, sys, torch, comfy_kitchen as ck\n"
-        f"sys.path.insert(0, {str(portable_root / 'ComfyUI')!r})\n"
-        "import comfy.quant_ops\n"
-        "resolved = {}\n"
-        f"{body}"
-        "print(json.dumps({'resolved': resolved, 'backends': ck.list_backends()}))\n"
-    )
-    result = subprocess.run(
-        [sys.executable, "-c", code], cwd=portable_root, text=True,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
-    )
-    payload = json.loads(result.stdout.strip().splitlines()[-1])
-    payload["warning"] = result.stderr.strip()
-    payload["native_ready"] = all(".backends.cuda" in module
-                                  for module in payload["resolved"].values())
-    return payload
+    ops: dict = {}
+    for fmt_name, layer_name in sorted(first_layer.items()):
+        present = frozenset(key[len(layer_name):] for key in header
+                            if key.startswith(layer_name + "."))
+        ops.update(FORMATS[fmt_name].probe_ops(layers[layer_name], present))
+    return ops
 
 
 def resolve_source(model: Path, explicit_source: Path | None) -> Path | None:
@@ -635,9 +653,13 @@ def run(args: argparse.Namespace, coverage: Coverage) -> int:
     quant = json.loads(metadata["_quantization_metadata"])
     layers = quant["layers"]
     counts: dict[str, int] = {}
-    for config in layers.values():
+    # The first layer of each format, chosen once and used by BOTH the backend probe and the
+    # smoke. They used to pick separately -- the probe from a hardcoded snippet, the smoke from
+    # the file -- so they could describe different configurations of the same checkpoint.
+    first_layer: dict[str, str] = {}
+    for layer_name, config in layers.items():
         counts[config["format"]] = counts.get(config["format"], 0) + 1
-    present = [FORMATS[name] for name in sorted(counts)]
+        first_layer.setdefault(config["format"], layer_name)
 
     if source:
         errors = validate_preserved_bytes(model, source, model_header, source_header, layers)
@@ -668,15 +690,17 @@ def run(args: argparse.Namespace, coverage: Coverage) -> int:
                       "metadata and the preserved byte ranges were touched.")
         return 0
 
-    backend = normal_comfy_backend(portable_root, present)
+    backend = native_backend_ready(portable_root,
+                                   probe_ops_for(layers, first_layer, model_header))
     for op, module in sorted(backend["resolved"].items()):
         print(f"Normal ComfyUI backend: {op} -> {module}")
     if not backend["native_ready"]:
         print("ERROR: normal ComfyUI is not selecting the CUDA backend for every format present")
         return 1
-    coverage.note("backend resolution is a registry lookup on dummy tensors in a subprocess. It "
-                  "shows which implementation would be chosen, NOT that this file's own shapes "
-                  "resolve the same way, and not that any kernel ran.")
+    coverage.note("backend resolution is a registry lookup in a subprocess, on tensors generated "
+                  "there at this checkpoint's own groupsizes -- NOT on this file's tensors and "
+                  "not at this file's shapes. It shows which implementation would be chosen; it "
+                  "does not show that any kernel ran.")
     # There used to be a note here saying the w4a8 and int8 probe snippets had never been
     # executed. All three have now been run against real checkpoints (see the module docstring),
     # so the note is gone rather than left standing -- a caveat that overstates teaches the reader
@@ -698,8 +722,7 @@ def run(args: argparse.Namespace, coverage: Coverage) -> int:
     smoked = []
     smoke_errors = []
     for fmt_name in sorted(counts):
-        layer_name = next(name for name, config in layers.items()
-                          if config["format"] == fmt_name)
+        layer_name = first_layer[fmt_name]
         result = kernel_smoke(model, source, layer_name, layers[layer_name],
                               model_header, source_header, options)
         smoked.append(result)

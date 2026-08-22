@@ -145,7 +145,7 @@ class _StubSource:
         return self._digest
 
 
-def _run_download(payload: bytes, digest, tmp: Path) -> tuple[object, Path, Path]:
+def _run_download(payload: bytes, digest, tmp: Path) -> tuple[object, Path, Path, dict]:
     real_source, real_fetch = hpg.Source, hpg.fetch_chunk
     hpg.Source = lambda repo, file, revision: _StubSource(payload, digest)
 
@@ -160,14 +160,16 @@ def _run_download(payload: bytes, digest, tmp: Path) -> tuple[object, Path, Path
     hpg.fetch_chunk = stub_fetch
     dest = tmp / "sub" / "blob.bin"
     state = dest.with_suffix(dest.suffix + ".parts.json")
+    outcome: dict = {}
     try:
         try:
-            result = hpg.download("R/r", "sub/blob.bin", tmp, chunk_mb=1, connections=2)
+            result = hpg.download("R/r", "sub/blob.bin", tmp, chunk_mb=1, connections=2,
+                                  outcome=outcome)
         except SystemExit as error:
             result = error
     finally:
         hpg.Source, hpg.fetch_chunk = real_source, real_fetch
-    return result, dest, state
+    return result, dest, state, outcome
 
 
 def test_verification_runs_before_the_sidecar_is_removed() -> None:
@@ -175,31 +177,101 @@ def test_verification_runs_before_the_sidecar_is_removed() -> None:
     good = hpg.hashlib.sha256(payload).hexdigest()
 
     with tempfile.TemporaryDirectory() as tmp:
-        result, dest, state = _run_download(payload, ("sha256", good, "stub"), Path(tmp))
+        result, dest, state, _ = _run_download(payload, ("sha256", good, "stub"), Path(tmp))
         assert result == 0, result
         assert dest.read_bytes() == payload
         assert not state.exists(), "sidecar should be gone once the digest agrees"
 
     with tempfile.TemporaryDirectory() as tmp:
         wrong = ("sha256", "0" * 64, "stub")
-        result, dest, state = _run_download(payload, wrong, Path(tmp))
+        result, dest, state, _ = _run_download(payload, wrong, Path(tmp))
         assert isinstance(result, SystemExit), f"a bad digest must raise, got {result!r}"
         assert "mismatch" in str(result)
         # This is the criterion's item 3: the resume state survives a failed verification.
         assert state.exists(), "sidecar was removed before/despite the digest failing"
 
     with tempfile.TemporaryDirectory() as tmp:
-        result, dest, state = _run_download(payload, None, Path(tmp))
+        result, dest, state, _ = _run_download(payload, None, Path(tmp))
         assert result == 0
         assert not state.exists()
 
 
+def test_outcome_separates_completed_from_verified() -> None:
+    """rc 0 covers both "sha256 matched" and "nothing checked the content".
+
+    `fetch_ltx25.py`'s end-of-run table prints `OK` from `path.stat().st_size == expected`, so
+    a file HF gave no digest for reads exactly like a verified one there while `download()`'s
+    own WARNING has long scrolled past. This is the fact that table has to be able to read; it
+    is not a refusal, and the return code is unchanged in every case below.
+    """
+    payload = bytes(range(256)) * 8192
+    good = hpg.hashlib.sha256(payload).hexdigest()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        result, dest, _, outcome = _run_download(payload, ("sha256", good, "stub"), Path(tmp))
+        assert result == 0 and outcome["verified"] is True, outcome
+        assert "sha256" in outcome["verification"]
+        assert outcome["bytes"] == len(payload) and outcome["path"] == str(dest)
+
+        # Same directory, second call: the file is now complete with no sidecar, which is the
+        # early return. It hashes nothing -- it never did -- so it must not claim it did.
+        result, _, _, again = _run_download(payload, ("sha256", good, "stub"), Path(tmp))
+        assert result == 0, result
+        assert again["verified"] is False, again
+        assert "not rechecked" in again["verification"], again
+
+    with tempfile.TemporaryDirectory() as tmp:
+        result, _, _, outcome = _run_download(payload, None, Path(tmp))
+        assert result == 0, "the no-digest case must stay a fail-open, not become a refusal"
+        assert outcome["verified"] is False, outcome
+        assert "NOT VERIFIED" in outcome["verification"], outcome
+
+    with tempfile.TemporaryDirectory() as tmp:
+        result, _, _, outcome = _run_download(payload, ("sha256", "0" * 64, "stub"), Path(tmp))
+        assert isinstance(result, SystemExit)
+        assert outcome["verified"] is False and "MISMATCH" in outcome["verification"], outcome
+
+    # A caller that passes nothing must still work: `outcome` is optional, and the two existing
+    # call sites (fetch_ltx25.py, fetch_minimax_h3.py) do not pass it.
+    with tempfile.TemporaryDirectory() as tmp:
+        real_source, real_fetch = hpg.Source, hpg.fetch_chunk
+        hpg.Source = lambda repo, file, revision: _StubSource(payload, None)
+
+        def stub_fetch(source, dest, index, start, end, retries, progress, lock):
+            with dest.open("r+b") as handle:
+                handle.seek(start)
+                handle.write(source.payload[start:end + 1])
+            with lock:
+                progress["done"] += end - start + 1
+            return index
+
+        hpg.fetch_chunk = stub_fetch
+        try:
+            assert hpg.download("R/r", "sub/blob.bin", Path(tmp), chunk_mb=1) == 0
+        finally:
+            hpg.Source, hpg.fetch_chunk = real_source, real_fetch
+
+
 def test_throughput_counts_only_kept_bytes() -> None:
-    """A chunk that fails once and succeeds on retry must contribute its length once."""
+    """A chunk that fails once and succeeds on retry must contribute its length once.
+
+    Both halves of the readout are here: the total credited when the chunk completes, and the
+    in-flight figure the progress line adds so the rate stops sagging between completions.
+    1.5 MiB crosses the wire below and 1 MiB is kept, so any sample above 1 MiB is the old
+    double count coming back.
+    """
     import threading
 
     payload = b"z" * (1024 * 1024)
     attempts = {"n": 0}
+    progress: dict = {"done": 0, "inflight": {}}
+    # What download()'s progress line would have printed, sampled where it cannot normally be
+    # observed: at the start of each attempt, and after each block lands.
+    at_attempt_start: list[int] = []
+    after_block: list[int] = []
+
+    def landed() -> int:
+        return progress["done"] + sum(progress["inflight"].values())
 
     class _FlakyClient:
         def __init__(self, *a, **k):
@@ -213,6 +285,7 @@ def test_throughput_counts_only_kept_bytes() -> None:
 
         def stream(self, method, url, headers=None):
             attempts["n"] += 1
+            at_attempt_start.append(landed())
             return _FlakyStream(attempts["n"] == 1)
 
     class _FlakyStream:
@@ -234,6 +307,7 @@ def test_throughput_counts_only_kept_bytes() -> None:
             body = payload[:len(payload) // 2] if self.half else payload
             for offset in range(0, len(body), size):
                 yield body[offset:offset + size]
+                after_block.append(landed())
 
     class _OkSource:
         token = None
@@ -248,7 +322,6 @@ def test_throughput_counts_only_kept_bytes() -> None:
         with tempfile.TemporaryDirectory() as tmp:
             dest = Path(tmp) / "blob.bin"
             dest.write_bytes(b"\0" * len(payload))
-            progress = {"done": 0}
             hpg.fetch_chunk(_OkSource(), dest, 0, 0, len(payload) - 1, 4,
                             progress, threading.Lock())
     finally:
@@ -257,6 +330,20 @@ def test_throughput_counts_only_kept_bytes() -> None:
     assert attempts["n"] == 2, attempts
     assert progress["done"] == len(payload), \
         f"retried bytes double-counted: {progress['done']} for a {len(payload)}-byte chunk"
+    assert progress["inflight"] == {}, \
+        f"a completed chunk left a live counter behind: {progress['inflight']}"
+    # What each of the last two can see, checked on 2026-08-22 by re-execing the module with
+    # the defect patched back in rather than by argument: deleting the per-attempt reset trips
+    # `at_attempt_start` only; deleting the reset *and* accumulating per block instead of
+    # assigning -- the historical shape -- trips both (`after_block` peaks at 1.5 MiB). Swapping
+    # assign for accumulate on its own trips neither, because within one attempt the two are
+    # arithmetically the same; the reset is the whole mechanism, and `at_attempt_start` is the
+    # assertion that guards it.
+    assert at_attempt_start == [0, 0], \
+        f"the retry did not start from zero, so the abandoned bytes were still claimed during " \
+        f"the backoff sleep: {at_attempt_start}"
+    assert after_block and max(after_block) <= len(payload), \
+        f"the live figure exceeded the chunk's own length: {after_block}"
 
 
 def main() -> int:
@@ -273,6 +360,9 @@ def main() -> int:
     print(f"\n{len(tests) - failed}/{len(tests)} passed")
     print("NOT covered here: any real HTTP, the HF API path of expected_digest(), and the "
           "sha256 of a real multi-GB blob. Those need the network and a download.")
+    print("Also not covered: the printed MiB/s itself. The accounting behind it is tested "
+          "above; whether the readout still swings on a real 8-connection multi-GiB fetch is "
+          "not, and only such a fetch settles it.")
     return 1 if failed else 0
 
 

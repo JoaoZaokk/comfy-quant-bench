@@ -112,19 +112,48 @@ def read_state(path: Path = LOCK_PATH) -> dict[str, str] | None:
 
 
 def _pid_alive(pid: int) -> bool:
-    """Windows-safe liveness. `os.kill(pid, 0)` raises PermissionError for a live process owned
-    by another user, which is a *yes*, not a no -- treating it as dead is how a live lock gets
-    called stale."""
+    """Windows liveness, and the POSIX intuition is wrong here in a way that matters.
+
+    MEASURED 2026-08-22 on this host, CPython 3.13.12:
+
+        pid   30692 (dead)   os.kill(pid, 0) -> OSError winerror=87 errno=22
+        pid   25476 (alive)  os.kill(pid, 0) -> no raise
+        pid  999999 (never)  os.kill(pid, 0) -> OSError winerror=87 errno=22
+
+    **A dead pid does not raise `ProcessLookupError` on Windows.** It raises a bare `OSError` with
+    `winerror = 87` (ERROR_INVALID_PARAMETER). The first version of this function caught
+    `ProcessLookupError` for dead, `PermissionError` for alive, and fell through to
+    `except OSError: return True` for everything else -- so **every dead pid read as alive.**
+
+    The direction was safe (a stale lock stays stuck rather than being stolen, and this module
+    never auto-reclaims anyway) but the *message* lied: `describe()` printed `alive=True` over a
+    process that had been dead for minutes. And it put the two halves of this lock back into
+    disagreement -- PowerShell's `Get-Process -Id` correctly said dead for the same pid, which is
+    exactly the class of split that ticket 01 was about.
+
+    `psutil.pid_exists` is what `Get-Process` effectively does and gets both cases right; it is
+    already in the embedded interpreter and already imported by the benchmark tools that import
+    this one. The `os.kill` path stays as the fallback for an interpreter without it, now reading
+    `winerror` instead of assuming.
+    """
     if pid <= 0:
         return False
+    try:
+        import psutil
+    except ImportError:
+        pass
+    else:
+        return psutil.pid_exists(pid)
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
     except PermissionError:
-        return True
-    except OSError:
-        return True  # unknown -> assume held; the nuisance is the cheaper failure
+        return True                     # alive, owned by someone else
+    except OSError as error:
+        if getattr(error, "winerror", None) == 87:
+            return False                # ERROR_INVALID_PARAMETER: no such process
+        return True                     # genuinely unknown -> assume held, the cheaper failure
     return True
 
 

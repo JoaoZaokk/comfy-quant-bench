@@ -524,6 +524,35 @@ async function poll() {
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
+    # `BaseHTTPRequestHandler.timeout` ships as None, which means the socket never times out:
+    # a client that sends `Content-Length: 5000` and then one byte parks the worker thread on
+    # `self.rfile.read(length)` for as long as it keeps the connection open. `Server` is a
+    # ThreadingTCPServer, so that costs one thread rather than the whole server -- but a handful
+    # of such connections is the tool refusing to work for the one person who uses it, and it
+    # needs no attacker: a browser tab killed mid-POST leaves exactly this shape.
+    #
+    # Setting the attribute is the whole mechanism -- `StreamRequestHandler.setup` calls
+    # `connection.settimeout(self.timeout)` and `handle_one_request` catches the resulting
+    # `socket.timeout`, closing the connection -- and that sentence is READ, not run: this
+    # interpreter ships the stdlib zipped and `inspect.getsource` cannot open it. What was
+    # executed here on 2026-08-22: `BaseHTTPRequestHandler.timeout` is None and
+    # `socket.timeout is TimeoutError` is True on Python 3.13.12, and
+    # `test_ltx_studio.test_stalled_request_is_abandoned` sends this exact half-body and watches
+    # the server drop it and free the thread -- with `timeout = None` put back, the same block
+    # instead ends with the client giving up first and the thread still held.
+    #
+    # This is an IDLE timeout, per socket operation, not a budget for the whole request -- a
+    # client that dribbles a byte every 14 s still holds a thread. That is a slowloris, not the
+    # dropped-tab case this is for, and bounding total request time would need
+    # `handle_one_request` overridden. The timed-out connection is dropped with no response (the
+    # client sees a reset, not a 408), because the timeout fires inside `handle_one_request`,
+    # above every route in this file.
+    #
+    # 15 s is chosen against the only real client: the page's `fetch()` writes its whole body at
+    # once and every response here is small (a few-MB mp4, a PNG frame), so nothing legitimate on
+    # loopback idles this long mid-request.
+    timeout = 15
+
     def log_message(self, *_args) -> None:  # the page polls twice a second; do not narrate it
         pass
 
@@ -655,6 +684,9 @@ def main() -> int:
     print("             /render checks Sec-Fetch-Site and Host; the GET routes check neither,")
     print("             so they are readable by any local process and confined to")
     print(f"             {OUTROOT} rather than authenticated.")
+    print(f"             A silent connection is dropped after {Handler.timeout}s, which frees the")
+    print("             thread a half-sent request parked -- but that is an idle timeout, so a")
+    print("             client dribbling one byte at a time still holds one.")
     with Server(("127.0.0.1", PORT), Handler) as httpd:
         try:
             httpd.serve_forever()

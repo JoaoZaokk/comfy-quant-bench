@@ -54,7 +54,6 @@ import math
 import os
 import shutil
 import struct
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -67,6 +66,7 @@ import psutil  # noqa: E402
 import torch  # noqa: E402
 import torch.nn.functional as F  # noqa: E402
 
+from _native_probe import native_backend_ready  # noqa: E402
 from calibrate_activations import (  # noqa: E402,F401
     PROFILE_FILE_PATTERNS,
     PROFILE_PATTERNS,
@@ -112,55 +112,41 @@ def human_size(size: int) -> str:
     return f"{size:.2f} TiB"
 
 
-def normal_comfy_backend(portable_root: Path) -> dict:
-    """Ask a fresh interpreter which implementation normal ComfyUI would pick.
+def mixed_probe_ops(args: argparse.Namespace) -> dict:
+    """All four ops this file measures with, each at the configuration it will measure at.
 
-    In-process resolution is not the same question: this script has already imported and poked at
-    comfy_kitchen by the time it would ask. The subprocess sees what `main.py` would see.
+    This used to be a private `normal_comfy_backend()` right here, one of six across `tools/`, and
+    of the six it was the closest to right: it already resolved all four ops and already passed
+    real quantizer output rather than `torch.empty` placeholders. What it did not do was pass
+    `--group-size` and `--convrot-groupsize`; it hardcoded 16 and 256, which happen to be the
+    defaults, so `--convrot-groupsize 64` preflighted at 256. Now the args go through.
+
+    Why real kwargs at all: `registry.get_implementation`'s own docstring says "kwargs: Kwargs for
+    constraint validation (empty/None skips validation)", so a no-kwargs probe asks which backend
+    would be picked *ignoring every constraint*, while the real call drops to eager on a failing
+    constraint with only a logger.debug line. READ, not measured -- and see `_native_probe.py`'s
+    docstring for the 2026-08-22 run in which dummy and real did NOT differ for the ConvRot pair.
+    The kwargs stay real regardless: they are what this file is about to call with.
     """
-    # The kwargs are not decoration. `registry.get_implementation`'s own docstring says
-    # "kwargs: Kwargs for constraint validation (empty/None skips validation)", so the earlier
-    # version of this probe -- `get_implementation(name)` with no kwargs -- asked which backend
-    # would be picked *ignoring every constraint*. The real conversion passes real tensors, where
-    # a failing constraint drops to the next backend (eager) with only a logger.debug line. So
-    # the guard could pass while the work ran dequantized, which is the exact failure this whole
-    # preflight exists to prevent.
-    probe = (
-        "import json,sys;"
-        f"sys.path.insert(0, {str(portable_root / 'ComfyUI')!r});"
-        "import torch;"
-        "import comfy.quant_ops;"
-        "import comfy_kitchen as ck;"
-        "from comfy_kitchen import registry as R;"
-        "w = torch.zeros(256, 256, device='cuda', dtype=torch.bfloat16);"
-        "x = torch.zeros(64, 256, device='cuda', dtype=torch.bfloat16);"
-        "q4, s4 = ck.quantize_convrot_w4a4_weight(w, 256, 64);"
-        "p8 = ck.quantize_w4a8_int8_weight(w, group_size=16, convrot_groupsize=256,"
-        "  symmetric=True, scale_dtype=torch.float8_e4m3fn, codebook=True,"
-        "  codebook_tensor=None, stochastic_rounding=0);"
-        "kw = {"
-        "  'quantize_convrot_w4a4_weight': {'weight': w, 'convrot_groupsize': 256,"
-        "      'quant_group_size': 64, 'stochastic_rounding': 0},"
-        "  'convrot_w4a4_linear': {'x': x, 'qweight': q4, 'wscales': s4, 'bias': None,"
-        "      'convrot_groupsize': 256, 'quant_group_size': 64, 'linear_dtype': 'int4'},"
-        "  'quantize_w4a8_int8_weight': {'weight': w, 'group_size': 16,"
-        "      'convrot_groupsize': 256, 'symmetric': True,"
-        "      'scale_dtype': torch.float8_e4m3fn, 'codebook': True,"
-        "      'codebook_tensor': None, 'stochastic_rounding': 0},"
-        "  'w4a8_int8_linear': {'x': x, 'qdata': p8[0], 's_rel': p8[1], 's_channel': p8[2],"
-        "      'codebook': p8[4], 'correction': p8[3], 'bias': None, 'group_size': 16,"
-        "      'convrot_groupsize': 256, 'out_dtype': torch.bfloat16},"
-        "};"
-        f"names={list(REQUIRED_OPS)!r};"
-        "print(json.dumps({n: getattr(R.get_implementation(n, kwargs=kw[n]),"
-        " '__module__', '?') for n in names}))"
-    )
-    result = subprocess.run([sys.executable, "-s", "-c", probe],
-                            capture_output=True, text=True, cwd=str(portable_root))
-    if result.returncode != 0:
-        raise SystemExit(f"Backend probe failed:\n{result.stderr.strip()}")
-    modules = json.loads(result.stdout.strip().splitlines()[-1])
-    return modules
+    ops = {
+        "quantize_convrot_w4a4_weight": {"convrot_groupsize": args.convrot_groupsize},
+        "convrot_w4a4_linear": {"convrot_groupsize": args.convrot_groupsize},
+        "quantize_w4a8_int8_weight": {"convrot_groupsize": args.convrot_groupsize,
+                                      "group_size": args.group_size,
+                                      # measure_layer() always passes codebook=True
+                                      "codebook": True},
+        "w4a8_int8_linear": {"convrot_groupsize": args.convrot_groupsize,
+                             "group_size": args.group_size, "codebook": True},
+    }
+    # REQUIRED_OPS is the list this file's own docstring promises to check. Keeping the two in
+    # one place would be tidier; keeping them in two with this check is what stops a future op
+    # being added to the promise and silently not probed.
+    missing = [name for name in REQUIRED_OPS if name not in ops]
+    if missing:
+        raise SystemExit(f"mixed_probe_ops has no configuration for {missing}, which "
+                         "REQUIRED_OPS says must resolve to CUDA before any number here means "
+                         "anything")
+    return ops
 
 
 def read_header(path: Path) -> tuple[dict, dict[str, str]]:
@@ -512,15 +498,16 @@ def main() -> int:
     print(f"Selected Linear weights: {len(selected)}")
     print(f"Output:  {output}\n")
 
-    backend = normal_comfy_backend(PORTABLE_ROOT)
-    wrong = {name: module for name, module in backend.items()
+    backend = native_backend_ready(PORTABLE_ROOT, mixed_probe_ops(args))
+    resolved = backend["resolved"]
+    wrong = {name: module for name, module in resolved.items()
              if "comfy_kitchen.backends.cuda" not in module}
     if wrong:
         raise SystemExit("Refusing: normal ComfyUI would not use the CUDA backend for "
                          + ", ".join(f"{k} -> {v}" for k, v in wrong.items()))
     if not torch.cuda.is_available():
         raise SystemExit("CUDA is unavailable")
-    for name, module in backend.items():
+    for name, module in resolved.items():
         print(f"  {name:<32} -> {module}")
     print()
 
@@ -839,7 +826,9 @@ def main() -> int:
         "layer_counts": counts,
         "calibration": analysis.get("calibration", {}),
         "group_size": args.group_size, "convrot_groupsize": args.convrot_groupsize,
-        "backend": backend,
+        # {op: module}, the same shape this sidecar has always carried -- not the whole probe
+        # payload, which would put a `native_ready` flag next to it that reads as a second claim.
+        "backend": resolved,
         "preserved_tensors": len(header) - len(quant_names),
         "comfy_kitchen_version": importlib.metadata.version("comfy-kitchen"),
         "torch_version": torch.__version__, "cuda_version": torch.version.cuda,

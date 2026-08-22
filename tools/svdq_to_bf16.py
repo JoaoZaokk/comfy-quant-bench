@@ -484,12 +484,23 @@ def write_checkpoint(src: Path, data_start: int, out: Path, partial: Path,
                      entries: list, blob: bytes, planned: int) -> None:
     """Stream the planned file out, and refuse to hand over anything that is not the plan.
 
-    This was the only writer in `tools/` without the contract the other six share -- compare
-    `quant_w4a4.py:285-327`, `quant_w4a8.py:373-393`, `quant_int8.py:270-289`,
-    `quant_w4a4_smooth.py:294-312`, `quant_mixed.py:637-657`, `to_native.py:200-227`. It opened
-    the partial `"wb"` (clobbering a crashed run's leftover), never compared bytes written
-    against bytes planned, never `fsync`ed, and had no `try/finally`, so a failure left the
-    partial behind for the next run to overwrite.
+    This was the only writer in `tools/` without the contract the other six share. Find them with
+
+        grep -n '"xb"' tools/*.py
+
+    -- exactly one hit in each of `quant_w4a4.py`, `quant_w4a8.py`, `quant_int8.py`,
+    `quant_w4a4_smooth.py`, `quant_mixed.py` and `to_native.py`, and several in this file, of
+    which only the `open(partial, "xb")` below is code. This paragraph
+    carried the six line ranges instead, and `quant_mixed.py:637-657` was ALREADY WRONG in the
+    commit that introduced it: the same commit added 213 lines to that file and moved its writer
+    to :798. Re-checked 2026-08-22, EXECUTED: four of the six had drifted again within one
+    session, three of them between two greps ten minutes apart, because sibling agents were
+    editing those files at the time. A line number in a comment is a claim with an expiry date
+    nobody can see; a symbol plus the grep that finds it does not rot.
+
+    What that contract is: the partial opened `"wb"` here (clobbering a crashed run's leftover),
+    bytes written were never compared against bytes planned, nothing was `fsync`ed, and there was
+    no `try/finally`, so a failure left the partial behind for the next run to overwrite.
 
     That gap is worse here than in any of the six, for two reasons. A safetensors header is
     self-describing, so a file short by one tensor still parses and still *loads* -- the tail
@@ -719,6 +730,19 @@ def main() -> int:
     # its siblings check W4A4 checkpoints, not dequantized BF16 ones -- and a partial-flag that
     # no gate enforces is the exact shape of claim this bench keeps getting burned by. A mode
     # that writes nothing cannot be misread.
+    #
+    # **What this cost, stated because the change that made it did not state it.** `--limit N`
+    # was the only cheap route to `write_checkpoint`: four layers, seconds of kernel time, and
+    # the writer ran. Returning here means the writer is now reachable ONLY from a full run --
+    # all 136 Z-Image layers off an 11 GiB source, on CUDA. And `tools/test_svdq_verify.py` has
+    # no case for `write_checkpoint` or `check_fusion` at all (grep, 2026-08-22, executed: zero
+    # hits for either symbol), so the contract added above -- "xb", written == planned, fsync,
+    # the finally -- rests on one ad-hoc temp-dir run recorded in that function's docstring and
+    # on nothing that re-runs. That is a fair trade against writing a checkpoint that is not one,
+    # but it is a trade, and the coverage it spent has to be bought back somewhere: a CPU case in
+    # test_svdq_verify.py that builds a small safetensors, calls `write_checkpoint` directly, and
+    # asserts the truncated write raises and leaves neither `out` nor `.partial`. It needs no GPU
+    # and does not exist yet.
     if args.limit:
         print(f"\n--limit {args.limit}: smoke mode, nothing written. {len(recovered)} tensor(s) "
               f"were recovered and discarded.")

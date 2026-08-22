@@ -9,8 +9,14 @@ a given *kernel* implements both equally, which is a software question and diffe
 So each backend is run twice, same shapes and same seed, and reported on three axes:
 
     runs?     an exception here is the strongest possible answer
-    time      median of timed iterations after warm-up, both dtypes on the same shapes
+    time      median over interleaved bursts, both dtypes on the same shapes, first burst dropped
     error     mean |difference| against an fp32 SDPA reference computed from the same inputs
+
+The timing goes through `_timing.compare()`. This file used to run fp16 to completion and only
+then bf16 -- the non-interleaved order `m_crossover.py:158-162` argues against at length, where
+any drift over the run lands entirely on whichever arm happened to be second. It also reported a
+single burst; MEASURED 2026-08-22 on the 3090, the first burst of an attention A/B reads ~3% high
+in the same direction every time, so it is now run and discarded rather than reported.
 
 The reference is fp32 for both, so the two error columns are comparable to each other. Note this
 measures the kernel, not the format: fp16 starting from fp32 inputs already has 3 more mantissa
@@ -22,9 +28,7 @@ baseline, which the `sdpa` row gives.
 
 from __future__ import annotations
 
-import statistics
 import sys
-import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -32,23 +36,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import torch
 import torch.nn.functional as F
 
+from _timing import compare, provenance, wall_ms  # noqa: E402
+
 DEV = "cuda"
 B, H, S, D = 2, 16, 4096, 64   # a real image-model attention shape, not a toy one
 ITERS = 20
-
-
-def timed(fn, iters: int = ITERS) -> float:
-    for _ in range(3):
-        fn()
-    torch.cuda.synchronize()
-    samples = []
-    for _ in range(iters):
-        torch.cuda.synchronize()
-        start = time.perf_counter()
-        fn()
-        torch.cuda.synchronize()
-        samples.append(time.perf_counter() - start)
-    return statistics.median(samples) * 1000.0
 
 
 def reference_inputs():
@@ -123,25 +115,42 @@ def backends():
     return out
 
 
-def main() -> int:
+def main(repeats: int = 3) -> int:
     if not torch.cuda.is_available():
         print("needs CUDA")
         return 1
     print(f"device {torch.cuda.get_device_name(0)} cc {torch.cuda.get_device_capability(0)}, "
           f"torch {torch.__version__}")
-    print(f"shape B={B} H={H} S={S} D={D}, median of {ITERS} timed iterations\n")
+    print(f"shape B={B} H={H} S={S} D={D}, {ITERS} timed iterations per burst\n")
 
     impls = backends()
     base, reference = reference_inputs()
-    print(f"{'backend':<16}{'fp16 ms':>10}{'bf16 ms':>10}{'bf16 vs fp16':>14}"
+    print(f"{'backend':<16}{'fp16 ms':>10}{'bf16 ms':>10}{'bf16 vs fp16':>30}"
           f"{'fp16 err':>11}{'bf16 err':>11}")
+    last_result = None
     for name, fn in impls.items():
-        row = {}
-        for dtype in (torch.float16, torch.bfloat16):
+        # Both dtypes are built and held for the whole comparison, so `compare()` can interleave
+        # them. This file used to time fp16 to completion and only then start bf16 -- the exact
+        # non-interleaved order `m_crossover.py` argues against, and the order that lets any drift
+        # over the run land entirely on bf16.
+        #
+        # The residency question this raises is the one this file already has a scar from: keeping
+        # the three fp32 tensors resident while timing once reported bf16 as 2.65x slower than
+        # fp16, an allocator artefact (see `reference_inputs`). Holding both 16-bit copies is 96
+        # MiB at this shape, 192 with the pre-transposed pair -- and, unlike the fp32 case, the
+        # residency is now *identical* for both arms rather than growing between them, which is
+        # the property that makes an interleaved A/B fair. NOT verified on the card: if a backend
+        # suddenly reads far off its old figure here, this is the first thing to suspect.
+        errors, calls, broken = {}, {}, {}
+        held = []
+        for label, dtype in (("fp16", torch.float16), ("bf16", torch.bfloat16)):
             q, k, v = (t.to(device=DEV, dtype=dtype) for t in base)
             pre = ([t.transpose(1, 2).contiguous() for t in (q, k, v)]
                    if getattr(fn, "needs_bshd", False) else None)
-            call = (lambda: fn(q, k, v, pre)) if pre is not None else (lambda: fn(q, k, v))
+            held.append((q, k, v, pre))
+            call = ((lambda f=fn, a=q, b=k, c=v, p=pre: f(a, b, c, p)) if pre is not None
+                    else (lambda f=fn, a=q, b=k, c=v: f(a, b, c)))
+            calls[label] = call
             try:
                 got = call().float().cpu()
                 if not torch.isfinite(got).all():
@@ -149,26 +158,38 @@ def main() -> int:
                     # in one column while the timing columns and the verdict look completely
                     # normal. A backend that only breaks in bf16 would slip through.
                     raise RuntimeError("output contains inf or nan")
-                error = float((got - reference).abs().mean())
+                errors[label] = float((got - reference).abs().mean())
                 del got
                 torch.cuda.empty_cache()
-                # Nothing but q, k, v (and the pre-transposed copies) is resident from here to
-                # the end of the timing loop.
-                row[dtype] = (timed(call), error)
             except Exception as exc:
-                row[dtype] = (None, repr(exc)[:70])
-            del q, k, v, pre, call
-            torch.cuda.empty_cache()
+                broken[label] = repr(exc)[:70]
+                errors[label] = float("nan")
 
-        fp16, bf16 = row[torch.float16], row[torch.bfloat16]
-        if fp16[0] is None or bf16[0] is None:
-            broken = "fp16" if fp16[0] is None else "bf16"
-            print(f"{name:<16}{'FAILED on ' + broken:>10}  {row[torch.float16 if fp16[0] is None else torch.bfloat16][1]}")
+        if broken:
+            which = ", ".join(sorted(broken))
+            print(f"{name:<16}{'FAILED on ' + which:>10}  {list(broken.values())[0]}")
+            del held, calls
+            torch.cuda.empty_cache()
             continue
-        ratio = bf16[0] / fp16[0]
-        verdict = f"{ratio:.2f}x slower" if ratio > 1 else f"{1 / ratio:.2f}x faster"
-        print(f"{name:<16}{fp16[0]:>10.2f}{bf16[0]:>10.2f}{verdict:>14}"
-              f"{fp16[1]:>11.5f}{bf16[1]:>11.5f}")
+
+        result = compare(calls, iters=ITERS, repeats=repeats, baseline="fp16", timer=wall_ms,
+                         owner="comfy_portable:attn_dtype_ab")
+        last_result = result
+        if result.failed:
+            print(f"{name:<16}{'FAILED while timing':>10}  {result.failed}")
+            del held, calls
+            torch.cuda.empty_cache()
+            continue
+        # The Ratio inverts and names its own direction, so a bf16 that wins reads "1.04x faster"
+        # instead of "0.96x" -- the form `razoes-na-direcao-certa` exists to keep out of here.
+        print(f"{name:<16}{result.times['fp16']:>10.2f}{result.times['bf16']:>10.2f}"
+              f"{result.ratios['bf16']:>30}{errors['fp16']:>11.5f}{errors['bf16']:>11.5f}")
+        del held, calls
+        torch.cuda.empty_cache()
+
+    if last_result is not None:
+        print(f"\n{provenance(last_result)}")
+        print("(the discarded burst quoted above is the last backend's; each discards its own)")
 
     print("\nerror is mean|out - fp32 SDPA| on identical fp32 inputs, so the two columns are")
     print("comparable. The `sdpa` row is the baseline: bf16 carries 3 fewer mantissa bits, so")
@@ -178,10 +199,22 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    import argparse
+
     from _bench_guard import BenchGuard
+
+    _parser = argparse.ArgumentParser(description="fp16 vs bf16 across the installed attention "
+                                                  "backends")
+    _parser.add_argument("--repeats", type=int, default=3,
+                         help="interleaved bursts KEPT per backend; one more is run and discarded "
+                              "as warm-up-biased")
+    _args = _parser.parse_args()
+    if _args.repeats < 1:
+        print("--repeats must be at least 1")
+        raise SystemExit(2)
 
     with BenchGuard("attn_dtype_ab") as _guard:
         if _guard.refused:
             print(_guard.refused)
             raise SystemExit(1)
-        raise SystemExit(main())
+        raise SystemExit(main(repeats=_args.repeats))

@@ -28,8 +28,13 @@ from pathlib import Path
 
 PORTABLE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PORTABLE_ROOT / "ComfyUI"))
+# The embedded interpreter's `python313._pth` suppresses the script-directory entry, so the two
+# sibling imports below need this (`m_crossover.py:49-52`).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import torch  # noqa: E402
+
+from _timing import compare, cuda_event_ms, provenance  # noqa: E402
 
 DTYPES = {"I8": torch.int8, "F32": torch.float32, "BF16": torch.bfloat16, "F16": torch.float16}
 
@@ -38,6 +43,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("model", type=Path)
     parser.add_argument("--tokens", type=int, default=4096)
+    parser.add_argument("--iters", type=int, default=20,
+                        help="timed iterations inside one burst")
+    parser.add_argument("--repeats", type=int, default=3,
+                        help="interleaved bursts KEPT; one more is run and discarded as "
+                             "warm-up-biased")
     return parser.parse_args()
 
 
@@ -91,20 +101,6 @@ def instrument():
     return counters
 
 
-def timed(fn, iters=20, warmup=5):
-    for _ in range(warmup):
-        fn()
-    torch.cuda.synchronize()
-    start = torch.cuda.Event(enable_timing=True)
-    end = torch.cuda.Event(enable_timing=True)
-    start.record()
-    for _ in range(iters):
-        fn()
-    end.record()
-    torch.cuda.synchronize()
-    return start.elapsed_time(end) / iters
-
-
 def main() -> int:
     args = parse_args()
     model = args.model.resolve()
@@ -134,6 +130,8 @@ def main() -> int:
 
     report = {"layer": layer, "shape": [1, args.tokens, in_features], "out_features": rows}
 
+    # The dispatch counters have to be read from a run of their own, before any timing: they count
+    # per call, and a burst of 20 would make "native_calls" a burst size rather than an answer.
     with torch.no_grad():
         counters["linear"] = counters["dequant"] = 0
         counters["impls"] = set()
@@ -143,9 +141,9 @@ def main() -> int:
             "native_calls": counters["linear"],
             "dequant_calls": counters["dequant"],
             "impls": sorted(counters["impls"]),
-            "ms": round(timed(lambda: module(x)), 3),
         }
 
+    compiled = None
     try:
         compiled = torch.compile(module)
         with torch.no_grad():
@@ -153,27 +151,53 @@ def main() -> int:
             counters["impls"] = set()
             compiled_out = compiled(x)
             torch.cuda.synchronize()
-            first_native = counters["linear"]
-            first_dequant = counters["dequant"]
-            first_impls = sorted(counters["impls"])
-            ms = round(timed(lambda: compiled(x)), 3)
         difference = (compiled_out.float() - eager_out.float())
         report["compiled"] = {
             "status": "ok",
-            "native_calls_first_run": first_native,
-            "dequant_calls_first_run": first_dequant,
-            "impls": first_impls,
-            "ms": ms,
-            "speedup_vs_eager": round(report["eager"]["ms"] / ms, 3) if ms else None,
+            "native_calls_first_run": counters["linear"],
+            "dequant_calls_first_run": counters["dequant"],
+            "impls": sorted(counters["impls"]),
             "max_abs_diff_vs_eager": difference.abs().max().item(),
-            "still_native": first_native > 0 and first_dequant == 0,
+            "still_native": counters["linear"] > 0 and counters["dequant"] == 0,
         }
     except Exception as error:
-        report["compiled"] = {"status": "FAILED", "error": f"{type(error).__name__}: {str(error)[:400]}"}
+        report["compiled"] = {"status": "FAILED",
+                              "error": f"{type(error).__name__}: {str(error)[:400]}"}
+
+    # Both arms exist by now, so they can be interleaved. This file used to time eager to
+    # completion, then compile, then time compiled -- with a whole Inductor compilation sitting
+    # between the two measurements, which is the single largest thing that can move a clock on
+    # this machine. It also took the mean of one CUDA-event span over 20 iterations: a mean over
+    # one span cannot express a spread at all, and MEASURED 2026-08-22 on the 3090 the first burst
+    # of an A/B here reads ~3% high in a fixed direction. `compare()` discards that burst.
+    with torch.no_grad():
+        paths = {"eager": lambda: module(x)}
+        if compiled is not None and report["compiled"]["status"] == "ok":
+            paths["compiled"] = lambda: compiled(x)
+        result = compare(paths, iters=args.iters, repeats=args.repeats,
+                         baseline="eager" if len(paths) > 1 else None,
+                         timer=cuda_event_ms, owner="comfy_portable:compile_w4a4_probe")
+    report["timing"] = result.as_json()
+    report["eager"]["ms"] = round(result.times["eager"], 3)
+    if "compiled" in result.times:
+        report["compiled"]["ms"] = round(result.times["compiled"], 3)
+        # Not a bare float any more. `"speedup_vs_eager": 1.676` is a number in exactly the shape
+        # that gets pasted into another session as if it had been measured three times.
+        report["compiled"]["speedup_vs_eager"] = str(result.ratios["compiled"])
 
     print(json.dumps(report, indent=2))
+    print(f"\n{provenance(result)}")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # `compare()` would take the lock on its own, but taking it here covers the load, the eager
+    # forward and the Inductor compilation too -- all of which are on the card, and the last of
+    # which is the longest single thing this file does.
+    from _bench_guard import BenchGuard
+
+    with BenchGuard("comfy_portable:compile_w4a4_probe") as _guard:
+        if _guard.refused:
+            print(_guard.refused)
+            raise SystemExit(1)
+        raise SystemExit(main())

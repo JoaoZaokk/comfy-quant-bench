@@ -131,11 +131,36 @@ function Take-GpuLock {
         '-NoProfile', '-ExecutionPolicy', 'Bypass',
         '-File', 'F:\COMFY_PORTABLE\tools\gpu_lock_beat.ps1',
         '-Owner', $Owner, '-LockPath', $script:LockPath)
-    Start-Sleep -Seconds 2
-    $now = Get-GpuLockState
+
+    # POLL, do not sleep a fixed interval. This was `Start-Sleep -Seconds 2`, which is a race
+    # against pwsh startup plus a file write on whatever the machine is doing at that moment --
+    # and it lost once here on 2026-08-22, on a box also running eleven ERP containers. Measured
+    # afterwards on an idle box the beat was up in under 0.4 s, which is exactly why a fixed
+    # sleep is the wrong shape: it passes every time you test it.
+    $deadline = [DateTime]::Now.AddSeconds(20)
+    $now = $null
+    while ([DateTime]::Now -lt $deadline) {
+        Start-Sleep -Milliseconds 200
+        $now = Get-GpuLockState
+        if ($now -and $now.Owner -eq $Owner) { break }
+        if (-not (Get-Process -Id $proc.Id -EA SilentlyContinue)) { break }   # it died; stop waiting
+    }
+
     if (-not $now -or $now.Owner -ne $Owner) {
         Stop-Process -Id $proc.Id -Force -EA SilentlyContinue
-        Write-Host "heartbeat did not come up -- lock NOT taken"
+        # And CLEAN UP. This used to return $false leaving the lock file on disk -- so a failed
+        # take locked the card for everyone, naming a pid it had just killed, and the next
+        # Assert-GpuLock threw citing a lock that belonged to nobody. That happened here on
+        # 2026-08-22 and cost the session its GPU window until the file was removed by hand.
+        # Remove it only if it names the beat we just killed: a lock somebody else legitimately
+        # holds is never ours to delete, which is the one thing a lock must not get wrong.
+        $stray = Get-GpuLockState
+        if ($stray -and $stray.Pid -eq $proc.Id) {
+            Remove-Item $script:LockPath -Force -EA SilentlyContinue
+            Write-Host "heartbeat did not come up -- lock NOT taken (its half-written lock removed)"
+        } else {
+            Write-Host "heartbeat did not come up -- lock NOT taken"
+        }
         return $false
     }
     Set-Content $script:BeatPath $proc.Id -Encoding ascii

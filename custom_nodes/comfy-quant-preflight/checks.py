@@ -383,13 +383,116 @@ def check_lora_over_quantized(class_types: list[str], quantized_files: int) -> t
 # Scope. What a pass from this package does and does not mean.
 # --------------------------------------------------------------------------------------------
 #
-# The table in __init__ covers four loader classes. ComfyUI's own nodes.py defines fifteen classes
-# whose name ends in "Loader" (grep, 2026-08-22, not executed), and the custom_nodes tree adds
-# more. A workflow built on any of the others got a completely clean preflight, which is
-# indistinguishable from a workflow that was checked and found sound. Naming the gap on every run
-# is the cheapest way to keep those two apart, and it costs one log line.
+# The table in __init__ covers five widgets across four loader classes. ComfyUI's own nodes.py
+# defines fifteen classes whose name ends in "Loader" (grep, 2026-08-22, not executed), and the
+# custom_nodes tree adds more. A workflow built on any of the others got a completely clean
+# preflight, which is indistinguishable from a workflow that was checked and found sound. Naming
+# the gap on every run is the cheapest way to keep those two apart, and it costs one log line.
+#
+# **The class is the wrong unit, and that is not theoretical.** `DualCLIPLoader` has two file
+# widgets. While only `clip_name1` was in the table, the class was reported as covered and a
+# quantized encoder in slot 2 was never opened -- a coverage line that CONCEALED the hole rather
+# than merely missing it. Adding the second table entry did not close it either. Measured
+# 2026-08-22 against the suite's fake registry (EXECUTED, `scratchpad/probe_dual.py`): with both
+# entries in the table, `folder_paths.get_full_path` was called exactly once, for
+# `clip_name1`, and the boot log blamed "another package got there first" for a validator this
+# package had installed one loop iteration earlier. So scope is stated per WIDGET below, and
+# `_inject` groups the table by class so one validator covers all of a class's widgets.
 
 LOADER_CLASS_HINT = "Loader"
+
+# A widget whose value ends in one of these is a widget this package could in principle check.
+# Read off the VALUE in the submitted graph rather than off INPUT_TYPES, for two reasons: the
+# graph is available without importing ComfyUI (and importing `nodes` here would pull in torch
+# and a CUDA context), and it is the widget the user actually filled in, so the list cannot
+# inflate with widgets nobody used.
+MODEL_FILE_SUFFIXES = (".safetensors", ".gguf", ".ckpt", ".pt", ".pth", ".bin", ".onnx")
+
+
+def _live_widgets(covered) -> dict[str, set[str]]:
+    """{class: {widget, ...}} -- the widgets an installed validator actually reads.
+
+    Tolerates the older shape, a bare sequence of class names, by mapping each to an EMPTY widget
+    set: "covered for no widget I can name". That reads as a gap rather than as coverage, which is
+    the direction an unknown has to fail in here -- the whole point of the widget unit is that
+    "the class is in the table" must stop being an answer to "was this file checked".
+    """
+    if isinstance(covered, dict):
+        return {str(name): set(widgets or ()) for name, widgets in covered.items()}
+    return {str(name): set() for name in covered}
+
+
+def _pairs(nodes) -> list[tuple[str, dict]]:
+    """Normalise the graph argument to (class_type, inputs) pairs.
+
+    A bare class name is accepted and becomes a node with no inputs, so the widget clause reports
+    nothing rather than raising. This function exists only because the alternative is a
+    `ValueError` raised inside the wrapped `execution.validate_prompt`, where nothing catches it:
+    the package would go from "states its scope" to "no prompt validates at all". A preflight that
+    can break the server is worse than one that under-reports, every time.
+    """
+    normalised = []
+    for node in nodes:
+        if isinstance(node, str):
+            normalised.append((node, {}))
+        elif isinstance(node, (tuple, list)) and len(node) == 2:
+            class_type, inputs = node
+            normalised.append((class_type, inputs if isinstance(inputs, dict) else {}))
+    return normalised
+
+
+# The suffixes `_make_validator` will actually open. It reads safetensors headers, and a header
+# is the only thing every check here inspects -- so a .gguf or a .pth in a covered widget is seen,
+# recognised as a model, and then skipped.
+#
+# It lives HERE, next to the coverage line, and `__init__.py` imports it, because the two drifted
+# apart the moment there were two of them: the validator gated on `.safetensors` while
+# `split_file_widgets` gated on the widget name alone, so the log said `opened` about six of the
+# seven suffixes it never opens. On this bench that is not hypothetical -- 35 of the 159 files in
+# `quantization_inventory.json` are non-safetensors (10 .gguf, 14 .pth, 7 .onnx, 4 .pt, 3 .ckpt,
+# 1 .bin). Widen this tuple and the log widens with it, in one edit.
+CHECKED_FILE_SUFFIXES = (".safetensors",)
+
+
+def file_widgets(nodes) -> list[tuple[str, str, str]]:
+    """(class_type, widget, suffix) for every widget in this graph whose value names a model file.
+
+    `nodes` is an iterable of (class_type, inputs) pairs taken straight from the submitted prompt.
+    Deduplicated on all three: two `CheckpointLoaderSimple` nodes pointing at two `.safetensors`
+    are one widget to report, because the question is "which widget does this package open", not
+    "how many nodes are there" -- but the same widget carrying a `.gguf` in one node and a
+    `.safetensors` in another is genuinely two coverage situations and is reported as two.
+    """
+    found: set[tuple[str, str, str]] = set()
+    for class_type, inputs in _pairs(nodes):
+        if not isinstance(class_type, str):
+            continue
+        for widget, value in (inputs or {}).items():
+            if isinstance(value, str) and value.lower().endswith(MODEL_FILE_SUFFIXES):
+                suffix = "." + value.rsplit(".", 1)[-1].lower()
+                found.add((class_type, str(widget), suffix))
+    return sorted(found)
+
+
+def split_file_widgets(nodes, covered) -> tuple[list[str], list[str]]:
+    """(checked, unchecked) file widgets in this graph, as 'ClassName.widget' strings.
+
+    A widget lands in `checked` only if it carries a live validator **and** the file is one this
+    package opens. Gating on the widget name alone was a false claim about a whole extension
+    class, and the test that was meant to catch it varied the widget NAME while holding the
+    extension constant -- the same blind spot as an earlier fixture that varied tensor shape while
+    the bug lived in identical shapes. So the unchecked label names the suffix: an operator
+    reading `UNETLoader.unet_name (.gguf)` knows why, without reading this file.
+    """
+    live = _live_widgets(covered)
+    checked, skipped = [], []
+    for class_type, widget, suffix in file_widgets(nodes):
+        if widget in live.get(class_type, ()) and suffix in CHECKED_FILE_SUFFIXES:
+            checked.append(f"{class_type}.{widget}")
+        else:
+            label = f"{class_type}.{widget}"
+            skipped.append(label if suffix in CHECKED_FILE_SUFFIXES else f"{label} ({suffix})")
+    return checked, skipped
 
 
 def uncovered_loader_classes(class_types, covered) -> list[str]:
@@ -399,33 +502,67 @@ def uncovered_loader_classes(class_types, covered) -> list[str]:
     misses a loader called something else, which is why the caller also prints the full uncovered
     list and not just this subset. A heuristic that under-reports is acceptable here only because
     it never decides anything -- it just makes a line louder.
+
+    Note what this CANNOT see, and why `check_uncovered_loaders` below no longer relies on it
+    alone: a class that is in the table is absent from this list even when only some of its
+    widgets carry a live check.
     """
-    covered = set(covered)
+    covered = set(_live_widgets(covered))
     return sorted({c for c in class_types
                    if isinstance(c, str) and LOADER_CLASS_HINT in c and c not in covered})
 
 
-def check_uncovered_loaders(class_types, covered) -> tuple | None:
-    """WARN naming loader-shaped nodes in this graph that no check looked at."""
+def check_uncovered_loaders(class_types, covered, nodes=()) -> tuple | None:
+    """WARN naming what this graph contains that no check looked at.
+
+    Two populations, because one of them used to hide inside the other. Loader-shaped CLASSES
+    nothing covers, and file WIDGETS nothing opened -- including widgets on a class that is
+    otherwise covered, which is the `DualCLIPLoader.clip_name2` shape and the only one that reads
+    as a pass while being a miss.
+    """
     skipped = uncovered_loader_classes(class_types, covered)
-    if not skipped:
+    _, widgets = split_file_widgets(nodes, covered)
+    if not skipped and not widgets:
         return None
-    return (WARN,
+    parts = []
+    if skipped:
+        parts.append(
             f"{len(skipped)} loader-shaped node(s) in this workflow are OUTSIDE this package's "
             f"scope and were not checked at all: {', '.join(skipped)}. A pass here says nothing "
             "about the files they load. Extend LOADER_TABLE in this package's __init__ to cover "
             "one.")
+    if widgets:
+        parts.append(
+            f"{len(widgets)} file widget(s) in this workflow were NOT opened: "
+            f"{', '.join(widgets)}. The unit is the widget, not the class: a loader this package "
+            "covers can still carry a second file widget it does not, and that one reads as a "
+            "pass. Add the missing widget to LOADER_TABLE.")
+    return (WARN, " ".join(parts))
 
 
-def scope_line(class_types, covered) -> str:
+def scope_line(nodes, covered) -> str:
     """One line stating what a pass covered, for the log, on every run.
+
+    `nodes` is an iterable of (class_type, inputs) pairs from the submitted prompt.
+
+    Two units, and both are needed. **Node types** say which boxes this package looked at at all.
+    **File widgets** say which files it actually opened -- and the widget is the unit a
+    partially-covered class hides in: with only the class clause, `DualCLIPLoader` printed as
+    checked while `clip_name2` never reached `check_file`. A coverage line that can say "covered"
+    about a partially-checked class does not merely miss the hole, it argues against looking for
+    it.
 
     Deliberately prints the whole uncovered list rather than a count. A count is the same
     reassurance a silent pass gives, in a smaller font.
     """
-    present = sorted({c for c in class_types if isinstance(c, str)})
-    covered_here = sorted(set(present) & set(covered))
+    nodes = _pairs(nodes)
+    present = sorted({c for c, _ in nodes if isinstance(c, str)})
+    covered_here = sorted(set(present) & set(_live_widgets(covered)))
     uncovered = [c for c in present if c not in set(covered_here)]
-    return ("checked {n} node type(s): {c} | SAW AND DID NOT CHECK {m}: {u}".format(
-        n=len(covered_here), c=", ".join(covered_here) or "none",
-        m=len(uncovered), u=", ".join(uncovered) or "none"))
+    checked, skipped = split_file_widgets(nodes, covered)
+    return ("opened {nw} file widget(s): {cw} | SAW AND DID NOT CHECK {mw} file widget(s): {uw} "
+            "| node types checked {n}: {c} | node types seen and not covered {m}: {u}".format(
+                nw=len(checked), cw=", ".join(checked) or "none",
+                mw=len(skipped), uw=", ".join(skipped) or "none",
+                n=len(covered_here), c=", ".join(covered_here) or "none",
+                m=len(uncovered), u=", ".join(uncovered) or "none"))

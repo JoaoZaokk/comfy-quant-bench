@@ -39,9 +39,7 @@ benchmark and cannot be quoted as one.
 
 from __future__ import annotations
 
-import statistics
 import sys
-import time
 from pathlib import Path
 
 PORTABLE_ROOT = Path(__file__).resolve().parent.parent
@@ -58,24 +56,17 @@ import torch.nn.functional as F  # noqa: E402
 import comfy.quant_ops  # noqa: E402,F401  (registers the backends)
 from comfy_kitchen import registry as R  # noqa: E402
 
+# The interleaved-repeat / paired-ratio / min-max machinery that used to live in this file is now
+# `_timing.compare()`, because it was general and this was the only file that had it. The local
+# `timed()` moved verbatim to `_timing.wall_ms` -- same warm-up count, same per-iteration
+# synchronize, same median -- so this file measures the quantity it measured before and the
+# re-run in a GPU window is a real regression test rather than a comparison of two instruments.
+from _timing import compare, provenance, wall_ms  # noqa: E402
+
 REQUIRED_OPS = ("quantize_convrot_w4a4_weight", "convrot_w4a4_linear",
                 "quantize_w4a8_int8_weight", "w4a8_int8_linear")
 # 1..8 is the decode regime an LLM lives in; 5856 is what Z-Image hands every Linear.
 BATCHES = (1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 5856, 8192)
-
-
-def timed(fn, iters: int) -> float:
-    for _ in range(3):
-        fn()
-    torch.cuda.synchronize()
-    samples = []
-    for _ in range(iters):
-        torch.cuda.synchronize()
-        start = time.perf_counter()
-        fn()
-        torch.cuda.synchronize()
-        samples.append(time.perf_counter() - start)
-    return statistics.median(samples) * 1000.0
 
 
 def relative(reference: torch.Tensor, got: torch.Tensor) -> float:
@@ -86,12 +77,21 @@ def relative(reference: torch.Tensor, got: torch.Tensor) -> float:
 def main(reverse: bool = False, repeats: int = 3) -> int:
     """Sweep the M column. `reverse` walks it from 8192 down to 1 instead of up.
 
-    `repeats` times every path that many times, interleaved, and reports the ratio's own min-max
-    alongside the median. It defaults to 3 because 1 was measured to be misleading: three
-    single-repeat runs on an idle, locked 3090 disagreed by up to 1.4x at the same M and the same
-    shape (M=2048, weight [3840, 3840]: 4.47x, 4.55x, 3.26x), and the crossover for weight
-    [10240, 3840] landed between 64 and 128 in two runs and between 128 and 256 in the third.
-    A two-decimal number printed from one run is a precision this instrument does not have.
+    `repeats` is the number of bursts **kept** per M, interleaved across paths by
+    `_timing.compare()`, which reports the ratio's own min-max alongside the median. It defaults
+    to 3 because 1 was measured to be misleading: three single-repeat runs on an idle, locked 3090
+    disagreed by up to 1.4x at the same M and the same shape (M=2048, weight [3840, 3840]: 4.47x,
+    4.55x, 3.26x), and the crossover for weight [10240, 3840] landed between 64 and 128 in two
+    runs and between 128 and 256 in the third. A two-decimal number printed from one run is a
+    precision this instrument does not have.
+
+    One further burst per M is now run and discarded. That is a ~33% increase in the time this
+    sweep occupies the card, and it is not free -- but a burst that is measured and thrown away is
+    the only way to remove a bias that repeating the tool cannot average out. MEASURED 2026-08-22
+    on the 3090, on attention rather than GEMM: the first of five interleaved bursts read 1.676x
+    against a 1.610-1.625 cluster, high in the same direction every time. Whether the same holds
+    for these GEMM shapes has NOT been measured; the discarded value is printed so the next run
+    on this file answers it.
 
     The sweep is not order-free, and the default order is the one that flatters the right-hand
     end: M climbs monotonically, so every large-M row is measured on a card that has been under
@@ -123,6 +123,7 @@ def main(reverse: bool = False, repeats: int = 3) -> int:
     # see which direction produced each one, and the file gets pasted without its command line.
     print(f"M order: {'descending 8192 -> 1 (--reverse)' if reverse else 'ascending 1 -> 8192'}")
 
+    last_result = None
     for out_features, in_features in ((3840, 3840), (10240, 3840)):
         torch.manual_seed(1)
         weight = (torch.randn(out_features, in_features, device="cuda", dtype=torch.float32)
@@ -154,13 +155,7 @@ def main(reverse: bool = False, repeats: int = 3) -> int:
                                          group_size=16, convrot_groupsize=256,
                                          out_dtype=torch.bfloat16),
             }
-            # Repeats are **interleaved**, not batched per path: all four paths are timed once,
-            # then all four again. Timing one path to completion before starting the next lets
-            # any drift over the burst -- clock boost decaying, another process arriving -- land
-            # entirely on whichever path happened to be running, which is exactly how a ratio
-            # picks up a bias that no single median reveals. Interleaved, drift hits every path
-            # alike and cancels in the ratio.
-            reps, errors, falhas = {k: [] for k in paths}, {}, []
+            errors, falhas = {}, []
             for label, call in paths.items():
                 try:
                     errors[label] = relative(reference, call())
@@ -171,19 +166,19 @@ def main(reverse: bool = False, repeats: int = 3) -> int:
                     # exception only for BATCHES[0], so a path that failed from M=128 upward
                     # turned into a silent nan column and the verdict still named a winner.
                     print(f"   M={m} {label} raised: {type(exc).__name__}: {str(exc)[:60]}")
-            for _ in range(repeats):
-                for label, call in paths.items():
-                    if label in falhas:
-                        reps[label].append(float("nan"))
-                        continue
-                    try:
-                        reps[label].append(timed(call, iters))
-                    except Exception:
-                        reps[label].append(float("nan"))
-                        falhas.append(label)
 
-            times = {k: (statistics.median(v) if all(s == s for s in v) else float("nan"))
-                     for k, v in reps.items()}
+            # Interleaving, the paired ratio and the min-max are `compare()`'s job now. `better=""`
+            # keeps this table's column exactly as it was -- the header already says "best vs
+            # bf16", so a repeated "faster" on every row would be noise -- while a ratio below 1
+            # still comes out as "N.NNx slower" rather than as 0.29x.
+            live = {k: v for k, v in paths.items() if k not in falhas}
+            result = compare(live, iters=iters, repeats=repeats, timer=wall_ms,
+                             baseline="bf16" if "bf16" in live else None,
+                             better="", worse="slower")
+            last_result = result
+            falhas.extend(k for k in result.failed if k not in falhas)
+            times = {k: result.times.get(k, float("nan")) for k in paths}
+
             quant = {k: v for k, v in times.items() if k != "bf16" and v == v}
             if not quant:
                 verdict = "todos falharam"
@@ -192,23 +187,7 @@ def main(reverse: bool = False, repeats: int = 3) -> int:
                 verdict = f"{min(quant, key=quant.get)} (sem bf16)"
             else:
                 best = min(quant, key=quant.get)
-                # Paired per repeat, so the spread shown is the spread of the *ratio*, which is
-                # the quantity that gets quoted. Three runs of this file on an idle 3090 put the
-                # same M at 3.26x and 4.55x, so a bare two-decimal ratio claims a precision the
-                # measurement does not have, and it travels out of here as if it did.
-                pairs = [b / q for b, q in zip(reps["bf16"], reps[best])
-                         if b == b and q == q and q > 0]
-                ratio = statistics.median(pairs) if pairs else times["bf16"] / quant[best]
-                if ratio >= 1:
-                    verdict = f"{best} {ratio:.2f}x"
-                    lo, hi = min(pairs), max(pairs)
-                else:
-                    # Never as 0.29x: the direction of a ratio below 1 is the thing readers
-                    # invert wrongly, so it is stated as the slower factor instead.
-                    verdict = f"{best} {1 / ratio:.2f}x slower"
-                    lo, hi = 1 / max(pairs), 1 / min(pairs)
-                if len(pairs) > 1:
-                    verdict += f" [{lo:.2f}-{hi:.2f}]"
+                verdict = f"{best} {result.ratios[best]}"
                 # Naming a winner over a field that lost entrants reads as a complete comparison.
                 if falhas:
                     verdict += f" (de {len(quant)})"
@@ -229,6 +208,13 @@ def main(reverse: bool = False, repeats: int = 3) -> int:
     print("\nThe bf16 baseline reads a full bf16 weight, twice what a weight-only-int4 kernel")
     print("moves, so it is handicapped at small M and the real crossover against Marlin is")
     print("further right than this table shows.")
+    if last_result is not None:
+        # How the numbers were reduced, printed under the numbers. A column with no estimator
+        # named reads as "the measurement", and three tools in this directory used to reduce
+        # differently with nothing in their output saying which. The discarded burst shown here is
+        # the LAST row's, not every row's -- one line, not thirty.
+        print(f"\n{provenance(last_result)}")
+        print("(the discarded burst quoted above is the final row's; each M discards its own)")
     return 0
 
 
@@ -247,8 +233,9 @@ if __name__ == "__main__":
     _parser.add_argument("--reverse", action="store_true",
                          help="walk M from 8192 down to 1 (order-effect counterproof)")
     _parser.add_argument("--repeats", type=int, default=3,
-                         help="interleaved timing repeats per M; 1 reproduces the old, "
-                              "misleadingly precise single-shot table")
+                         help="interleaved timing bursts KEPT per M (one more is run and "
+                              "discarded as warm-up-biased); 1 keeps a single burst and prints "
+                              "'no interval' rather than a misleadingly precise two decimals")
     _args = _parser.parse_args()
     if _args.repeats < 1:
         print("--repeats must be at least 1")

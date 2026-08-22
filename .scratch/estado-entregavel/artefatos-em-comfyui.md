@@ -4,6 +4,11 @@ Levantamento para o ticket `issues/16-artefatos-nossos-dentro-de-comfyui.md`. M�
 executados (git, listagem, diff, grep de conteúdo), não leitura de nomes de arquivo. Onde a
 conclusão vem de LER código em vez de rodá-lo, isso está dito explicitamente no item.
 
+**Convenção sobre números neste documento.** Os bytes/datas dos itens 1–4 e 6 são *identificação*:
+dizem qual arquivo foi olhado, num instante datado, para arquivos que este projeto não edita. Um
+número que só existe para ser **citado depois** é outra coisa, e sai daqui em favor do comando que
+o produz — ver a seção 5, onde exatamente esse número errou três vezes num dia.
+
 ## Como o teste de "nosso vs upstream vs órfão" foi feito
 
 Três fatos, todos por execução:
@@ -125,23 +130,39 @@ git ls-files | grep -i preflight
 
 find ComfyUI/custom_nodes/comfy-quant-preflight -type f
   -> só __init__.py + __pycache__ (compilado, irrelevante)
-
-stat -c '%s %n' custom_nodes/comfy-quant-preflight/__init__.py \
-                ComfyUI/custom_nodes/comfy-quant-preflight/__init__.py   # 2026-08-22
-  -> 8945 custom_nodes/comfy-quant-preflight/__init__.py            (o pacote, 207 linhas)
-  -> 1471 ComfyUI/custom_nodes/comfy-quant-preflight/__init__.py    (o stub, 34 linhas)
 ```
 
-Correção de 2026-08-22, medida: esta linha dizia que o arquivo **dentro** do `ComfyUI/` tinha
-**8 945 bytes**. Não tem — 8 945 é o tamanho do `__init__.py` **rastreado, fora** do `ComfyUI/`.
-O que está dentro tem 1 471 bytes. Os dois números foram trocados, e trocados exatamente na
-direção que apaga a conclusão desta seção: o parágrafo abaixo diz que o de dentro é um stub de 34
-linhas, e 8 945 bytes em 34 linhas não fecha. É o mesmo modo de falha que já custou uma auditoria
-aqui — afirmar a partir do arquivo plausível em vez do arquivo do caminho.
+**Os tamanhos dos dois `__init__.py` não estão escritos aqui. Rode:**
 
-Os três arquivos "rastreados" que o ticket viu no grep de 88 arquivos **já moram fora de
-`ComfyUI/`**, em `F:\COMFY_PORTABLE\custom_nodes\comfy-quant-preflight\`, rastreados pela bancada.
-O que existe dentro de `ComfyUI\custom_nodes\comfy-quant-preflight\` é um **stub de 34 linhas**
+```
+wc -c -l custom_nodes/comfy-quant-preflight/__init__.py \
+         ComfyUI/custom_nodes/comfy-quant-preflight/__init__.py
+```
+
+O que este documento afirma é a **relação**, não os números: o de **fora** (o pacote rastreado) é
+uma ordem de grandeza maior que o de **dentro** (o stub que só aponta para ele). Essa relação é o
+que sustenta a conclusão da seção; os bytes não sustentam nada e só existiam para serem citados.
+
+Por que os números saíram daqui, e não foram só atualizados — este número específico esteve errado
+**três vezes num único dia**, cada vez logo depois de ser medido corretamente:
+
+1. Na primeira redação (2026-08-22, manhã) os dois valores estavam **trocados**: dizia que o de
+   dentro tinha 8 945 bytes. 8 945 era o de fora. Trocados exatamente na direção que apaga a
+   conclusão desta seção — o parágrafo abaixo diz que o de dentro é um stub de umas três dezenas
+   de linhas, e 8 945 bytes nesse tamanho não fecha. Mesmo modo de falha que já custou uma
+   auditoria aqui: afirmar a partir do arquivo plausível em vez do arquivo do caminho.
+2. Corrigido para `8945 / 207 linhas` — e um agente concorrente da **mesma rodada** já tinha feito
+   o arquivo crescer. Errado na hora em que a tinta secou.
+3. E de novo agora: o ticket 16 mexeu nesse `__init__.py`. Medido no momento em que esta frase foi
+   escrita, o valor não é nenhum dos dois anteriores, e por isso não está escrito aqui.
+
+É o mesmo precedente que o `CLAUDE.md` já aplicou duas vezes — na contagem de arquivos rastreados
+e na de `custom_nodes/`, ambas erradas três vezes antes de virarem comando. **Onde uma contagem só
+existe para ser citada, o comando substitui a contagem.**
+
+Os três arquivos "rastreados" que o ticket viu no grep **já moram fora de `ComfyUI/`**, em
+`F:\COMFY_PORTABLE\custom_nodes\comfy-quant-preflight\`, rastreados pela bancada.
+O que existe dentro de `ComfyUI\custom_nodes\comfy-quant-preflight\` é um **stub fino**
 (`__init__.py`, diferente do `__init__.py` de fora — `diff` confirma, são dois arquivos com
 conteúdo diferente) cujo próprio docstring explica o desenho:
 
@@ -158,7 +179,7 @@ um ComfyUI de pé não foi confirmado nesta sessão.
 
 - **É nosso?** O stub sim (autoria do projeto, decisão deliberada). O pacote real já mora e já é
   rastreado fora de `ComfyUI/` — não é o caso órfão.
-- **Órfão / risco**: o pacote real (3 arquivos), não. **O stub de 34 linhas, sim** — ele não
+- **Órfão / risco**: o pacote real (3 arquivos), não. **O stub, sim** — ele não
   aparece nem no `git status` do ComfyUI (ignorado por `/custom_nodes/`) nem no `git ls-files` da
   bancada (nunca foi commitado o caminho `ComfyUI/custom_nodes/comfy-quant-preflight/__init__.py`
   em lugar nenhum). Se esse arquivo específico sumir num reinstall, o preflight para de rodar
@@ -167,7 +188,7 @@ um ComfyUI de pé não foi confirmado nesta sessão.
   o diretório simplesmente deixa de existir para o carregador de custom_nodes.
 - **Decisão recomendada**: guardar uma cópia do conteúdo do stub dentro do pacote rastreado (por
   exemplo como referência num README do pacote), para que as "três linhas" sejam recriáveis sem
-  depender de memória. Não é o pacote que está em risco — é o ponteiro de 34 linhas que o
+  depender de memória. Não é o pacote que está em risco — é o ponteiro fino que o
   ComfyUI usa para achar o pacote.
 
 ### 6. `ComfyUI/custom_nodes/comfy_convrot_native/`
@@ -241,7 +262,7 @@ conteúdo, não só de nome.
 | `SMOKE_HunyuanVideo15_W4A4.json` | sim | não | sim — risco alto em reinstall |
 | 6× `*.nunchaku.json` | sim | não | sim — risco alto em reinstall |
 | `comfy-quant-preflight/` (pacote real, 3 arq.) | **não** | n/a | não — já rastreado fora de `ComfyUI/` |
-| `comfy-quant-preflight/__init__.py` (stub, 34 linhas) | sim | não | sim, mas reconstruível a partir do próprio docstring do pacote real |
+| `comfy-quant-preflight/__init__.py` (o stub dentro de `ComfyUI/`) | sim | não | sim, mas reconstruível a partir do próprio docstring do pacote real |
 | `comfy_convrot_native/` (2 arquivos) | sim | não | sim — risco alto, é código de um achado central |
 | `Comfy-WaveSpeed-Fixed/` | **não** | n/a | não — tem `.git` e remoto próprios no GitHub |
 | `VOID_SAM3_Video_Inpaint_DualGPU.json` | — | — | descartado: não é nosso |

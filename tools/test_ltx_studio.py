@@ -23,6 +23,7 @@ import socket
 import sys
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -151,14 +152,14 @@ def test_resolve_output(outdir: Path) -> None:
 
 # ------------------------------------------------------------------------------ over HTTP
 
-def raw(request: bytes, timeout: float = 15.0) -> tuple[int, bytes, bytes]:
+def raw(request: bytes, timeout: float = 15.0, port: int | None = None) -> tuple[int, bytes, bytes]:
     """Send bytes verbatim; no client-side URL normalisation between us and the server.
 
     This is the `curl.exe --path-as-is` of the closing criterion, minus curl: urllib and most
     HTTP clients collapse `..` and re-encode the target before it reaches the wire, which
     would test the client instead of the server.
     """
-    with socket.create_connection(("127.0.0.1", ltx_studio.PORT), timeout=timeout) as sock:
+    with socket.create_connection(("127.0.0.1", port or ltx_studio.PORT), timeout=timeout) as sock:
         sock.sendall(request)
         chunks = []
         while True:
@@ -243,6 +244,77 @@ def test_http(outdir: Path, started: list) -> None:
     check("404 for an unknown POST route", status == 404, f"status={status}")
 
 
+# ------------------------------------------------------------------------- stalled request
+
+def test_stalled_request_is_abandoned() -> None:
+    """A body that is promised and not sent must not hold a worker thread forever.
+
+    Two checks, and they cover different halves. The first pins the value that ships -- nothing
+    else here can see it, because the second runs against a subclass. The second proves that
+    setting the attribute has the effect `ltx_studio`'s comment claims on *this* interpreter,
+    at 1.5s instead of 15s so the suite stays quick; the mechanism itself lives in
+    socketserver/http.server, not in our code, which is exactly why it is worth executing once
+    rather than reading.
+    """
+    print("stalled request")
+    shipped = ltx_studio.Handler.timeout
+    check("the shipped Handler sets a finite timeout",
+          isinstance(shipped, (int, float)) and not isinstance(shipped, bool) and shipped > 0,
+          f"Handler.timeout={shipped!r}")
+
+    class _Fast(ltx_studio.Handler):
+        timeout = 1.5
+
+    httpd = ltx_studio.Server(("127.0.0.1", 0), _Fast)
+    port = httpd.server_address[1]
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        baseline = threading.active_count()
+        request = (f"POST /render HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\n"
+                   f"Content-Length: 5000\r\n\r\nX").encode("latin-1")
+        started = time.perf_counter()
+        # The client's own timeout is far longer than the server's, so "the client gave up
+        # first" is distinguishable from "the server let go" rather than being scored as a pass.
+        with socket.create_connection(("127.0.0.1", port), timeout=20) as sock:
+            sock.sendall(request)
+            try:
+                while sock.recv(65536):
+                    pass
+                how = "server closed the connection"
+            except TimeoutError:
+                how = "the client gave up first"
+            except OSError as exc:
+                # Windows RSTs a socket closed while bytes are still owed on it, so a reset is
+                # the expected shape of the drop here, not a failure.
+                how = f"server dropped the connection ({type(exc).__name__})"
+            elapsed = time.perf_counter() - started
+            check("a half-sent body is abandoned instead of blocking forever",
+                  how != "the client gave up first" and elapsed < _Fast.timeout * 4,
+                  f"{how} after {elapsed:.1f}s")
+
+            # The point of the timeout is the thread, not the socket, so this is asserted with
+            # the client socket still OPEN. Run with `timeout = None` put back, the server
+            # releases the worker too -- but only once the client itself hangs up, which is the
+            # one thing a parked connection never does. Measured 2026-08-22 with a scratch copy
+            # of this block against a `timeout = None` subclass: 'the client gave up first'
+            # after 6.0s, and the thread count returned to baseline only after that close.
+            deadline = time.perf_counter() + 5
+            while threading.active_count() > baseline and time.perf_counter() < deadline:
+                time.sleep(0.05)
+            check("the worker thread was released while the client still held the socket",
+                  threading.active_count() <= baseline,
+                  f"{threading.active_count()} threads, baseline {baseline}")
+
+        # And the server is still a server afterwards.
+        status, _, _ = raw(f"GET / HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\n\r\n".encode("latin-1"),
+                           port=port)
+        check("the server still answers after a stalled connection", status == 200,
+              f"status={status}")
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
 # ----------------------------------------------------------------------------------- runner
 
 def main() -> int:
@@ -282,6 +354,7 @@ def main() -> int:
             test_start_resets_running()
             test_resolve_output(outdir)
             test_http(outdir, started)
+            test_stalled_request_is_abandoned()
         finally:
             httpd.shutdown()
             httpd.server_close()

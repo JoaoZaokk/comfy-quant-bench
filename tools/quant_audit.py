@@ -728,7 +728,15 @@ def markdown_report(inventory: dict) -> str:
         shown = f"`{root['path']}`"
         if declared and os.path.normcase(declared) != os.path.normcase(root["path"]):
             shown += f"<br>declared as `{declared}`"
-        lines.append(f"| `{root['label']}` | {shown} | {root['file_count']} | {root['size_human']} |")
+        # A root that is there and holds nothing is NOT the same finding as a root that is not
+        # there, and a bare `0` next to four healthy rows is read as neither. This bench has the
+        # failure mode that makes the difference matter: `viral_d` resolves to a NAS share, and a
+        # share that mounts before its contents are visible walks clean and empty. That is the
+        # 409-GiB hole this tool exists to stop, wearing the one rendering nobody double-takes at.
+        count = str(root["file_count"])
+        if not root["file_count"]:
+            count = "0 -- **PRESENT BUT EMPTY**"
+        lines.append(f"| `{root['label']}` | {shown} | {count} | {root['size_human']} |")
     for root in inventory.get("roots_declared_but_missing", []):
         lines.append(f"| `{root['label']}` | `{root['declared']}` | **DECLARED BUT NOT FOUND** | - |")
     lines.extend([
@@ -848,6 +856,16 @@ def main() -> int:
     # `not models_root.is_dir()` and the new code refused only when EVERY root was missing. On a
     # default run with the NAS down that regenerates exactly the single-root inventory this tool
     # was changed to stop producing -- exit 0, checked-in file replaced.
+    # Printed BEFORE the refusal below, not after. A refused run used to name only the bad path,
+    # so the operator learned which root was wrong and nothing about which roots would have been
+    # walked -- and "the output states the roots it covered, on every run" is ticket 15's item 3,
+    # which does not carve out the runs that stop early. The refusal still refuses; it just no
+    # longer takes the scope statement down with it.
+    for entry in roots:
+        print(f"root {entry['label']}: {entry['path']}", flush=True)
+    for entry in missing:
+        print(f"root {entry['label']}: DECLARED BUT NOT FOUND: {entry['declared']}", flush=True)
+
     requested = {str(root.resolve()) for root in args.models_root}
     absent_and_requested = [e for e in missing if str(Path(e["declared"]).resolve()) in requested]
     if absent_and_requested:
@@ -856,11 +874,6 @@ def main() -> int:
             + ", ".join(e["declared"] for e in absent_and_requested)
             + ". Continuing would overwrite the inventory with a partial walk and exit 0. "
               "Fix the path, or drop the flag to use the roots declared in extra_model_paths.yaml.")
-
-    for entry in roots:
-        print(f"root {entry['label']}: {entry['path']}", flush=True)
-    for entry in missing:
-        print(f"root {entry['label']}: DECLARED BUT NOT FOUND: {entry['declared']}", flush=True)
 
     models, root_summaries = collect_models(roots)
     inventory = {
@@ -889,7 +902,11 @@ def main() -> int:
           f"{len(models)} files, {human_size(inventory['total_size_bytes'])}:")
     for summary in inventory["roots"]:
         print(f"  {summary['label']:<24} {summary['file_count']:>6} files  "
-              f"{summary['size_human']:>12}  {summary['path']}")
+              f"{summary['size_human']:>12}  {summary['path']}"
+              f"{'   <- PRESENT BUT EMPTY' if not summary['file_count'] else ''}")
+    for entry in inventory["roots_declared_but_missing"]:
+        print(f"  {entry['label']:<24} {'-':>6}        {'-':>12}  {entry['declared']}"
+              "   <- DECLARED BUT NOT FOUND")
     print(NO_HASH_NOTE)
     return 0
 

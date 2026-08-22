@@ -45,6 +45,14 @@ NODE_DISPLAY_NAME_MAPPINGS: dict = {}
 # the "NOT FOUND and therefore UNCHECKED" warning below caught it within seconds of the first
 # boot. That is the property this design was chosen for, demonstrated on its own author: a fork
 # carrying the same mistake would have merged cleanly and left a check pointed at nothing.
+#
+# **Several entries may name the same class.** `_inject` groups by class before installing, and
+# that grouping is load-bearing rather than tidy: `VALIDATE_INPUTS` is one attribute per class, so
+# one entry per iteration meant the SECOND entry for a class found the attribute its own package
+# had just set and took the "someone else got here first" branch. Measured 2026-08-22, EXECUTED
+# against the suite's fake registry -- with both DualCLIPLoader rows present,
+# `folder_paths.get_full_path` was called once, for clip_name1, and the boot log named another
+# package as the reason clip_name2 was skipped.
 LOADER_TABLE = (
     ("UNETLoader", "unet_name", "diffusion_models", "weight_dtype"),
     ("CLIPLoader", "clip_name", "text_encoders", None),
@@ -60,8 +68,12 @@ LOADER_TABLE = (
 # What actually got installed, and what did not. Read by the graph-level wrapper so that a run
 # whose file-level checks never installed says so on that run, instead of at a boot line that
 # scrolled past three hours ago.
+#
+# `covered` is keyed by class and holds the WIDGET NAMES the installed validator actually reads,
+# not a bare list of class names. The class was the unit until 2026-08-22 and it is the unit a
+# half-covered loader hides in -- see the scope section of checks.py for the measurement.
 _STATUS: dict = {
-    "covered": (),          # loader class names carrying a live injected validator
+    "covered": {},          # {loader class: (widget, ...)} carrying a live injected validator
     "file_checks": "not installed yet",
     "graph_checks": "not installed yet",
 }
@@ -102,27 +114,43 @@ def _format(findings: list[tuple]) -> str | None:
     return "quant-preflight: " + " | ".join(errors)
 
 
-def _make_validator(file_widget: str, folder: str, dtype_widget: str | None):
+def _make_validator(entries: list):
+    """One validator for ALL of a class's file widgets. `entries` is [(file, folder, dtype), ...].
+
+    Per-widget rather than per-entry because `VALIDATE_INPUTS` is a single class attribute: a
+    second installation for the same class cannot exist, so the loop has to live inside the one
+    validator. A widget that resolves to nothing no longer ends the check for the rest of them
+    either -- `clip_name1` pointing at a missing file used to `return True` before `clip_name2`
+    was looked at.
+    """
     def VALIDATE_INPUTS(cls=None, **kwargs):
         # Injected as a plain function and read through getattr, so it must tolerate being called
-        # with or without the class. ComfyUI filters kwargs down to the names in the signature,
-        # which is why this takes **kwargs rather than naming them.
+        # with or without the class. ComfyUI inspects the signature and passes every input when
+        # `varkw` is not None, which is why this takes **kwargs rather than naming them --
+        # `grep -n "validate_has_kwargs" ComfyUI/execution.py` is the line, wherever it has
+        # drifted to. (Traced 2026-08-22, not executed: no prompt was submitted this session.)
         from . import checks
 
-        name = kwargs.get(file_widget)
-        if not isinstance(name, str) or not name:
-            return True
-        path, failure = _resolve(folder, name)
-        if failure:
-            _format([failure])      # logs the WARN; a WARN never blocks, so the run continues
-            return True
-        if path is None or not path.is_file() or path.suffix.lower() != ".safetensors":
-            return True
-        findings = checks.check_file(path)
-        if dtype_widget:
-            result = checks.check_dtype_widget(path, kwargs.get(dtype_widget))
-            if result:
-                findings.append(result)
+        findings: list[tuple] = []
+        for file_widget, folder, dtype_widget in entries:
+            name = kwargs.get(file_widget)
+            if not isinstance(name, str) or not name:
+                continue
+            path, failure = _resolve(folder, name)
+            if failure:
+                findings.append(failure)    # a WARN; logged by _format below, never blocks
+                continue
+            # Same tuple the coverage line reads, imported rather than restated. When these were
+            # two literals the log claimed `opened` about six suffixes this branch skips.
+            if path is None or not path.is_file():
+                continue
+            if path.suffix.lower() not in checks.CHECKED_FILE_SUFFIXES:
+                continue
+            findings.extend(checks.check_file(path))
+            if dtype_widget:
+                result = checks.check_dtype_widget(path, kwargs.get(dtype_widget))
+                if result:
+                    findings.append(result)
         message = _format(findings)
         return message if message else True
 
@@ -153,8 +181,17 @@ def _inject() -> None:
 
     from . import checks
 
-    injected, missing, stale, deferred = [], [], [], []
+    # Grouped by class BEFORE anything is installed. `VALIDATE_INPUTS` is one attribute per class,
+    # so a per-entry loop physically cannot install a second validator for a class -- it finds the
+    # one it set on the previous iteration and reports the class as somebody else's. See the
+    # LOADER_TABLE comment for the measurement.
+    grouped: dict[str, list[tuple[str, str, str | None]]] = {}
     for class_name, file_widget, folder, dtype_widget in LOADER_TABLE:
+        grouped.setdefault(class_name, []).append((file_widget, folder, dtype_widget))
+
+    injected: dict[str, tuple[str, ...]] = {}
+    live_entries, missing, stale, deferred = 0, [], [], []
+    for class_name, entries in grouped.items():
         node_class = nodes.NODE_CLASS_MAPPINGS.get(class_name)
         if node_class is None:
             missing.append(class_name)
@@ -165,14 +202,26 @@ def _inject() -> None:
         # incapable of ever firing. That is the fork failure mode this package was built to avoid,
         # reproduced inside the package. So the widget names are audited against INPUT_TYPES, and
         # a validator that could never fire is not installed and is reported as UNCHECKED.
+        #
+        # Audited per ENTRY, not per class: one renamed widget must cost that widget's check and
+        # not its siblings'. A class whose entries all went stale installs nothing, exactly as
+        # before.
         widgets, audit_failure = _widget_names(node_class)
         if audit_failure:
             logger.warning("quant-preflight: %s", audit_failure[1])
+            live = list(entries)
         elif widgets:
-            gone = [w for w in (file_widget, dtype_widget) if w and w not in widgets]
-            if gone:
-                stale.append(f"{class_name}(missing widget: {', '.join(gone)})")
-                continue
+            live = []
+            for file_widget, folder, dtype_widget in entries:
+                gone = [w for w in (file_widget, dtype_widget) if w and w not in widgets]
+                if gone:
+                    stale.append(f"{class_name}(missing widget: {', '.join(gone)})")
+                    continue
+                live.append((file_widget, folder, dtype_widget))
+        else:
+            live = list(entries)
+        if not live:
+            continue
         if getattr(node_class, "VALIDATE_INPUTS", None) is not None:
             # Refusing to replace an existing validator is not politeness. Overwriting one would
             # silently delete whatever check it was performing. It does mean this loader is not
@@ -180,17 +229,23 @@ def _inject() -> None:
             # forgotten.
             deferred.append(class_name)
             continue
-        validator = _make_validator(file_widget, folder, dtype_widget)
-        node_class.VALIDATE_INPUTS = classmethod(validator)
-        injected.append(class_name)
+        node_class.VALIDATE_INPUTS = classmethod(_make_validator(live))
+        # Every widget the installed validator reads, dtype widget included -- this is what the
+        # per-run scope line subtracts the graph's file widgets from, so an omission here reads
+        # as "not checked", which is the safe direction.
+        injected[class_name] = tuple(
+            w for file_widget, _, dtype_widget in live
+            for w in (file_widget, dtype_widget) if w)
+        live_entries += len(live)
 
-    _STATUS["covered"] = tuple(injected)
+    _STATUS["covered"] = injected
     _STATUS["file_checks"] = (
-        f"{len(injected)} of {len(LOADER_TABLE)} table entries live" if injected
+        f"{live_entries} of {len(LOADER_TABLE)} table entries live" if injected
         else "NO loader is checked")
 
-    logger.info("quant-preflight: injected into %d loader(s): %s",
-                len(injected), ", ".join(injected) or "none")
+    logger.info("quant-preflight: injected into %d loader(s), %d widget(s): %s",
+                len(injected), live_entries,
+                ", ".join(f"{c}.{w}" for c, ws in injected.items() for w in ws) or "none")
     for label, names, why in (
         ("NOT FOUND", missing,
          "ComfyUI probably renamed or removed them; the table in this package's __init__ needs "
@@ -208,9 +263,11 @@ def _inject() -> None:
             logger.warning("quant-preflight: %d loader class(es) %s and therefore UNCHECKED: %s. "
                            "%s.", len(names), label, ", ".join(names), why)
 
-    # The four entries in LOADER_TABLE are not the four loaders that exist. Everything else in the
-    # registry that looks like a loader is out of scope, and until this line existed a workflow
-    # built on one of them got a clean preflight that meant nothing.
+    # The classes in LOADER_TABLE are not the loaders that exist. Everything else in the registry
+    # that looks like a loader is out of scope, and until this line existed a workflow built on
+    # one of them got a clean preflight that meant nothing. This line is CLASS-level and cannot be
+    # anything else -- at boot there is no graph, so there are no widget values to read. The
+    # widget-level statement is the per-run one below.
     #
     # This list UNDER-REPORTS, deliberately and unavoidably: `init_external_custom_nodes` loads
     # packages in name order, so anything sorting after "comfy-quant-preflight" has not registered
@@ -243,7 +300,8 @@ def _wrap_validate_prompt() -> None:
             # every run" includes the runs where somebody else spoke first -- otherwise the only
             # runs that say what was skipped are the ones that got far enough to pass.
             logger.info("quant-preflight: %s (run already failed elsewhere)", checks.scope_line(
-                [n.get("class_type") for n in (prompt or {}).values() if isinstance(n, dict)],
+                [(n.get("class_type"), n.get("inputs"))
+                 for n in (prompt or {}).values() if isinstance(n, dict)],
                 _STATUS["covered"]))
             return result
 
@@ -258,12 +316,13 @@ def _wrap_validate_prompt() -> None:
                 seen_messages.add(finding[1])
                 findings.append(finding)
 
-        class_types, quantized_files, first_node = [], 0, None
+        class_types, graph_nodes, quantized_files, first_node = [], [], 0, None
         for node_id, node in (prompt or {}).items():
             class_type = node.get("class_type")
             if not class_type:
                 continue
             class_types.append(class_type)
+            graph_nodes.append((class_type, node.get("inputs")))
             if first_node is None:
                 first_node = node_id
             for _, file_widget, folder, _ in LOADER_TABLE:
@@ -288,8 +347,8 @@ def _wrap_validate_prompt() -> None:
 
         # Every run states its own scope, pass or fail. A green light from a package that looked at
         # two of a workflow's twenty nodes is worth exactly as much as the list of the eighteen.
-        logger.info("quant-preflight: %s", checks.scope_line(class_types, _STATUS["covered"]))
-        note(checks.check_uncovered_loaders(class_types, _STATUS["covered"]))
+        logger.info("quant-preflight: %s", checks.scope_line(graph_nodes, _STATUS["covered"]))
+        note(checks.check_uncovered_loaders(class_types, _STATUS["covered"], graph_nodes))
         if not _STATUS["covered"]:
             note((checks.WARN,
                   f"no per-file check is installed ({_STATUS['file_checks']}), so nothing in this "

@@ -17,6 +17,10 @@ from pathlib import Path
 import psutil
 import torch
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _native_probe import native_backend_ready  # noqa: E402
+
 
 PROFILE_PATTERNS = {
     "gemma": re.compile(
@@ -86,27 +90,23 @@ def human_size(size: int) -> str:
     raise AssertionError
 
 
-def normal_comfy_backend(portable_root: Path) -> dict:
-    code = f"""
-import json, sys, torch, comfy_kitchen as ck
-sys.path.insert(0, {str(portable_root / 'ComfyUI')!r})
-import comfy.quant_ops
-w = torch.empty((64, 64), device='cuda', dtype=torch.float16)
-q = torch.empty((64, 32), device='cuda', dtype=torch.int8)
-s = torch.empty((64,), device='cuda', dtype=torch.float32)
-x = torch.empty((2, 64), device='cuda', dtype=torch.float16)
-q_impl = ck.registry.get_implementation('quantize_convrot_w4a4_weight', kwargs={{'weight': w, 'convrot_groupsize': 64, 'quant_group_size': 64, 'stochastic_rounding': 0}})
-l_impl = ck.registry.get_implementation('convrot_w4a4_linear', kwargs={{'x': x, 'qweight': q, 'wscales': s, 'bias': None, 'convrot_groupsize': 64, 'quant_group_size': 64, 'linear_dtype': 'int4'}})
-print(json.dumps({{'quantizer': q_impl.__module__, 'linear': l_impl.__module__, 'backends': ck.list_backends()}}))
-"""
-    result = subprocess.run(
-        [sys.executable, "-c", code], cwd=portable_root, text=True,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
-    )
-    payload = json.loads(result.stdout.strip().splitlines()[-1])
-    payload["warning"] = result.stderr.strip()
-    payload["native_ready"] = all(".backends.cuda" in payload[key] for key in ("quantizer", "linear"))
-    return payload
+def w4a4_probe_ops(convrot_groupsize: int) -> dict:
+    """The two ops this converter dispatches, at the groupsize it is about to convert at.
+
+    This used to be a private `normal_comfy_backend()` here, one of six across `tools/`, and it
+    hardcoded `convrot_groupsize: 64, quant_group_size: 64` while `--convrot-groupsize` (default
+    256) went into the real call at write_streamed_checkpoint(). So the constraint validation ran
+    against a configuration the conversion did not use.
+
+    MEASURED 2026-08-22 on the 3090: that mismatch changed nothing -- cg=64 and cg=256 both
+    resolve to `comfy_kitchen.backends.cuda` for both ops, and both real calls succeed. The old
+    preflight was untidy, not wrong, and this is not a bug fix. It is passing the real value
+    because there is no reason to pass a different one.
+    """
+    return {
+        "quantize_convrot_w4a4_weight": {"convrot_groupsize": convrot_groupsize},
+        "convrot_w4a4_linear": {"convrot_groupsize": convrot_groupsize},
+    }
 
 
 def read_header(path: Path) -> tuple[dict, dict[str, str]]:
@@ -356,11 +356,12 @@ def main() -> int:
 
     backend = None
     if not args.dry_run:
-        backend = normal_comfy_backend(portable_root)
+        backend = native_backend_ready(portable_root, w4a4_probe_ops(args.convrot_groupsize))
         if not backend["native_ready"]:
             raise SystemExit(
                 "Refusing conversion: normal ComfyUI resolves ConvRot to a non-CUDA backend. "
-                f"quantizer={backend['quantizer']}, linear={backend['linear']}"
+                + ", ".join(f"{op}={module}"
+                            for op, module in sorted(backend["resolved"].items()))
             )
 
     header, metadata = read_header(source)
@@ -447,7 +448,7 @@ def main() -> int:
         "quantization": "ConvRot W4A4",
         "convrot_groupsize": args.convrot_groupsize,
         "layout": "TensorCoreConvRotW4A4Layout",
-        "backend": backend["linear"],
+        "backend": backend["resolved"]["convrot_w4a4_linear"],
         "expected_kernel": "native INT4 MMA",
         "weight_storage_dtype": "INT8 packed signed INT4",
         "activation_input_dtype": "BF16/FP16; dynamically rotated and quantized to INT4 in kernel",

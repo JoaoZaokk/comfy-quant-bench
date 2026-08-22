@@ -39,6 +39,8 @@ REAL_LOCK = "F:" + chr(92) + "GPU_BENCH.lock"
 REAL_BEATPID = "F:" + chr(92) + "COMFY_PORTABLE" + chr(92) + "tools" + chr(92) + ".gpu_lock_beat_pid"
 REAL_BEAT = "F:" + chr(92) + "COMFY_PORTABLE" + chr(92) + "tools" + chr(92) + "gpu_lock_beat.ps1"
 
+NL = chr(10)
+
 PASS, FAIL = [], []
 
 
@@ -150,6 +152,24 @@ def main() -> int:
               "file survived" if sb.lock.is_file() else "FILE WAS DELETED -- the bug is back")
         sb.lock.unlink(missing_ok=True)
 
+        rule("2b. the two halves must agree about whether a pid is alive")
+        # They did not. `_pid_alive` caught ProcessLookupError for dead -- which is the POSIX
+        # answer. On Windows a dead pid raises a bare OSError with winerror 87, so it fell to
+        # `except OSError: return True` and EVERY dead pid read as alive, while PowerShell's
+        # `Get-Process -Id` said dead for the same number. Safe direction, wrong message, and the
+        # same split between the two halves that this whole file exists to catch.
+        dead = subprocess.Popen([sys.executable, "-s", "-c", "pass"])
+        dead.wait(timeout=20)
+        check("a pid that has exited reads as dead", not gpu_lock._pid_alive(dead.pid),
+              f"pid {dead.pid}")
+        check("this process reads as alive", gpu_lock._pid_alive(os.getpid()))
+        check("a pid that never existed reads as dead", not gpu_lock._pid_alive(999_999))
+        r = sb.pwsh(f"Write-Output \"PS=$([bool](Get-Process -Id {dead.pid} -EA SilentlyContinue))\"")
+        ps_says = "PS=True" in r.stdout
+        check("and PowerShell agrees with Python about that same pid",
+              ps_says == gpu_lock._pid_alive(dead.pid),
+              f"PowerShell alive={ps_says}, Python alive={gpu_lock._pid_alive(dead.pid)}")
+
         # ---------------------------------------------------------- direction A
         rule("3. DIRECTION A -- Python holds, PowerShell asks. This is the one that was broken.")
         holder = spawn_python_holder(sb, "bench:long_sweep", 45)
@@ -226,7 +246,51 @@ def main() -> int:
             holder.wait(timeout=20)
         sb.kill_beat()
 
-        rule("6. an UNREADABLE lock file is held, not free")
+        rule("6. a FAILED take must not leave the card locked -- and must not clean up someone else's")
+        # The bug this covers cost a real GPU window on 2026-08-22. Take-GpuLock's heartbeat check
+        # failed, it killed the beat, returned $false -- and left the lock file on disk naming the
+        # pid it had just killed. The next Assert-GpuLock threw citing a lock that belonged to
+        # nobody, and the card stayed locked until the file was removed by hand.
+        beat_src = sb.beat.read_text(encoding="utf-8")
+
+        # (a) a beat that comes up and writes, but under a name Take-GpuLock is not expecting.
+        #     That is the branch: owner mismatch -> kill -> the stray names our beat -> remove it.
+        sb.beat.write_text(
+            "param([string]$Owner, [string]$LockPath, [int]$IntervalSec = 15)" + NL
+            + "Set-Content -Path $LockPath -Encoding ascii -Value @("
+            + "'dono=NOT-THE-OWNER-ASKED-FOR', \"pid=$PID\", 'desde=x',"
+            + " \"hb=$([DateTimeOffset]::Now.ToUnixTimeSeconds())\", 'owner_kind=controller')" + NL
+            + "while ($true) { Start-Sleep -Seconds 60 }" + NL,
+            encoding="utf-8")
+        r = sb.pwsh("$got = Take-GpuLock -Owner 'bench:will-not-match'; Write-Output \"TOOK=$got\"")
+        check("a take whose heartbeat misbehaves returns false", "TOOK=False" in r.stdout,
+              r.stdout.strip()[-140:])
+        check("and it does NOT leave the card locked", not sb.lock.is_file(),
+              "lock removed" if not sb.lock.is_file() else "LOCK LEFT BEHIND -- the bug is back")
+        sb.kill_beat()
+
+        # (b) the same failure, but the lock on disk belongs to somebody else. Never ours to
+        #     delete: that is the one failure mode a lock must not have, and the cleanup added
+        #     for (a) is exactly the kind of code that gets it wrong.
+        sb.beat.write_text(
+            "param([string]$Owner, [string]$LockPath, [int]$IntervalSec = 15)" + NL
+            + "exit 0" + NL, encoding="utf-8")
+        holder = spawn_python_holder(sb, "someone-else:real-work", 30)
+        try:
+            before = sb.lock.read_text(encoding="utf-8")
+            r = sb.pwsh("$got = Take-GpuLock -Owner 'bench:intruder'; Write-Output \"TOOK=$got\"")
+            check("a take that fails against a live foreign lock still returns false",
+                  "TOOK=False" in r.stdout, r.stdout.strip()[-140:])
+            check("and leaves that foreign lock untouched",
+                  sb.lock.is_file() and sb.lock.read_text(encoding="utf-8") == before,
+                  "intact" if sb.lock.is_file() else "SOMEBODY ELSE'S LOCK WAS DELETED")
+        finally:
+            holder.terminate()
+            holder.wait(timeout=20)
+        sb.beat.write_text(beat_src, encoding="utf-8")
+        sb.kill_beat()
+
+        rule("7. an UNREADABLE lock file is held, not free")
         sb.lock.write_text("this is not a lock, it is garbage\n", encoding="ascii")
         r = sb.pwsh("$got = Take-GpuLock -Owner 'other:steal'; Write-Output \"TOOK=$got\"")
         print("  " + " / ".join(l for l in r.stdout.splitlines() if l.strip())[:220])
@@ -246,8 +310,11 @@ def main() -> int:
     print("NOT covered by this file: it never touches the real F:/GPU_BENCH.lock, never takes the")
     print("GPU, and does not test the 55-second staleness path (that needs a lock older than the")
     print("limit with a dead pid, which costs a minute of wall clock). It also does not test two")
-    print("PowerShell sessions racing each other -- Start-Process + a 2 s settle is not atomic,")
-    print("and this file does not pretend to have checked it.")
+    print("PowerShell sessions racing each other for a free lock -- Take-GpuLock now POLLS for its")
+    print("heartbeat instead of sleeping a fixed 2 s (that sleep lost a race here on 2026-08-22")
+    print("and was measured at 0.4 s on an idle box afterwards, which is why a fixed sleep passes")
+    print("every time you test it), but the take itself is still not atomic and nothing here")
+    print("drives two takers at once.")
     print("=" * 76)
     return 1 if FAIL else 0
 
