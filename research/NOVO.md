@@ -34,7 +34,56 @@ descreve como *"community-compiled collection"* — é redistribuição, não qu
 
 Ou seja: estão distribuindo ConvRot misto sem documentar o método, para rodar na mesma
 placa que está aqui, e **este repo tem o conversor, a calibração e o preflight que
-decidem exatamente isso**. Nada disso foi baixado nem carregado — é tudo listagem e README.
+decidem exatamente isso**.
+
+### O header conta o que o README esconde — 102 KB para um arquivo de 15,9 GB
+
+O header do safetensors fica no começo do arquivo, e o ModelScope aceita `Range`. HTTP 206,
+102632 bytes lidos, **nenhum peso baixado**. O `__metadata__` traz a receita inteira:
+
+```json
+"convrot_w4a4_mixed": {
+  "int8_ratio": 0.2,          "int8_mm_ratio": 0.3,
+  "selection": "calibrated+", "calibrated_plus_preset": "BalancedQ",
+  "linear_dtype": "int4",     "convrot_groupsize": 256,
+  "w4a4_int4mm_layers": 0,    "w4a4_int8mm_layers": 117,  "int8_layers": 83,
+  "prune_donor": "diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+  "paper": "arXiv:2512.03673"
+}
+```
+
+Mais `int8_selected_layers` e `int8mm_selected_layers` — as listas nominais, camada por
+camada. 932 tensores: 220 BF16, 210 F32, 200 I8, 200 U8, 102 F16.
+
+**1. `convrot_groupsize: 256` é exatamente o `CONVROT_GROUP_SIZE = 256` deste repo.** O
+formato é o mesmo família, e a checagem de compatibilidade deixa de ser especulação.
+
+**2. `paper: arXiv:2512.03673` — conferido, existe, e é o paper deste projeto:** *"ConvRot:
+Rotation-Based Plug-and-Play 4-bit Quantization for Diffusion Transformers"* (Huang, Han,
+Zhou, Chen, Zhu, Wang; 2025-12-03). Hadamard em grupo, introduz `ConvLinear4bit`, reporta
+2,26× de velocidade e 4,05× de memória em FLUX.1-dev, e se apresenta como a primeira
+quantização por rotação plug-and-play W4A4 para transformer de difusão. É outro paper que
+o OrbitQuant (2607.02461) — duas linhas de rotação distintas, e esta é a nossa.
+
+**3. E aqui está o que importa mais: `w4a4_int4mm_layers: 0`.**
+
+Um checkpoint chamado `w4a4`, com `convrot` no nome, 67 mil downloads, declara no próprio
+metadado que **nenhuma camada usa o matmul INT4**. Cento e dezessete usam matmul INT8, e
+oitenta e três são INT8 puro. Os pesos são INT4 (`linear_dtype: int4`) — confirma-se pelas
+formas: `attn.out_proj.weight` é `I8 [5376, 3584]` e `3584 = 7168/2`, com
+`7168 = 56 cabeças × 128`, ou seja INT4 empacotado dois por byte. Mas o `qkv_proj` é
+`I8 [21504, 5376]`, largura cheia — INT8, e está na lista `int8mm_selected_layers`.
+
+Peso em 4 bits, multiplicação em 8. **É a coisa exata contra a qual a regra dura deste
+repo foi escrita** — "W4A4 significa execução ConvRot nativa, não INT4 só no peso seguido
+de GEMM em outra precisão" — e está rodando em escala, com o nome W4A4 no arquivo.
+
+- **CONFERIDO:** o campo existe e vale `0`, lido do header do arquivo real por Range.
+- **NÃO conferido, e a distinção é a regra desta casa:** a *semântica* desses campos é da
+  ferramenta que gerou, não minha. `w4a4_int4mm_layers: 0` pode significar "nenhum GEMM de
+  4 bits executa" ou algo mais estreito no vocabulário deles. Nenhum arquivo foi carregado,
+  nenhum kernel foi resolvido, nenhuma GPU foi tocada. Para virar afirmação sobre execução,
+  precisa do `tools/probe_backend_resolution.py` contra o arquivo — e da placa livre.
 
 ---
 
