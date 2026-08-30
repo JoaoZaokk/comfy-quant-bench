@@ -85,6 +85,50 @@ de GEMM em outra precisão" — e está rodando em escala, com o nome W4A4 no ar
   nenhum kernel foi resolvido, nenhuma GPU foi tocada. Para virar afirmação sobre execução,
   precisa do `tools/probe_backend_resolution.py` contra o arquivo — e da placa livre.
 
+**Correção de escala:** o ModelScope é a cópia. O original está no HuggingFace, com
+**791069 downloads e 215 likes** (`Abiray/Minimax-H3-nvfp4-INT4-INT8-Convrot`, mexido
+2026-08-15). Quase oitocentas mil, não sessenta e sete mil.
+
+### 4. E o ConvRot oficial não roda nesta placa — mas o comfy-kitchen roda
+
+`github.com/feice-huang/ConvRot`, 28 estrelas, Python, empurrado 2026-07-03. Conferido:
+existe, e a descrição é *"Official ConvRot implementation... enabling efficient W4A4
+quantization for diffusion models, achieving 4× memory savings and 2× faster inference"*.
+
+Do README dele, citado:
+
+> "Runs in a environment with torchao on an **NVFP4-capable GPU (Blackwell / sm_120)**."
+
+E `rot_size: 256` — o mesmo 256 do `CONVROT_GROUP_SIZE` daqui. Traz `quantize.py` como
+produtor de checkpoint, e uma variante `nvfp4-convrot-selfcalib` com escala de ativação
+estática auto-calibrada. **Suporte a ComfyUI: NOT STATED.** A distinção
+`int4mm` versus `int8mm`: **NOT STATED** — não vem do ConvRot oficial.
+
+**A implicação é a posição desta bancada.** A implementação oficial do paper exige
+Blackwell, torchao e NVFP4. Este repo executa ConvRot W4A4 em **sm86**, por
+`comfy_kitchen.backends.cuda`, e isso não é alegação de leitura: em 2026-08-22 mediu-se
+aqui que o caminho nativo difere do peso-dequantizado por **1,43e-1** e não 1e-6, ou seja,
+a metade A4 é real (`CLAUDE.md`, e `tools/probe_backend_resolution.py` reproduz).
+
+Se isso se sustentar, **o comfy-kitchen tem um ConvRot em Ampere que os próprios autores do
+paper não distribuem.**
+
+**Hipótese, explicitamente não medida:** talvez seja essa a razão do `w4a4_int4mm_layers: 0`
+— um checkpoint ConvRot adaptado para hardware sem NVFP4, onde o matmul de 4 bits não está
+disponível e a saída cai para INT8. Isso *explicaria* o campo, e explicar não é medir. Fica
+como pergunta, não como achado.
+
+### 5. A ferramenta que escreveu `calibrated+` / `BalancedQ` não foi encontrada
+
+Buscadas as strings literais (`calibrated+`, `BalancedQ`, `int8_mm_ratio`,
+`w4a4_int4mm_layers`, `convrot_w4a4_mixed`) em GitHub, HuggingFace e Gitee. Nada. O
+instrumento não estava cego — a mesma varredura achou o `feice-huang/ConvRot` e o controle
+`comfyanonymous/ComfyUI` responde com 130748 estrelas.
+
+Presets com nome e razões configuráveis não se escrevem à mão uma vez. A ferramenta existe
+e é privada, ou não foi publicada. **Consequência para cá: o `tools/quant_mixed.py` não está
+reimplementando algo público.**
+
 ---
 
 # Rodada 1 — o que abriu caminho
