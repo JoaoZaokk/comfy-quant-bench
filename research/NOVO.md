@@ -1,4 +1,78 @@
-# NOVO — rodadas 1 e 2, 2026-08-30
+# NOVO — 2026-08-30
+
+## O achado que fecha o dia: a 3090 está na única faixa que pega o MMA de 4 bits
+
+Um agente da rodada 5 voltou afirmando *"ninguém executa INT4 GEMM do ConvRot; o
+comfy-kitchen dequantiza INT4 → INT8 e usa CUTLASS INT8"*, e concluiu que o rótulo W4A4
+virou comercial. O comfy-kitchen 0.2.31 **está instalado aqui**, então isso se lê em vez de
+se acreditar. `backends/cuda/__init__.py:1252` bifurca:
+
+```python
+if linear_dtype == "int8" or not (
+    _cuda_device_supports_native_int4_mma(x2d) or _should_use_turing_int4(x2d)
+):
+    ...  # peso INT4 x ativação INT8, _int4_weight_int8_act_gemm_dequant_chunked
+...      # senão: quantize_int4_rowwise_convrot64 -> MMA INT4
+```
+
+E quem decide, em `:293`:
+
+```python
+def _cuda_device_supports_native_int4_mma(tensor) -> bool:
+    if not tensor.is_cuda or _FORCE_INT4_INT8_FALLBACK:
+        return False
+    major, _minor = _cuda_device_capability(tensor.get_device())
+    # The current ConvRot W4A4 kernel emits m16n8k64 s4 MMA, which is the
+    # sm80+ integer MMA shape. Hopper is routed through the INT8 fallback for
+    # better behavior with this implementation.
+    return major == 8
+```
+
+**`major == 8`, exato.** A 3090 é 8.6 e a 3080 Ti é 8.6 — as duas caem no caminho nativo.
+E a comparação é igualdade, não `>=`, então:
+
+| arquitetura | major | caminho |
+|---|---|---|
+| Turing 7.5 | 7 | rota própria (`_should_use_turing_int4`, `cutlass_turing_int4_dequant`) |
+| **Ampere / Ada 8.x** | **8** | **MMA `m16n8k64 s4` nativo** |
+| Hopper 9.x | 9 | fallback INT8, **de propósito** — o comentário diz "for better behavior" |
+| Blackwell 10/12 | 10/12 | fallback INT8 |
+
+**Ampere é a única faixa que pega o MMA de 4 bits neste kernel.** Não é acidente de
+hardware velho: Hopper é desviado deliberadamente.
+
+Isso reorganiza tudo o que apareceu hoje:
+
+1. **O agente errou pelo motivo de sempre** — descreveu o caminho de fallback como se fosse
+   o único. Ele existe e é o das linhas 1255-1296; só não é o desta placa.
+2. **Explica `w4a4_int4mm_layers: 0` sem hipótese nenhuma.** A ferramenta do Abiray rotula a
+   camada por qual caminho ela tomaria. Zero em `int4mm` e 117 em `int8mm` é exatamente o
+   que este código produz em hardware que não seja major 8. O metadado deles é honesto e
+   preciso; o que eu li como deficiência é o mesmo dispatch visto do outro lado.
+3. **Explica o ConvRot oficial exigir Blackwell/NVFP4.** É outro formato numérico, para o
+   hardware que *não* tem o s4 MMA nesta implementação.
+4. **E dá a posição desta bancada, agora com mecanismo:** os dois maiores distribuidores
+   públicos entregam ConvRot que multiplica em INT8, e esta placa é de uma geração que
+   multiplica em INT4. Não é sorte — é a faixa que o kernel atende.
+
+- **CONFERIDO:** o despacho, lido do pacote instalado; e a medição de 2026-08-22 registrada
+  no `CLAUDE.md` (nativo contra peso-dequantizado a **1,43e-1**, não 1e-6) é consistente
+  com ele.
+- **NÃO conferido, e a distinção importa:** isto é código lido, não instrução observada
+  executando. `major == 8` diz qual ramo o Python escolhe; que o `m16n8k64 s4` de fato
+  emita, e com que ganho, é `tools/probe_backend_resolution.py` mais um profile — e precisa
+  da placa, que segue com a sessão irmã. Note também `_FORCE_INT4_INT8_FALLBACK`: existe um
+  interruptor que desliga tudo isso, e ninguém aqui checou o que o liga.
+
+**Consequência para a medição de 22/08:** aquele 1,43e-1 comparou nativo contra *peso*
+dequantizado, o que prova que a ativação é quantizada — mas sozinho **não separa A4 de A8**,
+porque INT8 na ativação também produziria diferença contra BF16. O que separa é este
+dispatch. O par (código + medição) sustenta a afirmação; nenhum dos dois sozinho sustentava,
+e este arquivo dizia que sim.
+
+---
+
+# Rodadas 1 e 2 — o que abriu caminho
 
 ## O achado do dia: ConvRot INT4/INT8 misto, em produção, com 67 mil downloads
 
