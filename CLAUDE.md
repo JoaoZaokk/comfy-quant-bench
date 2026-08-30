@@ -100,6 +100,24 @@ Also read [AGENTS.md](AGENTS.md) (root policy) and [ComfyUI/AGENTS.md](ComfyUI/A
   **Not covered:** no sampling was run, so this is placement, not a completed generation — inference-time allocation is a separate budget and untested here. The neighbour's throughput was never measured, only its resident VRAM. Re-run both with `tools/probe_reserve_vram.py` (arithmetic) and `tools/probe_reserve_e2e.py` (real load).
 - **W4A4 means native ConvRot CUDA execution**, not weight-only INT4 followed by BF16 GEMM. Any change that lets the work fall back to eager/dequantized math defeats the entire project.
 
+  **But this rule names two options where the hardware offers three, and the third one wins on accuracy.** Measured 2026-08-30 on the 3090, varying one axis — `COMFY_KITCHEN_FORCE_INT4_INT8_FALLBACK` (`comfy_kitchen/backends/cuda/__init__.py:212`), which forces the same `convrot_w4a4_linear` down the other branch. `_cuda_device_supports_native_int4_mma` is `major == 8` (`:293`), so Ampere and Ada reach the `m16n8k64 s4` MMA and **Hopper and Blackwell are routed to the INT8 branch deliberately**. The native branch is not merely selected here — it executes: outputs differ from the fallback in 6/6 synthetic cases (`tools/probe_int4_mma_dispatch.py`).
+
+  The third option is **INT4 weight × INT8 activation on tensor cores**, which is neither "native INT4 MMA" nor "dequantized BF16 math". On **real** Z-Image activations and real weights — 24 layers spanning crest 4.4 to 43.0, from `calib/xfer_z_image_turbo_bf16.calib.pt` (`tools/probe_int4_vs_int8_real_acts.py`):
+
+  ```
+  media rel-RMSE   nativo 1,28e-1   int8 8,59e-2
+  nativo ganha em 0/24 camadas      -> int8 e 1,49x mais fiel
+  Spearman(crest, nativo-menos-int8) = +0,247
+  ```
+
+  Zero of twenty-four. And this was the run meant to *rescue* the native path: the earlier synthetic measurement used gaussian input, which has no outliers, and outliers are what the rotation exists to suppress — so real activations were expected to narrow the gap. They widened it slightly, 1.4x to 1.49x. Crest does not explain it either (+0.247, weak, and this repo already measured crest against W4A4 error at +0.10).
+
+  Speed is the other half and it points the other way: native is **1.41x and 1.67x faster at M=1024**, and **1.3x to 1.74x slower at M=1** — the `m_crossover` curve shape again.
+
+  So "anything that is not native INT4 defeats the project" is contradicted by measurement, and the two largest public ConvRot distributors — `Abiray/Minimax-H3-nvfp4-INT4-INT8-Convrot` (791k downloads, `w4a4_int4mm_layers: 0`) and `joeygambino/...surgical_int8_convrot` (`target_dtype: int8_tensorwise`) — ship exactly the third option. That reads as a deliberate trade, not a shortcut.
+
+  **The rule stands until the owner decides otherwise**, because this is a trade and the choice is his: accuracy and small-batch latency favour the INT8 branch, large-batch throughput favours native. **Not covered:** rel-RMSE on one Linear layer is not image quality — no image was generated, so whether 1.49x is visible is untested. Only Z-Image, only sm86, no SASS inspected.
+
 ## Say which one it was: traced, or executed
 
 Reading code and running code produce the same confident prose. That is the specific failure mode
