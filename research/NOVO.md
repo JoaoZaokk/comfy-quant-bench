@@ -129,6 +129,58 @@ Presets com nome e razões configuráveis não se escrevem à mão uma vez. A fe
 e é privada, ou não foi publicada. **Consequência para cá: o `tools/quant_mixed.py` não está
 reimplementando algo público.**
 
+### 6. São DUAS ferramentas privadas, e nenhuma das duas executa GEMM de 4 bits
+
+A rodada 4 achou `joeygambino/joyai-echo-ltx23-echoVid-ltxAud-surgical-int8` — a **mesma
+pessoa** do LTX-2.5 `mix4x8`, a única que documentou o método — e o arquivo dela chama-se
+`ltx23_echoVid-ltxAud_surgical_int8_convrot.safetensors`. ConvRot de novo.
+
+Header lido por Range (1112720 bytes, nenhum peso baixado). E o esquema é **outro**:
+
+```
+artifact_contract   = int8_tensorwise_inference_checkpoint.v1
+convrot             = true
+convrot_groupsize   = 256
+target_dtype        = int8_tensorwise
+artifact_target     = comfyui_diffusion_model
+scale_axis          = out_features        scale_granularity = per_channel
+quant_storage_dtype = int8                quantized_tensor_count = 1496
+model_family = ltx2   model_id = Lightricks/LTX-2.3   project = ltx2-int8-tensorwise-v0
+rift_built_from = SURGICAL MERGE: video/conditioning+av_ca-modulation from JoyAI-Echo...
+```
+
+7440 tensores: 2903 BF16, 1545 F32, 1496 I8, 1496 U8 — o mesmo pareamento I8/U8 do Abiray.
+
+**O que a comparação entrega:**
+
+1. **Não é a mesma ferramenta.** Abiray fala `convrot_w4a4_mixed`, `selection`, `preset`,
+   listas nominais de camada. joeygambino fala `artifact_contract` versionado,
+   `scale_granularity`, `project`, `rift_built_from`. Vocabulários disjuntos. São **duas**
+   cadeias privadas, não uma.
+2. **`convrot_groupsize = 256` nas duas**, e `rot_size: 256` no repo oficial, e
+   `CONVROT_GROUP_SIZE = 256` aqui. Quatro procedências independentes no mesmo 256.
+3. **E nenhuma das duas executa multiplicação em 4 bits.** A do joeygambino é
+   `int8_tensorwise` explícito — rotação ConvRot com armazenamento e execução em INT8. A do
+   Abiray declara `w4a4_int4mm_layers: 0`. Dois produtores independentes, os dois aplicando
+   a rotação, **nenhum fechando a metade A4.**
+
+Esta bancada mediu o contrário em 2026-08-22: caminho nativo contra peso-dequantizado deu
+**1,43e-1**, não 1e-6. Se isso se mantiver sob nova medição, a diferença entre aqui e os
+dois maiores distribuidores públicos de ConvRot não é o formato — é qual kernel de fato roda.
+
+- **CONFERIDO:** os dois headers, lidos dos arquivos reais por Range, com os campos citados.
+- **NÃO conferido:** nada foi carregado nem executado. Que `int8_tensorwise` e
+  `int4mm_layers: 0` signifiquem "não há GEMM de 4 bits" é leitura do vocabulário deles, não
+  medição minha. O `probe_backend_resolution.py` contra esses arquivos é o que decide, e
+  precisa da placa.
+
+### Achado de vídeo com abordagem diferente
+
+`Harahan/QVGen-CogVideoX-2B-W4A4` — 960 downloads, `arxiv:2505.11497`, tags `qat`, `iclr`,
+`text-to-video`, base `CogVideoX-2b`, licença Apache-2.0. É **QAT** (quantização durante o
+treino), não PTQ como tudo o mais acima. Caminho distinto do desta bancada, e o único W4A4
+de vídeo achado que não vem de ConvRot. **NÃO conferido:** header não lido, paper não lido.
+
 ---
 
 # Rodada 1 — o que abriu caminho

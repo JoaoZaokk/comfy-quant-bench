@@ -134,6 +134,32 @@ não é achado.
 **Fora de escopo:** treino de LLM, alinhamento, benchmark de chat, preço de API, notícia
 de produto sem artefato técnico atrás.
 
+**`W4A4` no nome de um LLM não é achado.** A rodada 4 voltou com dezesseis itens dos quais
+metade era LLM — `command-a-plus-...-w4a4`, `Qwen3-1.7B-...-W4A4`, `nemotron35-w4a4`,
+`Qwen3.6-27B-NVFP4-W4A4`. Todos casam a string e nenhum toca uma decisão daqui. O termo de
+busca é 4-bit; o **escopo** é difusão e vídeo. Filtre pela tarefa do modelo
+(`text-to-video`, `text-to-image`, `diffusers`), não pelo nome do formato.
+
+### A receita que mais rende: ler o header sem baixar o arquivo
+
+O header de um safetensors fica no começo do arquivo, e HuggingFace e ModelScope honram
+`Range`. Foi assim que se descobriu que um checkpoint com 791 mil downloads declara
+`w4a4_int4mm_layers: 0` — 102 KB lidos de um arquivo de 15,9 GB.
+
+```powershell
+# ModelScope: https://modelscope.cn/api/v1/models/<owner>/<nome>/repo?Revision=master&FilePath=<arq>
+# HuggingFace: https://huggingface.co/<owner>/<nome>/resolve/main/<arq>
+$r  = Invoke-WebRequest -Uri $u -Headers @{Range="bytes=0-7"} -UseBasicParsing -TimeoutSec 40
+$n  = [BitConverter]::ToUInt64($r.Content[0..7],0)          # tamanho do JSON, uint64 LE
+$r2 = Invoke-WebRequest -Uri $u -Headers @{Range="bytes=8-$(7+$n)"} -UseBasicParsing -TimeoutSec 120
+(([Text.Encoding]::UTF8.GetString($r2.Content)) | ConvertFrom-Json).'__metadata__'
+```
+
+**Faça isso em todo achado que alegue W4A4, ConvRot, INT4 ou precisão mista.** É a diferença
+entre VISTO e CONFERIDO nesta fonte, e não viola o limite de não baixar peso: só o header
+trafega. Se o header for grande, peça o intervalo inteiro de uma vez — cortar no meio
+produz JSON truncado, não erro.
+
 ---
 
 ## 4. Banco de consultas
