@@ -33,7 +33,24 @@ Also read [AGENTS.md](AGENTS.md) (root policy) and [ComfyUI/AGENTS.md](ComfyUI/A
 
   **Consequence worth knowing: the `.vhdx` compaction is no longer blocked by the ERP.** ~140 GB sits in `docker_data.vhdx` (229 GB, ~90 GB of build cache with zero active entries) and `ext4.vhdx` (63 GB with 22 GB used). `Optimize-VHD` needs `wsl --shutdown` because all distros share one VM — that was unthinkable with the ERP here and is now a scheduling question, not a hazard. Still the owner's call, and still never `--allow-unsafe`.
 
-- **A GPU held from inside WSL is invisible to the Windows-side CUDA free-memory query.** Measured 2026-08-30 while `glm-w4` held the 3090: `torch.cuda.mem_get_info` in a fresh Windows process reported **23332 MiB free** where `nvidia-smi` reported **6664 MiB free** — a 16.7 GiB disagreement on the same card in the same second. Same direction on the 3080 Ti: ComfyUI 9771-10024 MiB against 220-239 MiB from the driver, **41x**, stable over six interleaved rounds. The query is not broken — allocating 512 MiB *in this process* moves `vram_free` by exactly 512 MiB — it simply does not see other processes' memory. This matters because `get_free_memory()` **is** ComfyUI's own fit test (`comfy/model_management.py`, in `:978`, `:1096-1098` and `:1210-1213`); on a shared card it will happily decide a model fits when it does not. Anything reading `/system_stats` from outside to size a load must cross-check NVML.
+- **On a shared card, `torch.cuda.mem_get_info` reports memory that is real but belongs to somebody else.** Measured 2026-08-30 while the `glm-w4` container (inside WSL2) held the 3090: torch reported **23332 MiB free** where `nvidia-smi` reported **8362 MiB** — a 15 GiB disagreement on the same card in the same second. Same direction on the 3080 Ti, 41x, stable over six interleaved rounds.
+
+  **The obvious reading of that gap is wrong, and this file carried the wrong one for a few hours.** It said the number is phantom and ComfyUI "will decide a model fits when it does not". It fits. Probed by allocating 1 GiB at a time on `cuda:0` with the tenant present (`scratchpad/probe_wddm_evict.py`, under `Assert-GpuLock`): **22 GiB allocated, zero failures, 14166 MiB past what the driver called free.** WDDM evicts the neighbour's pages to system RAM on demand, so torch's number is honest about what this process can get.
+
+  What it is *not* honest about is the price, and the probe shows the eviction happening:
+
+  ```
+   held MiB  alloc  torch free  smi free  smi used
+      10240     OK         977      1002     23574
+      11264     OK       12068      1002     23574   <- 11 GiB reappears: the neighbour was evicted
+      18432     OK           0      1012     23564
+  ```
+
+  The neighbour's resident VRAM fell from 16214 to 13054 MiB and it was still paging back minutes later. It survived — the training kept running at 100% — but a 4-hour job silently trading VRAM for system RAM is a real cost that nothing in either tool reports.
+
+  So the rule is not "distrust the number". It is: **`get_free_memory()` answers "can I get this?", never "is the card free?"** — and it is ComfyUI's own fit test (`comfy/model_management.py`, in `:978`, `:1096-1098`, `:1210-1213`). On a card with a tenant, ComfyUI will load successfully *by taking memory from whatever else is running*. Cross-check NVML before starting work on a card someone else is using, and read `/system_stats` as a statement about the reader, not about the hardware.
+
+  Not covered: the neighbour's throughput was never measured, only its resident memory; Linux, TCC-mode cards, and a native-Windows neighbour are all untested.
 - **W4A4 means native ConvRot CUDA execution**, not weight-only INT4 followed by BF16 GEMM. Any change that lets the work fall back to eager/dequantized math defeats the entire project.
 
 ## Say which one it was: traced, or executed
