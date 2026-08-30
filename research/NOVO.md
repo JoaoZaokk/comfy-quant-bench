@@ -55,14 +55,44 @@ Isso reorganiza tudo o que apareceu hoje:
    públicos entregam ConvRot que multiplica em INT8, e esta placa é de uma geração que
    multiplica em INT4. Não é sorte — é a faixa que o kernel atende.
 
-- **CONFERIDO:** o despacho, lido do pacote instalado; e a medição de 2026-08-22 registrada
-  no `CLAUDE.md` (nativo contra peso-dequantizado a **1,43e-1**, não 1e-6) é consistente
-  com ele.
-- **NÃO conferido, e a distinção importa:** isto é código lido, não instrução observada
-  executando. `major == 8` diz qual ramo o Python escolhe; que o `m16n8k64 s4` de fato
-  emita, e com que ganho, é `tools/probe_backend_resolution.py` mais um profile — e precisa
-  da placa, que segue com a sessão irmã. Note também `_FORCE_INT4_INT8_FALLBACK`: existe um
-  interruptor que desliga tudo isso, e ninguém aqui checou o que o liga.
+### EXECUTADO: o ramo nativo roda mesmo, e é o **menos** preciso dos dois
+
+O dono liberou a placa e o A/B foi rodado (`tools/probe_int4_mma_dispatch.py`, sob
+`Assert-GpuLock`, RTX 3090 cc 8.6). Um eixo varia: `COMFY_KITCHEN_FORCE_INT4_INT8_FALLBACK`
+(`backends/cuda/__init__.py:212`), que força o mesmo `convrot_w4a4_linear`, com o mesmo peso
+e a mesma entrada, a descer pelo ramo INT8. Mesmo processo, mesma semente, mesma placa.
+
+```
+peso [4096, 4096]           peso [8192, 4096]
+     M  igual?  rmse nat  rmse int8   us nat  us int8      us nat  us int8
+     1     NAO  2,19e-1    1,56e-1     149,4    114,4       204,9    117,8
+    64     NAO  2,22e-1    1,58e-1     156,5    176,4       155,0    243,6
+  1024     NAO  2,24e-1    1,58e-1     218,9    309,5       310,6    519,0
+```
+
+**Saídas diferentes em 6 de 6.** São dois kernels distintos — `major == 8` não é só escolha
+de ramo, o caminho nativo INT4 existe e executa nesta placa. **O item aberto de hoje fecha.**
+
+E a reviravolta, que não estava prevista:
+
+1. **O nativo é o menos preciso.** 2,2e-1 contra 1,56e-1 — o fallback INT8 é ~1,4× mais
+   fiel. Faz sentido: ativação em 4 bits perde mais que em 8. **A metade A4 é real e é a
+   opção mais lossy**, o que reposiciona a escolha dos dois produtores públicos: entregar
+   INT8 deixa de parecer preguiça e passa a parecer troca deliberada.
+2. **A velocidade só paga em M grande.** Em M=1024 o nativo é 1,41× e 1,67× mais rápido; em
+   M=1 é **1,3× a 1,74× mais lento**. É o mesmo formato de curva que esta bancada já mediu
+   em `m_crossover`.
+
+**Ressalva que muda o peso do item 1, e é a regra desta casa:** o RMSE aqui é contra
+referência float32 com entrada **gaussiana aleatória**, que é sinal de vida e não métrica de
+qualidade (`CLAUDE.md` diz isso do `--kernel-smoke`). Gaussiana não tem outlier, e suprimir
+outlier é exatamente o que a rotação do ConvRot existe para fazer. **Em ativação real a
+diferença pode encolher ou inverter** — e é medível aqui, com o que o
+`calibrate_activations.py` já produz. Fica como a próxima, não como conclusão.
+
+- **NÃO coberto:** nenhuma inspeção de SASS, então "roda" significa "produz número diferente
+  do fallback", não "a instrução `m16n8k64.s4` foi vista emitindo". Camada sintética, não
+  modelo real. Nada sobre qualidade de imagem. Hopper e Blackwell não testados.
 
 **Consequência para a medição de 22/08:** aquele 1,43e-1 comparou nativo contra *peso*
 dequantizado, o que prova que a ativação é quantizada — mas sozinho **não separa A4 de A8**,
