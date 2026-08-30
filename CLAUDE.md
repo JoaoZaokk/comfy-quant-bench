@@ -51,6 +51,19 @@ Also read [AGENTS.md](AGENTS.md) (root policy) and [ComfyUI/AGENTS.md](ComfyUI/A
   So the rule is not "distrust the number". It is: **`get_free_memory()` answers "can I get this?", never "is the card free?"** — and it is ComfyUI's own fit test (`comfy/model_management.py`, in `:978`, `:1096-1098`, `:1210-1213`). On a card with a tenant, ComfyUI will load successfully *by taking memory from whatever else is running*. Cross-check NVML before starting work on a card someone else is using, and read `/system_stats` as a statement about the reader, not about the hardware.
 
   Not covered: the neighbour's throughput was never measured, only its resident memory; Linux, TCC-mode cards, and a native-Windows neighbour are all untested.
+
+- **`--reserve-vram` does not reserve anything from another process, despite saying it does.** Its help text is *"the amount of vram in GB you want to reserve for use by your OS/other software"* and it logs *"Reserving NMB vram for other applications."* But the reserve never enters `get_free_memory()` — it is added to the **demand** side (`comfy/model_management.py`, the `memory_required + extra_reserved_memory()` and `minimum_memory_required + extra_reserved_memory()` expressions) and then compared against that same inflated free number. Measured 2026-08-30 with `glm-w4` on the 3090, recomputing ComfyUI's own arithmetic with its own functions at several values:
+
+  ```
+   --reserve-vram  comfy free   reserve  demand@1GiB  loads?  smi free
+        (default)    23332 MiB    700 MiB      1724 MiB     YES  10690 MiB
+            8 GiB    23332 MiB   8192 MiB      9216 MiB     YES  10690 MiB
+           20 GiB    23332 MiB  20480 MiB     21504 MiB     YES  10690 MiB
+  ```
+
+  `comfy free` never moves — it cannot see the tenant — so **the guard cannot bind at any value.** Told to hold back 20 GiB on a card with 10.7 GiB actually free, ComfyUI still decides it can load, and then takes the difference from the neighbour by eviction. The flag works exactly as intended against **ComfyUI's own** consumption (allocating 512 MiB in-process moves `get_free_memory` by exactly 512 MiB); it is the "other applications" half of its own description that does not hold here. Re-run with `tools/probe_reserve_vram.py`.
+
+  **Not executed:** no model was loaded and ComfyUI was not started for this — it is ComfyUI's decision arithmetic recomputed with its own functions on the real numbers, not an observed load or refusal. A candidate for an upstream report, but only after a real load is watched end to end.
 - **W4A4 means native ConvRot CUDA execution**, not weight-only INT4 followed by BF16 GEMM. Any change that lets the work fall back to eager/dequantized math defeats the entire project.
 
 ## Say which one it was: traced, or executed
