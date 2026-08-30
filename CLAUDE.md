@@ -52,18 +52,34 @@ Also read [AGENTS.md](AGENTS.md) (root policy) and [ComfyUI/AGENTS.md](ComfyUI/A
 
   Not covered: the neighbour's throughput was never measured, only its resident memory; Linux, TCC-mode cards, and a native-Windows neighbour are all untested.
 
-- **`--reserve-vram` does not reserve anything from another process, despite saying it does.** Its help text is *"the amount of vram in GB you want to reserve for use by your OS/other software"* and it logs *"Reserving NMB vram for other applications."* But the reserve never enters `get_free_memory()` — it is added to the **demand** side (`comfy/model_management.py`, the `memory_required + extra_reserved_memory()` and `minimum_memory_required + extra_reserved_memory()` expressions) and then compared against that same inflated free number. Measured 2026-08-30 with `glm-w4` on the 3090, recomputing ComfyUI's own arithmetic with its own functions at several values:
+- **`--reserve-vram` does bind, and the way this bench proved otherwise for twenty minutes is the lesson.** The flag's help says it reserves vram *"for use by your OS/other software"*. Reading the code, the reserve never enters `get_free_memory()` — it is added to the **demand** side — so recomputing the comparison by hand (`tools/probe_reserve_vram.py`) said `loads? YES` at every value up to 20 GiB and the conclusion written here was "the guard cannot bind". **That conclusion was wrong.** Measured end to end on 2026-08-30 with a real 15881 MiB checkpoint, a real `comfy.sd.load_diffusion_model`, and the real `load_models_gpu`, while `glm-w4` held the 3090:
 
   ```
-   --reserve-vram  comfy free   reserve  demand@1GiB  loads?  smi free
-        (default)    23332 MiB    700 MiB      1724 MiB     YES  10690 MiB
-            8 GiB    23332 MiB   8192 MiB      9216 MiB     YES  10690 MiB
-           20 GiB    23332 MiB  20480 MiB     21504 MiB     YES  10690 MiB
+   --reserve-vram   model    really free   landed on the card   neighbour
+        (default)  15881 MiB   10924 MiB          +6672 MiB     unchanged
+            8 GiB  15881 MiB   10924 MiB             +0 MiB     unchanged
+           20 GiB  15881 MiB   10924 MiB             +0 MiB     unchanged
   ```
 
-  `comfy free` never moves — it cannot see the tenant — so **the guard cannot bind at any value.** Told to hold back 20 GiB on a card with 10.7 GiB actually free, ComfyUI still decides it can load, and then takes the difference from the neighbour by eviction. The flag works exactly as intended against **ComfyUI's own** consumption (allocating 512 MiB in-process moves `get_free_memory` by exactly 512 MiB); it is the "other applications" half of its own description that does not hold here. Re-run with `tools/probe_reserve_vram.py`.
+  The flag changes the outcome from a partial 6.7 GiB residency to nothing at all, and at the default it stayed **under** what the card actually had — no eviction, the neighbour ended exactly where it started.
 
-  **Not executed:** no model was loaded and ComfyUI was not started for this — it is ComfyUI's decision arithmetic recomputed with its own functions on the real numbers, not an observed load or refusal. A candidate for an upstream report, but only after a real load is watched end to end.
+  **What made the hand-recomputation wrong was an axis held, not an axis varied.** The first end-to-end attempt passed `force_full_load=True`, which is not what a sampler uses; under it every arm loaded and the neighbour *was* evicted, which looked like confirmation. The real path streams weights under a budget that the reserve genuinely shrinks. Two separate self-inflicted wounds in one probe: modelling a guard instead of calling it, and then calling it with the one argument that disables it. See the memory `teste-varia-o-eixo-errado`.
+
+  **`--gpu-only` and `--highvram` bypass the reserve.** Same model, same card, same tenant, one arm per flag:
+
+  ```
+                           arm   really free    landed   placed
+                       default     10924 MiB     +6672   cuda:0
+                    --gpu-only     10924 MiB    +10169   cuda:0
+                    --highvram     10999 MiB    +10252   cuda:0
+   --gpu-only --reserve-vram 8     10999 MiB    +10207   cuda:0
+  ```
+
+  The last row is the finding: with `--gpu-only`, asking for 8 GiB of reserve lands **+10207** against **+10169** without it — the flag is simply not consulted. On the default path the same reserve took residency to zero. So `--reserve-vram` protects only while nothing else has overridden the placement policy, and the two flags people reach for to "make it use the GPU" are exactly the two that switch it off.
+
+  **And ComfyUI never evicted the neighbour in any arm.** Every run stopped at roughly the card's real free memory (~10.2 GiB of a 15.9 GiB model) rather than the 23332 MiB it believed it had, and `glm-w4` ended at 13341 MiB against 13429 at the start. That is the opposite of what the raw-allocation probe does: 22 GiB placed past the driver's free number with plain `torch.empty`, neighbour evicted. **So WDDM will hand over a neighbour's memory, but ComfyUI's loader does not take it** — it backs off at the physical limit. Why it backs off was not determined; the useful part is that the inflated `get_free_memory` does not, on this path, translate into stealing.
+
+  **Not covered:** no sampling was run, so this is placement, not a completed generation — inference-time allocation is a separate budget and untested here. The neighbour's throughput was never measured, only its resident VRAM. Re-run both with `tools/probe_reserve_vram.py` (arithmetic) and `tools/probe_reserve_e2e.py` (real load).
 - **W4A4 means native ConvRot CUDA execution**, not weight-only INT4 followed by BF16 GEMM. Any change that lets the work fall back to eager/dequantized math defeats the entire project.
 
 ## Say which one it was: traced, or executed
