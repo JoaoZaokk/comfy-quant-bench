@@ -11,7 +11,20 @@
 !/*.md
 !/inspect_quant.py
 !/_check_accel.py
+# Launchers. Tracked as of 2026-08-30: they now carry `set CUDA_VISIBLE_DEVICES=0,1`,
+# which is what keeps ComfyUI 0.34+ from hiding the 3080 Ti on Windows. Listed one by
+# one, not as *.bat, because this file is an allowlist -- baixar_vae22.bat,
+# run_cpu.bat and run_deepcompressor.bat stay out deliberately.
+!/run_8190_limpo.bat
+!/run_nvidia_gpu.bat
+!/run_nvidia_gpu_8190.bat
+!/run_nvidia_gpu_8190_dual_component.bat
+!/run_nvidia_gpu_8190_flash.bat
+!/run_nvidia_gpu_8190_loopback.bat
+!/run_nvidia_gpu_8190_ultra_image.bat
+!/run_nvidia_gpu_8190_ultra_video.bat
 !/run_nvidia_gpu_8190_void_cache_none.bat
+!/run_nvidia_gpu_fast_fp16_accumulation.bat
 
 # Written by /setup-matt-pocock-skills: where issues live, the triage vocabulary, and the domain-doc
 # rules. Text only, and the skills read them as input on every run -- so untracked here means every
