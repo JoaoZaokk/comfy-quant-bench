@@ -10,6 +10,7 @@ REM Disable the job-level MGPU orchestrator. Native Select * Device nodes remain
 set "COMFYUI_MGPU_DISABLED=1"
 
 REM VOID/Nunchaku-safe baseline: SageAttention, no DynamicVRAM, no execution-output cache.
+set CUDA_VISIBLE_DEVICES=0,1
 ".\python_embeded\python.exe" -s ".\ComfyUI\main.py" ^
   --windows-standalone-build ^
   --use-sage-attention ^
