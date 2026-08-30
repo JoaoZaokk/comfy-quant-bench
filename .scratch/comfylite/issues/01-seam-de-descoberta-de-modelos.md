@@ -1,7 +1,7 @@
 # 01 - How does ComfyLite see the same models ComfyUI sees?
 
 Type: grilling
-Status: ready-for-human
+Status: resolved
 Blocked by: -
 Provenance: EXECUTED for the import test; OBSERVED for the filesystem
 
@@ -94,3 +94,27 @@ choice, not a default.
 
 Closed when the owner picks Option 1 or 2 and picks the inventory's meaning, and both are written
 here. No code required to close.
+
+## RESOLVED, 2026-08-22 -- the owner picked Option 1
+
+**Seam: import `folder_paths`.** The worker puts `comfy_root` on `sys.path`, imports
+`folder_paths` and `utils.extra_config`, calls `load_extra_path_config` so the D: mount becomes
+visible, and exports the resolved map as JSON to the Rust side. Coupling stays at the two symbols
+named above. The reason the owner's answer matches the recommendation is the failure *mode*, not
+the effort: a hand-copied category table does not break loudly on the next `update_comfyui.bat` --
+a category quietly returns fewer files, and nothing prints.
+
+**Inventory meaning: the union, in one record, with `visible_to_comfyui` per row.** Both views are
+kept because they genuinely disagree in *both* directions -- ~45 custom-node-owned directories that
+`folder_paths` does not know, and three directories on D: (`diffusers`, `latent_upscale_models`,
+`model_patches`) that the YAML never maps. Recording either view alone throws the other away
+permanently; recording the union throws nothing away and costs one integer column.
+
+This half of the answer was **not** stated by the owner in the same breath as the seam. It is the
+shape ticket 03's closing criterion already demanded before anyone looked at a result -- *"every
+record carries the root it came from and a `visible_to_comfyui` flag"* -- so it is taken as the
+written-in-advance criterion rather than as a fresh decision. **If the owner wants ComfyUI's view
+alone, this is the line to contradict**, and the change is a filter at read time, not a re-scan.
+
+Implemented in `ComfyLite/worker/comfylite/discovery.py` and `catalog.py` (the `visible_to_comfyui`
+column). Unblocks tickets 02 and 03.

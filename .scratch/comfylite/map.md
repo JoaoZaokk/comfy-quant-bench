@@ -29,6 +29,12 @@ already says so. Outside it, three repos touch and none overlaps.
 
 <!-- one line per closed ticket -->
 
+- [01 - How does ComfyLite see the same models ComfyUI sees?](issues/01-seam-de-descoberta-de-modelos.md):
+  **import `folder_paths`** (Option 1), and the inventory means **the union of both views with a
+  `visible_to_comfyui` flag per row**, not ComfyUI's view alone. Owner picked the seam on 2026-08-22;
+  the union half comes from ticket 03's pre-written closing criterion and is flagged in the ticket as
+  the line to contradict if that was not intended.
+
 ## Not yet specified
 
 - **The Retrieval Agent** (handoff section 8) and the **Source Adapters** (section 6). Nothing on this
@@ -57,8 +63,36 @@ already says so. Outside it, three repos touch and none overlaps.
 
 ## Tickets
 
-- [01-seam-de-descoberta-de-modelos.md](issues/01-seam-de-descoberta-de-modelos.md)
-- [02-scaffold-e-colisao.md](issues/02-scaffold-e-colisao.md)
-- [03-inventario-duas-raizes.md](issues/03-inventario-duas-raizes.md)
+- [01-seam-de-descoberta-de-modelos.md](issues/01-seam-de-descoberta-de-modelos.md) — **resolved**
+- [02-scaffold-e-colisao.md](issues/02-scaffold-e-colisao.md) — 6 of 8 clauses met; open on the first
+  commit and on opening a Tauri window (both the owner's call)
+- [03-inventario-duas-raizes.md](issues/03-inventario-duas-raizes.md) — **resolved**
 - [04-participar-do-lock-da-gpu.md](issues/04-participar-do-lock-da-gpu.md)
 - [05-runtime-compat-primeiro.md](issues/05-runtime-compat-primeiro.md)
+- [06-visibilidade-custom-node.md](issues/06-visibilidade-custom-node.md) — found by running 03:
+  `visible_to_comfyui` is core-only visibility and under-reports by 110 GiB
+- [07-subgraphs-bloqueiam-27-de-46.md](issues/07-subgraphs-bloqueiam-27-de-46.md) — found by running
+  a REAL generation: subgraph expansion is unimplemented and blocks 27 of the 46 workflows
+
+## Phase 3 is built and a real generation has run, 2026-08-23
+
+The gap from phase 1 to phase 3 was closed in one pass: `comfyui.py` (client, UI->API conversion,
+`/ws` relay), `workflows.py` (the 46 workflows, catalogued, schema v2), `loras.py` (34 LoRAs analysed
+from headers), the generate endpoints and output proxy, and the Workflows + Generate screens.
+
+**EXECUTED end to end on the 3090, with a real ComfyUI 0.33:** `txt_to_image_to_video` (SDXL + SVD),
+`done` in 224.1 s, live progress relayed the whole way, **2 output files** fetched back through
+ComfyLite's own proxy — a 1.37 MB PNG and a 469 KB MP4, both verified by magic bytes.
+
+Two real bugs were found by that run and fixed; both are written up in ticket 07, and both are the
+same shape: the failure cost GPU time before it became visible.
+
+## The destination moved, and it should be said plainly
+
+This map's destination was *"a decision-complete plan for phase 0 — **not** the application"*. On
+2026-08-22 the owner asked for a beta, so phases 0, 1 and most of 2 were **built**, not planned:
+~8,000 lines of Python worker plus ~4,000 of Svelte/Tauri, 125 tests green, and a real 505-file /
+1.01 TiB catalog produced in 4.52 s. That is past this map's stated end.
+
+Tickets 04 (GPU lock participation) and 05 (Compatibility Runtime) are untouched and are the next
+real decisions — ComfyLite does not yet take the GPU or run a workflow, so neither has bitten.
