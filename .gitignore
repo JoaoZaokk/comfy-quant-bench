@@ -72,3 +72,6 @@ bench/quality_ladder/*.png
 
 # Written by tools/gpu_lock.ps1 while the heartbeat runs. Machine state, not source.
 tools/.gpu_lock_beat_pid
+
+# O posto de escuta. Texto e ledger, sem payload -- nada de peso baixado entra aqui.
+!/research/
