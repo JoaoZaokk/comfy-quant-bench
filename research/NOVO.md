@@ -1,4 +1,44 @@
-# NOVO — rodada 1, 2026-08-30
+# NOVO — rodadas 1 e 2, 2026-08-30
+
+## O achado do dia: ConvRot INT4/INT8 misto, em produção, com 67 mil downloads
+
+`Abiray/Minimax-H3-nvfp4-INT4-INT8-Convrot` no ModelScope. **67114 downloads** — duas ordens
+de grandeza acima de qualquer outra coisa achada hoje. Listagem de arquivos conferida pelo
+endpoint `/repo/files`:
+
+```
+MiniMax_H3_FL2VA_pruned_int8_convrot.safetensors              20,97 GB
+MiniMax_H3_FL2VA_pruned_mixed_int4_int8_convrot.safetensors   15,90 GB
+MiniMax_H3_FL2VA_pruned_nvfp4.safetensors                     12,53 GB
+MiniMax_H3_Ref2VA_pruned_int8_convrot.safetensors             20,97 GB
+MiniMax_H3_Ref2VA_pruned_mixed_int4_int8_convrot.safetensors  15,09 GB
+MiniMax_H3_Ref2VA_pruned_nvfp4.safetensors                    12,53 GB
+MiniMax_H3_Ref2VA_nvfp4_mixed.safetensors                     24,44 GB
+```
+
+`mixed_int4_int8_convrot` **é o que este repo constrói**: rotação ConvRot com INT4 e INT8
+misturados por camada. Existe publicado, em MiniMax-H3, em escala.
+
+Do README, citado:
+
+- INT8 convrot: *"Recommended for 24GB GPUs"*, e a **RTX 3090 é citada por nome**. Roda em
+  Ampere.
+- misto int4/int8: *"Requires 15+ VRAM (~15.5 GB)"*
+- NVFP4: *"Blackwell Architecture Required"* — confirmação independente do que o
+  `nunchaku/utils.py` já dizia, por caminho separado.
+
+**E o que ele NÃO diz é a abertura.** Perguntado diretamente, o README responde NOT STATED
+para: o que "convrot" significa ali, como a atribuição INT4/INT8 por camada foi decidida,
+que ferramenta gerou os arquivos, e qualquer número de qualidade ou velocidade. Ele se
+descreve como *"community-compiled collection"* — é redistribuição, não quem produziu.
+
+Ou seja: estão distribuindo ConvRot misto sem documentar o método, para rodar na mesma
+placa que está aqui, e **este repo tem o conversor, a calibração e o preflight que
+decidem exatamente isso**. Nada disso foi baixado nem carregado — é tudo listagem e README.
+
+---
+
+# Rodada 1 — o que abriu caminho
 
 Três agentes em paralelo: ModelScope, Gitee, HuggingFace. Cada linha abaixo com achado foi
 **reconferida por quem orquestrou**, chamando o endpoint de detalhe direto — os agentes
@@ -22,9 +62,44 @@ LTX25-distilled-DiT-Q2_K.gguf .. Q8_0.gguf
 camada, num único arquivo, com o prefixo `comfy-`. Duas variantes de tamanho sugerem dois
 pontos de corte diferentes na mesma decisão que este repo toma por medição de erro.
 
-- **CONFERIDO:** existência, contagem de arquivos (21), tags, `base_model: Lightricks/LTX-2.5`
-- **NÃO conferido:** como a mistura foi decidida (medida? heurística? crest factor?), se
-  carrega no ComfyUI daqui, se o `comfy_quant` por camada é o mesmo formato.
+**O critério da mistura está no README, e é medido — não heurística.** Citado literal:
+
+> "All 1440 quantised layers were reconstructed at both precisions against the bf16
+> original, then promoted by **error-removed-per-byte** until the budget ran out — the
+> greedy solution to minimising total squared reconstruction error under a size cap."
+>
+> "Ranking by relative error does not work... **Weighting each layer by ‖W‖² is what
+> separates them.**"
+>
+> "**363 of the first 386 promotions land in the audio tower**, only 23 in the video tower."
+
+Três coisas que isso entrega de graça:
+
+1. **É o mesmo método deste repo, um passo à frente.** O `quant_mixed.py` mede
+   `err_bf16` / `err_w4a4` / `err_w4a8` por camada contra referência float32. Ele mede a
+   mesma coisa e depois **aloca sob orçamento de tamanho**, ordenando por erro removido por
+   byte. As duas variantes (13,8 GB e 17 GB) são dois tetos do mesmo greedy, como se
+   suspeitava.
+2. **"Ranking por erro relativo não funciona; pesar por ‖W‖² é o que separa."** Isto é
+   testável aqui, direto, com os dados que o `calibrate_activations.py` já produz. Este
+   repo já mediu que crest factor não prediz nada (Spearman +0,10) e que o erro W4A8 prediz
+   (+0,978); ‖W‖² é um terceiro eixo, e é de **alocação de orçamento**, não de predição de
+   formato. São complementares, não concorrentes.
+3. **A torre de áudio é que come o 8-bit.** 363 das 386 primeiras promoções. Se valer para
+   o LTX daqui, muda onde procurar regressão de qualidade.
+
+E a confissão dele, que é o que abre espaço:
+
+> "neither w4a4 nor w4a8 **has been run here on an Ada or Ampere 16 GB card**."
+
+**Ele não testou em Ampere. Esta bancada é Ampere, com 24 GB.** Temos o hardware que falta
+ao autor do checkpoint.
+
+- **CONFERIDO:** existência, 21 arquivos, tags, `base_model: Lightricks/LTX-2.5`, e o
+  critério de mistura, citado do README dele.
+- **NÃO conferido:** nada foi baixado, então não sei se carrega no ComfyUI daqui, nem se o
+  `comfy_quant` por camada é byte-compatível com o que o `quant_mixed.py` escreve. O README
+  diz `NVFP4 is Blackwell-only by construction`, o que bate com o `nunchaku/utils.py`.
 
 ### 2. Quatro W4A4 de vídeo/difusão no ModelScope
 
@@ -38,11 +113,61 @@ Todos verificados por `GET /api/v1/models/<owner>/<nome>` (controle: Qwen, 7,1 M
 | `ModelsLab/MiniMax-H3-svdquant-nvfp4_r32` | 2 | MiniMax-H3 é o que a 0.34 trouxe |
 
 - **CONFERIDO:** os quatro existem, com downloads e data de criação reais.
-- **NÃO conferido:** nada do conteúdo. Não sei o kernel, não sei se roda em sm86, não sei
-  se `OrbitQuant` é ConvRot com outro nome ou coisa distinta, não sei se algum carrega no
-  ComfyUI. **Três dos quatro são NVFP4, que é formato nativo de Blackwell** — se ele não
-  tiver caminho em Ampere, esta tabela inteira é inaplicável nesta placa. É a primeira
-  pergunta da rodada 2.
+### 2b. NVFP4 em Ampere: respondido pela fonte primária no disco
+
+A rodada 2 mandou um agente responder isso. Ele voltou com **"(a) não roda, 0% de
+compatibilidade, o hardware simplesmente não existe"**, citando *NVIDIA oficial + X/Twitter
+(Grok)*. Grok não é fonte primária para compatibilidade de hardware, e a conclusão está
+**errada na parte que importa**.
+
+O nunchaku 1.2.1 está instalado aqui. `python_embeded/Lib/site-packages/nunchaku/utils.py`,
+em `check_hardware_compatibility`:
+
+```python
+if sm in ["120", "121"]:                       # Blackwell: só fp4
+    if ...["dtype"] != "fp4_e2m1_all": raise ValueError('Please use "fp4" ...')
+elif sm in ["75", "80", "86", "89"]:           # Turing, Ampere, Ada: só int4
+    if ...["dtype"] != "int4":         raise ValueError('Please use "int4" ...')
+else:
+    raise ValueError(f"Unsupported GPU architecture {sm} due to the lack of 4-bit tensorcores...")
+```
+
+E em `get_precision`: `precision = "fp4" if sm in ["120","121"] else "int4"`.
+
+O correto, então:
+
+- **sm86 está na lista de suportados.** Turing, Ampere e Ada têm tensor core de 4 bits — a
+  mensagem de "lack of 4-bit tensorcores" é para as arquiteturas de *fora* dessa lista.
+  Dizer que o hardware não existe inverte o que o código diz.
+- **O que é exclusivo do Blackwell é o formato NVFP4** (`fp4_e2m1_all`, com escala
+  `fp8_e4m3_nan`, grupo 16), não a capacidade de 4 bits.
+- **Um checkpoint NVFP4 aqui é RECUSADO em voz alta**, com `ValueError`. Não dequantiza em
+  silêncio. Para este projeto isso é a boa notícia: o modo de falha que mataria a premissa
+  — cair para BF16 sem avisar — não acontece por esse caminho.
+
+**Consequência prática, e ela muda o alvo:** os três NVFP4 saem, mas *por causa do formato*.
+`XXXXinXXXXX/Wan22-i2v-w4a4` — o de 1439 downloads, o mais adotado dos quatro — **não tem
+`nvfp4` no nome.** Se for int4, é o único candidato que pode carregar nesta placa, e é o
+que vale conferir primeiro.
+
+- **NÃO conferido:** o `dtype` real dentro do `Wan22-i2v-w4a4`; nenhum arquivo foi baixado.
+  Se o ComfyUI (fora do nunchaku) tem outro caminho para nvfp4. Se o `OrbitQuant` roda sem
+  o runtime próprio dele.
+
+### 2c. OrbitQuant é real, e mira o mesmo modelo que calibramos aqui
+
+`arxiv.org/abs/2607.02461` — **"OrbitQuant: Data-Agnostic Quantization for Image and Video
+Diffusion Transformers"**. Confirmado buscando a página, porque o ID veio de um agente e
+tinha cara de inventado.
+
+Rotação Hadamard em blocos, permutada e randomizada, com codebook único entre camadas e
+modalidades; alega empurrar PTQ de transformer de difusão até **W2A4** com qualidade usável.
+Avaliado em FLUX.1, **Z-Image-Turbo**, Wan 2.1 e CogVideoX.
+
+É a mesma família do ConvRot — rotacionar antes de quantizar — por um caminho diferente, e
+ataca justamente o Z-Image, que é onde o `quant_mixed.py` foi calibrado aqui. **NÃO
+conferido:** o paper não foi lido além do resumo, e o `OrbitQuant` exige runtime próprio
+segundo o agente, o que não foi verificado.
 
 ### 3. Alguém mais faz W4A4 com calibração em ativação real
 
