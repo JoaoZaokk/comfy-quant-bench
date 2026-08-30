@@ -29,6 +29,17 @@ running it.
 Caveat that belongs with any number this prints: it covers the sampler path of one model at one
 resolution. A branch that never fires here can still fire under a LoRA, under torch.compile, or in
 a node that calls `mm` on a transposed weight.
+
+And one blindness that is structural rather than incidental, because it makes the counter read
+zero while the kernel runs: **a Python-side counter counts nothing during CUDA graph replay.**
+The wrapper below is Python; a captured graph replays the recorded device work without
+re-entering it. MEASURED in the sibling LLM project on 2026-08-16 -- with its per-call counter
+forced on, generating 48 tokens moved the count by **zero**, because the custom op's Python body
+does not re-execute on replay. So a count like "680 of 680 native" proves the right branch was
+taken while it was being *built*; it does not prove how many times it ran in steady state.
+Whether anything on ComfyUI's sampler path captures a graph was NOT checked here -- so treat
+every number above as valid for eager execution and unestablished for anything captured. The
+fixes are the same two the sibling names: force eager, or count inside the kernel.
 """
 
 from __future__ import annotations
@@ -320,6 +331,11 @@ def main() -> int:
     print("\nCovered: TensorCoreConvRotW4A4Layout and AsymW4A8Int8Layout. Any other quantized "
           "layout in the checkpoint dispatches through handlers that are not wrapped here and is "
           "absent from every number above.")
+    print("NOT covered: CUDA graph replay. This counter is Python; a replayed graph re-runs the "
+          "device work without re-entering it, so the count would read zero while the kernel "
+          "runs. Measured in the sibling LLM project (48 tokens moved its counter by zero). "
+          "Whether this path captures a graph at all was not checked -- read these numbers as "
+          "eager-only.")
     return 0
 
 

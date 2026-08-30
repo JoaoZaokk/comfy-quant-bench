@@ -1794,10 +1794,40 @@ M~128-256 registrado acima e do relogio, e o relogio carrega ~160 us de despacho
 chamada, fixo, que so deixa de importar quando o trabalho de GPU cresce o bastante para afoga-lo.
 
 Consequencia para quem serve LLM: custo de host e exatamente o que a captura de CUDA graph
-elimina. Um decode em M=1 sem CUDA graph mede despacho, nao kernel. O projeto irmao abandonou o
-tier `w4a8_int8_linear` **por quebrar a captura de CUDA graph** - isto e, abandonou por causa do
-mecanismo que consertaria o problema que o motivou. A pergunta certa la nao e "o kernel int4 serve
-em M=1" e sim "o decode roda com graph ligado".
+elimina. Um decode em M=1 sem CUDA graph mede despacho, nao kernel. A pergunta certa no projeto
+irmao nao e "o kernel int4 serve em M=1" e sim "o decode roda com graph ligado".
+
+> **CONTESTADO e depois RESOLVIDO no mesmo dia, 2026-08-29 - e o percurso vale mais que o
+> desfecho.** Esta linha afirmava, como fato, que o projeto irmao abandonou o tier
+> `w4a8_int8_linear` por quebrar a captura de CUDA graph. Nao era medicao deste lado: veio de
+> relato relayado em 2026-08-19. Em 2026-08-29 **o projeto irmao negou** - "nunca testei captura
+> nesse tier". Marquei contestado em vez de apagar, porque o `state.md` dele listava o tier dentro
+> do plugin de vLLM e as duas versoes nao fechavam.
+>
+> Ele foi buscar o log e **a evidencia contradiz a negativa dele**. Lido aqui direto da fonte,
+> `P:\PROJETOS\W4A4_LLM\.claude\autopilot\state.md:267-290`, secao *"W4A8 / CHECKPOINT MIXED -
+> REPROVADO POR MEDICAO"*:
+>
+> ```
+> RuntimeError: info.status != cudaStreamCaptureStatusInvalidated
+>   INTERNAL ASSERT FAILED at CUDACachingAllocator.cpp:2213
+> torch.AcceleratorError: CUDA error: operation failed due to a previous error during capture
+> ```
+>
+> **Duas correcoes no enunciado original, e as duas apertam em vez de afrouxar:**
+>
+> 1. **A captura quebra no caminho do model runner novo** (o que o DSpark exige). *"Sozinho ele
+>    captura bem"* - o que bate exatamente com o que foi medido aqui na parte 11. O bloqueio era a
+>    integracao, nao o op. Entao nem arqueologia e: esta medido dos dois lados.
+> 2. **A decisao nao foi so a captura.** `W4A4 puro 28,73 sem draft e 63,10 com DSpark k=7`; o
+>    `mixed (W4A8 em 0/63)` da `27,43` (-4,5%) e **nao sobe** com o draft. A frase do arquivo dele e
+>    *"custo sem contrapartida demonstrada"* - nao ha medida de qualidade mostrando que 0/63 em W4A4
+>    degradem algo. Captura foi a causa proximal; custo-beneficio foi a decisao.
+>
+> Licao de metodo, e e a que transfere: **uma sessao nao e autoridade sobre a propria historia
+> quando a historia esta em outra sessao.** A negativa dele era verdadeira da sessao em que ele
+> estava, e falsa do historico. O arquivo decidiu. Nao fechar como resolvido so porque a outra
+> parte afirmou foi o que fez a evidencia aparecer.
 
 Ressalva: os 161 us sao do wrapper Python do `comfy_kitchen` nesta stack; o numero absoluto nao
 transfere para outro caminho de chamada. O que transfere e a forma - em M=1 o trabalho de GPU e
@@ -1854,7 +1884,11 @@ Entao "o graph apaga o overhead" e falso; "o graph apaga 83% dele nesta stack" e
 
 **Os dois ops do comfy_kitchen sao capture-safe** - `convrot_w4a4_linear` e `w4a8_int8_linear`
 capturam e reproduzem com saida correta. Isso importa para o projeto irmao, que abandonou o tier
-W4A8 por quebrar a captura: o que quebrou la nao pode ser o kernel, porque aqui ele captura.
+W4A8 tendo a quebra de captura como causa proximal - e o log dele, lido em 2026-08-29
+(`state.md:284-285`), diz literalmente *"o `w4a8_int8_linear` nao e capture-safe no caminho de CUDA
+graph do model runner novo. **Sozinho ele captura bem**"*. As duas medicoes, em duas maquinas e
+dois runtimes, concordam: **o que quebrou la nao era o kernel.** Ver o bloco da parte 10 para o
+percurso completo dessa afirmacao, que passou por contestada antes de fechar.
 
 > **ERRADO, corrigido em 2026-08-19 (parte 12).** Isto foi medido em M pequeno e escrito como se
 > valesse para todo M. `w4a8_int8_linear` **recusa a captura** acima de M x K ~ 21,8 milhoes de
@@ -2009,6 +2043,29 @@ replay nesta maquina e ~6 us, seja qual for o kernel.**
 Isso **nao** reproduz o "83%, ~11 us sobrando" que este log afirmava. Pelo instrumento de hoje sao
 ~93% do host e ~5,6 us sobrando. Nao da para reconciliar os dois: o instrumento antigo nao existe
 mais. Fica o de hoje, que da para rodar de novo.
+
+> **Adendo 2026-08-29 - o projeto irmao mediu a mesma razao em outra maquina, e ela caiu em cima do
+> instrumento APOSENTADO.** Numeros dele, RELATO RELAYADO, nao medidos aqui: RTX 3080 Ti, WSL2,
+> rodada declarada **suja** (desktop do dono a ~18%, pico 58%), peso de 8 MiB, M=1, os dois bracos
+> sob graph -> `w4a8 78,1 / bf16 53,6 = 1,46x`. Ao lado dos dois daqui, mesma razao, mesmo M:
+>
+> | fonte | maquina | w4a8 replay | bf16 replay | razao |
+> |---|---|---|---|---|
+> | instrumento aposentado | 3090 / Windows | 77,5 | 53,7 | **1,44** |
+> | `graph_capture_probe` (atual) | 3090 / Windows | 70,6 | 51,1 | **1,38** |
+> | bench do irmao | 3080 Ti / WSL2 | 78,1 | 53,6 | **1,46** (sujo) |
+>
+> Ele chamou de "replicacao independente, 1,44 contra 1,46". A leitura honesta e outra: **a
+> discordancia entre os dois instrumentos da MESMA maquina (1,44 contra 1,38) e maior que a
+> distancia entre as duas maquinas.** O que a tabela sustenta e "a razao vive em 1,38-1,46", nao
+> dois decimais. O interessante e que a medida dele bate com o instrumento que foi aposentado, e
+> nao com o que ficou - o que reabre *por que* os dois discordam (iteracoes, warmup, ou a checagem
+> de saida dentro da regiao cronometrada), pergunta que ninguem respondeu.
+>
+> **E a condicao que nao pode soltar da razao: tudo isso e M=1.** Em M=5856 a parte 10 mede
+> `w4a8_int8_linear` em 1,121 ms contra ~2,55-2,64 ms do bf16 - **~2,3x mais rapido**, ordem
+> invertida. "W4A8 fica ~1,45x atras mesmo capturado" so e verdade com "em decode" colado. Sem
+> isso vira veredito de formato e contradiz a medicao de prefill deste mesmo repo.
 
 ### 2. O achado grande: `w4a8_int8_linear` recusa captura acima de um tamanho
 
