@@ -77,7 +77,25 @@ Also read [AGENTS.md](AGENTS.md) (root policy) and [ComfyUI/AGENTS.md](ComfyUI/A
 
   The last row is the finding: with `--gpu-only`, asking for 8 GiB of reserve lands **+10207** against **+10169** without it — the flag is simply not consulted. On the default path the same reserve took residency to zero. So `--reserve-vram` protects only while nothing else has overridden the placement policy, and the two flags people reach for to "make it use the GPU" are exactly the two that switch it off.
 
-  **And ComfyUI never evicted the neighbour in any arm.** Every run stopped at roughly the card's real free memory (~10.2 GiB of a 15.9 GiB model) rather than the 23332 MiB it believed it had, and `glm-w4` ended at 13341 MiB against 13429 at the start. That is the opposite of what the raw-allocation probe does: 22 GiB placed past the driver's free number with plain `torch.empty`, neighbour evicted. **So WDDM will hand over a neighbour's memory, but ComfyUI's loader does not take it** — it backs off at the physical limit. Why it backs off was not determined; the useful part is that the inflated `get_free_memory` does not, on this path, translate into stealing.
+  **It does not back off, and "ComfyUI evicted nobody" was a measurement error.** That claim came from watching the card's `memory.used` rise by only ~10.2 GiB for a 15.9 GiB model and concluding ComfyUI had stopped early. It had not. Reproduced 2026-08-30 against a **synthetic tenant** — a separate native-Windows process holding 13 GiB with `torch.empty` and then sleeping, which unlike a live training does not touch its pages and page them back:
+
+  ```
+  --gpu-only, tenant holding 13790 MiB
+    smi before                13790 MiB
+    smi after                 23428 MiB      delta only +9638
+    ComfyUI's own accounting  15881 MiB resident, no exception
+    tenant afterwards          7402 MiB      <- it lost 6.2 GiB
+  ```
+
+  `7318 + 15881 = 23199`, against the 23428 measured. The full model landed. **The delta looked small because the other occupant was shrinking at the same time** — I attributed to ComfyUI a number that was the sum of two moving quantities, which is `ab-so-vale-se-os-dois-tomaram-o-mesmo-caminho` with the arms being two processes instead of two code paths.
+
+  So WDDM evicts, and ComfyUI does ask it to. Against the live `glm-w4` this was invisible precisely because that training was at 100% and kept faulting its pages back in — its *resident* number barely moved while it was actually thrashing against the loader. **A neighbour that looks unharmed by resident VRAM may be the worst case, not the best.**
+
+  The default path is different and is fully explained by arithmetic, not by any backoff: `MIN_WEIGHT_MEMORY_RATIO` is **0.0 on NVIDIA** (`comfy/model_management.py:454-457`), so the budget collapses to `lowvram_model_memory = max(0, free − (model_size + reserve))`. Measured `6750 MiB` against `23332 − (15881 + 700) = 6751`. Note the shape of that formula: it subtracts the **whole model** from free and loads the remainder, so a bigger model puts *less* on the GPU, and any reserve at or above `free − model_size` puts nothing there at all. That is what the `+0 MiB` rows above are.
+
+  **Why `--gpu-only` differs is also not a policy decision:** under it, `comfy.sd.load_diffusion_model` writes weights straight to the GPU while reading the file (`smi_after_read` was already 23428 MiB, before `load_models_gpu` was ever called), so `load_models_gpu` and its reserve arrive after the memory is spent.
+
+  One thing this closed by accident: the synthetic tenant is a **native Windows process**, not WSL, and `get_free_memory` over-reported identically (23332 MiB with 13567 MiB held). The inflation is not a WSL artifact.
 
   **Not covered:** no sampling was run, so this is placement, not a completed generation — inference-time allocation is a separate budget and untested here. The neighbour's throughput was never measured, only its resident VRAM. Re-run both with `tools/probe_reserve_vram.py` (arithmetic) and `tools/probe_reserve_e2e.py` (real load).
 - **W4A4 means native ConvRot CUDA execution**, not weight-only INT4 followed by BF16 GEMM. Any change that lets the work fall back to eager/dequantized math defeats the entire project.
