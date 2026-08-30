@@ -1,0 +1,49 @@
+services:
+  glm46v:
+    image: lmsysorg/sglang:latest
+    container_name: glm46v-quality
+    restart: unless-stopped
+    ipc: host
+    shm_size: "16gb"
+    ports:
+      - "127.0.0.1:30000:30000"
+    environment:
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      NVIDIA_VISIBLE_DEVICES: "0"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
+    volumes:
+      - type: bind
+        source: "${GLM_NAS_HOST_PATH:-//NAS/purple}"
+        target: /nas/purple
+        read_only: true
+      - type: bind
+        source: "C:/Users/joaoz/Downloads/Photos-1-001"
+        target: /data/photos
+        read_only: true
+    command:
+      - python3
+      - -m
+      - sglang.launch_server
+      - --model-path
+      - /nas/purple
+      - --served-model-name
+      - glm-4.6v
+      - --host
+      - 0.0.0.0
+      - --port
+      - "30000"
+      - --tp
+      - "1"
+      - --trust-remote-code
+      - --dtype
+      - bfloat16
+      - --mem-fraction-static
+      - "0.88"
+      - --max-total-tokens
+      - "8192"
