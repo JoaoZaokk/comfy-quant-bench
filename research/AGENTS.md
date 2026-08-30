@@ -82,10 +82,17 @@ são caminhos que *parecem* funcionar e não funcionam.
 | **HuggingFace** | 200, ~180 ms | `GET https://huggingface.co/api/models?search=<q>&limit=<n>` |
 | **hf-mirror** | 200, ~1550 ms | mesma rota, host `hf-mirror.com`. Espelho fiel: resposta byte-a-byte do mesmo tamanho que a HF na consulta de controle. **Só vale se a HF estiver bloqueada** — caso contrário é a mesma coisa 8x mais lenta |
 | **ModelScope** | 200 | `PUT https://modelscope.cn/api/v1/dolphin/models`, corpo JSON `{"PageSize":20,"PageNumber":1,"SortBy":"Default","Name":"<q>","SingleCriterion":[]}`. Detalhe: `GET /api/v1/models/<owner>/<nome>` |
-| **Gitee (descoberta)** | funciona **só** por WebSearch | `WebSearch` com `allowed_domains: ["gitee.com"]` |
+| **Gitee (busca real)** | **`so.gitee.com`**, por navegador | `https://so.gitee.com/?q=<termo>` — **outro host**, é para onde `gitee.com/search` redireciona. SPA: precisa de navegador, não de fetch |
+| **Gitee (descoberta alternativa)** | funciona | `WebSearch` com `allowed_domains: ["gitee.com"]` |
 | **Gitee (confirmação)** | 200 | `GET https://gitee.com/api/v5/repos/<owner>/<repo>` — devolve estrelas, `pushed_at`, licença |
 | ~~Gitee API de busca~~ | **CEGA** | `GET /api/v5/search/repositories?q=...` devolve **200 `[]`** para tudo, inclusive `q=vue`. Não use, e nunca conclua ausência a partir dela |
-| ~~Gitee página de busca~~ | **INÚTIL** | `https://gitee.com/search?q=...` devolve 849 bytes de casca SPA. O conteúdo é montado em JS e não chega por fetch |
+| ~~Gitee `gitee.com/search`~~ | **INÚTIL por fetch** | 849 bytes de casca SPA. **Redireciona para `so.gitee.com`**, e foi por não seguir o redirecionamento que a busca pareceu inexistir |
+
+**Como o Gitee enganou duas vezes seguidas, na mesma sessão.** A API respondia `200 []` para
+tudo, e a página respondia casca vazia. Duas leituras independentes dizendo "não tem nada",
+e as duas eram do instrumento, não do mundo. O que faltava era um terceiro host, `so.gitee.com`,
+que só se alcança por navegador de verdade. **Duas fontes cegas concordando não são
+confirmação** — é a mesma cegueira contada duas vezes.
 
 Endpoints do ModelScope que **não** existem, para ninguém tentar de novo:
 `GET /api/v1/models?PageSize=...` → 404. `POST /api/v1/dolphin/models` → 404.
@@ -97,11 +104,30 @@ Endpoints do ModelScope que **não** existem, para ninguém tentar de novo:
    chinesa própria e modelos que nunca cruzam para o ocidente. É a aposta real.
 2. **HuggingFace** é a base de comparação, não uma descoberta.
 3. **hf-mirror** é rota de contingência, não fonte. Não gaste execução nele com a HF no ar.
-4. **Gitee é, em grande parte, fazenda de espelho.** As buscas de 2026-08-30 devolveram
-   sobretudo cópias declaradas de repositórios do GitHub ("本仓库仅同步方便大家使用" —
-   *este repositório só sincroniza para conveniência*). Logo: **todo achado do Gitee tem
-   que responder "isto é espelho de quê?"** antes de ser relatado. Espelho de coisa que já
-   conhecemos não é achado; é ruído com aparência de novidade.
+4. **Gitee é, em grande parte, fazenda de espelho** — e isso agora foi medido com um
+   instrumento que enxerga, não com um cego. Rodado em `so.gitee.com` pelo navegador do
+   dono, com controle:
+
+   | consulta | resultado |
+   |---|---|
+   | `vue` (**controle**) | 200 resultados reais, milhares de estrelas. O instrumento enxerga |
+   | `LTX-Video` | 21 resultados, **todos** clone nu: 0 estrela, 0 fork, sem descrição, um diz "Mirror of huggingface.co/Lightricks/LTX-Video" |
+   | `ComfyUI 量化` | 2 resultados, **os dois falso positivo** — casaram `量化` dentro de `轻量化` ("leve"), e nenhum é sobre quantização |
+   | `W4A4` | "200 resultados" que são FlashDB, proxy HTTP, SDK do WeChat e spam. Nada de W4A4 |
+   | `视频生成 量化` | 200 de ruído: RAG, análise de tênis, e **trading quantitativo** |
+
+   Duas armadilhas de idioma que essa tabela expõe, e que valem para qualquer fonte chinesa:
+   **`量化` significa quantização (ML) *e* quantitativo (finanças)** — sozinho, arrasta
+   repositório de bolsa; e ele é **substring de `轻量化`** ("leve"), então casa em texto que
+   não fala de quantização nenhuma. Use sempre acompanhado (`模型量化`, `权重量化`, `INT4`).
+
+   E o `about N results` do `so.gitee.com` é casamento difuso, **não uma contagem**. Não
+   cite esse número como se fosse achado.
+
+   Portanto: **todo achado do Gitee tem que responder "isto é espelho de quê?"** antes de
+   ser relatado. Espelho de coisa que já conhecemos não é achado; é ruído com aparência de
+   novidade. Até 2026-08-30, o Gitee rendeu **zero** trabalho original de quantização de
+   difusão ou vídeo.
 
 ---
 
