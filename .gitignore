@@ -11,6 +11,7 @@
 !/*.md
 !/inspect_quant.py
 !/_check_accel.py
+!/run_nvidia_gpu_8190_void_cache_none.bat
 
 # Written by /setup-matt-pocock-skills: where issues live, the triage vocabulary, and the domain-doc
 # rules. Text only, and the skills read them as input on every run -- so untracked here means every
@@ -45,6 +46,16 @@ bench/quality_ladder/*.png
 # The local issue tracker. Ignored for four days, which meant 26 tickets and the map
 # existed only on disk -- one `git clean -xdf` from gone. Tracked now.
 !/.scratch/
+
+# But `!/.scratch/` re-includes the WHOLE subtree, and by 2026-08-29 that subtree held 59 GiB of
+# payload that `git add -A` would have taken: a 20 GiB model copy, a 37 GiB HF cache, and two
+# directories of downloaded upstream workflow templates at 2.0 GiB and 412 MiB. The allowlist above
+# exists precisely to stop that, and this is the hole it leaked through -- the tickets are text,
+# the scratch space beside them is not. Measured with `du -sh` before writing these five lines.
+/.scratch/glm46v_model/
+/.scratch/hf_cache/
+/.scratch/workflow_templates_upstream/
+/.scratch/workflow_templates_upstream_incomplete_20260826/
 
 # Written by tools/gpu_lock.ps1 while the heartbeat runs. Machine state, not source.
 tools/.gpu_lock_beat_pid
