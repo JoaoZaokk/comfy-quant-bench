@@ -1,7 +1,7 @@
 # 08 - One converter core: five converters re-implement the same eight-part contract and the parts diverge
 
 Type: grilling
-Status: ready-for-human
+Status: in-progress
 Blocked by: 05, 07
 Severity: medium
 Provenance: TRACED, then EXECUTED 2026-08-22 on the 3090
@@ -122,3 +122,69 @@ What that does and does not mean:
 
 **Caveat that travels with this:** one call, one argument set, one build. `scale_dtype` is a
 parameter -- pass `float8_e5m2` and the answer may change. Not tested.
+
+---
+
+## DECISAO DO DONO, 2026-08-31: NUCLEO
+
+Perguntado de novo depois de o inventario ser refeito, ele decidiu pelo nucleo, e acrescentou uma
+peca que este ticket nao tinha: a **superficie**. Palavras dele -- "juntar esses codigos em Py e o
+`quant_w4a4` ser uma funcao, um def, que vai ser chamado quando alguem digitar `--w4a4`".
+
+Ele tambem registrou por que tinha adiado antes: *"na hora eu queria um resultado rapido"*. Nao foi
+recusa; foi prioridade.
+
+### O que foi feito
+
+`tools/_conversion.py` -- o contrato de oito partes escrito uma vez. `Conversion(source, output)`
+com `.refuse_unsafe()`, `.guard()` e `.commit(entries, metadata)`. A costura de plano aceita tres
+formas de payload -- `("copy", (inicio, tamanho))`, `("write", tensor)` e
+`("write", callable)` -- e a terceira e o que faz o nucleo servir tanto quem transmite
+(`quant_w4a4`, que quantiza dentro do laco de escrita) quanto quem acumula (`quant_w4a8`,
+`quant_mixed`), sem obrigar o primeiro a segurar o modelo inteiro em RAM so para caber na costura.
+Essa era a objecao real contra a forma que este ticket desenhou.
+
+`tools/test_conversion_core.py` -- **32 checagens, 0 falhas, EXECUTADO** contra safetensors de
+verdade em disco temporario. Sem mock: o ponto de um contrato de escrita e o byte no disco.
+
+`tools/convert.py` -- a porta unica, por SUBCOMANDO e nao por flag.
+
+### Por que subcomando e nao `--w4a4`
+
+Nao e preferencia. EXECUTADO: os namespaces de `--profile` sao disjuntos entre as ferramentas --
+`mixed --profile gemma` e invalid choice, `w4a8 --profile zimage` e invalid choice. Um argparse
+plano nao expressa "esta flag aceita estes valores QUANDO aquela outra esta presente"; viraria
+validacao pos-parse, o mesmo defeito com outro nome. Some-se a isso quatro grafias do mesmo
+conceito na arvore (`--profile`, `--arch`, `--auto-detect`, e o `--profile` sem `auto` do mixed) e
+um `--output` obrigatorio em dois dos sete e opcional em cinco.
+
+### Por que os sete arquivos continuam existindo
+
+EXECUTADO por um refutador que tentou derrubar "da para fundir sem quebrar nada", e derrubou: oito
+arquivos importam esses modulos pelo nome e quebram se sumirem, e `test_svdq_write_contract.py:229`
+lista os SETE nomes de arquivo literalmente. A porta da frente e nova; os modulos seguem sendo os
+modulos.
+
+### Divergencias que o nucleo resolve, e a regra que adotou
+
+| parte | como estava | o que vale agora |
+|---|---|---|
+| disco | 3 regras; 3 dos 7 sem nenhuma; duas levantavam sem numero | `estimativa + 1 GiB`, dizendo livre e quanto falta |
+| RAM | 4 de 7; o pior caso (`smooth`, que acumula tudo) sem guarda | obrigatoria para quem declara acumulo |
+| bytes conferidos | `smooth` levantava `RuntimeError("length mismatch")` sem numero | a mensagem carrega escrito, planejado e a diferenca |
+| `SAFETENSORS_DTYPE` | duas tabelas; `mixed` sem `int16` | uma tabela |
+| fp8 / bf16 na escrita | `header_dtype`/`as_bytes` so no `w4a8`; `e5m2` dava KeyError **depois de quantizar tudo** | unico caminho de escrita |
+| recusa em dry-run | `mixed` condicionava as recusas a `not args.dry_run` | incondicional: um ensaio que pula a checagem do caminho real nao e ensaio |
+
+### O que este ticket NAO fecha ainda
+
+O criterio de fechamento foi escrito antes de alguem olhar o resultado, e ele exige mais do que
+existe hoje:
+
+    grep -c "def write_streamed_checkpoint" tools/*.py devolve 1
+    e o conjunto de guardas de todo conversor e o mesmo conjunto
+
+O nucleo existe e esta testado, e a porta unica existe. **Os sete ainda nao foram migrados para
+ele.** Enquanto nao forem, o contrato continua escrito oito vezes -- sete nos conversores e uma no
+nucleo -- e isso e pior do que sete, nao melhor, porque agora ha uma copia que se parece com a
+fonte da verdade sem ser. Migrar e o trabalho seguinte, e este ticket segue aberto ate la.
