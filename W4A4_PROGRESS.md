@@ -3663,3 +3663,100 @@ Um modelo, um prompt, um scheduler, oito sementes. Nao e teste formal de hipotes
 entre o efeito e o proprio espalhamento dele, que e o minimo para nao chamar de resultado uma
 diferenca que troca de sinal entre sementes. E `sigma` (linear) foi implementado e testado como
 aritmetica, mas nunca virou checkpoint.
+
+## 2026-08-31, parte 36 - o aviso publico de agosto reproduziu, e o que ele mede e o MODELO
+
+O repositorio publico deste projeto -- renomeado hoje de `ComfyUI-ConvRot-Quant` para
+`comfy-quant-bench`, ver abaixo -- carrega desde 16 de agosto uma manchete em negrito:
+**"Use `tools/quant_w4a8.py`. Do not use W4A4."**, apoiada numa foto de tres macas onde a do meio,
+ConvRot W4A4, esta destruida. Modelo: HunyuanVideo 1.5, 480x480, um quadro, seed 12345, 6 passos,
+cfg 6, euler/simple.
+
+Desde entao esta bancada mediu o oposto no Z-Image: W4A4 1,83x-1,93x mais rapido por passo, 3,6x
+mais leve, imagem boa (parte 29 e o portao de aceitacao). Duas afirmacoes publicas incompativeis
+sobre o mesmo formato.
+
+### O que se moveu entre as duas, e o que nao
+
+A primeira hipotese foi o `to_native.py`: o ComfyUI funde `attention.to_{q,k,v}` em `attention.qkv`
+na carga e so `.weight` esta no mapa de renome, entao `weight_scale` passa sem renomear e a camada
+carrega **sem escala e sem erro** -- exatamente a cara daquele dano.
+
+**Essa hipotese morreu antes de custar uma janela de GPU**, e morreu lendo o comentario que o
+proprio perfil carrega (`tools/quant_w4a4.py`, perfil `hunyuan_video_15`):
+
+```
+# HunyuanVideo.process_unet_state_dict rewrites them ... and its substring replacements
+# ("_attn_qkv." -> "_attn.qkv.", ...) carry the injected .comfy_quant and .weight_scale
+```
+
+O HunyuanVideo tem o proprio `process_unet_state_dict` e ele **carrega as escalas junto**. O buraco
+do `to_native.py` e especifico do Z-Image (nomes diffusers). Nao explica nada aqui.
+
+Sobrou a pilha. Diferenca real entre 16 e 31 de agosto:
+
+```
+comfy-kitchen   0.2.23  ->  0.2.31
+ComfyUI         0.29    ->  0.33 (c1739380)
+torch           2.12.1  ->  2.13.0+cu130
+conversor       praticamente o mesmo codigo (flag nova, sonda extraida para _native_probe.py)
+```
+
+### EXECUTADO: requantizado e re-renderizado hoje, 3090
+
+Requantizacao com `tools/quant_w4a4.py --profile hunyuan_video_15`. O sidecar registra
+`backend: comfy_kitchen.backends.cuda`, `convrot_groupsize: 256`, 432 tensores quantizados, 929
+preservados, **saida de 7,92 GiB -- identica a de agosto.** Mesmo perfil, mesmas camadas, mesmo
+group size.
+
+Render com `tools/quality_ladder.py`, `CUDA_VISIBLE_DEVICES=0`, exatamente os parametros do
+`SMOKE_HunyuanVideo15_W4A4.json` de agosto:
+
+```
+                    s/passo    GiB   divergencia   imagem
+FP16 (controle)       1,858   15,51            -   boa
+ConvRot W4A4          1,961    7,92       0,8255   DESTRUIDA
+```
+
+1,055x **mais lento** que o FP16, e destruida. As duas metades do aviso de agosto reproduziram numa
+pilha tres versoes mais nova. **`comfy-kitchen` 0.2.31 nao consertou nada.**
+
+### O que isso realmente mede
+
+Nao e bug de pilha e nao e bug de conversor. E o modelo:
+
+| modelo | W4A4, por passo | imagem |
+|---|---|---|
+| Z-Image | 1,83x-1,93x **mais rapido** | boa |
+| HunyuanVideo 1.5 | 1,055x **mais lento** | destruida |
+
+Mesmo formato, mesmo kernel, mesmo conversor, mesmo group size. O que separa e qual modelo entra.
+
+Consequencia para o README publico: **nao e retratacao, e escopo.** A frase
+*"ConvRot W4A4 destroys HunyuanVideo 1.5"* fica, e fica mais forte -- foi reproduzida quinze dias
+depois. A frase *"Do not use W4A4"* e generalizacao de um modelo so, e o Z-Image e o contraexemplo
+medido.
+
+**Vale registrar por que isso nao foi publicado antes de rodar.** A tentacao era virar a manchete
+com a foto boa do Z-Image na mao. Se tivesse feito isso, o repositorio publico estaria hoje
+afirmando que o W4A4 foi consertado -- falso, e falso num repo cujo log de commits e feito de
+retratacoes cuidadosas (`Retract the smoothing recommendation`, `correct two claims it refutes`).
+E `ab-so-vale-se-os-dois-tomaram-o-mesmo-caminho` outra vez: dois bracos, quatro eixos movidos.
+
+### Divergencia de latente nao tem limiar
+
+```
+HunyuanVideo W4A4   divergencia 0,8255   ->  destruida
+Z-Image      W4A4   divergencia 0,7173   ->  boa
+```
+
+Dois numeros proximos, desfechos opostos. Terceira vez que esta bancada bate nisso: **distancia nao
+e qualidade**, e nenhum corte nesse eixo separa "funciona" de "nao funciona". So a imagem decidiu.
+
+### Nao coberto
+
+Uma semente, um prompt, 480x480, um quadro. Sem SASS -- "kernel nativo" aqui significa que o
+registry resolveu `comfy_kitchen.backends.cuda` e o sidecar gravou, nao que a instrucao foi
+observada emitindo. O s/passo inclui carga sob dynamic VRAM nos dois bracos, nao isolada. Nenhuma
+metrica perceptual. Nao foi testado nenhum group size alem de 256 nesta rodada (agosto testou 256,
+64 e 16 e reportou os tres inutilizaveis).

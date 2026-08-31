@@ -129,6 +129,22 @@ Also read [AGENTS.md](AGENTS.md) (root policy) and [ComfyUI/AGENTS.md](ComfyUI/A
 
   **The rule stands until the owner decides otherwise**, because this is a trade and the choice is his: accuracy and small-batch latency favour the INT8 branch, large-batch throughput favours native.
 
+  **And whether native W4A4 is worth reaching at all depends on the MODEL, which this rule does not mention.** Measured 2026-08-31 on the 3090, requantizing `hunyuanvideo1.5_720p_t2v_fp16` with today's pipeline and re-rendering the exact prompt, seed and sampler of the public repo's August test:
+
+  ```
+  modelo             W4A4 por passo   imagem       divergencia
+  Z-Image                1.83x-1.93x MAIS RAPIDO   boa      0.7173
+  HunyuanVideo 1.5       1.055x MAIS LENTO         DESTRUIDA 0.8255
+  ```
+
+  Same format, same kernel, same converter, same `convrot_groupsize` 256, output byte-size identical to August's 7.92 GiB. The public repo's warning — *"ConvRot W4A4 is slower than FP16 and destroys the output"* — **reproduced fifteen days later** across `comfy-kitchen` 0.2.23→0.2.31, ComfyUI 0.29→0.33 and torch 2.12.1→2.13.0. **Nothing in the stack fixed it**, because nothing in the stack was broken: the model is the axis.
+
+  The leading hypothesis before the run was the `to_native.py` fused-qkv gap (scales passing through unrenamed, layer loading with no scale and no error). It died on reading, not on the GPU: `HunyuanVideo.process_unet_state_dict` carries `.comfy_quant` and `.weight_scale` through its own substring replacements — the gap is Z-Image-specific.
+
+  Two consequences. First, **a checkpoint that converts cleanly, resolves the CUDA backend and writes a valid sidecar can still produce garbage** — the preflight proves dispatch, never quality; only a render does. Second, **latent divergence has no threshold**: 0.8255 destroyed against 0.7173 fine is a 15% gap separating "unusable" from "ship it", so no cut on that axis decides anything.
+
+  Not covered: one seed, one prompt, 480x480, one frame, no perceptual metric, no SASS, and only `convrot_groupsize` 256 in this round. Re-run with `tools/quant_w4a4.py --profile hunyuan_video_15` then `tools/quality_ladder.py`; see `W4A4_PROGRESS.md` part 36.
+
   **The "is 1.49x visible?" question is now answered, and answering it corrected how this bench measures.** Three measurements of the same pair, 2026-08-30/31:
 
   ```
