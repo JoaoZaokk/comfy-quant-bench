@@ -45,6 +45,7 @@ from comfy_kitchen.tensor.base import QuantizedTensor
 
 MODE = %(MODE)r; CKPT = %(CKPT)r; CLIP = %(CLIP)r; CLIP_TYPE = %(CLIP_TYPE)r
 PROMPT = %(PROMPT)r; STEPS = %(STEPS)d; SIDE = %(SIDE)d; SEED = %(SEED)d
+FRAMES = %(FRAMES)d
 rep = {"mode": MODE, "ckpt": CKPT}
 
 if MODE == "te":
@@ -128,7 +129,20 @@ try:
         rep["saida"] = {"shape": list(cond.shape), "norm": float(cond.norm())}
     else:
         lf = obj.model.latent_format
-        latent = torch.zeros([1, lf.latent_channels, SIDE // 8, SIDE // 8], device="cpu")
+        # `latent_dimensions` e 2 para modelo de imagem e 3 para video, e um modelo de video
+        # que recebe latente 4-D nao falha limpo: falha dentro do transformer com um erro de
+        # forma que nao diz nada sobre o latente. Ler o formato, nao supor imagem -- e o que
+        # `calibrate_activations.py` ja fazia e este probe nao fazia.
+        dims = getattr(lf, "latent_dimensions", 2)
+        side = max(SIDE // 8, 8)
+        if dims == 3:
+            ratio = getattr(lf, "temporal_downscale_ratio", 4)
+            frames = max(1, (FRAMES - 1) // ratio + 1)
+            shape = [1, lf.latent_channels, frames, side, side]
+        else:
+            shape = [1, lf.latent_channels, side, side]
+        rep["latent_shape"] = shape
+        latent = torch.zeros(shape, device="cpu")
         noise = comfy.sample.prepare_noise(latent, SEED, None)
         s = comfy.sample.sample(obj, noise, STEPS, 1.0, "euler", "simple",
                                 positive, negative, latent, denoise=1.0,
@@ -157,13 +171,16 @@ def main():
     p.add_argument("--steps", type=int, default=2)
     p.add_argument("--size", type=int, default=512)
     p.add_argument("--seed", type=int, default=1234)
+    p.add_argument("--frames", type=int, default=9,
+                   help="so vale para modelo de video (latent_dimensions == 3)")
     p.add_argument("--device", type=int, default=0)
     a = p.parse_args()
 
     env = dict(os.environ)
     env["CUDA_VISIBLE_DEVICES"] = str(a.device)
     src = SRC % {"MODE": a.mode, "CKPT": a.ckpt, "CLIP": a.clip, "CLIP_TYPE": a.clip_type,
-                 "PROMPT": a.prompt, "STEPS": a.steps, "SIDE": a.size, "SEED": a.seed}
+                 "PROMPT": a.prompt, "STEPS": a.steps, "SIDE": a.size, "SEED": a.seed,
+                 "FRAMES": a.frames}
     proc = subprocess.run([str(ROOT / "python_embeded/python.exe"), "-s", "-c", src],
                           capture_output=True, text=True, env=env, cwd=str(ROOT))
     rep = None

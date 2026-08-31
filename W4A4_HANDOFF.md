@@ -2,7 +2,9 @@
 
 ## Scope and safety rules
 
-This is the live ComfyUI Portable installation at `F:\COMFY_PORTABLE`. Always use `F:\COMFY_PORTABLE\python_embeded\python.exe`; never use global Python. Do not delete, overwrite, move, or requantize original models. Do not mass-upgrade dependencies. W4A4 must execute through the native ConvRot CUDA backend, not eager/dequantized BF16 GEMM. WSL currently hosts unrelated Qwen/DeepSeek work and must not be stopped or modified.
+This is the live ComfyUI Portable installation at `F:\COMFY_PORTABLE`. Always use `F:\COMFY_PORTABLE\python_embeded\python.exe`; never use global Python. Do not delete, overwrite, move, or requantize original models. Do not mass-upgrade dependencies. W4A4 must execute through the native ConvRot CUDA backend, not eager/dequantized BF16 GEMM. **Do not stop or reconfigure WSL** — but not for the reason this line used to give: it said "WSL currently hosts unrelated Qwen/DeepSeek work", and that stopped being true. Measured 2026-08-30 in both docker contexts and confirmed by the owner: the ERP moved to Proxmox, and what runs there now is `glm-w4` (his own GPU training, which holds the 3090), a MacroLog rollback copy, and a cloudflared tunnel. The rule stands because `wsl --shutdown` is still destructive to *those*. See CLAUDE.md for the current container list.
+
+**And the W4A4 rule above has a boundary, measured 2026-08-31:** it is unreachable for any **text encoder** in stock ComfyUI, whatever the checkpoint says, because `comfy/sd.py:269` calls `set_model_compute_dtype(torch.float32)` on every CLIP object. Counted on a real encode: 0 calls to the 4-bit path, 336 dequantizes. Diffusion models are unaffected — Z-Image W4A4 measured 340 quantized forwards and 0 dequantizes. See `W4A4_PROGRESS.md` parts 29-32.
 
 ## Current environment
 

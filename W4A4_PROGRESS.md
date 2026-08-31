@@ -3384,3 +3384,87 @@ Um prompt, um modelo, tres sementes, sem metrica perceptual. `sigma` e `sigma2` 
 criterio mas so `high` virou checkpoint e foi amostrado -- `sigma2` e mais suave (81% da massa na
 metade alta contra 100% do `high`) e nao foi para a ponta a ponta. E o BF16 continua sendo o alvo,
 nao a verdade.
+
+## 2026-08-31, parte 32 - destravar um text encoder: quanto custa, quanto rende, e a medicao que dependia de sorte
+
+Continuacao direta da parte 29. Executado na 3090 sob o lock `w4a4:te_lock_cost`.
+
+### Primeiro, item fechado: nada nesta instalacao liga `_FORCE_INT4_INT8_FALLBACK`
+
+Varredura da arvore inteira: as unicas ocorrencias sao a leitura em
+`comfy_kitchen/backends/cuda/__init__.py:212` (mais a copia em `_backup_20260816_preupgrade/`),
+documentacao e os probes deste projeto. Conferidos tambem os pontos cegos de um grep: variaveis de
+ambiente de usuario e de maquina (nenhuma), arquivos `.env` (nao existem) e atribuicoes dinamicas a
+`os.environ[...]` (a unica que casa com "fallback" e `PYTORCH_ENABLE_MPS_FALLBACK`, de outro
+pacote). **Na sm86 o ramo nativo sempre roda.**
+
+### O erro de metodo, que vale mais que os numeros
+
+A parte 29 destravava escrevendo `comfy_force_cast_weights = False` nos modulos. Isso e apagado:
+`model_patcher.py:1016` faz `m.comfy_force_cast_weights = self.force_cast_weights` em **cada
+modulo, cada vez que o modelo sobe para a GPU**. A escrita so sobrevive se o modelo ja estava
+residente -- o que depende do estado da VRAM naquele instante.
+
+**A mesma linha de comando deu 350 chamadas ao kernel numa execucao e 0 na seguinte.** O que pegou
+foi o contador de dispatch: ele imprimiu `convrot 0` e `dequantize 252` no braco que deveria estar
+destravado. Um probe que so comparasse saidas teria concluido "destravar nao muda nada" -- com os
+dois bracos identicos bit a bit, o que e exatamente a aparencia de um resultado limpo.
+
+Forma correta: `clip.patcher.force_cast_weights = False` na FONTE, mais remover
+`manual_cast_dtype` dos object patches; `patch_model` propaga. `_full_precision_mm` continua sendo
+escrito no modulo, porque esse `patch_model` nao toca. E o probe agora le o estado **depois** do
+primeiro load, nao antes -- antes ele reportava um estado que ainda ia ser sobrescrito.
+
+### Os tres encoders, medidos pelo metodo confiavel
+
+`tools/probe_te_lock_cost.py`. Tres bracos onde ha referencia BF16 (A bf16, B travado, C
+destravado) e dois onde nao ha. Mediana de 5 encodes, apos dois aquecimentos.
+
+```
+encoder                  formato  quant     travado  destravado   tempo               C-vs-B    cos
+qwen_3_4b (4B)             W4A4   2,4 GiB    70,2 ms    82,9 ms   1,18x MAIS LENTO   5,99e-1  0,949
+gemma_3_12B_it_heretic     W4A8   8,1 GiB  1772,3 ms   478,9 ms   3,70x mais rapido  2,11e-1  0,982
+qwen3vl_32b_minimax_h3     W4A4  13,2 GiB   311,6 ms   117,7 ms   2,65x mais rapido  9,73e-2  0,99989
+```
+
+Dispatch conferido em cada braco: travado sempre `dequantize = n_camadas`, destravado sempre
+`convrot`/`w4a8 = n_camadas`, zero do outro lado.
+
+O `qwen_3_4b` foi quantizado aqui (`tools/quant_w4a4.py --profile qwen`, 8,04 GiB -> 2,42 GiB, 252
+camadas) justamente porque tem gemeo BF16 no disco. So nele da para separar as duas metades do
+custo: **o peso de 4 bits sozinho ja custa 1,44e-1** contra o BF16 (cos 0,9896), e destravar leva a
+6,09e-1 (cos 0,9492) -- **4,23x**.
+
+### Duas coisas que um modelo so teria escondido
+
+**Destravar so paga em encoder grande.** O caminho travado materializa o peso inteiro em BF16 a
+cada encode, entao o custo dele escala com o TAMANHO DO PESO enquanto a contagem de tokens fica
+minuscula. Num encoder de 2,4 GiB isso e barato e o kernel de 4 bits perde pela ineficiencia em M
+pequeno -- a curva do `m_crossover` mais uma vez. Num de 13,2 GiB, ou num Gemma de 8,1 GiB com 336
+camadas grandes, o custo de dequantizar domina e destravar ganha de 2,6x a 3,7x.
+
+**O custo em precisao nao e propriedade do formato.** Dois arquivos W4A4 diferem por 6x no erro que
+destravar adiciona (5,99e-1 contra 9,73e-2). "W4A4 custa X" nao pode ser citado sem dizer qual
+checkpoint.
+
+### E o que os publicos da Abiray fazem, lido camada a camada
+
+Nao pelo campo de resumo: pelos 200 tensores `.comfy_quant` que estao no proprio header.
+
+```
+117 convrot_w4a4  com linear_dtype "int8"      83 int8_tensorwise  (sem linear_dtype)
+```
+
+E o resumo do arquivo se contradiz: `convrot_w4a4_mixed` traz `"linear_dtype": "int4"` no topo e
+`"w4a4_int4mm_layers": 0` tres chaves abaixo. Quem ler o campo de topo conclui int4; **zero camadas
+usam MM de int4**. Como sao modelos de DIFUSAO, eles nao pegam a trava do text encoder: aquelas 117
+camadas executam matematica quantizada, pelo ramo INT8 -- que a medicao desta bancada em 30/08 diz
+ser 1,49x mais fiel que o nativo. E uma escolha, e os dados daqui a sustentam.
+
+### Nao coberto
+
+Um prompt por encoder (tres no Qwen), uma placa sm86, sem metrica perceptual, sem gerar imagem --
+mede o CONDICIONAMENTO, nao o resultado. Nao ha referencia BF16 para o Gemma (o fonte de 23,5 GiB
+foi apagado) nem para o MiniMax, entao nesses dois so existe o delta C-contra-B. E destravar
+continua sendo monkeypatch: `custom_operations` em `model_options` e a unica saida real, e nenhum
+no a expoe.

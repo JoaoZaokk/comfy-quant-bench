@@ -151,13 +151,23 @@ rep["counts"] = dict(counts)
 # `sd1_clip.py:114` fixa True para todo text encoder; o arquivo pede False
 # (`_full_precision_mm_config` = False). Isto pergunta o que aconteceria se a trava saisse.
 if rep.get("encoded"):
+    # AS DUAS travas, e cada uma tem de ser desligada NA FONTE CERTA.
+    #
+    # `_full_precision_mm` vem de `sd1_clip.py:114` e vive no modulo: escrever nele basta.
+    #
+    # `comfy_force_cast_weights` NAO. `model_patcher.py:1016` reescreve o atributo em cada
+    # modulo toda vez que o modelo sobe para a GPU, a partir de `patcher.force_cast_weights`.
+    # Escrever no modulo funciona so se o modelo ja estiver carregado -- e se ele carregar de
+    # novo, some. Medido em 2026-08-31: a mesma linha de comando deu 350 chamadas ao kernel
+    # numa execucao e 0 na seguinte, conforme o ComfyUI resolvesse carregar durante o
+    # `load_clip` ou no primeiro encode. Desligar na fonte faz o proprio `patch_model`
+    # propagar False e o resultado deixa de depender do estado da VRAM.
+    clip.patcher.force_cast_weights = False
+    clip.patcher.object_patches.pop("manual_cast_dtype", None)
     n_flipped = 0
     for _, mod in tr.named_modules():
         if getattr(mod, "layout_type", None) is None:
             continue
-        # AS DUAS travas, nao uma. `_full_precision_mm` vem de `sd1_clip.py:114`;
-        # `comfy_force_cast_weights` vem de `sd.py:269` via `set_model_compute_dtype(float32)`,
-        # e e ELE que aparece True na instrumentacao da fase 1.
         mod._full_precision_mm = False
         mod.comfy_force_cast_weights = False
         n_flipped += 1

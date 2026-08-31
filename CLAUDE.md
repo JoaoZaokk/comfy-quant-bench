@@ -159,15 +159,20 @@ Also read [AGENTS.md](AGENTS.md) (root policy) and [ComfyUI/AGENTS.md](ComfyUI/A
 
   Zero. The weight stays 4-bit in VRAM and the **math is dequantized** — memory saved, no time saved, kernel never reached.
 
-  **The obvious culprit is the wrong one, and flipping it changes nothing.** `comfy/sd1_clip.py:114` hardcodes `full_precision_mm=True` for every text encoder; setting it False left the count at 0. Instrumenting each term of `_use_quantized` (`comfy/ops.py:1372-1377`) on a real forward names the one that actually bites: **`comfy_force_cast_weights=True`**, which comes from `model_patcher.py:743` via `set_model_compute_dtype`, called at **`comfy/sd.py:269` for every CLIP object** — `set_model_compute_dtype(torch.float32)`, commented "Match torch.float32 hardcode upcast in TE implemention". Two independent locks; only releasing both fires the kernel:
+  **The obvious culprit is the wrong one, and flipping it changes nothing.** `comfy/sd1_clip.py:114` hardcodes `full_precision_mm=True` for every text encoder; setting it False left the count at 0. Instrumenting each term of `_use_quantized` (`comfy/ops.py:1372-1377`) on a real forward names the one that actually bites: **`comfy_force_cast_weights=True`**, which comes from `model_patcher.py:743` via `set_model_compute_dtype`, called at **`comfy/sd.py:269` for every CLIP object** — `set_model_compute_dtype(torch.float32)`, commented "Match torch.float32 hardcode upcast in TE implemention". Two independent locks, and only releasing both fires the kernel.
+
+  **Release it at the source, never on the modules — and this cost a run that looked like a result.** `model_patcher.py:1016` rewrites `m.comfy_force_cast_weights = self.force_cast_weights` on every module *every time the model is loaded to GPU*. Writing the attribute on the modules survives only if the model happened to be resident already, which depends on VRAM state at that instant. **The same command line gave 350 kernel calls on one run and 0 on the next.** The fix is `clip.patcher.force_cast_weights = False` (plus popping `manual_cast_dtype`), which `patch_model` then propagates. What caught it was the dispatch counter reporting 0 — a probe that only compared outputs would have reported "releasing the locks changes nothing" and been believed.
+
+  With that fixed, the same measurement on three real encoders, each `--sem-bf16` except Qwen, which has a BF16 twin on disk:
 
   ```
-                             stock        both released
-  _convrot_w4a4_forward          0                  350
-  dequantize                   350                    0
-  encode, median of 5      312.1 ms             114.3 ms   -> 4-bit 2.73x faster
-  rel-RMSE against the dequantized arm            9.70e-2
+  encoder                 formato  quant   travado  destravado    tempo            erro C-vs-B   cos
+  qwen_3_4b (4B)            W4A4  2.4 GiB   70.2ms      82.9ms   1.18x MAIS LENTO    5.99e-1   0.949
+  gemma_3_12B_heretic       W4A8  8.1 GiB  1772.3ms    478.9ms   3.70x mais rapido   2.11e-1   0.982
+  qwen3vl_32b_minimax       W4A4 13.2 GiB   311.6ms    117.7ms   2.65x mais rapido   9.73e-2   0.99989
   ```
+
+  Two things fall out that a single model would have hidden. **Releasing pays only on big encoders**: the locked path must materialise the whole weight to BF16 on every encode, so its cost scales with weight size while the token count stays tiny — on a 2.4 GiB encoder the 4-bit kernel's poor small-M efficiency loses instead. And **the accuracy cost is not a property of the format**: two W4A4 files differ by 6x in the error releasing adds (5.99e-1 against 9.73e-2), so "W4A4 costs X" cannot be quoted without naming the checkpoint. For Qwen the full picture is available: the 4-bit *weight* alone already costs 1.44e-1 against its BF16 twin, and releasing takes it to 6.09e-1 — 4.23x.
 
   **Measured the same day on this project's own outputs, and the split is clean.** `tools/probe_quant_dispatch.py` counts the same way against a real load and a real forward:
 
