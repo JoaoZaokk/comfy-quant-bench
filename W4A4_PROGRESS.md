@@ -3928,3 +3928,90 @@ modelo e sobrevive a isso, as medianas absolutas comparadas entre modelos sobrev
 rotacao usada no probe de ativacao e uma Hadamard normalizada do proprio arquivo, nao a do kernel:
 a escala dos numeros pode diferir, a comparacao entre os dois modelos nao, porque ambos passam pela
 mesma. E mede a entrada de cada camada isolada, nunca o acumulo pelo residual.
+
+## 2026-08-31, parte 39 - a linha de uso existe, e esta entre 0,1837 e 0,2147
+
+A parte 38 concluiu que o que separa o Z-Image do HunyuanVideo e o PESO: mesma penalidade por
+descer a ativacao para 4 bits (razao a4/a8 de 3,17 contra 3,05), bases diferentes (`err_w4a8`
+mediano 0,0394 contra 0,0695). A previsao que isso faz e testavel: se o que decide e o **nivel
+absoluto** de erro por camada, entao puxar o erro do Hunyuan para baixo deve trazer a maca de volta,
+e existe um nivel onde isso acontece.
+
+O criterio foi escrito antes de rodar, em `bench/criterio_hunyuan_misto.md`, e incluia o desfecho
+que me contradiria (a maca voltar ja em 0,40, o que significaria que manda a cauda e nao o corpo da
+distribuicao) e o que mataria a teoria (nao voltar em nenhum).
+
+### Primeiro: os guardas da bancada barraram o atalho, duas vezes
+
+`quant_mixed.py` recusou a analise de 2026-08-19 e depois a calibracao, as duas por
+`carries no 'source_identity_sha256'`, com a mensagem *"'nothing to check' is not 'checked'"*. Sao
+anteriores as chaves de proveniencia. Custou uma recaptura e estava certo: eu ia construir tres
+checkpoints a partir de numeros que ninguem consegue amarrar ao arquivo de entrada.
+
+**A recaptura virou uma replicacao independente da parte 38**, e replicou:
+
+```
+                med_w4a4   med_w4a8   razao a4/a8   acima de 0,15 / 0,25 / 0,40
+agosto            0,2136     0,0695        3,0466        408 / 140 /  31
+hoje              0,2230     0,0708        3,0207        408 / 150 /  30
+```
+
+Prompt, resolucao, passos e semente diferentes, doze dias e tres versoes de pilha de distancia, e a
+razao `a4/a8` -- o numero em que a conclusao se apoia -- moveu **0,9%**.
+
+### EXECUTADO: tres builds mistos, mesma maca, 3090
+
+```
+build              4 bits / 8 bits   mediana do erro EFETIVO   imagem
+W4A4 puro              432 /   0                     0,2230    DESTRUIDA (papa)
+misto  --promote 0,40  402 /  30                     0,2147    destruida, ja com forma de maca
+misto  --promote 0,25  282 / 150                     0,1837    CORRETA, granulada
+misto  --promote 0,15   24 / 408                     0,0739    CORRETA, limpa
+Z-Image W4A4 (ref)     170 /   0                     0,1241    CORRETA
+```
+
+"Erro efetivo" e, para cada camada, o erro do formato que ela **realmente recebeu** -- `err_w4a4`
+nas que ficaram em 4 bits, `err_w4a8` nas promovidas.
+
+**A linha de uso fica entre 0,1837 e 0,2147.** O desfecho foi o segundo do criterio, que era o
+melhor dos tres vivos: a maca volta com **65% do modelo ainda em 4 bits**.
+
+E dentro do "correta" a qualidade acompanha o erro monotonicamente: 0,1837 granulada, 0,1241 boa,
+0,0739 limpa. Nao e binario.
+
+### A regra de bolso que isto entrega, e e a parte util
+
+O erro por camada sai da **calibracao**, antes de converter e sem renderizar nada. Entao:
+
+```
+mediana err_w4a4 > 0,21   ->  W4A4 puro vai quebrar
+mediana err_w4a4 < 0,15   ->  W4A4 puro funciona
+entre                     ->  funciona, com granulacao visivel
+```
+
+Isso transforma "converte e reza" em uma checagem previa. **Nao coberto:** dois modelos, uma
+familia de arquitetura cada, uma semente. A linha e o intervalo entre duas medidas adjacentes, nao
+um valor com incerteza estimada.
+
+### Divergencia de latente errou a ordem outra vez, e agora com quatro pontos
+
+```
+                divergencia   imagem
+W4A4 puro            0,8255   destruida
+misto 0,40           0,7978   destruida
+misto 0,25           0,3741   correta, granulada
+misto 0,15           0,4246   CORRETA, LIMPA     <- divergencia MAIOR, imagem MELHOR
+```
+
+O build de melhor imagem tem divergencia pior que o anterior. Quarta vez que esta bancada mede que
+distancia no latente nao ordena qualidade, e a primeira com uma serie de quatro pontos em vez de um
+par.
+
+### Nao coberto
+
+Uma semente, um prompt, 480x480, um quadro, sem metrica perceptual -- o julgamento e olho humano
+sobre "quebrou ou nao", que e o unico uso que esta bancada ja mediu que a imagem final tem. O ganho
+pratico do misto 0,25 sobre o W4A8 puro e pequeno em disco (8,03 contra 8,24 GiB) e a imagem e
+pior; o valor aqui e o numero da linha, nao o checkpoint. E a analise do Z-Image continua sendo a
+de agosto, sem chaves de proveniencia: o lado do Hunyuan replicou, o do Z-Image ainda nao foi
+refeito.
