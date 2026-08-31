@@ -3253,6 +3253,8 @@ _convrot_w4a4_forward              0                    350
 dequantize                       350                      0
 norma do cond               15724.97               14215.17
 tempo do encode (mediana de 5)  312,1 ms              114,3 ms   -> 4 bits 2,73x mais rapido
+  [SUPERSEDIDO pela parte 32: estes numeros vieram de um destravamento que so pegava por
+   acaso. Refeitos pelo metodo confiavel dao 311,6 -> 117,7 ms, 2,65x, e 9,73e-2.]
                         [313,1 311,7 312,0 313,2 312,1]  [128,6 112,7 114,7 114,3 111,3]
 rel-RMSE fase2 contra fase1                        9,70e-2
 ```
@@ -3468,3 +3470,93 @@ mede o CONDICIONAMENTO, nao o resultado. Nao ha referencia BF16 para o Gemma (o 
 foi apagado) nem para o MiniMax, entao nesses dois so existe o delta C-contra-B. E destravar
 continua sendo monkeypatch: `custom_operations` em `model_options` e a unica saida real, e nenhum
 no a expoe.
+## 2026-08-31, parte 33 - os publicos de difusao despacham quantizado, e o instrumento que mediu isso estava errado tres vezes
+
+Executado na 3090 sob o lock `w4a4:te_lock_cost`.
+
+### Os dois arquivos mais baixados da Abiray nao abrem sem dynamic-VRAM
+
+Ambos carregam bytes DEPOIS do ultimo tensor -- 83 no FL2VA, 64 no Ref2VA -- e
+`safetensors.safe_open` recusa:
+
+```
+SafetensorError: Error while deserializing header: incomplete metadata, file not fully covered
+```
+
+Nao e download quebrado, e conferir custou dois `curl`: o `Content-Length` do servidor bate com o
+nosso byte a byte (15903012791 e 15093774276) e um `Range: bytes=-83` devolve exatamente a mesma
+cauda que temos. A do FL2VA e texto legivel --
+`\nL2P_bypass_MiniMax_H3_FL2VA_..._convrot.safetensors_1785789862\n` -- e a do Ref2VA sao 64 bytes
+binarios. **Estao no arquivo publicado.**
+
+O caminho do dynamic-VRAM usa outro leitor (`comfy/utils.py:85`, `comfy_aimdo.model_mmap`) e
+aceita: com o aimdo inicializado os dois abrem, 932 e 1132 tensores. Ou seja, funcionam para quase
+todo mundo -- dynamic VRAM e o default -- e falham exatamente na configuracao que esta bancada
+precisa para Nunchaku e LTX 2.5. O `minimax_h3_fl2va_pruned-w4a8_convrot_pruned` do Winnougan nao
+tem cauda e abre dos dois jeitos.
+
+### O instrumento errou tres vezes, e as tres valem mais que o resultado
+
+**1. Imprimiu veredito sobre um forward que nao rodou.** O MiniMax H3 e audio-video e quer uma
+LISTA de latentes; o probe passou um tensor so e morreu em `audio_src = x[1]`. Ele imprimiu
+`ZERO forwards quantizados` mesmo assim. Contador zerado por nao ter executado e contador zerado
+por ter executado dequantizado sao o mesmo numero com significados opostos. Agora ele recusa dar
+veredito quando `rodou` e False.
+
+**2. Chamou os modulos na CPU.** O modo `--forward-only` chama Linear do modelo carregado com
+entrada sintetica -- e nada tinha subido o modelo para a GPU. Os pesos ficaram no device de
+offload, o registry do comfy-kitchen resolveu para o backend **eager**, e o A/B de
+`COMFY_KITCHEN_FORCE_INT4_INT8_FALLBACK` virou no-op, porque essa flag so existe no backend CUDA.
+Os quatro "8/8 quantizado" da primeira rodada mediram o backend errado. O que denunciou foi um
+`ValueError: Expected a cuda device, but got: cpu` ao instrumentar a chamada -- ate ali o probe
+estava alegre e coerente. Agora ele chama `load_models_gpu` antes e reporta o device dos pesos.
+
+**3. A impressao digital era grossa demais.** Quatro elementos em bf16 batiam entre os dois ramos
+ate no Z-Image, que sabidamente muda de kernel com a flag. Trocada por soma, norma e absmax sobre
+o tensor inteiro.
+
+E a correcao de fundo, que e a mesma da AUDITORIA item 18: **contar "quantizado" nao diz qual
+kernel rodou.** O probe agora grava tambem `impl:<op>=<modulo>` -- a implementacao que o registry
+escolheu -- e o `linear_dtype` que chegou no despachante.
+
+### Validacao do instrumento, no Z-Image
+
+```
+flag=0  pesos cuda:0  impl comfy_kitchen.backends.cuda  linear_dtype=int4
+        FP [-14911.6582, 16050.6924, 160.0] ...
+flag=1  pesos cuda:0  impl comfy_kitchen.backends.cuda  linear_dtype=int4
+        FP [-17727.7383, 15852.9805, 178.0] ...
+```
+
+Fingerprints diferem, entao os dois ramos sao kernels distintos e o Z-Image roda o nativo.
+
+### Qual ramo cada checkpoint toma, medido e nao lido
+
+Mesmo probe, `--forward-only`, pesos na GPU, um eixo variando (`FORCE_INT4_INT8_FALLBACK`):
+
+```
+checkpoint                                linear_dtype  impl                          flag muda?  ramo
+zimage-v2-w4a4                (nosso)         int4      comfy_kitchen.backends.cuda      SIM      nativo int4
+LTX25-distilled-DiT-comfy-w4a4 (riftcast)     int4      comfy_kitchen.backends.cuda      SIM      nativo int4
+MiniMax_H3_FL2VA        (Abiray, 791k dl)     int8      comfy_kitchen.backends.cuda      NAO      INT8, por instrucao
+minimax_h3_fl2va-w4a8      (Winnougan)         --       comfy_kitchen.backends.cuda      n/a      w4a8, outro kernel
+```
+
+A linha da Abiray e a que fecha tres semanas de duvida: o arquivo **executa matematica quantizada
+no backend CUDA**, e nao muda nada quando se desliga o MMA de 4 bits, porque aquelas camadas nunca
+tomam esse ramo. `linear_dtype: "int8"` gravado camada a camada -- e o resumo do proprio arquivo se
+contradiz, com `"linear_dtype": "int4"` no topo e `"w4a4_int4mm_layers": 0` tres chaves abaixo.
+**Nao e um atalho: e a escolha que a medicao desta bancada em 30/08 diz ser 1,49x mais fiel.**
+
+E aparece um segundo W4A4 publico que roda 4 bits de verdade: `LTX25-distilled-DiT-comfy-w4a4`,
+`quantized_by: riftcast/ltx25-quant-lab`, 1440 camadas `convrot_w4a4` com `linear_dtype` ausente.
+**Setimo escritor conhecido de checkpoint** para o ticket 08.
+
+### Nao coberto
+
+Sem SASS: "ramo nativo" continua significando "produz numero diferente do fallback". Tres camadas
+por checkpoint no `--forward-only`, entrada sintetica gaussiana, M=256, uma placa sm86. O
+`--forward-only` prova que ESTES modulos, como o loader os deixou, despacham assim -- nao que uma
+geracao inteira o faca; para o Z-Image as duas coisas foram medidas e concordam (340/340 no
+sampler), para os outros nao. E nao ha nenhuma afirmacao de fidelidade aqui: nenhum destes tem
+gemeo BF16 nesta bancada.

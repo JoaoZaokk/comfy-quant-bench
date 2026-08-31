@@ -52,8 +52,11 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--ref-unet", default="beyond-reality-zimage-v2_native.safetensors")
-    p.add_argument("--arm", action="append", required=True, metavar="ROTULO=ARQUIVO",
-                   help="pode repetir; o primeiro e a base das razoes")
+    p.add_argument("--arm", action="append", required=True, metavar="ROTULO=UNET[,CLIP]",
+                   help="pode repetir; o primeiro e a base das razoes. Com um CLIP depois da "
+                        "virgula, o braco usa esse text encoder em vez de --clip -- e assim o "
+                        "eixo que varia passa a ser o ENCODER, com o mesmo modelo de difusao "
+                        "e a mesma trajetoria imposta.")
     p.add_argument("--clip", default="qwen_3_4b.safetensors")
     p.add_argument("--prompt",
                    default="a red apple on a weathered wooden table, soft window light")
@@ -67,9 +70,10 @@ def main() -> int:
     arms = []
     for spec in a.arm:
         if "=" not in spec:
-            raise SystemExit(f"--arm precisa de ROTULO=ARQUIVO, recebi {spec!r}")
-        rotulo, arquivo = spec.split("=", 1)
-        arms.append((rotulo, arquivo))
+            raise SystemExit(f"--arm precisa de ROTULO=UNET[,CLIP], recebi {spec!r}")
+        rotulo, resto = spec.split("=", 1)
+        unet, _, clip_do_braco = resto.partition(",")
+        arms.append((rotulo, unet, clip_do_braco or a.clip))
     if len(arms) < 2:
         raise SystemExit("dois --arm no minimo; com um so nao ha comparacao")
 
@@ -88,17 +92,18 @@ def main() -> int:
     print(f"  sigmas: {', '.join(f'{s:.3f}' for s in ref['sigmas'])}\n")
 
     got = {}
-    for rotulo, arquivo in arms:
-        print(f"--- {rotulo}  ({arquivo}) ---", flush=True)
+    for rotulo, arquivo, clip_do_braco in arms:
+        marca = arquivo if clip_do_braco == a.clip else f"{arquivo}  +  clip {clip_do_braco}"
+        print(f"--- {rotulo}  ({marca}) ---", flush=True)
         q = dict(common)
-        q.update({"UNET": arquivo, "REFP": str(refp), "OUTP": ""})
+        q.update({"UNET": arquivo, "CLIP": clip_do_braco, "REFP": str(refp), "OUTP": ""})
         res = rodar(QUANT_ARM % q, a.device)
         if not res:
             return 1
         got[rotulo] = res["passos"]
         print(f"  {len(res['passos'])} passos medidos")
 
-    rotulos = [r for r, _ in arms]
+    rotulos = [r for r, _, _ in arms]
     base = rotulos[0]
     n = len(got[base])
     sigmas = [s["sigma"] for s in got[base]]

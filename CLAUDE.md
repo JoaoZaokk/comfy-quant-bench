@@ -116,6 +116,17 @@ Also read [AGENTS.md](AGENTS.md) (root policy) and [ComfyUI/AGENTS.md](ComfyUI/A
 
   So "anything that is not native INT4 defeats the project" is contradicted by measurement, and the two largest public ConvRot distributors — `Abiray/Minimax-H3-nvfp4-INT4-INT8-Convrot` (791k downloads, `w4a4_int4mm_layers: 0`) and `joeygambino/...surgical_int8_convrot` (`target_dtype: int8_tensorwise`) — ship exactly the third option. That reads as a deliberate trade, not a shortcut.
 
+  **Executed 2026-08-31, with the models on the GPU** — `tools/probe_quant_dispatch.py --forward-only` records the device of the weights, the implementation the registry resolved, and the `linear_dtype` that reached the dispatcher, then varies `COMFY_KITCHEN_FORCE_INT4_INT8_FALLBACK`:
+
+  ```
+  checkpoint                                 linear_dtype  impl     flag muda?  ramo
+  zimage-v2-w4a4                 (nosso)         int4      cuda        SIM      nativo int4
+  LTX25-distilled-DiT-comfy-w4a4 (riftcast)      int4      cuda        SIM      nativo int4
+  MiniMax_H3_FL2VA         (Abiray, 791k dl)     int8      cuda        NAO      INT8, por instrucao
+  ```
+
+  The Abiray file **does run quantized math on the CUDA backend**; it is simply insensitive to the int4 fallback flag because those layers never take that branch. Its own summary contradicts itself, too — `convrot_w4a4_mixed` carries `"linear_dtype": "int4"` at the top and `"w4a4_int4mm_layers": 0` three keys below, while all 117 per-layer `comfy_quant` tensors say `"int8"`. Read the layers, not the summary. And `LTX25-distilled-DiT-comfy-w4a4` (`quantized_by: riftcast/ltx25-quant-lab`, 1440 layers, `linear_dtype` absent) is a **second public W4A4 that really executes 4 bits**, and a seventh known checkpoint writer for ticket 08.
+
   **The rule stands until the owner decides otherwise**, because this is a trade and the choice is his: accuracy and small-batch latency favour the INT8 branch, large-batch throughput favours native.
 
   **The "is 1.49x visible?" question is now answered, and answering it corrected how this bench measures.** Three measurements of the same pair, 2026-08-30/31:
@@ -187,7 +198,7 @@ Also read [AGENTS.md](AGENTS.md) (root policy) and [ComfyUI/AGENTS.md](ComfyUI/A
 
   **Still not measured:** what it costs in s/it on a real LTX render, and whether releasing the locks on a text encoder is safe for output quality.
 
-  Not covered: no SASS; no BF16 reference for that model exists here, so the `9.70e-2` is against its own dequantized arm and is **not** a fidelity claim; one prompt, one card; the locks were released by post-load monkeypatch, not by anything ComfyUI offers — `custom_operations` in `model_options` is the only real escape and no node exposes it. Re-run with `tools/probe_winnougan_int4.py`, `tools/probe_winnougan_load.py` and `tools/probe_te_fullprecision_mm.py`.
+  Not covered: no SASS; there is no BF16 reference for the Gemma or the MiniMax on this bench, so their error columns are against their own dequantized arm and are **not** fidelity claims — only Qwen, which has its twin on disk, gives the total; one prompt per encoder, one card; the locks were released by post-load monkeypatch, not by anything ComfyUI offers — `custom_operations` in `model_options` is the only real escape and no node exposes it. Re-run with `tools/probe_winnougan_int4.py`, `tools/probe_winnougan_load.py`, `tools/probe_te_fullprecision_mm.py` and `tools/probe_te_lock_cost.py`.
 
 ## Say which one it was: traced, or executed
 
@@ -294,6 +305,16 @@ torch.AcceleratorError: CUDA error: out of memory
 ```bash
 .\python_embeded\python.exe -s .\ComfyUI\main.py --windows-standalone-build --use-sage-attention --disable-dynamic-vram --listen 127.0.0.1 --port 8190
 ```
+
+**But `--disable-dynamic-vram` also makes two of the most-downloaded ConvRot checkpoints unloadable, and the error blames the file.** Measured 2026-08-31. Both `Abiray/Minimax-H3-nvfp4-INT4-INT8-Convrot` files carry bytes **past the last tensor** — 83 in FL2VA, 64 in Ref2VA — so `safetensors.safe_open` refuses them:
+
+```
+SafetensorError: Error while deserializing header: incomplete metadata, file not fully covered
+```
+
+That is not a broken download, and checking was cheap: the server's `Content-Length` matches ours byte for byte (15903012791 and 15093774276), and a `Range: bytes=-83` request returns the same trailing bytes we have. FL2VA's are readable text — `\nL2P_bypass_MiniMax_H3_FL2VA_..._convrot.safetensors_1785789862\n` — and Ref2VA's are 64 bytes of binary. **They are in the published file.**
+
+The dynamic-VRAM path uses a different reader (`comfy/utils.py:85`, `comfy_aimdo.model_mmap`) which accepts them: with aimdo initialised both files open, 932 and 1132 tensors. So these checkpoints work for almost everyone — dynamic VRAM is the default — and fail for exactly the configuration this bench needs for Nunchaku and LTX 2.5. `minimax_h3_fl2va_pruned-w4a8_convrot_pruned` (Winnougan) has no trailing bytes and opens either way.
 
 Launcher notes. There are **13** `.bat` launchers in the root, not seven — count them, do not quote this. The claim that **none** of them passes `--disable-dynamic-vram` was true on 2026-08-21 and is **false since 2026-08-26**: measured 2026-08-30, **four** pass it — `run_nvidia_gpu_8190_dual_component.bat`, `run_nvidia_gpu_8190_ultra_image.bat`, `run_nvidia_gpu_8190_ultra_video.bat`, `run_nvidia_gpu_8190_void_cache_none.bat`. Those four also set `COMFYUI_MGPU_DISABLED=1`. `run_nvidia_gpu_8190_loopback.bat` (Sage, `127.0.0.1:8190`) still does **not** pass the flag, so for a Nunchaku SVDQuant loader or the LTX 2.5 workflow above, use one of the four, call `main.py` by hand, or use `F:\cortiq-cmf\run_e2e_comfy.ps1`. Following "use the loopback launcher" alone will reproduce the 35 GB staging OOM. Other launchers: `run_nvidia_gpu.bat`, `run_nvidia_gpu_fast_fp16_accumulation.bat`, `run_nvidia_gpu_8190_flash.bat` (FlashAttention), `run_8190_limpo.bat`, `run_cpu.bat`.
 
