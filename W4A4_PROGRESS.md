@@ -3439,11 +3439,16 @@ custo: **o peso de 4 bits sozinho ja custa 1,44e-1** contra o BF16 (cos 0,9896),
 
 ### Duas coisas que um modelo so teria escondido
 
-**Destravar so paga em encoder grande.** O caminho travado materializa o peso inteiro em BF16 a
-cada encode, entao o custo dele escala com o TAMANHO DO PESO enquanto a contagem de tokens fica
-minuscula. Num encoder de 2,4 GiB isso e barato e o kernel de 4 bits perde pela ineficiencia em M
-pequeno -- a curva do `m_crossover` mais uma vez. Num de 13,2 GiB, ou num Gemma de 8,1 GiB com 336
-camadas grandes, o custo de dequantizar domina e destravar ganha de 2,6x a 3,7x.
+**Destravar pagou nos dois encoders maiores e perdeu no menor** -- e o POR QUE nao esta
+estabelecido. A primeira versao deste paragrafo afirmava um mecanismo que nao foi medido ("o
+caminho travado materializa o peso inteiro a cada encode, entao o custo escala com o tamanho do
+peso enquanto a contagem de tokens fica minuscula"). Os proprios numeros recusam essa historia: os
+tempos travados sao 70,2 ms com 2,4 GiB, **1772,3 ms com 8,1 GiB** e 311,6 ms com 13,2 GiB -- nao e
+monotonico no tamanho do peso. E os tres casos diferem tambem em comprimento de sequencia por
+ordens de grandeza (o condicionamento do Gemma e `[1, 49, 1024, 3840]`, o do MiniMax e
+`[1, 8, 5120]`), entao tamanho e M andam juntos aqui e estes dados nao separam os dois. Fica como
+observacao, nao como explicacao, ate alguem variar um eixo sozinho -- o teste obvio e repetir o
+Qwen com um prompt longo.
 
 **O custo em precisao nao e propriedade do formato.** Dois arquivos W4A4 diferem por 6x no erro que
 destravar adiciona (5,99e-1 contra 9,73e-2). "W4A4 custa X" nao pode ser citado sem dizer qual
@@ -3560,3 +3565,51 @@ por checkpoint no `--forward-only`, entrada sintetica gaussiana, M=256, uma plac
 geracao inteira o faca; para o Z-Image as duas coisas foram medidas e concordam (340/340 no
 sampler), para os outros nao. E nao ha nenhuma afirmacao de fidelidade aqui: nenhum destes tem
 gemeo BF16 nesta bancada.
+
+## 2026-08-31, parte 34 - o que decide se destravar um text encoder paga e o COMPRIMENTO DO PROMPT
+
+A parte 32 mediu tres encoders e viu destravar perder no menor e ganhar nos dois maiores. O
+paragrafo que escrevi para explicar isso afirmava um mecanismo que **nao tinha sido medido** -- que
+o custo do caminho travado escala com o tamanho do peso enquanto a contagem de tokens fica
+minuscula. Os proprios numeros ja recusavam: 70,2 ms com 2,4 GiB, **1772,3 ms com 8,1 GiB** e 311,6
+ms com 13,2 GiB nao e monotonico em tamanho. E os tres encoders diferiam em tamanho **e** em
+comprimento de sequencia ao mesmo tempo (o condicionamento do Gemma e `[1, 49, 1024, 3840]`, o do
+MiniMax e `[1, 8, 5120]`), entao aquela tabela nao separava os dois eixos.
+
+Separado agora: mesmo arquivo, mesma placa (3080 Ti), so o prompt muda.
+
+```
+qwen_3_4b W4A4, mediana de 3
+tokens   travado  destravado
+    22     80,7      120,1    1,49x MAIS LENTO
+    75    100,1      105,8    1,06x MAIS LENTO
+   199    151,9       95,2    1,60x mais rapido    <- cruza entre 75 e 199
+   424    245,2      102,0    2,40x
+   850    456,1      124,3    3,67x
+  1496    824,5      249,0    3,31x
+```
+
+**O cruzamento fica entre 75 e 199 tokens.** O caminho destravado quase nao se move de 22 a 424
+tokens (120 -> 102 ms) enquanto o travado sobe com a sequencia: o kernel de 4 bits carrega um custo
+fixo por camada que prompt curto nao amortiza, e o caminho dequantizado paga um GEMM BF16 que
+cresce com os tokens. A curva do `m_crossover` de novo, agora do lado do text encoder.
+
+Consequencia pratica: prompt de verdade costuma estar acima do cruzamento. Em 850 tokens o encoder
+quantizado e destravado bate ate o **BF16 original** (372,1 ms perto de 700 tokens contra 124,3 ms).
+
+Tamanho do peso pode continuar importando por cima disso -- o MiniMax de 13,2 GiB ganhou com 8
+tokens -- mas esse eixo **nao** foi isolado.
+
+### O erro de metodo, de novo e por pouco
+
+A primeira tentativa de isolar o eixo rodou o prompt curto na 3090 e o longo na 3080 Ti. Dois eixos
+mexendo. Refeito na mesma placa antes de qualquer conclusao: 62,9 / 82,1 / 96,2 ms no curto contra
+372,1 / 375,3 / 95,6 no longo, e ai sim a inversao de sinal e do prompt.
+
+### Nao coberto
+
+Um modelo (qwen_3_4b W4A4), uma placa (3080 Ti), mediana de 3 por ponto, um unico texto cortado em
+comprimentos crescentes -- os prompts nao sao independentes, sao prefixos do mesmo. Nao mede
+qualidade: o erro do condicionamento cresce com o comprimento (o peso quantizado sozinho custa
+1,44e-1 no curto e 2,55e-1 no longo) e isso nao foi investigado. E nao diz onde fica o cruzamento
+em outro modelo ou outra placa.

@@ -183,7 +183,20 @@ Also read [AGENTS.md](AGENTS.md) (root policy) and [ComfyUI/AGENTS.md](ComfyUI/A
   qwen3vl_32b_minimax       W4A4 13.2 GiB   311.6ms    117.7ms   2.65x mais rapido   9.73e-2   0.99989
   ```
 
-  Two things fall out that a single model would have hidden. **Releasing pays only on big encoders**: the locked path must materialise the whole weight to BF16 on every encode, so its cost scales with weight size while the token count stays tiny — on a 2.4 GiB encoder the 4-bit kernel's poor small-M efficiency loses instead. And **the accuracy cost is not a property of the format**: two W4A4 files differ by 6x in the error releasing adds (5.99e-1 against 9.73e-2), so "W4A4 costs X" cannot be quoted without naming the checkpoint. For Qwen the full picture is available: the 4-bit *weight* alone already costs 1.44e-1 against its BF16 twin, and releasing takes it to 6.09e-1 — 4.23x.
+  **The sign is set by the sequence length, and that took varying one axis alone.** The first version of this paragraph asserted a mechanism it had not measured ("the cost scales with weight size while the token count stays tiny"), and the table above refuses it: the locked times are 70.2 ms at 2.4 GiB, **1772.3 ms at 8.1 GiB**, 311.6 ms at 13.2 GiB — not monotonic in weight size. The three encoders differ in weight size *and* in sequence length at once (Gemma's conditioning is `[1, 49, 1024, 3840]`, MiniMax's `[1, 8, 5120]`), so that table cannot separate them. Same file, same card, only the prompt changed:
+
+  ```
+  qwen_3_4b W4A4, RTX 3080 Ti, mediana de 3
+  tokens   travado  destravado
+      22     80.7      120.1    1.49x MAIS LENTO
+      75    100.1      105.8    1.06x MAIS LENTO
+     199    151.9       95.2    1.60x mais rapido    <- cruza entre 75 e 199
+     424    245.2      102.0    2.40x
+     850    456.1      124.3    3.67x
+    1496    824.5      249.0    3.31x
+  ```
+
+  **The crossover is between 75 and 199 tokens** on this model and card. The released path is nearly flat from 22 to 424 tokens (120 → 102 ms) while the locked path climbs with the sequence, so the 4-bit kernel carries a per-layer fixed cost that a short prompt cannot amortise and the dequantized path pays a BF16 GEMM that grows with the tokens. Real prompts usually sit above that crossover: at 850 tokens the quantized encoder also beats the **BF16 original** (372.1 ms at ~700 tokens against 124.3 ms). Weight size may still matter on top of this — MiniMax won at 8 tokens — but it has not been isolated. And **the accuracy cost is not a property of the format**: two W4A4 files differ by 6x in the error releasing adds (5.99e-1 against 9.73e-2), so "W4A4 costs X" cannot be quoted without naming the checkpoint; on Qwen the long prompt is also worse than the short one (weight-only 2.55e-1 against 1.44e-1). For Qwen the full picture is available: the 4-bit *weight* alone already costs 1.44e-1 against its BF16 twin, and releasing takes it to 6.09e-1 — 4.23x.
 
   **Measured the same day on this project's own outputs, and the split is clean.** `tools/probe_quant_dispatch.py` counts the same way against a real load and a real forward:
 

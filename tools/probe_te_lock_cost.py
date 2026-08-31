@@ -137,8 +137,13 @@ try:
         # que cabe numa lista Python.
         alvo = f"{OUTDIR}/{ROTULO}_{i}.pt"
         torch.save(cond, alvo)
+        # Tempo POR PROMPT, nao so do primeiro: e o que transforma "curto perde, longo ganha"
+        # em uma curva. A forma da saida vai junto porque e ela que diz quantos tokens sao --
+        # "prompt longo" em caracteres nao e uma medida.
+        ts_p = sorted(round(encode(p)[1], 1) for _ in range(REPEATS))
         saidas.append({"prompt": p, "shape": list(cond.shape),
-                       "norm": float(cond.norm()), "arquivo": alvo})
+                       "norm": float(cond.norm()), "arquivo": alvo,
+                       "ms_mediana": ts_p[len(ts_p) // 2], "ms_todas": ts_p})
     rep["counts_apos_aquecimento"] = dict(counts)
     ts = []
     for _ in range(REPEATS):
@@ -311,7 +316,24 @@ def main() -> int:
 
     print()
     print("-" * 78)
-    print("tempo do encode, mediana (razao sempre >= 1, com a direcao dita)")
+    print("tempo POR PROMPT (mediana), e a forma da saida que diz quantos tokens sao")
+    print("-" * 78)
+    print(f"{'tokens':>8} {'forma':>22}" + "".join(f"{r:>14}" for r in arms) + "   destravar")
+    for i in range(len(prompts)):
+        sh = tra["saidas"][i]["shape"]
+        tok = sh[-2] if len(sh) >= 2 else "?"
+        linha = f"{tok:>8} {str(sh):>22}"
+        for r in arms:
+            linha += f"{arms[r]['saidas'][i].get('ms_mediana', float('nan')):>14.1f}"
+        t, d = tra["saidas"][i].get("ms_mediana"), des["saidas"][i].get("ms_mediana")
+        if t and d:
+            linha += (f"   {t / d:.2f}x mais rapido" if d <= t
+                      else f"   {d / t:.2f}x MAIS LENTO")
+        print(linha)
+
+    print()
+    print("-" * 78)
+    print("tempo do encode no prompt 0, mediana (razao sempre >= 1, com a direcao dita)")
     print("-" * 78)
     for rotulo in [r for r in ("bf16", "quant_travado", "quant_destravado") if r in arms]:
         print(f"  {rotulo:<20}{arms[rotulo]['ms_mediana']:>9.1f} ms   {arms[rotulo]['ms_todas']}")
