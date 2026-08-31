@@ -3760,3 +3760,72 @@ registry resolveu `comfy_kitchen.backends.cuda` e o sidecar gravou, nao que a in
 observada emitindo. O s/passo inclui carga sob dynamic VRAM nos dois bracos, nao isolada. Nenhuma
 metrica perceptual. Nao foi testado nenhum group size alem de 256 nesta rodada (agosto testou 256,
 64 e 16 e reportou os tres inutilizaveis).
+
+## 2026-08-31, parte 37 - o gemeo BF16 chegou, e o ramo INT8 ganha pela terceira vez seguida
+
+`tools/probe_winnougan_int4.py` fechava toda execucao com esta ressalva, escrita por ele proprio:
+*"NAO mede fidelidade contra o BF16 original: o BF16 deste modelo nao esta aqui. Diz qual ramo
+executa e quanto custa, nao qual erra menos."* Baixado hoje:
+`Comfy-Org/MiniMax-H3`, `text_encoders/qwen3vl_32b_minimax_h3_bf16.safetensors`, **51.506.295.256
+bytes (47,97 GiB)**, que bate ao byte com o publicado. **351 de 351** nomes de camada casam com o
+arquivo quantizado do Winnougan. A ressalva caiu, e o item do handoff marcado `bloqueado` deixou de
+estar.
+
+### EXECUTADO: `tools/probe_winnougan_fidelidade.py`, 3090
+
+Um eixo (`COMFY_KITCHEN_FORCE_INT4_INT8_FALLBACK`, um subprocesso por braco). Referencia
+`F.linear(x, W_bf16)` em float32, peso do gemeo lido por faixa de bytes. 20 camadas, 5 formas
+distintas, 4 profundidades, M em {1, 64, 1024}:
+
+```
+media rel-RMSE contra BF16   nativo 2,3415e-1   int8 1,6737e-1
+int8 e 1,40x mais fiel
+vitorias por camada-M: nativo 0, int8 60, empate 0
+```
+
+**Sessenta de sessenta.** E agora sao tres medicoes independentes na mesma direcao:
+
+| medicao | modelo | quem quantizou | ativacao | resultado |
+|---|---|---|---|---|
+| erro por camada (parte 27) | Z-Image, difusao | nos | real | int8 1,49x, 24/24 |
+| epsilon por passo (parte 29) | Z-Image, difusao | nos | real | int8 1,33x, 8/8 |
+| erro por camada (aqui) | Qwen3-VL-32B, text encoder | **Winnougan** | sintetica | int8 1,40x, 60/60 |
+
+Familia de modelo diferente, quantizador diferente, ativacao diferente. O ramo INT4 do ConvRot e
+consistentemente menos fiel que o ramo INT8, e a razao fica entre 1,33x e 1,49x nas tres.
+
+### O erro nao cresce com a profundidade
+
+```
+mesma forma, bloco 0 -> bloco 49
+  nativo  2,2776e-1 -> 2,2762e-1
+  int8    1,6010e-1 -> 1,6002e-1
+```
+
+Quatro casas iguais entre o primeiro e o quinquagesimo bloco. Nenhum acumulo ao longo do modelo,
+pelo menos medindo camada isolada -- o que nao diz nada sobre acumulo na ATIVACAO, que este probe
+nao propaga.
+
+### A sonda estava errada, e o comentario dela dizia como
+
+A primeira execucao mediu **cinco camadas, todas de `model.layers.0`**, e deu 1,39x, 15/15. O
+`pick_layers` pegava "uma camada por forma distinta", com um comentario explicando que isso era
+melhor que pegar as N primeiras *"porque as N primeiras seriam todas do bloco 0"*. Num transformer
+as formas se repetem bloco a bloco, entao parar na primeira ocorrencia de cada forma **e** parar no
+bloco 0: a funcao fazia exatamente o que o proprio comentario dizia evitar. A forma variava e a
+profundidade ficava presa -- `teste-varia-o-eixo-errado`, dentro do instrumento.
+
+O primeiro conserto tambem estava errado: passo fixo a partir do inicio dava 0/10/20/30 num modelo
+de 50 blocos, deixando os ultimos dezenove blocos inteiros fora da amostra. Agora e linspace
+**fechado nos dois extremos**, entao o primeiro e o ultimo bloco entram sempre.
+
+O numero quase nao mudou (1,39x -> 1,40x), mas isso e sorte deste modelo, nao defesa do metodo: o
+resultado antigo era sobre um bloco e estava escrito como se fosse sobre o modelo.
+
+### Nao coberto
+
+Ativacao gaussiana sintetica, sem os outliers que a rotacao existe para suprimir -- e este eixo ja
+mudou de resposta entre sintetico e real nesta bancada (1,4x -> 1,49x na parte 27). Sem SASS. Erro
+por CAMADA, que preve o erro de predicao do modelo mas nao preve a imagem final. Uma placa, sm86.
+Nao carrega nada no ComfyUI: prova o kernel, nao o loader. E o BF16 do publicador e o alvo, nao a
+verdade -- nunca foi validado contra float32 aqui.
