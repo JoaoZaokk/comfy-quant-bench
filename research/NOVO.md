@@ -1,5 +1,105 @@
 # NOVO — 2026-08-30
 
+## Rodada 6: a fonte do kernel é pública, e o ConvRot é upstream desde julho
+
+O ângulo "procure o fork da FERRAMENTA" pagou na primeira tentativa, e de um jeito melhor
+que fork: **não precisa de fork, o original é aberto.**
+
+### 1. `Comfy-Org/comfy-kitchen` é público — 193 estrelas, empurrado 2026-08-29
+
+Está no PyPI (`comfy-kitchen`, versão atual **0.2.31**, a mesma instalada aqui) e o
+`project_urls` aponta para `github.com/Comfy-Org/comfy-kitchen`. 176 arquivos, e o que
+interessa:
+
+```
+133317  comfy_kitchen/backends/cuda/ops/convrot_w4a4.cu
+  5157  comfy_kitchen/backends/hip/ops/convrot_w4a4.hip     <- existe caminho AMD
+  9155  comfy_kitchen/backends/cuda/ops/svdquant_utils.cuh
+ 17417  tests/test_convrot_w4a4.py
+```
+
+**Tudo o que foi lido do `.pyd` compilado hoje tem fonte legível.** Isso muda o custo de
+qualquer pergunta futura sobre o kernel: era engenharia reversa, virou leitura.
+
+### 2. A guarda de hardware e a guarda de política são DIFERENTES
+
+Em `svdquant_utils.cuh`, citado:
+
+```cuda
+// All code gated on __CUDA_ARCH__ >= 800. On older arches (sm_75) the ...
+#if __CUDA_ARCH__ >= 800
+asm volatile("mma.sync.aligned.m16n8k64.row.col.s32.s4.s4.s32 " ...
+#endif
+```
+
+A instrução é `mma.sync.aligned.m16n8k64.row.col.s32.s4.s4.s32`, e o **hardware** está
+liberado em `__CUDA_ARCH__ >= 800` — Ampere para cima, **incluindo Hopper (9.x) e Blackwell
+(12.x)**. Mas o despacho em Python é `major == 8`, que exclui as duas.
+
+**Correção ao que este arquivo dizia hoje de manhã.** Estava escrito que Ampere é "a única
+faixa que pega o MMA de 4 bits". O certo é: **é a única faixa escolhida**, não a única
+capaz. O kernel compila e roda em Hopper; o comentário do dispatch diz que Hopper é desviada
+*"for better behavior with this implementation"*, ou seja, decisão de performance, não
+limite de capacidade. A diferença importa para quem for reportar isso upstream.
+
+Também aparece a variante `m16n8k64...u4.s4`, com ativação **não-sinalizada** de 4 bits —
+que é o que explica os tensores **U8 pareados com I8** vistos nos headers do Abiray (200/200)
+e do joeygambino (1496/1496).
+
+### 3. ConvRot entrou no ComfyUI upstream em julho, e o `linear_dtype` é o interruptor
+
+`comfyanonymous/ComfyUI` **PR #14859, "Support convrot int4 models", mergeado 2026-07-09**,
+4 arquivos, branch `Comfy-Org:convrot_int4`. Adiciona `QUANT_ALGOS["convrot_w4a4"]` com
+`storage_t: torch.int8` e layout `TensorCoreConvRotW4A4Layout`, e sobe o pino de
+`comfy-kitchen==0.2.16` para `0.2.17`.
+
+E o teste que o próprio upstream escreveu, `test_convrot_w4a4_loads_into_params`, usa
+**`"linear_dtype": "int8"`**.
+
+Isso fecha o mecanismo que faltava. `linear_dtype` é campo **por camada, gravado no
+checkpoint**, e no backend é a **primeira** condição do desvio:
+
+```python
+if linear_dtype == "int8" or not (_cuda_device_supports_native_int4_mma(x2d) or ...):
+```
+
+**Os produtores públicos não estão limitados pelo hardware — eles escolhem o INT8 por
+camada, e gravam a escolha no arquivo.** O `w4a4_int8mm_layers: 117` do Abiray é isso: não
+é a placa dele recusando, é a ferramenta dele decidindo. Dado o que se mediu aqui hoje
+(INT8 1,49x mais fiel por camada), a decisão deles tem número atrás.
+
+**Refina, sem reverter, o que este arquivo disse sobre "duas cadeias privadas":** os dois
+formatos são **upstream** — `int8_tensorwise` + `convrot: true` é o caminho mais antigo, e
+`convrot_w4a4` é o de julho. O que é privado são os campos extras de cada um
+(`calibrated+`/`BalancedQ` contra `artifact_contract`/`project`), não o formato.
+
+### 4. Um quinto escritor de checkpoint, e ele é público
+
+`bedovyy/comfy-dit-quantizer`, 23 estrelas, empurrado 2026-07-14: *"DiT model quantizer for
+ComfyUI. Converts full-precision models to NVFP4/FP8 using comfy-kitchen"*. Suporta
+`convrot_w4a4`. É material direto para o ticket 08, que é sobre escritores de checkpoint.
+
+### 5. Como o campo mede dano de quantização — e o buraco que sobra
+
+Confirmado: `ggml-org/llama.cpp` **PR #5076, "KL-divergence", mergeado**. É a métrica que o
+mundo de LLM adotou, e o Unsloth a usa para decidir bits por camada.
+
+Em difusão, o levantamento aponta que o critério ainda é sensibilidade por camada (MixDQ
+usa SQNR+SSIM; DiffPro, manifold-aware), e que erro de epsilon por passo aparece em
+`arxiv:2407.03917` (Timestep-Aware Correction) e `arxiv:2508.12094` (Error Propagation) —
+mas **para corrigir, não como critério de atribuição**.
+
+- **VISTO, não conferido:** esses quatro papers vieram de agente e não foram lidos aqui além
+  do resumo. A afirmação "ninguém usa epsilon-por-passo como critério" é ausência **sem
+  controle**, e por isso não vale como achado ainda. O que vale: a pergunta está formulada e
+  a infraestrutura para medi-la já existe neste disco.
+
+### Alegação que NÃO sobreviveu
+
+Um agente reportou "nunchaku issue #582: H100 sem suporte 4-bit". A issue existe e é
+*"fix: ensure caching flag is set correctly"*, sem relação. Controle: PR #14000 do ComfyUI
+responde normalmente, então o instrumento enxergava. **Alegação descartada.**
+
 ## O achado que fecha o dia: a 3090 está na única faixa que pega o MMA de 4 bits
 
 Um agente da rodada 5 voltou afirmando *"ninguém executa INT4 GEMM do ConvRot; o
