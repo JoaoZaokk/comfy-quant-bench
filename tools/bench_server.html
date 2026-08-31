@@ -1,0 +1,312 @@
+<!-- gerado por scratchpad/monta_html.py -- nao edite a mao, edite o gerador -->
+<style>
+:root{
+  --tinta:#e8e6e3; --fraca:#9a978f; --fundo:#141416; --painel:#1b1b1f; --borda:#2c2c33;
+  --acento:#c9a227; --bom:#7bc47f; --ruim:#e06c6c; --mono:ui-monospace,"Cascadia Mono",Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--fundo);color:var(--tinta);
+     font:15px/1.55 ui-sans-serif,"Segoe UI",system-ui,sans-serif}
+a{color:var(--acento)}
+header{padding:22px 26px 14px;border-bottom:1px solid var(--borda);
+       display:flex;gap:18px;align-items:baseline;flex-wrap:wrap}
+h1{margin:0;font-size:20px;font-weight:600;letter-spacing:-.01em}
+.sub{color:var(--fraca);font-size:14px}
+.linguas{margin-left:auto;display:flex;gap:4px}
+.linguas button{background:none;border:1px solid var(--borda);color:var(--fraca);
+                border-radius:5px;padding:3px 9px;cursor:pointer;font-size:12px}
+.linguas button[aria-pressed=true]{color:var(--fundo);background:var(--acento);border-color:var(--acento)}
+.faixa{padding:9px 26px;font-size:13px;border-bottom:1px solid var(--borda)}
+.faixa.leitura{background:#20201a;color:#d8c98a}
+.faixa.escrita{background:#2a1a1a;color:#e8a0a0}
+nav{display:flex;gap:2px;padding:0 20px;border-bottom:1px solid var(--borda);flex-wrap:wrap}
+nav button{background:none;border:0;border-bottom:2px solid transparent;color:var(--fraca);
+           padding:11px 14px;cursor:pointer;font-size:14px}
+nav button[aria-selected=true]{color:var(--tinta);border-bottom-color:var(--acento)}
+main{padding:22px 26px;max-width:1100px}
+section[hidden]{display:none}
+h2{font-size:16px;font-weight:600;margin:0 0 4px}
+.dica{color:var(--fraca);font-size:13px;margin:0 0 16px;max-width:66ch}
+label{display:block;font-size:13px;color:var(--fraca);margin:12px 0 4px}
+input[type=text],select{width:100%;max-width:660px;background:var(--painel);color:var(--tinta);
+  border:1px solid var(--borda);border-radius:6px;padding:8px 10px;font-size:14px}
+input[type=text]{font-family:var(--mono);font-size:13px}
+.caixa{display:flex;gap:8px;align-items:center;margin:14px 0}
+.caixa label{margin:0}
+button.acao{background:var(--acento);color:#1a1a1a;border:0;border-radius:6px;
+            padding:9px 20px;font-size:14px;font-weight:600;cursor:pointer}
+button.acao:disabled{opacity:.45;cursor:not-allowed}
+button.leve{background:none;border:1px solid var(--borda);color:var(--fraca);
+            border-radius:6px;padding:7px 13px;cursor:pointer;font-size:13px}
+pre{background:var(--painel);border:1px solid var(--borda);border-radius:6px;padding:12px;
+    overflow-x:auto;font-family:var(--mono);font-size:12.5px;line-height:1.5;margin:10px 0;
+    white-space:pre-wrap;word-break:break-word}
+pre.log{max-height:420px;overflow-y:auto;white-space:pre}
+table{border-collapse:collapse;width:100%;font-size:13px;margin-top:10px}
+th,td{text-align:left;padding:6px 10px;border-bottom:1px solid var(--borda);vertical-align:top}
+th{color:var(--fraca);font-weight:500;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+td.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+.rolagem{overflow-x:auto}
+.pilula{display:inline-block;padding:1px 8px;border-radius:99px;font-size:11.5px;
+        border:1px solid var(--borda);color:var(--fraca)}
+.pilula.sim{color:var(--bom);border-color:#2f4a31}
+.pilula.rodando{color:var(--acento);border-color:#4a3f1a}
+.pilula.falhou{color:var(--ruim);border-color:#4a2626}
+.erro{color:var(--ruim)}
+.achado{border-left:2px solid var(--borda);padding:2px 0 2px 12px;margin:10px 0}
+.achado .onde{color:var(--fraca);font-size:12px;font-family:var(--mono)}
+.achado .txt{font-size:13.5px}
+footer{padding:20px 26px 40px;color:var(--fraca);font-size:12.5px;max-width:78ch;
+       border-top:1px solid var(--borda);margin-top:30px}
+@media (prefers-color-scheme:light){
+ :root{--tinta:#1b1b1e;--fraca:#6b6862;--fundo:#faf9f7;--painel:#f0eeea;--borda:#dcd8d1;
+       --acento:#8a6d0f;--bom:#2f7a36;--ruim:#a83232}
+ .faixa.leitura{background:#fdf6dd;color:#6b5510}
+ .faixa.escrita{background:#fbe6e6;color:#8f2a2a}
+ button.acao{color:#fff}
+}
+</style>
+<header>
+  <h1 data-t="titulo"></h1>
+  <span class="sub" data-t="subtitulo"></span>
+  <span id="gpu"></span>
+  <span class="linguas" id="linguas"></span>
+</header>
+<div class="faixa leitura" id="faixa"></div>
+<nav>
+  <button data-aba="converter"   data-t="aba_converter"   onclick="aba('converter')"></button>
+  <button data-aba="checkpoints" data-t="aba_checkpoints" onclick="aba('checkpoints')"></button>
+  <button data-aba="achados"     data-t="aba_achados"     onclick="aba('achados')"></button>
+  <button data-aba="medir"       data-t="aba_como_medir"  onclick="aba('medir')"></button>
+</nav>
+<main>
+  <section id="aba-converter">
+    <h2 data-t="conv_titulo"></h2>
+    <label data-t="conv_qual"></label>
+    <select id="subcomando" onchange="mostraDescricao()"></select>
+    <p class="dica" id="descricao" style="margin:6px 0 0;font-family:var(--mono);font-size:12px"></p>
+    <label data-t="conv_entrada"></label>
+    <input type="text" id="entrada" data-tp="conv_escolha_entrada">
+    <label data-t="conv_saida"></label>
+    <input type="text" id="saida">
+    <div class="caixa">
+      <input type="checkbox" id="ensaio" checked>
+      <label for="ensaio" data-t="conv_ensaio"></label>
+    </div>
+    <div class="caixa">
+      <button class="acao" id="rodar" data-t="conv_rodar" onclick="roda()"></button>
+      <button class="leve" data-t="conv_ver_flags" onclick="verFlags()"></button>
+    </div>
+    <pre id="flags" style="display:block"></pre>
+    <div id="resultado"></div>
+    <h2 data-t="trab_titulo" style="margin-top:26px"></h2>
+    <div id="trabalhos"></div>
+  </section>
+
+  <section id="aba-checkpoints" hidden>
+    <h2 data-t="ckpt_titulo"></h2>
+    <div id="tabela-ckpt"></div>
+  </section>
+
+  <section id="aba-achados" hidden>
+    <h2 data-t="ach_titulo"></h2>
+    <p class="dica" data-t="ach_dica"></p>
+    <input type="text" id="consulta" data-tp="ach_campo">
+    <div class="caixa"><button class="acao" data-t="ach_buscar" onclick="busca()"></button></div>
+    <div id="achados"></div>
+  </section>
+
+  <section id="aba-medir" hidden>
+    <h2 data-t="aba_como_medir"></h2>
+    <pre id="texto-medir"></pre>
+  </section>
+</main>
+<footer data-t="rodape"></footer>
+
+<script>
+const I18N = {"en": {"titulo": "Quantization bench", "subtitulo": "Convert checkpoints, and see what has already been measured", "aviso_somente_leitura": "Read-only. A dry run works; a real conversion needs the owner to restart the server with --permitir-escrita.", "aviso_escrita_liberada": "Writing enabled. A real conversion will use the GPU for hours and write gigabytes.", "aba_converter": "Convert", "aba_checkpoints": "Checkpoints", "aba_achados": "Findings", "aba_como_medir": "How this bench measures", "gpu_livre": "GPU lock free", "gpu_ocupada": "GPU lock held by", "conv_titulo": "Run a converter", "conv_qual": "Which converter", "conv_entrada": "Input file", "conv_saida": "Output file (optional)", "conv_ensaio": "Dry run (writes nothing)", "conv_rodar": "Run", "conv_ver_flags": "Show every flag for this converter", "conv_linha": "Command line", "conv_recusado": "Refused", "conv_escolha_entrada": "Pick an input file", "trab_titulo": "Jobs", "trab_nenhum": "Nothing has been run yet", "trab_rodando": "running", "trab_terminou": "finished", "trab_falhou": "failed", "trab_codigo": "exit code", "trab_saida": "Output", "ckpt_titulo": "Checkpoints on disk", "ckpt_arquivo": "File", "ckpt_pasta": "Folder", "ckpt_tamanho": "Size", "ckpt_quantizado": "Quantized", "ckpt_camadas": "Layers", "ckpt_formatos": "Formats", "ckpt_sim": "yes", "ckpt_nao": "no", "ach_titulo": "Search what has already been measured", "ach_dica": "Search before you measure. Most of it has been measured once, and the caveat matters as much as the number.", "ach_campo": "e.g. text encoder lock, int8 branch, reserve-vram", "ach_buscar": "Search", "ach_vazio": "Nothing found", "ach_documento": "Document", "ach_linha": "Line", "erro_requisicao": "The request failed", "carregando": "Loading", "rodape": "This page runs the same command line you would type in a terminal. It verifies nothing on its own: a clean conversion proves the kernel dispatches, never that the output is good. Only a render answers that."}, "pt": {"titulo": "Bancada de quantização", "subtitulo": "Converta checkpoints e veja o que já foi medido", "aviso_somente_leitura": "Somente leitura. Um ensaio (--dry-run) roda; uma conversão de verdade exige que o dono reinicie o servidor com --permitir-escrita.", "aviso_escrita_liberada": "Escrita liberada. Uma conversão de verdade consome horas de GPU e escreve gigabytes.", "aba_converter": "Converter", "aba_checkpoints": "Checkpoints", "aba_achados": "Achados", "aba_como_medir": "Como esta bancada mede", "gpu_livre": "Lock da GPU livre", "gpu_ocupada": "Lock da GPU está com", "conv_titulo": "Rodar um conversor", "conv_qual": "Qual conversor", "conv_entrada": "Arquivo de entrada", "conv_saida": "Arquivo de saída (opcional)", "conv_ensaio": "Ensaio (--dry-run): não escreve nada", "conv_rodar": "Rodar", "conv_ver_flags": "Mostrar todas as flags deste conversor", "conv_linha": "Linha de comando", "conv_recusado": "Recusado", "conv_escolha_entrada": "Escolha um arquivo de entrada", "trab_titulo": "Trabalhos", "trab_nenhum": "Nada rodou ainda", "trab_rodando": "rodando", "trab_terminou": "terminou", "trab_falhou": "falhou", "trab_codigo": "código de saída", "trab_saida": "Saída", "ckpt_titulo": "Checkpoints no disco", "ckpt_arquivo": "Arquivo", "ckpt_pasta": "Pasta", "ckpt_tamanho": "Tamanho", "ckpt_quantizado": "Quantizado", "ckpt_camadas": "Camadas", "ckpt_formatos": "Formatos", "ckpt_sim": "sim", "ckpt_nao": "não", "ach_titulo": "Buscar o que já foi medido", "ach_dica": "Busque antes de medir. A maior parte já foi medida uma vez, e a ressalva importa tanto quanto o número.", "ach_campo": "ex.: trava do text encoder, ramo int8, reserve-vram", "ach_buscar": "Buscar", "ach_vazio": "Nada encontrado", "ach_documento": "Documento", "ach_linha": "Linha", "erro_requisicao": "A requisição falhou", "carregando": "Carregando", "rodape": "Esta página roda a mesma linha de comando que você digitaria no terminal. Ela não verifica nada por conta própria: uma conversão limpa prova que o dispatch chega no kernel, nunca que o resultado presta. Só um render responde isso."}, "es": {"titulo": "Banco de pruebas de cuantización", "subtitulo": "Convierta checkpoints y vea lo que ya se midió", "aviso_somente_leitura": "Solo lectura. Un dry run funciona; una conversión real requiere que el dueño reinicie el servidor con --permitir-escrita.", "aviso_escrita_liberada": "Escritura habilitada. Una conversión real ocupará la GPU durante horas y escribirá gigabytes en disco.", "aba_converter": "Convertir", "aba_checkpoints": "Checkpoints", "aba_achados": "Hallazgos", "aba_como_medir": "Cómo se mide aquí", "gpu_livre": "Lock de GPU libre", "gpu_ocupada": "Lock de GPU tomado por", "conv_titulo": "Ejecutar un conversor", "conv_qual": "Qué conversor", "conv_entrada": "Archivo de entrada", "conv_saida": "Archivo de salida (opcional)", "conv_ensaio": "Dry run (no escribe nada)", "conv_rodar": "Ejecutar", "conv_ver_flags": "Ver todos los flags de este conversor", "conv_linha": "Línea de comando", "conv_recusado": "Rechazado", "conv_escolha_entrada": "Elija un archivo de entrada", "trab_titulo": "Trabajos", "trab_nenhum": "Todavía no se ejecutó nada", "trab_rodando": "en ejecución", "trab_terminou": "terminado", "trab_falhou": "fallido", "trab_codigo": "código de salida", "trab_saida": "Salida", "ckpt_titulo": "Checkpoints en disco", "ckpt_arquivo": "Archivo", "ckpt_pasta": "Carpeta", "ckpt_tamanho": "Tamaño", "ckpt_quantizado": "Cuantizado", "ckpt_camadas": "Capas", "ckpt_formatos": "Formatos", "ckpt_sim": "sí", "ckpt_nao": "no", "ach_titulo": "Busque lo que ya se midió", "ach_dica": "Busque antes de medir. La mayor parte ya se midió una vez, y la salvedad importa tanto como el número.", "ach_campo": "ej.: lock del text encoder, rama int8, reserve-vram", "ach_buscar": "Buscar", "ach_vazio": "No se encontró nada", "ach_documento": "Documento", "ach_linha": "Línea", "erro_requisicao": "La solicitud falló", "carregando": "Cargando", "rodape": "Esta página ejecuta la misma línea de comando que escribiría en una terminal. Por sí sola no verifica nada: una conversión limpia prueba que el despacho llega al kernel, nunca que la salida sea buena. Eso solo lo responde un render."}, "zh": {"titulo": "量化工作台", "subtitulo": "转换 checkpoint，查看已经测过的结果", "aviso_somente_leitura": "只读模式。可以做 dry run；真正的转换需要机器所有者加上 --permitir-escrita 重启服务器。", "aviso_escrita_liberada": "已允许写入。真正的转换会占用 GPU 数小时，并写入数 GB 数据。", "aba_converter": "转换", "aba_checkpoints": "Checkpoint", "aba_achados": "结论", "aba_como_medir": "本工作台如何测量", "gpu_livre": "GPU 锁空闲", "gpu_ocupada": "GPU 锁被占用，持有者", "conv_titulo": "运行转换器", "conv_qual": "使用哪个转换器", "conv_entrada": "输入文件", "conv_saida": "输出文件（可选）", "conv_ensaio": "Dry run（不写入任何文件）", "conv_rodar": "运行", "conv_ver_flags": "显示这个转换器的全部参数", "conv_linha": "命令行", "conv_recusado": "已拒绝", "conv_escolha_entrada": "选择输入文件", "trab_titulo": "任务", "trab_nenhum": "还没有运行过任何任务", "trab_rodando": "运行中", "trab_terminou": "已完成", "trab_falhou": "失败", "trab_codigo": "退出码", "trab_saida": "输出", "ckpt_titulo": "磁盘上的 checkpoint", "ckpt_arquivo": "文件", "ckpt_pasta": "目录", "ckpt_tamanho": "大小", "ckpt_quantizado": "是否量化", "ckpt_camadas": "层数", "ckpt_formatos": "格式", "ckpt_sim": "是", "ckpt_nao": "否", "ach_titulo": "搜索已经测过的结果", "ach_dica": "先搜索，再测量。大部分内容都已经测过一次了，而附带的限制条件和数字本身同样重要。", "ach_campo": "例如：text encoder lock、int8 分支、reserve-vram", "ach_buscar": "搜索", "ach_vazio": "没有找到结果", "ach_documento": "文档", "ach_linha": "行号", "erro_requisicao": "请求失败", "carregando": "加载中", "rodape": "本页面运行的就是你在终端里会敲的那条命令行。它本身不验证任何东西：转换干净跑完只能证明 kernel 分发正常，绝不能证明输出是好的。只有真正渲染一次才能回答这个问题。"}};
+const ORDEM = ["en","pt","es","zh"];
+const NOMES = {en:"EN", pt:"PT", es:"ES", zh:"\u4e2d\u6587"};
+let L = localStorage.getItem("bancada_lingua") || (navigator.language||"en").slice(0,2);
+if (!I18N[L]) L = "en";
+const t = k => (I18N[L] && I18N[L][k]) || I18N.en[k] || k;
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+async function pede(nome, args, metodo){
+  try{
+    const r = metodo === "POST"
+      ? await fetch("/api/"+nome, {method:"POST", headers:{"Content-Type":"application/json"},
+                                   body: JSON.stringify(args||{})})
+      : await fetch("/api/"+nome+"?"+new URLSearchParams(args||{}));
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.erro || t("erro_requisicao"));
+    return j.valor;
+  }catch(e){ throw new Error(e.message || t("erro_requisicao")); }
+}
+
+function pinta(){
+  document.documentElement.lang = L === "zh" ? "zh-Hans" : L;
+  document.title = t("titulo");
+  document.querySelectorAll("[data-t]").forEach(e => e.textContent = t(e.dataset.t));
+  document.querySelectorAll("[data-tp]").forEach(e => e.placeholder = t(e.dataset.tp));
+  $("#linguas").innerHTML = ORDEM.map(c =>
+    `<button aria-pressed="${c===L}" onclick="trocaLingua('${c}')">${NOMES[c]}</button>`).join("");
+  // Tudo que o JS escreveu tem de ser reescrito: a primeira versao disto so redesenhava o que
+  // tinha sido carregado uma vez, entao "GPU lock free" e o estado vazio de tarefas ficavam em
+  // ingles depois de trocar a lingua. O que o data-t alcanca e so o HTML estatico.
+  if (window.__ultimosCkpt) desenhaCkpt(window.__ultimosCkpt);
+  desenhaTrabalhos();
+  pintaGpu();
+  pintaFaixa();
+}
+function trocaLingua(c){ L = c; localStorage.setItem("bancada_lingua", c); pinta(); }
+
+function aba(nome){
+  document.querySelectorAll("nav button").forEach(b =>
+    b.setAttribute("aria-selected", b.dataset.aba === nome));
+  document.querySelectorAll("main section").forEach(s => s.hidden = s.id !== "aba-"+nome);
+  if (nome === "checkpoints" && !window.__ultimosCkpt) carregaCkpt();
+  if (nome === "medir" && !$("#texto-medir").textContent.trim()) carregaMedir();
+}
+
+function pintaGpu(){
+  const g = window.__gpu;
+  if (!g){ $("#gpu").innerHTML = ""; return; }
+  $("#gpu").innerHTML = g.erro ? `<span class="erro">${esc(g.erro)}</span>`
+    : g.livre ? `<span class="pilula sim">${esc(t("gpu_livre"))}</span>`
+              : `<span class="pilula falhou">${esc(t("gpu_ocupada"))} ${esc(g.dono)}</span>`;
+}
+async function carregaGpu(){
+  try{ window.__gpu = await pede("estado_da_gpu"); }
+  catch(e){ window.__gpu = {erro: e.message}; }
+  pintaGpu();
+}
+function pintaFaixa(){
+  if (window.__escrita === undefined) return;
+  const f = $("#faixa");
+  f.className = "faixa " + (window.__escrita ? "escrita" : "leitura");
+  f.textContent = t(window.__escrita ? "aviso_escrita_liberada" : "aviso_somente_leitura");
+}
+
+async function carregaConversores(){
+  const cs = await pede("listar_conversores");
+  window.__conv = cs;
+  $("#subcomando").innerHTML = cs.map(c =>
+    `<option value="${esc(c.subcomando)}">${esc(c.subcomando)}</option>`).join("");
+  mostraDescricao();
+}
+function mostraDescricao(){
+  // A descricao vem do proprio conversor e NAO e traduzida -- fica marcada como texto da
+  // ferramenta em vez de fingir que faz parte da interface.
+  const c = (window.__conv||[]).find(x => x.subcomando === $("#subcomando").value);
+  $("#descricao").textContent = c ? `${c.modulo} · ${c.o_que_faz}` : "";
+}
+
+async function verFlags(){
+  const s = $("#subcomando").value;
+  $("#flags").textContent = t("carregando");
+  try{ $("#flags").textContent = await pede("flags_do_conversor", {subcomando:s}); }
+  catch(e){ $("#flags").textContent = e.message; }
+}
+
+async function roda(){
+  const entrada = $("#entrada").value.trim();
+  if (!entrada){ $("#resultado").innerHTML = `<span class="erro">${esc(t("conv_escolha_entrada"))}</span>`; return; }
+  const flags = {"--input": entrada};
+  if ($("#saida").value.trim()) flags["--output"] = $("#saida").value.trim();
+  if ($("#ensaio").checked) flags["--dry-run"] = true;
+  $("#rodar").disabled = true;
+  try{
+    const v = await pede("converter", {subcomando:$("#subcomando").value, flags}, "POST");
+    if (v.recusado){
+      $("#resultado").innerHTML =
+        `<p class="erro"><b>${esc(t("conv_recusado"))}</b> \u2014 ${esc(v.porque)}</p>`+
+        `<p class="dica">${esc(t("conv_linha"))}</p><pre>${esc(v.linha_de_comando)}</pre>`;
+    } else {
+      $("#resultado").innerHTML =
+        `<p class="dica">${esc(t("conv_linha"))}</p><pre>${esc(v.linha_de_comando)}</pre>`;
+      acompanha(v.id);
+    }
+  }catch(e){ $("#resultado").innerHTML = `<p class="erro">${esc(e.message)}</p>`; }
+  finally{ $("#rodar").disabled = false; }
+}
+
+const TRAB = {};
+async function acompanha(id){
+  const passo = async () => {
+    try{
+      const j = await pede("estado_do_trabalho", {id, linhas: 300});
+      TRAB[id] = j; window.__ultimosTrab = 1; desenhaTrabalhos();
+      if (j.estado === "rodando") setTimeout(passo, 1200);
+    }catch(e){ /* servidor caiu; para de pedir */ }
+  };
+  passo();
+}
+function desenhaTrabalhos(){
+  const ids = Object.keys(TRAB);
+  if (!ids.length){ $("#trabalhos").innerHTML = `<p class="dica">${esc(t("trab_nenhum"))}</p>`; return; }
+  $("#trabalhos").innerHTML = ids.reverse().map(id => {
+    const j = TRAB[id];
+    const cls = j.estado === "rodando" ? "rodando" : j.estado === "falhou" ? "falhou" : "sim";
+    const rot = j.estado === "rodando" ? t("trab_rodando")
+              : j.estado === "falhou" ? t("trab_falhou") : t("trab_terminou");
+    const cod = j.codigo === null ? "" : ` \u00b7 ${esc(t("trab_codigo"))} ${j.codigo}`;
+    return `<div class="achado"><div class="onde">${esc(j.subcomando)} \u00b7 ${esc(id)}${cod}
+      <span class="pilula ${cls}">${esc(rot)}</span></div>
+      <pre class="log">${esc((j.saida||[]).join("\n"))}</pre></div>`;
+  }).join("");
+}
+
+async function carregaCkpt(){
+  $("#tabela-ckpt").innerHTML = `<p class="dica">${esc(t("carregando"))}</p>`;
+  try{ window.__ultimosCkpt = await pede("listar_checkpoints"); desenhaCkpt(window.__ultimosCkpt); }
+  catch(e){ $("#tabela-ckpt").innerHTML = `<p class="erro">${esc(e.message)}</p>`; }
+}
+function desenhaCkpt(cs){
+  $("#tabela-ckpt").innerHTML = `<div class="rolagem"><table><thead><tr>
+    <th>${esc(t("ckpt_arquivo"))}</th><th>${esc(t("ckpt_pasta"))}</th>
+    <th style="text-align:right">${esc(t("ckpt_tamanho"))}</th>
+    <th>${esc(t("ckpt_quantizado"))}</th>
+    <th style="text-align:right">${esc(t("ckpt_camadas"))}</th>
+    <th>${esc(t("ckpt_formatos"))}</th></tr></thead><tbody>` +
+    cs.map(c => `<tr><td style="font-family:var(--mono);font-size:12px">${esc(c.arquivo)}</td>
+      <td>${esc(c.pasta)}</td><td class="num">${c.gib.toFixed(2)}</td>
+      <td>${c.quantizado ? `<span class="pilula sim">${esc(t("ckpt_sim"))}</span>`
+                         : `<span class="pilula">${esc(t("ckpt_nao"))}</span>`}</td>
+      <td class="num">${c.camadas_quantizadas || ""}</td>
+      <td style="font-size:12px">${esc(Object.entries(c.formatos||{})
+          .map(([k,v]) => `${k} \u00d7${v}`).join(", "))}</td></tr>`).join("") +
+    "</tbody></table></div>";
+}
+
+async function busca(){
+  const q = $("#consulta").value.trim();
+  if (!q) return;
+  $("#achados").innerHTML = `<p class="dica">${esc(t("carregando"))}</p>`;
+  try{
+    const r = await pede("buscar_achados", {consulta:q, limite:14});
+    $("#achados").innerHTML = r.length ? r.map(a =>
+      `<div class="achado"><div class="onde">${esc(a.documento)} \u00b7 ${esc(t("ach_linha"))} ${a.linha}</div>
+       <div class="txt">${esc(a.texto)}</div></div>`).join("")
+      : `<p class="dica">${esc(t("ach_vazio"))}</p>`;
+  }catch(e){ $("#achados").innerHTML = `<p class="erro">${esc(e.message)}</p>`; }
+}
+
+async function carregaMedir(){
+  try{ $("#texto-medir").textContent = await pede("como_medir"); }
+  catch(e){ $("#texto-medir").textContent = e.message; }
+}
+
+async function carregaServidor(){
+  try{
+    const s = await pede("estado_do_servidor");
+    window.__escrita = !!s.permitir_escrita;
+    pintaFaixa();
+  }catch(e){ $("#faixa").textContent = e.message; }
+}
+
+pinta(); aba("converter"); carregaServidor(); carregaGpu(); carregaConversores(); desenhaTrabalhos();
+setInterval(carregaGpu, 15000);
+$("#consulta").addEventListener("keydown", e => { if (e.key === "Enter") busca(); });
+</script>
