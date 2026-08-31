@@ -160,6 +160,40 @@ não é achado.
 **Fora de escopo:** treino de LLM, alinhamento, benchmark de chat, preço de API, notícia
 de produto sem artefato técnico atrás.
 
+### Quatro ângulos que as rodadas 1-5 não cobriram
+
+Colhidos em 2026-08-30 de um plano de pesquisa escrito por **outro modelo** (GLM 5.3 Flash),
+para um alvo diferente (LLM em Intel Arc). O plano em si não foi executado e nada dele é
+afirmação sobre este projeto — o que vale é o **método**, e ele expõe buracos reais aqui.
+
+1. **Procure o FORK da FERRAMENTA, não só o modelo.** O plano cita `ik_llama.cpp`, fork do
+   `llama.cpp` que carrega formatos de quantização que o upstream não tem. As rodadas 1-5
+   varreram **checkpoints** — nenhuma procurou quem forkou o runtime. Um fork do
+   `comfy-kitchen`, do `nunchaku`, ou do `ComfyUI` carregando um kernel ConvRot diferente
+   passaria batido. Procure por: forks no GitHub dos repos que importam, `comfy_kitchen`
+   em PyPI e em espelhos, `ConvLinear4bit` em código de terceiro.
+2. **Issue e discussion são fonte, repositório não é.** É em issue que se lê "esse quant
+   quebrou na minha 3090" e "o kernel cai para fallback em sm86". Varra
+   `github.com/<repo>/issues` e `/discussions` dos repos centrais, não só o README.
+3. **Plataformas onde se escreve a RECEITA, não onde se publica o PESO.** HuggingFace,
+   ModelScope e Gitee são prateleiras de artefato. O relato de quem rodou está em
+   **Zhihu (知乎), CSDN, juejin, oschina**, e em fórum de fabricante (o análogo do
+   `community.intel.com` aqui é o fórum de desenvolvedor da NVIDIA e o Discussions do
+   ComfyUI). Nenhuma dessas foi tocada até a rodada 5. Se `WebFetch` for bloqueado nelas,
+   registre o bloqueio como achado e tente por `WebSearch` com `allowed_domains`.
+4. **Procure quem MEDIU, não só quem publicou.** Existe uma literatura informal de
+   "esse formato é quase lossless" com número atrás — comparações de perplexidade, deltas
+   de KL. Nós procuramos artefatos; não procuramos *medições de terceiro sobre* artefatos.
+
+**E uma ideia técnica que veio junto e é a mais valiosa do lote:** o mundo de LLM bateu no
+mesmo muro que esta bancada bateu em 2026-08-30 — erro por camada não prevê o resultado
+final — e resolveu medindo **divergência KL da distribuição de saída** contra o modelo em
+precisão cheia (`llama-perplexity --kl-divergence-base`), em vez de erro por camada. O
+análogo em difusão é comparar o **ruído previsto a cada passo** contra o BF16, e não a
+imagem final, o que contorna a divergência de trajetória que embaralhou a comparação
+visual. É a substituição óbvia para o critério do `tools/quant_mixed.py`, e é testável com
+o que já está no disco. **Traçado, não medido.**
+
 **`W4A4` no nome de um LLM não é achado.** A rodada 4 voltou com dezesseis itens dos quais
 metade era LLM — `command-a-plus-...-w4a4`, `Qwen3-1.7B-...-W4A4`, `nemotron35-w4a4`,
 `Qwen3.6-27B-NVFP4-W4A4`. Todos casam a string e nenhum toca uma decisão daqui. O termo de
