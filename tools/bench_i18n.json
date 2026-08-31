@@ -45,7 +45,14 @@
   "ach_linha": "Linha",
   "erro_requisicao": "A requisição falhou",
   "carregando": "Carregando",
-  "rodape": "Esta página roda a mesma linha de comando que você digitaria no terminal. Ela não verifica nada por conta própria: uma conversão limpa prova que o dispatch chega no kernel, nunca que o resultado presta. Só um render responde isso."
+  "rodape": "Esta página roda a mesma linha de comando que você digitaria no terminal. Ela não verifica nada por conta própria: uma conversão limpa prova que o dispatch chega no kernel, nunca que o resultado presta. Só um render responde isso.",
+  "conv_procurar": "Procurar",
+  "sel_titulo": "Escolher arquivo",
+  "sel_filtro": "Filtrar pelo nome",
+  "sel_fechar": "Fechar",
+  "sel_quantizado": "já quantizado",
+  "sel_indisponivel": "raiz indisponível",
+  "sel_vazio": "Nenhum arquivo aqui"
  },
  "es": {
   "titulo": "Banco de pruebas de cuantización",
@@ -93,7 +100,14 @@
   "ach_linha": "Línea",
   "erro_requisicao": "La solicitud falló",
   "carregando": "Cargando",
-  "rodape": "Esta página ejecuta la misma línea de comando que escribiría en una terminal. Por sí sola no verifica nada: una conversión limpia prueba que el despacho llega al kernel, nunca que la salida sea buena. Eso solo lo responde un render."
+  "rodape": "Esta página ejecuta la misma línea de comando que escribiría en una terminal. Por sí sola no verifica nada: una conversión limpia prueba que el despacho llega al kernel, nunca que la salida sea buena. Eso solo lo responde un render.",
+  "conv_procurar": "Explorar",
+  "sel_titulo": "Elegir archivo",
+  "sel_filtro": "Filtrar por nombre",
+  "sel_fechar": "Cerrar",
+  "sel_quantizado": "ya cuantizado",
+  "sel_indisponivel": "raíz no disponible",
+  "sel_vazio": "Ningún archivo aquí"
  },
  "zh": {
   "titulo": "量化工作台",
@@ -141,6 +155,13 @@
   "ach_linha": "行号",
   "erro_requisicao": "请求失败",
   "carregando": "加载中",
-  "rodape": "本页面运行的就是你在终端里会敲的那条命令行。它本身不验证任何东西：转换干净跑完只能证明 kernel 分发正常，绝不能证明输出是好的。只有真正渲染一次才能回答这个问题。"
+  "rodape": "本页面运行的就是你在终端里会敲的那条命令行。它本身不验证任何东西：转换干净跑完只能证明 kernel 分发正常，绝不能证明输出是好的。只有真正渲染一次才能回答这个问题。",
+  "conv_procurar": "浏览",
+  "sel_titulo": "选择文件",
+  "sel_filtro": "按名称筛选",
+  "sel_fechar": "关闭",
+  "sel_quantizado": "已量化",
+  "sel_indisponivel": "根目录不可用",
+  "sel_vazio": "这里没有文件"
  }
 }

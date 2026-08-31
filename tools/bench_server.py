@@ -108,6 +108,48 @@ def _checkpoints() -> list[dict]:
     return out
 
 
+def _arquivos(a: dict) -> dict:
+    """Lista .safetensors sob as raizes permitidas, para a pagina oferecer escolha em vez de texto.
+
+    POR QUE NAO E O DIALOGO DO WINDOWS. Um `<input type=file>` do navegador entrega o CONTEUDO do
+    arquivo, nunca o caminho -- por politica de seguranca, e nao ha como contornar. E o servidor
+    precisa de um caminho, porque quem le o arquivo e o conversor, do outro lado. Listar do lado do
+    servidor resolve isso e ainda tem uma propriedade que um dialogo nativo nao teria: nao existe
+    caminho fora das raizes para escolher, entao a validacao deixa de depender de o usuario se
+    comportar.
+    """
+    import struct
+    filtro = (a.get("filtro") or "").lower()
+    saida = []
+    for raiz in RAIZES:
+        if not raiz.is_dir():
+            saida.append({"raiz": str(raiz), "indisponivel": True, "arquivos": []})
+            continue
+        itens = []
+        for f in sorted(raiz.rglob("*.safetensors")):
+            rel = f.relative_to(raiz).as_posix()
+            if filtro and filtro not in rel.lower():
+                continue
+            reg = {"caminho": str(f), "rel": rel,
+                   "gib": round(f.stat().st_size / 1024**3, 2), "quantizado": None}
+            try:
+                with open(f, "rb") as h:
+                    n = struct.unpack("<Q", h.read(8))[0]
+                    cab = json.loads(h.read(n))
+                meta = cab.pop("__metadata__", {}) or {}
+                reg["quantizado"] = bool(meta.get("_quantization_metadata")) or any(
+                    k.endswith(".comfy_quant") for k in cab)
+            except Exception:  # noqa: BLE001
+                pass                      # cabecalho ilegivel nao impede escolher o arquivo
+            itens.append(reg)
+            if len(itens) >= 400:
+                break
+        saida.append({"raiz": str(raiz), "indisponivel": False, "arquivos": itens})
+    return {"raizes": saida,
+            "nota": "Um checkpoint marcado como ja quantizado sera recusado pelo conversor: "
+                    "requantizar destroi o que ja foi perdido uma vez."}
+
+
 def _achados(consulta: str, limite: int = 12) -> list[dict]:
     """Busca nos documentos de medicao. E isto que responde 'isso a gente ja tinha visto?'."""
     docs = [RAIZ / n for n in (
@@ -134,7 +176,28 @@ def _achados(consulta: str, limite: int = 12) -> list[dict]:
     return achados[:limite]
 
 
-def _como_medir() -> str:
+def _como_medir(a: dict | None = None) -> str:
+    """O texto na lingua pedida. Cai no ingles quando a lingua nao existe.
+
+    As versoes moram em `bench_como_medir.json`, ao lado deste arquivo, e nao aqui dentro: o
+    texto e traduzido por gente (tradutor mais revisor nativo) e nao deve exigir editar codigo
+    Python para corrigir uma virgula em chines.
+    """
+    lingua = (a or {}).get("lingua") or "en"
+    arq = TOOLS / "bench_como_medir.json"
+    if arq.is_file():
+        try:
+            versoes = json.loads(arq.read_text(encoding="utf-8"))
+            if versoes.get(lingua):
+                return versoes[lingua]
+            if versoes.get("en"):
+                return versoes["en"]
+        except Exception:  # noqa: BLE001
+            pass
+    return _como_medir_pt()
+
+
+def _como_medir_pt() -> str:
     return (
         "COMO ESTA BANCADA MEDE, e o que cada instrumento NAO responde.\n"
         "\n"
@@ -353,6 +416,12 @@ FERRAMENTAS = [
                                                    "description": "w4a4, w4a8, int8, mixed, "
                                                                   "smooth, native ou from-svdq"}}},
      "fn": lambda a: _flags(a.get("subcomando", ""))},
+    {"name": "listar_arquivos", "escreve": False,
+     "description": "Todo .safetensors sob as raizes que este servidor aceita, com tamanho e se "
+                    "ja esta quantizado. Use para descobrir o que existe antes de converter.",
+     "inputSchema": {"type": "object", "properties": {
+         "filtro": {"type": "string", "description": "substring do caminho relativo"}}},
+     "fn": _arquivos},
     {"name": "listar_checkpoints", "escreve": False,
      "description": "Todo checkpoint em disco, com se e quantizado, quantas camadas e em que "
                     "formato. Le so o cabecalho.",
@@ -368,8 +437,9 @@ FERRAMENTAS = [
     {"name": "como_medir", "escreve": False,
      "description": "As tres formas de medir desta bancada, qual pergunta cada uma responde, e "
                     "as regras que ja custaram trabalho perdido aqui. Leia antes de concluir algo.",
-     "inputSchema": {"type": "object", "properties": {}},
-     "fn": lambda a: _como_medir()},
+     "inputSchema": {"type": "object", "properties": {
+         "lingua": {"type": "string", "description": "en, pt, es ou zh. Default en."}}},
+     "fn": _como_medir},
     {"name": "estado_do_servidor", "escreve": False,
      "description": "Se este servidor esta em modo somente-leitura ou com escrita liberada, e "
                     "quais raizes de caminho ele aceita.",

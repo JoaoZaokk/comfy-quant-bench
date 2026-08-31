@@ -66,6 +66,13 @@ EN = {
     "ach_vazio": "Nothing found",
     "ach_documento": "Document",
     "ach_linha": "Line",
+    "conv_procurar": "Browse",
+    "sel_titulo": "Pick a file",
+    "sel_filtro": "Filter by name",
+    "sel_fechar": "Close",
+    "sel_quantizado": "already quantized",
+    "sel_indisponivel": "root unavailable",
+    "sel_vazio": "No files here",
     "erro_requisicao": "The request failed",
     "carregando": "Loading",
     "rodape": "This page runs the same command line you would type in a terminal. It verifies "
@@ -132,6 +139,20 @@ td.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-num
 .achado .txt{font-size:13.5px}
 footer{padding:20px 26px 40px;color:var(--fraca);font-size:12.5px;max-width:78ch;
        border-top:1px solid var(--borda);margin-top:30px}
+.modal{position:fixed;inset:0;background:#000a;display:flex;align-items:center;
+       justify-content:center;padding:24px;z-index:9}
+.modal[hidden]{display:none}
+.modal .caixa-modal{background:var(--fundo);border:1px solid var(--borda);border-radius:9px;
+  width:min(880px,100%);max-height:82vh;display:flex;flex-direction:column;overflow:hidden}
+.modal header{border:0;border-bottom:1px solid var(--borda);padding:14px 18px}
+.modal .corpo{overflow-y:auto;padding:6px 18px 18px}
+.raiz{color:var(--fraca);font-size:11.5px;font-family:var(--mono);margin:14px 0 4px;
+      text-transform:none;letter-spacing:0}
+.arq{display:flex;gap:10px;align-items:baseline;width:100%;text-align:left;background:none;
+     border:0;border-bottom:1px solid var(--borda);color:var(--tinta);padding:6px 4px;
+     cursor:pointer;font-family:var(--mono);font-size:12.5px}
+.arq:hover{background:var(--painel)}
+.arq .gib{margin-left:auto;color:var(--fraca);font-variant-numeric:tabular-nums}
 @media (prefers-color-scheme:light){
  :root{--tinta:#1b1b1e;--fraca:#6b6862;--fundo:#faf9f7;--painel:#f0eeea;--borda:#dcd8d1;
        --acento:#8a6d0f;--bom:#2f7a36;--ruim:#a83232}
@@ -177,6 +198,9 @@ function pinta(){
   desenhaTrabalhos();
   pintaGpu();
   pintaFaixa();
+  if (window.__arq) pintaSeletor();
+  // como_medir vem do servidor JA na lingua, entao trocar de lingua exige rebuscar
+  if ($("#texto-medir").textContent.trim()) carregaMedir();
 }
 function trocaLingua(c){ L = c; localStorage.setItem("bancada_lingua", c); pinta(); }
 
@@ -311,8 +335,48 @@ async function busca(){
   }catch(e){ $("#achados").innerHTML = `<p class="erro">${esc(e.message)}</p>`; }
 }
 
+let ALVO_SELETOR = null;
+async function abreSeletor(campo){
+  ALVO_SELETOR = campo;
+  $("#seletor").hidden = false;
+  $("#lista-arq").innerHTML = `<p class="dica">${esc(t("carregando"))}</p>`;
+  try{ window.__arq = await pede("listar_arquivos"); }
+  catch(e){ window.__arq = {erro: e.message}; }
+  pintaSeletor();
+}
+function fechaSeletor(){ $("#seletor").hidden = true; ALVO_SELETOR = null; }
+function escolhe(caminho){
+  if (ALVO_SELETOR) $("#"+ALVO_SELETOR).value = caminho;
+  fechaSeletor();
+}
+// Delegacao, e nao onclick inline: um caminho do Windows tem barras invertidas e o valor sai de
+// JSON.stringify com aspas DUPLAS, que fecham o proprio atributo onclick="..." no meio. O bug e
+// silencioso -- o botao simplesmente nao faz nada.
+document.addEventListener("click", ev => {
+  const b = ev.target.closest && ev.target.closest("#lista-arq .arq");
+  if (b) escolhe(b.dataset.caminho);
+});
+function pintaSeletor(){
+  const d = window.__arq;
+  if (!d) return;
+  if (d.erro){ $("#lista-arq").innerHTML = `<p class="erro">${esc(d.erro)}</p>`; return; }
+  const f = ($("#filtro").value||"").toLowerCase();
+  $("#lista-arq").innerHTML = d.raizes.map(r => {
+    if (r.indisponivel)
+      return `<div class="raiz">${esc(r.raiz)} — ${esc(t("sel_indisponivel"))}</div>`;
+    const itens = r.arquivos.filter(a => !f || a.rel.toLowerCase().includes(f));
+    const corpo = itens.length ? itens.map(a =>
+      `<button class="arq" data-caminho="${esc(a.caminho)}">
+        <span>${esc(a.rel)}</span>
+        ${a.quantizado ? `<span class="pilula">${esc(t("sel_quantizado"))}</span>` : ""}
+        <span class="gib">${a.gib.toFixed(2)} GiB</span></button>`).join("")
+      : `<p class="dica">${esc(t("sel_vazio"))}</p>`;
+    return `<div class="raiz">${esc(r.raiz)}</div>${corpo}`;
+  }).join("");
+}
+
 async function carregaMedir(){
-  try{ $("#texto-medir").textContent = await pede("como_medir"); }
+  try{ $("#texto-medir").textContent = await pede("como_medir", {lingua: L}); }
   catch(e){ $("#texto-medir").textContent = e.message; }
 }
 
@@ -349,9 +413,15 @@ CORPO = """<header>
     <select id="subcomando" onchange="mostraDescricao()"></select>
     <p class="dica" id="descricao" style="margin:6px 0 0;font-family:var(--mono);font-size:12px"></p>
     <label data-t="conv_entrada"></label>
-    <input type="text" id="entrada" data-tp="conv_escolha_entrada">
+    <div style="display:flex;gap:8px;max-width:660px">
+      <input type="text" id="entrada" data-tp="conv_escolha_entrada">
+      <button class="leve" data-t="conv_procurar" onclick="abreSeletor('entrada')"></button>
+    </div>
     <label data-t="conv_saida"></label>
-    <input type="text" id="saida">
+    <div style="display:flex;gap:8px;max-width:660px">
+      <input type="text" id="saida">
+      <button class="leve" data-t="conv_procurar" onclick="abreSeletor('saida')"></button>
+    </div>
     <div class="caixa">
       <input type="checkbox" id="ensaio" checked>
       <label for="ensaio" data-t="conv_ensaio"></label>
@@ -384,6 +454,18 @@ CORPO = """<header>
     <pre id="texto-medir"></pre>
   </section>
 </main>
+<div class="modal" id="seletor" hidden onclick="if(event.target===this)fechaSeletor()">
+  <div class="caixa-modal">
+    <header style="display:flex;gap:12px;align-items:center">
+      <b data-t="sel_titulo"></b>
+      <input type="text" id="filtro" data-tp="sel_filtro" style="max-width:280px"
+             oninput="pintaSeletor()">
+      <button class="leve" data-t="sel_fechar" onclick="fechaSeletor()"
+              style="margin-left:auto"></button>
+    </header>
+    <div class="corpo" id="lista-arq"></div>
+  </div>
+</div>
 <footer data-t="rodape"></footer>
 """
 
