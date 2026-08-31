@@ -154,7 +154,18 @@ Also read [AGENTS.md](AGENTS.md) (root policy) and [ComfyUI/AGENTS.md](ComfyUI/A
   rel-RMSE against the dequantized arm            9.70e-2
   ```
 
-  **This lands on this project's own flagship**: the `gemma` profile output is loaded as a text encoder, so the same `sd.py:269` applies to it. Expected, **not yet measured** — that is the next test, along with what it costs in s/it on LTX. The diffusion model takes a different path (`comfy/ops.py:1667`, which passes `disabled=` rather than `full_precision_mm`) and was not touched here.
+  **Measured the same day on this project's own outputs, and the split is clean.** `tools/probe_quant_dispatch.py` counts the same way against a real load and a real forward:
+
+  ```
+  zimage-v2-w4a4        difusao  170 convrot_w4a4   340 quantizados, 0 sem, 0 dequantize
+  gemma_3_12B_heretic   TE       336 asym_w4a8_int8   0 quantizados, 336 sem, 336 dequantize
+  ```
+
+  So: **the diffusion path really does run quantized** — every Z-Image number this bench has published (per-layer error, epsilon per step, the INT4-vs-INT8 comparison) was measured on genuinely quantized math, not on two dequantizations. And **our own Gemma is memory-only**, exactly as predicted, with both locks `True` on all 336 layers. The format does not matter: `asym_w4a8_int8` is blocked by the same `comfy_force_cast_weights`, so this is about being a text encoder, not about being W4A4.
+
+  One counting trap worth keeping: `MixedPrecisionOps.Linear` is the class of **every** Linear in the model, quantized or not. Patching the class and counting all its calls first reported Z-Image as "MISTO, 340 against 76" — the 76 were layers that never had a quantized weight at all. Scope the count to `layout_type is not None`.
+
+  **Still not measured:** what it costs in s/it on a real LTX render, and whether releasing the locks on a text encoder is safe for output quality.
 
   Not covered: no SASS; no BF16 reference for that model exists here, so the `9.70e-2` is against its own dequantized arm and is **not** a fidelity claim; one prompt, one card; the locks were released by post-load monkeypatch, not by anything ComfyUI offers — `custom_operations` in `model_options` is the only real escape and no node exposes it. Re-run with `tools/probe_winnougan_int4.py`, `tools/probe_winnougan_load.py` and `tools/probe_te_fullprecision_mm.py`.
 

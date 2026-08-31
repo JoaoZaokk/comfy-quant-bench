@@ -3277,3 +3277,44 @@ entao o `9,70e-2` e contra o proprio braco dequantizado, e nao ha nenhuma afirma
 aqui. Um prompt, uma placa sm86. As travas foram soltas por monkeypatch pos-load, nao por um
 caminho que o ComfyUI ofereca -- `custom_operations` em `model_options` e a unica saida real, e
 nenhum no a expoe.
+
+## 2026-08-31, parte 30 - a divisao e limpa: difusao roda quantizado, text encoder nao
+
+`tools/probe_quant_dispatch.py`, executado na 3090 sob o lock `w4a4:gemma_te_dispatch`. Mesmo
+instrumento da parte 29, generalizado: carrega pelo caminho de estoque, instrumenta **depois** do
+load, e conta o kwarg `weight_only_quant` que o proprio `comfy/ops.py:1414-1419` calcula a partir
+de `_use_quantized` -- em vez de re-derivar a expressao, que seria mais uma leitura.
+
+```
+zimage-v2-w4a4              difusao  170 convrot_w4a4    340 quant, 0 sem, 0 dequantize
+gemma_3_12B_it_heretic_w4a8  TE      336 asym_w4a8_int8    0 quant, 336 sem, 336 dequantize
+```
+
+### O que isso salva
+
+**As medicoes de Z-Image desta bancada estavam certas.** Erro por camada, epsilon por passo,
+nativo-contra-INT8 -- tudo rodou em matematica de fato quantizada, `_full_precision_mm` False e
+`comfy_force_cast_weights` False nas 170 camadas. Se tivesse dado o contrario, aquelas comparacoes
+teriam sido entre duas dequantizacoes e nao valeriam nada.
+
+### O que isso custa
+
+**O Gemma deste projeto e economia de memoria e nada mais.** As duas travas `True` nas 336 camadas,
+336 dequantize, zero forward quantizado. E `asym_w4a8_int8` nao e ConvRot W4A4 -- **o formato nao
+importa**, o que importa e ser text encoder. `comfy/sd.py:269` nao olha para o formato.
+
+### O erro de contagem, registrado porque quase virou conclusao
+
+A primeira versao do probe embrulhou `forward_comfy_cast_weights` na **classe**
+`MixedPrecisionOps.Linear` e contou toda chamada. Resultado: `MISTO: 340 quantizados contra 76
+nao`, para um modelo em que 170 de 170 camadas quantizadas estavam quantizadas. As 76 eram Linear
+que **nunca tiveram peso quantizado** -- a classe serve todas as Linear do modelo, quantizada ou
+nao. Contagem correta filtra por `layout_type is not None`. O numero errado nao era menor nem
+maior: era de outra populacao.
+
+### Nao coberto
+
+Sem SASS. Sem referencia BF16 casada, entao nada aqui afirma fidelidade. Uma placa (3090, sm86).
+Difusao rodou 2 passos em 512, o bastante para o dispatch acontecer e nao para julgar imagem.
+**Nao medido:** quanto custa em s/it num render LTX real, e se soltar as travas num text encoder e
+seguro para a qualidade da saida.
