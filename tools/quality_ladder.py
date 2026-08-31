@@ -43,6 +43,24 @@ PORTABLE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PORTABLE_ROOT / "ComfyUI"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+# O bootstrap que o ComfyUI espera de quem o importa como biblioteca, e que esta ferramenta nao
+# fazia: sem ele o `comfy.cli_args.args` nao existe com os defaults, e sob a 0.33 o loader vai
+# parar em caminhos que so o `main.py` prepara. E o mesmo preambulo de
+# `tools/probe_int4_vs_int8_visual.py`, que decodifica imagem com sucesso nesta mesma versao.
+# Duas armadilhas, uma dentro da outra:
+#   1. o parser do ComfyUI le `sys.argv` e reclama dos argumentos DESTA ferramenta
+#      ("argument --models-directory: The path 'zimage-v2-w4a4.safetensors' does not exist");
+#   2. `enable_args_parsing()` so LIGA o parse -- ele acontece de verdade no primeiro
+#      `import comfy.cli_args`, que e tarde. Neutralizar o argv sem forcar o parse ali nao
+#      adianta, e nao restaurar depois deixa o `parse_args()` daqui sem nenhum argumento.
+# Entao: neutraliza, liga, FORCA o parse, restaura.
+_ARGV = sys.argv[:]
+sys.argv = ["main.py"]
+import comfy.options  # noqa: E402
+comfy.options.enable_args_parsing()
+import comfy.cli_args  # noqa: E402,F401  -- e aqui que o parse acontece
+sys.argv = _ARGV
+
 import torch  # noqa: E402
 
 
@@ -96,11 +114,18 @@ def encode(args, folder_paths, comfy_sd, comfy_mm, prompts):
     options = {}
     if args.clip_device == "cpu":
         options["load_device"] = options["offload_device"] = torch.device("cpu")
+    # `disable_dynamic=True` NAO e uma otimizacao: e o que impede o ComfyUI 0.33 de construir um
+    # `CoreModelPatcher`, cujo `register_load_device` aloca um HostBuffer do comfy-aimdo. Num
+    # script que importa `comfy.sd` direto -- sem o `comfy_aimdo.control.init()` que `main.py:63`
+    # faz -- isso morre. Se o aimdo for inicializado pela metade, e pior: o processo cai sem
+    # traceback nenhum, deixando o lock preso. Esta ferramenta foi escrita sob a 0.29, onde esse
+    # caminho nao existia. Para um benchmark, dynamic VRAM tambem so adicionaria variancia.
     clip = comfy_sd.load_clip(
         ckpt_paths=paths,
         embedding_directory=folder_paths.get_folder_paths("embeddings"),
         clip_type=getattr(comfy_sd.CLIPType, args.clip_type.upper()),
-        model_options=options)
+        model_options=options,
+        disable_dynamic=True)
     out = []
     for text in prompts:
         positive = [list(clip.encode_from_tokens_scheduled(clip.tokenize(text))[0])]
@@ -132,7 +157,7 @@ def sample_all(args, name, conditioning, comfy_sample, comfy_sd, comfy_mm, folde
         # it against whatever else wants the card.
         comfy_mm.vram_state = comfy_mm.VRAMState.NORMAL_VRAM
         comfy_mm.set_vram_to = comfy_mm.VRAMState.NORMAL_VRAM
-        model = comfy_sd.load_diffusion_model(path)
+        model = comfy_sd.load_diffusion_model(path, disable_dynamic=True)
         # Loaded as a package, not as a loose module. `distorch_2.py` opens with
         # `from .device_utils import get_device_list`, and a bare `import distorch_2` off sys.path
         # dies with "attempted relative import with no known parent package" -- after the model has
@@ -168,7 +193,7 @@ def sample_all(args, name, conditioning, comfy_sample, comfy_sd, comfy_mm, folde
                   f"same numbers. --distorch distributes blocks instead.", flush=True)
 
     if model is None:
-        model = comfy_sd.load_diffusion_model(path)
+        model = comfy_sd.load_diffusion_model(path, disable_dynamic=True)
     latent_format = model.model.latent_format
     side = max(args.size // 8, 8)
     if getattr(latent_format, "latent_dimensions", 2) == 3:
@@ -212,6 +237,7 @@ def main() -> int:
     import comfy.sample as comfy_sample
     import comfy.sd as comfy_sd
     import folder_paths
+
 
     extra = PORTABLE_ROOT / "ComfyUI" / "extra_model_paths.yaml"
     if extra.is_file():
@@ -316,8 +342,33 @@ def main() -> int:
               "Divergence is unaffected, and that is checkable -- the same checkpoint run with "
               "and without --distorch must give the same latent.")
 
+    # O relatorio e gravado ANTES das imagens. Numa execucao anterior o decode do VAE morreu e
+    # levou junto vinte minutos de amostragem ja medidos: as imagens sao um extra, a medicao e o
+    # produto, e um extra nao pode derrubar o produto.
+    args.out.mkdir(parents=True, exist_ok=True)
+    (args.out / "ladder.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    print(f"\nwrote {args.out / 'ladder.json'}")
+
+    # Os latentes vao para o disco antes do decode, e nao so o relatorio. Uma amostragem custa
+    # dezenas de minutos de GPU e o decode ja morreu duas vezes por motivos que nao tem nada a ver
+    # com a medicao; com os latentes salvos, decodificar de novo custa segundos num processo a
+    # parte, em vez de repetir tudo.
+    latdir = args.out / "latents"
+    latdir.mkdir(exist_ok=True)
+    for name, latents in all_latents.items():
+        for (prompt_index, seed), samples in latents.items():
+            torch.save(samples.cpu(),
+                       latdir / f"{Path(name).stem}__p{prompt_index}_s{seed}.pt")
+    print(f"wrote {sum(len(v) for v in all_latents.values())} latentes em {latdir}")
+
     if args.vae:
-        _write_images(args, all_latents, folder_paths, comfy_sd)
+        try:
+            _write_images(args, all_latents, folder_paths, comfy_sd)
+        except Exception as exc:   # noqa: BLE001
+            import traceback
+            traceback.print_exc()
+            print(f"\nAS IMAGENS FALHARAM ({type(exc).__name__}), mas a medicao acima esta "
+                  "gravada e continua valida. Os numeros nao dependem do decode.")
     else:
         print("\nNo --vae given, so no images were written. Divergence is a distance from the "
               "reference latent, not a verdict on the picture: nothing here says which checkpoint "
@@ -335,6 +386,17 @@ def _write_images(args, all_latents, folder_paths, comfy_sd):
 
     vae_path = folder_paths.get_full_path_or_raise("vae", args.vae)
     import comfy.utils
+    # `comfy.sd.VAE.__init__` escolhe `CoreModelPatcher` a menos que o proprio VAE peca
+    # `disable_offload`, e nao aceita a escolha por parametro -- diferente de `load_clip` e
+    # `load_diffusion_model`, que aceitam `disable_dynamic`. Entao aqui o comfy-aimdo precisa
+    # existir de verdade. Inicializado SO NESTE PONTO: fazer isso no inicio do programa, com o
+    # CLIP ainda passando pelo caminho dinamico, derrubou o processo sem traceback nenhum.
+    # NAO tentar inicializar o comfy-aimdo aqui e religar `host_buffer.lib` na mao. Foi tentado:
+    # `comfy_aimdo/host_buffer.py:6` faz `lib = control.lib` no import, e o
+    # `comfy/memory_management.py:7` importa esse modulo no import do ComfyUI, entao a `lib` fica
+    # `None` congelada. Religar depois do `init()` faz o processo morrer com SIGSEGV (exit 139),
+    # sem traceback e deixando o lock da GPU preso. A biblioteca nativa nao esta preparada para
+    # ser adotada no meio do caminho. O bootstrap correto e o do topo deste arquivo.
     vae = comfy_sd.VAE(sd=comfy.utils.load_torch_file(vae_path))
     written = 0
     for name, latents in all_latents.items():
