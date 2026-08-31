@@ -4015,3 +4015,63 @@ pratico do misto 0,25 sobre o W4A8 puro e pequeno em disco (8,03 contra 8,24 GiB
 pior; o valor aqui e o numero da linha, nao o checkpoint. E a analise do Z-Image continua sendo a
 de agosto, sem chaves de proveniencia: o lado do Hunyuan replicou, o do Z-Image ainda nao foi
 refeito.
+
+## 2026-08-31, parte 40 - os dois lados refeitos com proveniencia, e a conclusao nao se moveu
+
+A parte 39 fechou com uma ressalva propria: o lado do Hunyuan tinha sido recapturado, o do Z-Image
+continuava sendo o de 19 de agosto, sem chaves de proveniencia. Recapturado hoje, nas condicoes do
+render dele (1024 px, 8 passos, cfg 1.0, semente 1234, o prompt da maca), mesmo tratamento dado ao
+Hunyuan.
+
+```
+                 med w4a8   med w4a4   razao a4/a8   camadas > 0,15
+Z-Image agosto     0,0394     0,1241        3,1670            33,5%
+Z-Image hoje       0,0390     0,1216        3,2021            31,8%
+Hunyuan agosto     0,0695     0,2136        3,0466            94,4%
+Hunyuan hoje       0,0708     0,2230        3,0207            94,4%
+```
+
+Deriva maxima em qualquer campo: **4,4%**. A razao `a4/a8`, que e onde a conclusao se apoia, moveu
+**+1,1%** no Z-Image e **-0,9%** no Hunyuan.
+
+A conclusao recomputada usando **somente** numeros de hoje, mesma ferramenta, mesmo dia, os dois
+lados com `source_identity_sha256`:
+
+```
+base (peso)     Z 0,0390   H 0,0708    Hunyuan 1,82x pior
+razao a4/a8     Z 3,2021   H 3,0207    5,7% de diferenca
+camadas > 0,15  Z  31,8%   H  94,4%
+```
+
+**A razao difere por 5,7% e a base por 82%.** E o argumento inteiro: os dois modelos pagam
+praticamente o mesmo por descer a ativacao para 4 bits, e partem de lugares muito diferentes.
+
+Os tres desfechos escritos antes de rodar como "me obriga a corrigir a parte 38 e o README publico"
+-- a base do Z-Image subir perto de 0,0695, a razao dele se afastar de 3,05, ou os numeros nao
+replicarem -- nenhum aconteceu.
+
+### O crest continua sem explicar nada, pela terceira vez
+
+A calibracao nova do Z-Image reporta crest p99 batendo **100** nas camadas `feed_forward.w2`,
+contra ~26-31 nas piores do Hunyuan. Somado ao que a parte 38 ja tinha medido:
+
+```
+crest por token, mediana        Z 19,1   H  5,9    Z pior, Z funciona
+pior canal / canal mediano      Z 57,5   H  4,1    Z pior, Z funciona
+crest p99 do pior tipo          Z  100   H   31    Z pior, Z funciona
+```
+
+O modelo com a ativacao mais feia em todos os eixos e o que sobrevive. Isto e consistente com o que
+esta bancada ja tinha medido e escrito no CLAUDE.md num contexto diferente: crest contra erro W4A4
+da Spearman **+0,10** sobre 170 camadas. Aquele numero foi publicado como "nao escolha precisao por
+crest"; aparece agora como "nao explique por crest qual modelo quebra". Mesma estatistica, mesma
+inutilidade preditiva, dois usos distintos.
+
+### Nao coberto
+
+Continua sendo dois modelos, um por familia de arquitetura. As duas recapturas usaram cada uma as
+condicoes de render do seu proprio modelo (1024/8/cfg 1,0 contra 480/6/cfg 6), o que e o certo para
+representar cada um, mas significa que as medianas absolutas cruzadas entre modelos nunca foram
+medidas sob condicoes identicas -- e nao podem ser, porque os dois nao rodam nas mesmas condicoes.
+A razao `a4/a8` e interna a cada modelo e nao tem esse problema, que e por isso que a conclusao se
+apoia nela.
