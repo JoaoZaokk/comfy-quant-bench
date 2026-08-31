@@ -3318,3 +3318,69 @@ Sem SASS. Sem referencia BF16 casada, entao nada aqui afirma fidelidade. Uma pla
 Difusao rodou 2 passos em 512, o bastante para o dispatch acontecer e nao para julgar imagem.
 **Nao medido:** quanto custa em s/it num render LTX real, e se soltar as travas num text encoder e
 seguro para a qualidade da saida.
+
+## 2026-08-31, parte 31 - o criterio ponderado por sigma foi testado e nao paga
+
+A ideia era de 30/08: `tools/probe_epsilon_per_step.py` mostrou que o dano da quantizacao se
+concentra em sigma alto e decai monotonico (6,17e-1 em 1,000 -> 5,31e-2 em 0,300), entao um
+criterio que pesasse as camadas pela contribuicao delas la seria coisa diferente de um que trata
+todo passo igual. Executado hoje na 3090 sob o lock `w4a4:sigma_criterion`.
+
+### O que foi preciso construir
+
+O reservoir mistura os passos por construcao (Algoritmo R sobre o fluxo inteiro) e depois nao da
+para separar -- **uma calibracao antiga nao pode ser reponderada**. Entao:
+
+- `calibrate_activations.py` grava agora `sample_sigma`, um sigma por linha guardada, escrito nos
+  mesmos slots do reservoir. O sigma vem de um `model_function_wrapper` em `apply_model`, porque o
+  forward-pre-hook da Linear nao ve o timestep. Meta nova: `sigma_tagged_layers`, `sigma_min`,
+  `sigma_max`, `sigma_distinct` -- se o wrapper nunca disparasse, a coluna sairia toda NaN e o
+  arquivo pareceria normal.
+- `quant_mixed.py` ganhou `--sigma-weight none|sigma|sigma2|high`, **default `none`**: mudar o
+  default reinterpretaria em silencio toda analise ja gravada. A analise e o sidecar registram o
+  modo, e reusar uma analise medida com outro modo e recusado -- as colunas `err_*` tem o mesmo
+  nome nos dois casos e significam coisas diferentes.
+- `tools/test_quant_mixed_sigma.py`, 15 checagens, sem GPU. A que carrega o resto: **peso uniforme
+  tem de dar exatamente o mesmo numero que nenhum peso**, senao `--sigma-weight` nao e uma
+  ponderacao da metrica existente, e uma metrica nova com o mesmo nome.
+- `tools/probe_epsilon_per_step.py` teve o corpo de script guardado em `main()`. Estava tudo em
+  escopo de modulo, entao importar os templates ARM executava o `parse_args()` do outro programa.
+
+Calibracao: 170/170 camadas rotuladas, 8 sigmas distintos (1,000 a 0,300), reservoir espalhado
+pelos 8 passos como o Algoritmo R promete.
+
+### O criterio ponderado e quase o mesmo criterio
+
+Spearman de `err_w4a4` contra o plano, 170 camadas: **+0,9935** (`sigma2`), **+0,9629** (`high`).
+Cruzam o limiar 0,15: 6 e 9 camadas. Contagens: 117/53, 115/55, 114/56.
+
+### A primeira comparacao disse 8/8 e estava confundida
+
+Plano contra `high`, trajetoria do BF16 imposta aos dois: `sigma_alto` ganhava **8/8 passos** e
+1,047x na media. Mas ele promovera **56 camadas a 8 bits contra 53** -- modelo maior contra modelo
+menor. O eixo que eu achava segurado era o orcamento, e ele estava variando.
+
+### Com o orcamento igualado, o efeito some e inverte
+
+Braco plano reconstruido com `--promote-error 0,1484`, que promove exatamente 56. Tres sementes:
+
+```
+                  todos os passos       sigma ALTO          sigma BAIXO      passos
+seed 1234   plano56  1,0045x        sigma_alto 1,0079x   plano56 1,0443x      6x2
+seed 5678   plano56  1,0102x        sigma_alto 1,0005x   plano56 1,0511x      7x1
+seed 4242   plano56  1,0188x        plano56    1,0116x   plano56 1,0438x      5x3
+```
+
+O plano ganha no geral nas tres. **Em sigma alto, que e onde a ponderacao foi desenhada para
+ganhar, a direcao inverte entre sementes na casa de 1% -- ou seja, nada.** Em sigma baixo perde
+uns 4,5%, estavel. Todo o ganho aparente eram as tres camadas de 8 bits a mais.
+
+`ab-so-vale-se-os-dois-tomaram-o-mesmo-caminho` de novo, com o eixo segurado sendo o orcamento de
+promocao. Regra que fica: **igualar o orcamento antes de comparar dois criterios de selecao.**
+
+### Nao coberto
+
+Um prompt, um modelo, tres sementes, sem metrica perceptual. `sigma` e `sigma2` foram medidos como
+criterio mas so `high` virou checkpoint e foi amostrado -- `sigma2` e mais suave (81% da massa na
+metade alta contra 100% do `high`) e nao foi para a ponta a ponta. E o BF16 continua sendo o alvo,
+nao a verdade.

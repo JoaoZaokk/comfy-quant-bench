@@ -194,9 +194,81 @@ def selected_layers(header: dict, profile: str, convrot_groupsize: int) -> list[
     return names
 
 
-def relative(reference: torch.Tensor, got: torch.Tensor) -> float:
-    return float((reference.float() - got.float()).norm()
-                 / reference.float().norm().clamp(min=1e-12))
+def relative(reference: torch.Tensor, got: torch.Tensor,
+             weights: torch.Tensor | None = None) -> float:
+    """L2 relativa, opcionalmente com um peso POR LINHA da amostra.
+
+    Sem `weights` isto e exatamente o que sempre foi: uma norma global sobre todas as linhas,
+    que trata cada linha igual -- e como o reservoir mistura os passos do sampler, "cada linha
+    igual" e na pratica "cada passo com o peso que o numero de linhas dele deu".
+
+    Com `weights` a conta vira uma razao de normas ponderadas:
+
+        sqrt(sum_i w_i * ||ref_i - got_i||^2) / sqrt(sum_i w_i * ||ref_i||^2)
+
+    que reduz exatamente ao caso sem peso quando todos os w_i sao iguais -- verificado em
+    `tools/test_quant_mixed_sigma.py`, porque uma formula que NAO reduz seria uma mudanca
+    silenciosa de metrica em vez de uma ponderacao.
+    """
+    ref = reference.float()
+    dif = ref - got.float()
+    if weights is None:
+        return float(dif.norm() / ref.norm().clamp(min=1e-12))
+    w = weights.to(device=ref.device, dtype=torch.float32).reshape(-1, 1)
+    if w.shape[0] != ref.shape[0]:
+        raise SystemExit(f"pesos com {w.shape[0]} linhas para uma referencia de {ref.shape[0]}")
+    num = (dif.pow(2) * w).sum().sqrt()
+    den = (ref.pow(2) * w).sum().sqrt().clamp(min=1e-12)
+    return float(num / den)
+
+
+SIGMA_WEIGHTS = ("none", "sigma", "sigma2", "high")
+
+
+def sigma_weights(mode: str, sigma: torch.Tensor | None, layer: str) -> torch.Tensor | None:
+    """Peso por linha a partir do sigma em que ela foi observada.
+
+    Motivo, medido e nao suposto: `tools/probe_epsilon_per_step.py` mostrou em 2026-08-30 que o
+    erro do epsilon cai monotonico de 6,17e-1 em sigma 1,000 para 5,31e-2 em 0,300. O dano bate
+    mais forte onde a estrutura e decidida. Se isso importa para a decisao de formato, um
+    criterio que pese as linhas de sigma alto e diferente do que trata todo passo igual.
+
+    `sigma` e `sigma2` sao continuos; `high` e um corte na mediana dos sigmas OBSERVADOS nesta
+    camada, e nao um limiar fixo, porque o intervalo de sigma depende do scheduler e um 0,5
+    escrito aqui viraria um corte diferente a cada configuracao.
+
+    Um NaN no vetor para a execucao. Nao vira zero: zero descartaria a linha em silencio, que e
+    o modo de falha registrado em `finite()` logo abaixo, apontando para outro lado.
+    """
+    if mode == "none":
+        return None
+    if sigma is None:
+        raise SystemExit(
+            f"{layer}: --sigma-weight {mode!r} pedido, mas a calibracao nao tem 'sample_sigma'. "
+            "Recalibre com a versao de `calibrate_activations.py` que grava o sigma por linha; "
+            "uma calibracao antiga nao pode ser reponderada depois porque o reservoir ja "
+            "misturou os passos.")
+    s = sigma.float().reshape(-1)
+    if not bool(torch.isfinite(s).all()):
+        n = int((~torch.isfinite(s)).sum())
+        raise SystemExit(
+            f"{layer}: {n} de {s.numel()} linhas da amostra estao sem sigma (NaN). Nao sao "
+            "tratadas como zero: uma linha sem rotulo descartada em silencio muda a metrica "
+            "sem aparecer no resultado.")
+    if mode == "sigma":
+        w = s
+    elif mode == "sigma2":
+        w = s.pow(2)
+    elif mode == "high":
+        w = (s >= s.median()).float()
+    else:
+        raise SystemExit(f"--sigma-weight desconhecido: {mode!r}")
+    total = float(w.sum())
+    if not math.isfinite(total) or total <= 0:
+        raise SystemExit(
+            f"{layer}: o peso por sigma somou {total!r}. Todos os sigmas desta camada sao zero "
+            "ou o modo zerou o vetor inteiro; a razao ponderada seria 0/0.")
+    return w
 
 
 def finite(layer: str, metric: str, value) -> float:
@@ -248,7 +320,8 @@ def validate_analysis_rows(rows, origin: str) -> None:
 
 
 def measure_layer(layer: str, weight: torch.Tensor, x: torch.Tensor, ck,
-                  group_size: int, convrot_groupsize: int) -> dict:
+                  group_size: int, convrot_groupsize: int,
+                  weights: torch.Tensor | None = None) -> dict:
     """Relative L2 of each format against a float32 reference, on this layer's real input.
 
     Both operands must already be MEASURE_DTYPE; this function casts neither, because the cast it
@@ -261,11 +334,12 @@ def measure_layer(layer: str, weight: torch.Tensor, x: torch.Tensor, ck,
             "344064-vs-65504 overflow described at MEASURE_DTYPE; cast to MEASURE_DTYPE at the "
             "read, not here.")
     reference = F.linear(x.float(), weight.float())
-    result = {"err_bf16": finite(layer, "err_bf16", relative(reference, F.linear(x, weight)))}
+    result = {"err_bf16": finite(layer, "err_bf16",
+                                 relative(reference, F.linear(x, weight), weights))}
 
     qdata4, wscales4 = ck.quantize_convrot_w4a4_weight(weight, convrot_groupsize, 64)
     got4 = ck.convrot_w4a4_linear(x, qdata4, wscales4, None, convrot_groupsize, 64)
-    result["err_w4a4"] = finite(layer, "err_w4a4", relative(reference, got4))
+    result["err_w4a4"] = finite(layer, "err_w4a4", relative(reference, got4, weights))
     del qdata4, wscales4, got4
 
     qdata8, s_rel, s_channel, correction, codebook = ck.quantize_w4a8_int8_weight(
@@ -277,7 +351,7 @@ def measure_layer(layer: str, weight: torch.Tensor, x: torch.Tensor, ck,
     got8 = ck.w4a8_int8_linear(x, qdata8, s_rel, s_channel, codebook=codebook,
                                correction=None, bias=None, group_size=group_size,
                                convrot_groupsize=convrot_groupsize, out_dtype=x.dtype)
-    result["err_w4a8"] = finite(layer, "err_w4a8", relative(reference, got8))
+    result["err_w4a8"] = finite(layer, "err_w4a8", relative(reference, got8, weights))
     del qdata8, s_rel, s_channel, codebook, got8, reference
     return result
 
@@ -330,6 +404,11 @@ def parse_args() -> argparse.Namespace:
                         help="max fraction of selected layers allowed at W4A8 (0.0-1.0)")
     parser.add_argument("--uncalibrated", choices=["w4a8", "bf16", "fail"], default="w4a8",
                         help="what to do with a selected layer the calibration never saw")
+    parser.add_argument("--sigma-weight", choices=list(SIGMA_WEIGHTS), default="none",
+                        help="pesa cada linha da amostra pelo sigma em que ela foi observada. "
+                             "'none' e o comportamento historico e o default: mudar o default "
+                             "reinterpretaria em silencio toda analise ja gravada. Exige uma "
+                             "calibracao com 'sample_sigma'.")
     parser.add_argument("--group-size", type=int, default=16)
     parser.add_argument("--convrot-groupsize", type=int, default=256)
     parser.add_argument("--dry-run", action="store_true")
@@ -435,6 +514,17 @@ def main() -> int:
                 f"The analysis was measured at {recorded_dtype} and this tool measures at "
                 f"{MEASURE_DTYPE}. Re-measure with --calibration; see MEASURE_DTYPE for why the "
                 "measurement dtype is not negotiable.")
+        # Uma analise gravada com outra ponderacao de sigma descreve outra metrica, e as
+        # colunas tem o mesmo nome nas duas. Sem esta checagem, reusar uma analise antiga com
+        # `--sigma-weight sigma2` produziria uma decisao "ponderada" feita de numeros nao
+        # ponderados, sem nenhum sinal na saida. Analise sem o campo e pre-2026-08-31 e portanto
+        # 'none' -- o que e verdade, e nao uma suposicao conveniente: a ponderacao nao existia.
+        recorded_sw = analysis.get("sigma_weight", "none")
+        if recorded_sw != args.sigma_weight:
+            raise SystemExit(
+                f"A analise foi medida com --sigma-weight {recorded_sw!r} e esta execucao pede "
+                f"{args.sigma_weight!r}. Os campos err_* tem o mesmo nome nos dois casos e "
+                "significam coisas diferentes. Re-meca com --calibration.")
         validate_analysis_rows(analysis.get("layers"), origin)
         shapes = {row["layer"]: tuple(row["shape"]) for row in analysis["layers"]}
         for name, info in header.items():
@@ -548,11 +638,18 @@ def main() -> int:
                         "bf16 precisely so real activations (up to 344064 on Z-Image) cannot "
                         "overflow the way fp16's 65504 does, so this is a capture bug, not a "
                         f"property of the layer. Recapture with tools/calibrate_activations.py.")
+                w = sigma_weights(args.sigma_weight, entry.get("sample_sigma"), stem)
                 measured = measure_layer(stem, weight, x, ck,
-                                         args.group_size, args.convrot_groupsize)
+                                         args.group_size, args.convrot_groupsize, w)
                 measured.update({"layer": stem, "shape": info["shape"], "calibrated": True,
                                  "rows": int(entry["rows"]),
+                                 "sigma_weight": args.sigma_weight,
                                  "crest_p99": float(entry["crest_p99"])})
+                if w is not None:
+                    s = entry["sample_sigma"].float()
+                    measured["sigma_span"] = [float(s.min()), float(s.max())]
+                    measured["sigma_weight_mass_top_half"] = float(
+                        w[s >= s.median()].sum() / w.sum())
                 rows.append(measured)
                 del weight, x
                 torch.cuda.empty_cache()
@@ -565,6 +662,7 @@ def main() -> int:
             # carry the same identity forward. Both are what item 1 of the ticket is for.
             "source_identity_sha256": source_digest,
             "measure_dtype": str(MEASURE_DTYPE),
+            "sigma_weight": args.sigma_weight,
             "calibration": calibration_meta,
             "group_size": args.group_size, "convrot_groupsize": args.convrot_groupsize,
             "seconds": round(time.perf_counter() - started, 2),
@@ -822,6 +920,7 @@ def main() -> int:
             "keep_bf16_error": args.keep_bf16_error,
             "budget": args.budget,
             "uncalibrated": args.uncalibrated,
+            "sigma_weight": args.sigma_weight,
         },
         "layer_counts": counts,
         "calibration": analysis.get("calibration", {}),

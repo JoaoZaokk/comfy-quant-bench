@@ -130,7 +130,22 @@ Also read [AGENTS.md](AGENTS.md) (root policy) and [ComfyUI/AGENTS.md](ComfyUI/A
 
   This also **rehabilitates the per-layer criterion** that `tools/quant_mixed.py` uses. It was written off here on 2026-08-30 as non-predictive; it is not. It predicts the model's prediction error (1.49 against 1.33, same direction, same winner). What it does not predict is the free-running image, and nothing does.
 
-  New information only the per-step view gives: the error is **concentrated at high sigma**. Native goes 6.17e-1 at sigma 1.000 down to 5.31e-2 at sigma 0.300, cosine 0.787 → 0.9986. Quantization damage lands hardest where structure is decided, and decays monotonically into texture. A criterion that weights layers by their contribution at high sigma is therefore a different, and possibly better, thing than one that weights all steps equally — untested.
+  New information only the per-step view gives: the error is **concentrated at high sigma**. Native goes 6.17e-1 at sigma 1.000 down to 5.31e-2 at sigma 0.300, cosine 0.787 → 0.9986. Quantization damage lands hardest where structure is decided, and decays monotonically into texture. A criterion that weights layers by their contribution at high sigma is therefore a different thing from one that weights all steps equally. **Tested on 2026-08-31, and it does not pay.**
+
+  `calibrate_activations.py` now records the sigma of every sampled row (`sample_sigma`), and `quant_mixed.py` takes `--sigma-weight none|sigma|sigma2|high` (default `none`, unchanged). The weighted criterion is nearly the same criterion: Spearman **+0.9935** (`sigma2`) and **+0.9629** (`high`) against flat on `err_w4a4` over 170 Z-Image layers, moving 6 and 9 layers across the 0.15 threshold.
+
+  **The first comparison said it won 8/8 steps at 1.047x, and that was a confound, not a result.** The weighted build promoted 56 layers to 8-bit against the flat build's 53 — a bigger model, measured against a smaller one. Rebuilding the flat arm at a threshold that promotes exactly 56 and re-running against the same imposed BF16 trajectory, over three seeds:
+
+  ```
+                    todos os passos      sigma ALTO         sigma BAIXO      passos
+  seed 1234   plano56  1.0045x        sigma_alto 1.0079x   plano56 1.0443x    6x2
+  seed 5678   plano56  1.0102x        sigma_alto 1.0005x   plano56 1.0511x    7x1
+  seed 4242   plano56  1.0188x        plano56    1.0116x   plano56 1.0438x    5x3
+  ```
+
+  Flat wins overall in all three. At high sigma — where the weighting was *designed* to win — the direction flips between seeds at around 1%, i.e. nothing. At low sigma it loses a stable ~4.5%. So the whole apparent gain was the three extra 8-bit layers, and **`ab-so-vale-se-os-dois-tomaram-o-mesmo-caminho` again, with the held axis being the promotion budget.** Always match the budget before comparing two selection criteria.
+
+  Re-run with `tools/probe_epsilon_ckpt_ab.py`, which imposes the BF16 trajectory on N checkpoints at once. Not covered: one prompt, one model, three seeds, no perceptual metric; `sigma` and `sigma2` were measured as criteria but only `high` was built and sampled.
 
   **Not covered:** one prompt, one seed, no perceptual metric, only Z-Image, only sm86, no SASS. And BF16 is the target, not the truth — it was never itself validated against float32.
 

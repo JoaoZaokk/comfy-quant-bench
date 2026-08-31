@@ -171,65 +171,80 @@ def rodar(src, env_extra=None, timeout=3600):
     return None
 
 
-p = argparse.ArgumentParser(description=__doc__,
-                            formatter_class=argparse.RawDescriptionHelpFormatter)
-p.add_argument("--ref-unet", default="beyond-reality-zimage-v2_native.safetensors")
-p.add_argument("--quant-unet", default="zimage-v2-w4a4.safetensors")
-p.add_argument("--clip", default="qwen_3_4b.safetensors")
-p.add_argument("--prompt", default="a red apple on a weathered wooden table, soft window light")
-p.add_argument("--seed", type=int, default=1234)
-p.add_argument("--steps", type=int, default=8)
-p.add_argument("--cfg", type=float, default=1.0)
-p.add_argument("--size", type=int, default=1024)
-p.add_argument("--device", type=int, default=1, help="1 = RTX 3080 Ti (tambem cc 8.6)")
-ARGS = p.parse_args()
+def main() -> int:
+    """Corpo do script, atras de um guard para que os templates acima sejam importaveis.
 
-OUT.mkdir(parents=True, exist_ok=True)
-refp = OUT / "trajetoria_bf16.pkl"
+    Estava tudo no escopo do modulo, entao `from probe_epsilon_per_step import QUANT_ARM`
+    executava `parse_args()` do OUTRO programa e morria com 'unrecognized arguments'. Os
+    templates ARM sao a parte reutilizavel deste arquivo -- e a tecnica de casar entradas
+    que vale, nao a comparacao especifica que ele faz.
+    """
+    p = argparse.ArgumentParser(description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--ref-unet", default="beyond-reality-zimage-v2_native.safetensors")
+    p.add_argument("--quant-unet", default="zimage-v2-w4a4.safetensors")
+    p.add_argument("--clip", default="qwen_3_4b.safetensors")
+    p.add_argument("--prompt", default="a red apple on a weathered wooden table, soft window light")
+    p.add_argument("--seed", type=int, default=1234)
+    p.add_argument("--steps", type=int, default=8)
+    p.add_argument("--cfg", type=float, default=1.0)
+    p.add_argument("--size", type=int, default=1024)
+    p.add_argument("--device", type=int, default=1, help="1 = RTX 3080 Ti (tambem cc 8.6)")
+    global ARGS
+    ARGS = p.parse_args()
 
-print(f"device cuda:{ARGS.device}  |  a trajetoria do BF16 e imposta aos dois bracos quantizados\n")
+    OUT.mkdir(parents=True, exist_ok=True)
+    refp = OUT / "trajetoria_bf16.pkl"
 
-print("--- referencia BF16 (grava a trajetoria) ---", flush=True)
-common = {"UNET": ARGS.ref_unet, "CLIP": ARGS.clip, "PROMPT": ARGS.prompt, "SEED": ARGS.seed,
-          "STEPS": ARGS.steps, "CFG": repr(ARGS.cfg), "SIDE": ARGS.size,
-          "DEV": ARGS.device, "OUTP": str(refp)}
-ref = rodar(REF_ARM % common)
-if not ref:
-    sys.exit("referencia falhou")
-print(f"  {ref['chamadas']} chamadas ao modelo, saida {ref['shape']}")
-print(f"  sigmas: {', '.join(f'{s:.3f}' for s in ref['sigmas'])}\n")
+    print(f"device cuda:{ARGS.device}  |  a trajetoria do BF16 e imposta aos dois bracos quantizados\n")
 
-arms = {}
-for force, label in ((False, "nativo_int4"), (True, "fallback_int8")):
-    print(f"--- {label} (reproduz a trajetoria) ---", flush=True)
-    q = dict(common)
-    q.update({"UNET": ARGS.quant_unet, "REFP": str(refp), "OUTP": ""})
-    res = rodar(QUANT_ARM % q,
-                {"COMFY_KITCHEN_FORCE_INT4_INT8_FALLBACK": "1"} if force else None)
-    if not res:
-        sys.exit(f"braco {label} falhou")
-    arms[label] = res
-    print(f"  flag={res['flag']}  {len(res['passos'])} passos medidos")
+    print("--- referencia BF16 (grava a trajetoria) ---", flush=True)
+    common = {"UNET": ARGS.ref_unet, "CLIP": ARGS.clip, "PROMPT": ARGS.prompt, "SEED": ARGS.seed,
+              "STEPS": ARGS.steps, "CFG": repr(ARGS.cfg), "SIDE": ARGS.size,
+              "DEV": ARGS.device, "OUTP": str(refp)}
+    ref = rodar(REF_ARM % common)
+    if not ref:
+        sys.exit("referencia falhou")
+    print(f"  {ref['chamadas']} chamadas ao modelo, saida {ref['shape']}")
+    print(f"  sigmas: {', '.join(f'{s:.3f}' for s in ref['sigmas'])}\n")
 
-a, b = arms["nativo_int4"]["passos"], arms["fallback_int8"]["passos"]
-print(f"\n{'passo':>6} {'sigma':>9} {'rmse nativo':>12} {'rmse int8':>11} "
-      f"{'cos nativo':>11} {'cos int8':>10} {'ganha':>8}")
-vit = 0
-for x, y in zip(a, b):
-    quem = "nativo" if x["rel_rmse"] < y["rel_rmse"] else "int8"
-    vit += quem == "nativo"
-    print(f"{x['passo']:>6} {x['sigma']:>9.3f} {x['rel_rmse']:>12.4e} {y['rel_rmse']:>11.4e} "
-          f"{x['cos']:>11.6f} {y['cos']:>10.6f} {quem:>8}")
+    arms = {}
+    for force, label in ((False, "nativo_int4"), (True, "fallback_int8")):
+        print(f"--- {label} (reproduz a trajetoria) ---", flush=True)
+        q = dict(common)
+        q.update({"UNET": ARGS.quant_unet, "REFP": str(refp), "OUTP": ""})
+        res = rodar(QUANT_ARM % q,
+                    {"COMFY_KITCHEN_FORCE_INT4_INT8_FALLBACK": "1"} if force else None)
+        if not res:
+            sys.exit(f"braco {label} falhou")
+        arms[label] = res
+        print(f"  flag={res['flag']}  {len(res['passos'])} passos medidos")
 
-mn = sum(x["rel_rmse"] for x in a) / len(a)
-mf = sum(y["rel_rmse"] for y in b) / len(b)
-print(f"\nmedia por passo   nativo {mn:.4e}   int8 {mf:.4e}")
-print(f"nativo ganha em {vit}/{len(a)} passos")
-print(f"-> {'int8' if mn > mf else 'nativo'} e "
-      f"{max(mn, mf) / min(mn, mf):.2f}x mais fiel ao BF16 na previsao")
-print("\ncomparar com: erro por camada deu int8 1,49x melhor (24/24);")
-print("a imagem final deu 2x1 com os dois a ~0,3-0,5 do BF16.")
+    a, b = arms["nativo_int4"]["passos"], arms["fallback_int8"]["passos"]
+    print(f"\n{'passo':>6} {'sigma':>9} {'rmse nativo':>12} {'rmse int8':>11} "
+          f"{'cos nativo':>11} {'cos int8':>10} {'ganha':>8}")
+    vit = 0
+    for x, y in zip(a, b):
+        quem = "nativo" if x["rel_rmse"] < y["rel_rmse"] else "int8"
+        vit += quem == "nativo"
+        print(f"{x['passo']:>6} {x['sigma']:>9.3f} {x['rel_rmse']:>12.4e} {y['rel_rmse']:>11.4e} "
+              f"{x['cos']:>11.6f} {y['cos']:>10.6f} {quem:>8}")
 
-print("\nNAO COBERTO: um prompt, uma semente; sem metrica perceptual; so Z-Image; so imagem."
-      " O BF16 e o alvo, nao a verdade -- ele proprio nao foi validado contra float32.",
-      file=sys.stderr)
+    mn = sum(x["rel_rmse"] for x in a) / len(a)
+    mf = sum(y["rel_rmse"] for y in b) / len(b)
+    print(f"\nmedia por passo   nativo {mn:.4e}   int8 {mf:.4e}")
+    print(f"nativo ganha em {vit}/{len(a)} passos")
+    print(f"-> {'int8' if mn > mf else 'nativo'} e "
+          f"{max(mn, mf) / min(mn, mf):.2f}x mais fiel ao BF16 na previsao")
+    print("\ncomparar com: erro por camada deu int8 1,49x melhor (24/24);")
+    print("a imagem final deu 2x1 com os dois a ~0,3-0,5 do BF16.")
+
+    print("\nNAO COBERTO: um prompt, uma semente; sem metrica perceptual; so Z-Image; so imagem."
+          " O BF16 e o alvo, nao a verdade -- ele proprio nao foi validado contra float32.",
+          file=sys.stderr)
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

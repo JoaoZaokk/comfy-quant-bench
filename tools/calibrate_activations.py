@@ -259,6 +259,16 @@ class Reservoir:
 
     def __init__(self, capacity: int, width: int, seed: int):
         self.capacity = capacity
+        # Sigma da chamada que produziu cada linha guardada, na MESMA posicao do buffer.
+        # Existe porque o dano da quantizacao nao e uniforme ao longo da trajetoria: medido em
+        # 2026-08-30 com `tools/probe_epsilon_per_step.py`, o erro do epsilon vai de 6,17e-1 em
+        # sigma 1,000 para 5,31e-2 em 0,300, monotonico. Um criterio que pese as linhas por
+        # onde elas foram observadas e uma coisa diferente de um que trate todo passo igual, e
+        # sem esta coluna essa pergunta nao pode nem ser feita: o reservoir mistura os passos
+        # por construcao (Algoritmo R sobre o fluxo inteiro) e depois nao da para separar.
+        # NaN aqui significa "nao rotulada" -- o `--sigma-weight` do quant_mixed recusa, em vez
+        # de tratar como zero, que seria descartar a linha em silencio.
+        self.sigma = torch.full((capacity,), float("nan"), dtype=torch.float32)
         # bfloat16, not float16, for the same two bytes. Measured on Z-Image:
         # `layers.0.feed_forward.w2` receives channel magnitudes up to 344064, which overflows
         # fp16's 65504 to inf. Stored that way, every error metric for that layer came back nan,
@@ -269,7 +279,7 @@ class Reservoir:
         self.seen = 0
         self.generator = torch.Generator().manual_seed(seed)
 
-    def offer(self, rows: torch.Tensor) -> None:
+    def offer(self, rows: torch.Tensor, sigma: float = float("nan")) -> None:
         n = rows.shape[0]
         if n == 0:
             return
@@ -277,6 +287,7 @@ class Reservoir:
             take = min(self.capacity - self.filled, n)
             self.buffer[self.filled:self.filled + take] = rows[:take].to(
                 device="cpu", dtype=torch.bfloat16)
+            self.sigma[self.filled:self.filled + take] = sigma
             self.filled += take
             self.seen += take
             rows = rows[take:]
@@ -304,6 +315,9 @@ class Reservoir:
         last = torch.ones_like(chosen, dtype=torch.bool)
         last[:-1] = chosen[1:] != chosen[:-1]
         self.buffer[chosen[last]] = rows[keep[last]].to(device="cpu", dtype=torch.bfloat16)
+        # Mesmos slots, mesma mascara: a linha e o sigma dela tem de andar juntos ou a coluna
+        # mente sobre de onde a linha veio, que e pior do que nao existir.
+        self.sigma[chosen[last]] = sigma
 
 
 class LayerStats:
@@ -328,7 +342,8 @@ class LayerStats:
         self.calls = 0
         self.rows = 0
 
-    def observe(self, x: torch.Tensor, crest_rows: int) -> None:
+    def observe(self, x: torch.Tensor, crest_rows: int,
+                sigma: float = float("nan")) -> None:
         flat = x.reshape(-1, x.shape[-1])
         self.calls += 1
         self.rows += flat.shape[0]
@@ -342,14 +357,17 @@ class LayerStats:
         rms = head.pow(2).mean(dim=1).sqrt().clamp(min=1e-12)
         self.crest_chunks.append(head.amax(dim=1) / rms)
 
-        self.reservoir.offer(flat)
+        self.reservoir.offer(flat, sigma)
 
     def finish(self) -> dict:
         crest = (torch.cat(self.crest_chunks).cpu() if self.crest_chunks
                  else torch.zeros(1))
         quantiles = torch.quantile(crest.float(), torch.tensor([0.5, 0.99]))
+        sample_sigma = self.reservoir.sigma[:self.reservoir.filled].clone()
         return {
             "sample": self.reservoir.buffer[:self.reservoir.filled].clone(),
+            "sample_sigma": sample_sigma,
+            "sigma_tagged": bool(sample_sigma.numel()) and bool(torch.isfinite(sample_sigma).all()),
             "channel_absmax": self.channel_absmax.cpu(),
             "crest_mean": float(crest.mean()),
             "crest_p50": float(quantiles[0]),
@@ -498,6 +516,27 @@ def main() -> int:
     stats: dict[str, LayerStats] = {}
     handles = []
 
+    # O hook e um forward-pre-hook numa Linear: ele nao ve o timestep. Quem ve e o wrapper de
+    # `apply_model`, e todo hook que dispara dentro de uma chamada dele compartilha o mesmo
+    # sigma -- e a mesma tecnica que `tools/probe_epsilon_per_step.py` usa para casar entradas.
+    # Uma lista de um elemento, e nao `nonlocal`, porque `make_hook` fecha sobre o objeto.
+    current_sigma = [float("nan")]
+
+    def sigma_wrapper(apply_model, kwargs):
+        t = kwargs["timestep"]
+        try:
+            current_sigma[0] = float(t.detach().reshape(-1)[0])
+        except Exception:
+            current_sigma[0] = float("nan")
+        return apply_model(kwargs["input"], t, **kwargs["c"])
+
+    model.model_options = dict(model.model_options)
+    if model.model_options.get("model_function_wrapper") is not None:
+        raise SystemExit(
+            "model_function_wrapper ja esta ocupado. Encadear em silencio trocaria o que o "
+            "outro wrapper faz; parar aqui e a opcao honesta.")
+    model.model_options["model_function_wrapper"] = sigma_wrapper
+
     def make_hook(name: str):
         def hook(module, inputs):
             x = inputs[0]
@@ -514,7 +553,7 @@ def main() -> int:
                                    device=x.device)
                 stats[name] = entry
             with torch.no_grad():
-                entry.observe(x.detach(), args.crest_rows)
+                entry.observe(x.detach(), args.crest_rows, current_sigma[0])
         return hook
 
     for name, module in targets.items():
@@ -567,10 +606,20 @@ def main() -> int:
     if len(payload) != len(stats):
         raise SystemExit(f"the module->file translation collapsed {len(stats)} layers into "
                          f"{len(payload)}; MODULE_TO_FILE for profile {args.profile!r} is wrong")
+    # Quantas camadas sairam com TODA linha rotulada. Se o wrapper nunca disparasse -- outro
+    # caminho de sampling, uma versao do ComfyUI que nao chama `model_function_wrapper` -- a
+    # coluna sairia toda NaN e o arquivo pareceria normal. Isto e o que impede isso de passar.
+    tagged = sum(1 for e in payload.values() if e.get("sigma_tagged"))
+    sigmas_vistos = torch.cat([e["sample_sigma"] for e in payload.values()]) if payload else torch.zeros(0)
+    finitos = sigmas_vistos[torch.isfinite(sigmas_vistos)] if sigmas_vistos.numel() else sigmas_vistos
     meta = {
         "source": str(path),
         "source_identity_sha256": source_digest,
         "sample_dtype": str(torch.bfloat16),
+        "sigma_tagged_layers": tagged,
+        "sigma_min": float(finitos.min()) if finitos.numel() else None,
+        "sigma_max": float(finitos.max()) if finitos.numel() else None,
+        "sigma_distinct": int(torch.unique(finitos).numel()) if finitos.numel() else 0,
         "profile": args.profile,
         "prompts": len(prompts),
         "seeds": args.seeds,
@@ -591,6 +640,11 @@ def main() -> int:
     partial = args.out.with_suffix(args.out.suffix + ".partial")
     torch.save({"meta": meta, "layers": payload}, partial)
     partial.replace(args.out)
+
+    if tagged != len(payload):
+        print(f"warning: {len(payload) - tagged} de {len(payload)} camadas ficaram com alguma "
+              "linha SEM sigma. `quant_mixed --sigma-weight` vai recusar essas camadas em vez "
+              "de tratar NaN como zero.")
 
     print(f"\n{json.dumps(meta, indent=2)}")
     worst = sorted(payload.items(), key=lambda kv: -kv[1]["crest_p99"])[:10]
