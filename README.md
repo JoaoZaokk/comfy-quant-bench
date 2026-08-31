@@ -152,6 +152,61 @@ activations, which lack the outliers the rotation exists to suppress — an axis
 answer on this bench before. And the reference in every row is the publisher's high-precision
 checkpoint, which is the target, not the truth.
 
+### Where the line is, and how to check before converting
+
+*2026-08-31.* The section above leaves "why does one model survive and the other not" open. It is
+now measured, and the answer is not the activations.
+
+Per-layer error from calibration, measured with the real kernels on the real activations:
+
+| | Z-Image | HunyuanVideo 1.5 |
+| --- | --- | --- |
+| median `err_w4a8` (4-bit weights, 8-bit activations, weight-dominated) | 0.0394 | 0.0695 |
+| median ratio a4/a8 (what dropping activations to 4 bits costs) | 3.17 | 3.05 |
+| median `err_w4a4` | 0.1241 | 0.2136 |
+
+**The activation penalty is the same in both.** What differs is where they start. Two other
+hypotheses died first, both backwards: Z-Image quantizes **97.7%** of its parameters against
+HunyuanVideo's 65.3%, and Z-Image's activations are far uglier — worst channel over median channel
+57.5 against 4.1, fourteen times worse. The model with the nastier activations is the one that
+survives.
+
+So the prediction is that an absolute error level decides breakage. Tested by promoting layers to
+8 bits at three thresholds and rendering the same apple:
+
+![where the line is](docs/where_the_line_is.png)
+
+| build | 4-bit / 8-bit | median effective error | image |
+| --- | --- | --- | --- |
+| ConvRot W4A4 | 432 / 0 | 0.2230 | destroyed |
+| mixed, promote > 0.40 | 402 / 30 | 0.2147 | destroyed |
+| mixed, promote > 0.25 | 282 / 150 | **0.1837** | **correct**, grainy |
+| mixed, promote > 0.15 | 24 / 408 | 0.0739 | correct, clean |
+| *Z-Image W4A4, for scale* | 170 / 0 | 0.1241 | correct |
+
+**The line sits between 0.1837 and 0.2147.** The apple comes back with 65% of the model still at
+4 bits, and quality inside "correct" tracks the error rather than being binary.
+
+That gives a check you can run **before** converting, from calibration alone, with no render:
+
+```
+median err_w4a4 > 0.21   pure W4A4 will break
+median err_w4a4 < 0.15   pure W4A4 works
+in between               works, with visible graininess
+```
+
+The criterion for this experiment, including the outcomes that would have refuted it, was written
+before the builds were made: [`bench/criterio_hunyuan_misto.md`] in the bench repo.
+
+One more time, the free-running divergence misordered it: the best-looking build (promote > 0.15,
+0.4246) has *worse* divergence than the grainy one (promote > 0.25, 0.3741). Four points now, same
+lesson.
+
+**Not covered:** two models, one seed, one prompt, 480x480, one frame, no perceptual metric. The
+line is the gap between two adjacent measurements, not a value with an estimated uncertainty. And
+the practical gain of the mixed build over plain W4A8 is small — 8.03 against 8.24 GiB, with a
+worse image; what is worth having here is the number, not that checkpoint.
+
 ## What actually breaks: the activations, in both model families
 
 Both formats keep 4-bit **weights**. The one that works keeps 8-bit **activations**. It is easy to
