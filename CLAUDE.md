@@ -116,7 +116,23 @@ Also read [AGENTS.md](AGENTS.md) (root policy) and [ComfyUI/AGENTS.md](ComfyUI/A
 
   So "anything that is not native INT4 defeats the project" is contradicted by measurement, and the two largest public ConvRot distributors — `Abiray/Minimax-H3-nvfp4-INT4-INT8-Convrot` (791k downloads, `w4a4_int4mm_layers: 0`) and `joeygambino/...surgical_int8_convrot` (`target_dtype: int8_tensorwise`) — ship exactly the third option. That reads as a deliberate trade, not a shortcut.
 
-  **The rule stands until the owner decides otherwise**, because this is a trade and the choice is his: accuracy and small-batch latency favour the INT8 branch, large-batch throughput favours native. **Not covered:** rel-RMSE on one Linear layer is not image quality — no image was generated, so whether 1.49x is visible is untested. Only Z-Image, only sm86, no SASS inspected.
+  **The rule stands until the owner decides otherwise**, because this is a trade and the choice is his: accuracy and small-batch latency favour the INT8 branch, large-batch throughput favours native.
+
+  **The "is 1.49x visible?" question is now answered, and answering it corrected how this bench measures.** Three measurements of the same pair, 2026-08-30/31:
+
+  ```
+  erro por camada, ativacao real     int8 1,49x mais fiel   24/24 camadas
+  epsilon por passo, entrada casada  int8 1,33x mais fiel    8/8 passos
+  imagem final, trajetoria livre     2x1 em 3 sementes, ambos a ~0,3-0,5 do BF16
+  ```
+
+  The final-image comparison is the one that carries no signal, and it is the one that looked most like an answer. At 8 steps a tiny perturbation reroutes the sampler, and the destination is still a good image — so the free-running image measures chaos, not fidelity. **Do not use a generated image to compare two quantizations of the same model.** `tools/probe_epsilon_per_step.py` is the instrument that does work: the BF16 arm records every `(x, timestep)` it was called with via `model_options["model_function_wrapper"]`, and the quantized arms replay exactly those inputs, so every step is a matched comparison and trajectory divergence cannot exist by construction.
+
+  This also **rehabilitates the per-layer criterion** that `tools/quant_mixed.py` uses. It was written off here on 2026-08-30 as non-predictive; it is not. It predicts the model's prediction error (1.49 against 1.33, same direction, same winner). What it does not predict is the free-running image, and nothing does.
+
+  New information only the per-step view gives: the error is **concentrated at high sigma**. Native goes 6.17e-1 at sigma 1.000 down to 5.31e-2 at sigma 0.300, cosine 0.787 → 0.9986. Quantization damage lands hardest where structure is decided, and decays monotonically into texture. A criterion that weights layers by their contribution at high sigma is therefore a different, and possibly better, thing than one that weights all steps equally — untested.
+
+  **Not covered:** one prompt, one seed, no perceptual metric, only Z-Image, only sm86, no SASS. And BF16 is the target, not the truth — it was never itself validated against float32.
 
 ## Say which one it was: traced, or executed
 
