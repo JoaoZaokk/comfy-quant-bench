@@ -3829,3 +3829,102 @@ mudou de resposta entre sintetico e real nesta bancada (1,4x -> 1,49x na parte 2
 por CAMADA, que preve o erro de predicao do modelo mas nao preve a imagem final. Uma placa, sm86.
 Nao carrega nada no ComfyUI: prova o kernel, nao o loader. E o BF16 do publicador e o alvo, nao a
 verdade -- nunca foi validado contra float32 aqui.
+
+## 2026-08-31, parte 38 - por que o Z-Image aguenta o W4A4 e o HunyuanVideo nao: e o PESO
+
+A parte 36 deixou uma pergunta aberta e escrita como aberta: o mesmo formato, o mesmo kernel e o
+mesmo conversor produzem imagem boa no Z-Image e lixo no HunyuanVideo 1.5. Tres hipoteses foram
+testadas hoje. **Duas morreram, e as duas morreram na direcao contraria a esperada.**
+
+### Hipotese 1: "o Z-Image aguenta porque quantiza menos". MORTA, ao contrario
+
+Contagem de parametro pelo cabecalho, sem GPU, reconstruindo o numel real das camadas empacotadas:
+
+```
+                params totais   quantizados        %   camadas quantizadas
+Z-Image W4A4          6,155 B       6,016 B    97,7%                  170
+Hunyuan W4A4          8,327 B       5,436 B    65,3%                  432
+```
+
+O Z-Image e o mais agressivamente quantizado dos dois **por muito** -- 97,7% dos parametros em 4
+bits -- e e o que sobrevive. O Hunyuan deixa um terco do modelo em FP16 e quebra assim mesmo.
+
+### Hipotese 2: "as ativacoes do Hunyuan tem outliers piores". MORTA, ao contrario
+
+E era a hipotese que o proprio README acusa: o caminho de ativacao do ConvRot e um absmax por
+token cobrindo todos os canais, 15 niveis, entao um canal outlier fixa a escala do vetor inteiro.
+
+`tools/probe_por_que_zimage_aguenta.py`, sobre as ativacoes REAIS ja capturadas em 2026-08-19
+(nada recapturado, nenhuma GPU), mediana sobre as camadas:
+
+```
+                                   Z-Image   Hunyuan
+crest por token, SEM rotacao       19,1121    5,8893   Z-Image 3,25x PIOR
+crest por token, COM rotacao        4,1642    3,9638   praticamente igual
+pior canal / canal mediano         57,4915    4,0708   Z-Image 14,12x PIOR
+fracao de ativacoes no codigo 0     0,2534    0,2324   Z-Image pior
+erro int4 uma escala por token      0,1760    0,1682   Z-Image pior
+```
+
+O Z-Image tem ativacao **dramaticamente mais feia** -- canal outlier quatorze vezes pior -- e e ele
+que sobrevive.
+
+### Hipotese 3: e o PESO. Sobreviveu, e e a unica que separa
+
+Das analises por camada de 2026-08-19, medidas com os kernels reais nas ativacoes reais:
+
+```
+                          Z-Image   Hunyuan
+mediana err_w4a8 (base)    0,0394    0,0695   Hunyuan 1,76x pior
+mediana err_w4a4           0,1241    0,2136   Hunyuan 1,72x pior
+mediana da razao a4/a8     3,1670    3,0466   IGUAL, 4% de diferenca
+```
+
+**O custo de descer a ativacao para 4 bits e o mesmo nos dois modelos.** O que difere e de onde
+eles partem:
+
+```
+Z-Image   0,0394 x 3,17 = 0,125   fica abaixo da linha de uso
+Hunyuan   0,0695 x 3,05 = 0,212   passa
+```
+
+`err_w4a8` e peso de 4 bits com ativacao de 8, e o proprio README ja mediu que nessa configuracao o
+peso domina por ~8x (0,0731 contra 0,0092). Entao esse numero e um medidor de qualidade do PESO, e
+o peso do Hunyuan e 1,76x pior.
+
+A distribuicao inteira acompanha, e nao e cauda -- e o corpo:
+
+```
+camadas com err_w4a4 > 0,15   Z-Image  57/170 (33,5%)   Hunyuan 408/432 (94,4%)
+camadas com err_w4a4 > 0,25   Z-Image   3/170 ( 1,8%)   Hunyuan 140/432 (32,4%)
+```
+
+`0,15` nao e um numero escolhido depois: e o `--promote-error` **padrao do `quant_mixed.py`**. O
+criterio desta propria bancada diz que 94,4% do HunyuanVideo deveria ser 8 bits, e nos rodamos ele
+100% em 4.
+
+Os piores sao estruturais, nao aleatorios: os oito piores do Hunyuan sao **todos**
+`double_blocks.NN.img_mlp.fc1`, blocos 31 a 43, uma faixa contigua. Por tipo, `img_attn_qkv` tem
+mediana 0,3105 sobre 54 camadas; o pior tipo do Z-Image e `w3` a 0,1782.
+
+### A resposta ja estava no repositorio publico, escrita em agosto
+
+`comfy-quant-bench`, secao "The matrix: which axis actually decides", 2026-08-16:
+
+> So the weight quantizer, not the activation precision, decides whether the model works.
+
+Foi medido no **Gemma**, com uma bateria de perguntas, e nunca foi aplicado ao lado da difusao.
+Aplicado hoje, da a mesma coisa.
+
+E esta na primeira FOTO do repositorio: as tres macas de agosto sao FP16 boa, W4A4 destruida,
+**W4A8 boa**. W4A8 e o mesmo peso de 4 bits com ativacao de 8 -- funciona no Hunyuan exatamente por
+isto, a base de 0,0695 sem o multiplicador de 3x fica abaixo da linha.
+
+### Nao coberto
+
+Nao explica **por que** o peso do Hunyuan e 1,76x pior; mede que e. As duas calibracoes tem passos,
+resolucao e execucoes diferentes (8/1024/4 contra 6/512/2) -- a razao `a4/a8` e interna a cada
+modelo e sobrevive a isso, as medianas absolutas comparadas entre modelos sobrevivem menos. A
+rotacao usada no probe de ativacao e uma Hadamard normalizada do proprio arquivo, nao a do kernel:
+a escala dos numeros pode diferir, a comparacao entre os dois modelos nao, porque ambos passam pela
+mesma. E mede a entrada de cada camada isolada, nunca o acumulo pelo residual.
