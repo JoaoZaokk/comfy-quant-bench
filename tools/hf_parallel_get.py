@@ -38,7 +38,7 @@ import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit
 
 import httpx
@@ -69,7 +69,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--repo", required=True)
     parser.add_argument("--file", required=True, help="path inside the repo")
     parser.add_argument("--dest", required=True, type=Path,
-                        help="directory; the repo path is appended, so folders match ComfyUI's")
+                        help="DIRECTORY -- the repo path is appended, so folders match ComfyUI's. "
+                             "Passing the full target file path also works and is detected, but "
+                             "the directory form is what the folder layout is built around.")
     parser.add_argument("--revision", default="main")
     parser.add_argument("--connections", type=int, default=8)
     parser.add_argument("--chunk-mb", type=int, default=256)
@@ -303,7 +305,17 @@ def download(repo: str, file: str, dest_dir: Path, *, revision: str = "main",
     report.update({"verified": False, "verification": "did not finish", "bytes": None,
                    "path": None})
 
-    dest = (dest_dir / file).resolve()
+    # `--dest` is a DIRECTORY and `file` is appended to it. That is a footgun, and it fired three
+    # times on 2026-08-31 alone: a caller passing the full target path got
+    # `<path>/<basename>` -- a directory named after the file, holding a file of the same name.
+    # The download itself was fine every time, which is what made it survive; only the path was
+    # absurd, and it was fixed by hand afterwards rather than here. Accept both spellings instead
+    # of being right about the one.
+    if dest_dir.name == PurePosixPath(file).name:
+        dest = dest_dir.resolve()
+        print(f"note: --dest already names the file, using it as the full path\n      {dest}")
+    else:
+        dest = (dest_dir / file).resolve()
     dest.parent.mkdir(parents=True, exist_ok=True)
     state_path = dest.with_suffix(dest.suffix + ".parts.json")
 

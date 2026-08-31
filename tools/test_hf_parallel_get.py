@@ -172,6 +172,44 @@ def _run_download(payload: bytes, digest, tmp: Path) -> tuple[object, Path, Path
     return result, dest, state, outcome
 
 
+def test_dest_naming_the_file_is_not_nested_under_itself() -> None:
+    """`--dest` is a directory, but three callers on 2026-08-31 passed the full target path.
+
+    Each one produced `<path>/<basename>` -- a directory named after the file, containing a
+    file of the same name. The bytes were always correct, which is exactly why it survived
+    three times: nothing failed, only the path was absurd. This pins both spellings.
+    """
+    payload = bytes(range(256)) * 8192
+    good = hpg.hashlib.sha256(payload).hexdigest()
+    real_source, real_fetch = hpg.Source, hpg.fetch_chunk
+    hpg.Source = lambda repo, file, revision: _StubSource(payload, ("sha256", good, "stub"))
+
+    def stub_fetch(source, dest, index, start, end, retries, progress, lock):
+        with dest.open("r+b") as handle:
+            handle.seek(start)
+            handle.write(source.payload[start:end + 1])
+        with lock:
+            progress["done"] += end - start + 1
+        return index
+
+    hpg.fetch_chunk = stub_fetch
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            # A caller passing the FULL path, which is the mistake being pinned.
+            alvo = Path(tmp) / "text_encoders" / "blob.bin"
+            hpg.download("R/r", "blob.bin", alvo, chunk_mb=1, connections=2)
+            assert alvo.is_file(), f"{alvo} deveria ser o arquivo"
+            assert alvo.read_bytes() == payload
+            assert not (alvo / "blob.bin").exists(), "aninhou o arquivo dentro de si mesmo"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            # The documented directory form has to keep working unchanged.
+            hpg.download("R/r", "sub/blob.bin", Path(tmp), chunk_mb=1, connections=2)
+            assert (Path(tmp) / "sub" / "blob.bin").read_bytes() == payload
+    finally:
+        hpg.Source, hpg.fetch_chunk = real_source, real_fetch
+
+
 def test_verification_runs_before_the_sidecar_is_removed() -> None:
     payload = bytes(range(256)) * 8192  # 2 MiB, so it splits into two 1 MiB chunks
     good = hpg.hashlib.sha256(payload).hexdigest()
