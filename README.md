@@ -1,11 +1,17 @@
-# ComfyUI ConvRot Quant
+# comfy-quant-bench
 
 4-bit quantization for ComfyUI checkpoints that actually executes its kernel instead of quietly
 dequantizing back to a full-precision GEMM — plus the measurements showing which 4-bit format is
 worth using.
 
-**Use `tools/quant_w4a8.py`. Do not use W4A4.** That is not a style preference; it is what the
-numbers said.
+*Renamed from `ComfyUI-ConvRot-Quant` on 2026-08-31. The old URL redirects. ConvRot was the only
+format here in August; it is now one of several, and what the repo actually does is measure whether
+a quantization does what it claims.*
+
+**Default to `tools/quant_w4a8.py`.** W4A4 is a real option on some models and a catastrophe on
+others, and the only way to know which is to render. See
+[When W4A4 works, and when it does not](#when-w4a4-works-and-when-it-does-not) — that section is
+newer than everything below it and narrows a claim this README used to make without qualification.
 
 ![FP16 vs ConvRot W4A4 vs asym_w4a8_int8](docs/w4a4_vs_w4a8.png)
 
@@ -28,6 +34,110 @@ not rescue it. The ConvRot paper reports 2.26x speedup on FLUX.1-dev; that did n
 
 The W4A4 converter is kept because the format is a useful fixture for kernel and loader work, and
 because a negative result with a reproduction is worth more than silence.
+
+## When W4A4 works, and when it does not
+
+*Added 2026-08-31. Everything below this section was written on 2026-08-16 and is left intact,
+including the parts this narrows.*
+
+The August result above was re-run from scratch fifteen days later, on a stack three versions
+newer, and it **reproduced exactly**. But a second model was measured in the meantime and it does
+the opposite. Same format, same kernel, same converter, same `convrot_groupsize` 256:
+
+![same format, two models, opposite outcomes](docs/same_format_two_models.png)
+
+| | ConvRot W4A4, per sampling step | image |
+| --- | --- | --- |
+| HunyuanVideo 1.5, 480×480, 6 steps | **1.055× slower** than FP16 | destroyed |
+| Z-Image, 1024×1024, 8 steps | **1.50× faster** than BF16 | correct |
+
+Each cell's image and number come from the same run. Z-Image also measures 1.83×–1.93× faster per
+step over two seeds on a different prompt, and 3.60×–3.75× lighter on disk.
+
+So the sentence this README used to open with — *do not use W4A4* — was generalized from one model.
+The narrower statement survives and is now stronger: **ConvRot W4A4 destroys HunyuanVideo 1.5**, and
+that is not a stale result from an old build.
+
+### What did not change it
+
+The re-test was set up to find a fix and did not find one:
+
+```
+              2026-08-16      2026-08-31
+comfy-kitchen     0.2.23          0.2.31
+ComfyUI           0.29            0.33 (c1739380)
+torch             2.12.1          2.13.0+cu130
+converter         same math (one new flag, probe moved to its own module)
+output size       7.92 GiB        7.92 GiB
+```
+
+Requantized with `tools/quant_w4a4.py --profile hunyuan_video_15`; the sidecar records
+`backend: comfy_kitchen.backends.cuda` and 432 quantized tensors, byte-size identical to August's.
+Rendered with the same prompt, seed 12345, 6 steps, cfg 6, euler/simple.
+
+The leading hypothesis going in was a scale-loss bug: ComfyUI fuses `to_{q,k,v}` into `qkv` at load
+and only `.weight` is in the rename map, so `weight_scale` can pass through unrenamed and a layer
+loads **with no scale and no error**. That hypothesis died on reading rather than on the GPU —
+`HunyuanVideo.process_unet_state_dict` carries `.comfy_quant` and `.weight_scale` through its own
+substring replacements. The gap is real, but it is specific to diffusers-named checkpoints.
+
+### Two things this makes concrete
+
+**A clean conversion proves dispatch, never quality.** The HunyuanVideo W4A4 file converts without a
+warning, resolves the CUDA backend, passes the native-backend preflight, and writes a valid sidecar.
+It still renders garbage. The preflight in this repo answers *"will the kernel run?"* and nothing
+else; only a render answers the other question.
+
+**Latent divergence has no threshold.** Against its own high-precision reference:
+
+```
+HunyuanVideo 1.5  W4A4   divergence 0.8255   ->  destroyed
+Z-Image           W4A4   divergence 0.7173   ->  ship it
+```
+
+A 15% gap separates unusable from fine, in the wrong direction to be useful. No cut on that axis
+decides anything, so the acceptance gate here looks at images.
+
+### The INT8 branch is the more faithful one, measured three ways
+
+`convrot_w4a4_linear` has two branches. `_cuda_device_supports_native_int4_mma` is `major == 8`, so
+Ampere and Ada reach the `m16n8k64 s4` MMA while Hopper and Blackwell are routed to an INT4-weight
+× INT8-activation path deliberately. `COMFY_KITCHEN_FORCE_INT4_INT8_FALLBACK` forces the same call
+down the other branch, which makes it a one-axis comparison.
+
+| measurement | model | quantized by | activations | result |
+| --- | --- | --- | --- | --- |
+| per-layer error | Z-Image, diffusion | us | real | int8 **1.49×** more faithful, 24/24 |
+| epsilon per step | Z-Image, diffusion | us | real | int8 **1.33×** more faithful, 8/8 |
+| per-layer error | Qwen3-VL-32B, text encoder | a third party | synthetic | int8 **1.40×** more faithful, 60/60 |
+
+Different model family, different quantizer, different activation kind, same direction every time.
+The third row is measured against the publisher's own BF16 twin
+(`Comfy-Org/MiniMax-H3`, 47.97 GiB, 351 of 351 layer names matching) over 20 layers spanning 5
+shapes and 4 depths. Per-layer error is flat in depth: block 0 and block 49 agree to four decimals.
+
+This is consistent with the mechanism the rest of this README measures — the activation half of
+W4A4 is 18.2× worse than W4A8's, against 2.1× for the weight half. It also explains why the two most
+downloaded public ConvRot checkpoints ship `int8` per-layer rather than `int4`: that reads as a
+deliberate accuracy trade, not a shortcut.
+
+Native is not strictly worse. It is 1.41×–1.67× faster at M=1024 and 1.3×–1.74× *slower* at M=1 —
+the usual crossover shape. It buys large-batch throughput and costs accuracy.
+
+### Open, and not covered
+
+Why Z-Image survives a format that destroys HunyuanVideo is **not measured**. The mechanism sections
+below explain why W4A4 is coarse; they do not explain why one model tolerates that coarseness. Two
+candidates — better-behaved activations, or an architecture less sensitive at that error level —
+and no evidence separating them.
+
+One seed, one prompt per model, no perceptual metric, one card (sm86), no SASS anywhere: "native
+branch" always means "produces a different number from the fallback", never "the instruction was
+observed being emitted". `convrot_groupsize` 256 only in this round; August tested 256, 64 and 16
+and reported all three unusable on HunyuanVideo. The third fidelity row uses synthetic Gaussian
+activations, which lack the outliers the rotation exists to suppress — an axis that has changed the
+answer on this bench before. And the reference in every row is the publisher's high-precision
+checkpoint, which is the target, not the truth.
 
 ## What actually breaks: the activations, in both model families
 
@@ -463,6 +573,74 @@ producing a checkpoint that can only ever run dequantized.
   CLIP. Harmless — it changes only the declared logical dtype — but worth knowing.
 - The converter refuses to overwrite a source, an existing output, an existing sidecar, or a stale
   `.partial`, and refuses any checkpoint that already carries quantization metadata.
+
+## Credits
+
+Almost nothing here was invented in this repo. What this bench does is read what a lot of separate
+people already solved, put the pieces on one machine, and measure which ones hold. The list below is
+that reading, with what each one actually contributed.
+
+**The method and the kernel.** [ConvRot](https://arxiv.org/abs/2512.03673) — Huang et al. — is the
+rotation-based 4-bit method every result here is about. **comfy-kitchen** (Comfy-Org) is the CUDA
+backend that really executes `convrot_w4a4_linear` and `quantize_convrot_w4a4_weight`; without its
+`COMFY_KITCHEN_FORCE_INT4_INT8_FALLBACK` switch there is no one-axis comparison between the two
+branches, and half this README would be unmeasurable. **ComfyUI** (comfyanonymous / Comfy-Org)
+supplies the per-layer `.comfy_quant` format, `MixedPrecisionOps`, and the loader path that made
+mixed formats in one file possible without patching anything. **comfy-aimdo** is the dynamic-VRAM
+reader, and the only one that opens two of the public checkpoints tested here.
+
+**Related quantization work read or measured against.**
+[deepcompressor](https://github.com/nunchaku-tech/deepcompressor) and
+[nunchaku / SVDQuant](https://github.com/mit-han-lab/nunchaku) (MIT Han Lab) — the SVDQuant path,
+whose `ops.attention_fp16` was measured running on sm86 here, and whose INT4 checkpoints
+`svdq_to_bf16.py` learned to read back.
+[comfy-dit-quantizer](https://github.com/bedovyy/comfy-dit-quantizer) (bedovyy) was the first
+*public* ConvRot checkpoint writer found.
+[comfyui-mixed-quantizer](https://github.com/NidAll/comfyui-mixed-quantizer) (NidAll) does per-layer
+W4A4/W4A8/INT8/BF16 selection with presets — the closest neighbour to `quant_mixed.py`, and reached
+independently. Also read: **SparknightLLC/ComfyUI-Quantization**, **Comfy-Org/comfy-quants**,
+**AlperKTS** (architectural rather than dynamic sensitivity — a genuinely different criterion),
+**0xDELUXA** (ConvRot for RDNA4), **newgrit1004** (Z-Image with Triton kernels), **ussoewwin**
+(hybrid-sensitivity weights).
+
+**Accelerators that make the bench usable.** [SageAttention and
+SpargeAttn](https://github.com/thu-ml) (thu-ml), [FlashAttention](https://github.com/Dao-AILab)
+(Dao-AILab), and **woct0rdho**, whose cu130 abi3 wheels are the reason the acceleration stack runs
+on this machine at all. [Comfy-WaveSpeed](https://github.com/chengzeyi/Comfy-WaveSpeed) (chengzeyi)
+is the original First Block Cache node every cache measurement here descends from, via
+**yannickcruz**'s fixed fork.
+
+**People publishing ConvRot checkpoints, whose files are the evidence.** **Abiray**, whose two
+MiniMax-H3 files are the most downloaded of the genre and whose per-layer `int8` choice — against a
+top-level manifest that says `int4` — is what forced this bench to learn to read layers instead of
+summaries. **Winnougan**, whose `qwen3vl_32b_minimax_h3-int4_convrot` is the public W4A4 that
+genuinely emits 4-bit MMA, and is the subject of the third fidelity row above. **riftcast**
+(`ltx25-quant-lab`), the second file found that really executes 4 bits. **joeygambino**, the largest
+public distributor of ConvRot INT8. **rockerBOO**, **ariaotp**, **starsfriday**, and the **Star
+Ultimate Model Converter** tool that signs one of these files. Their published choices are most of
+what this bench had to go on; disagreeing with a measurement of them is not a criticism of them.
+
+**Model authors.** [Tongyi-MAI / Alibaba](https://huggingface.co/Tongyi-MAI) for **Z-Image**, on
+which every real-activation calibration here was done, and **tonera** for the
+`Beyond_Reality Z-Image v2` checkpoint that is this bench's main subject.
+[Tencent](https://huggingface.co/tencent) for **HunyuanVideo 1.5** — the counter-example model, and
+the one in the photograph at the top. [Google](https://huggingface.co/google) for **Gemma 3 12B**,
+the project's first real conversion. [Alibaba / Qwen](https://huggingface.co/Qwen) for **Qwen3-4B**
+and **Qwen3-VL-32B**. [Lightricks](https://huggingface.co/Lightricks) for **LTX-Video / LTX-2.5**.
+**Wan-AI** for **Wan 2.1 VACE**, **Glanty** for `capybara_v0.1`, and **MiniMaxAI** for **MiniMax-H3**.
+
+**Prior art that shaped how things are measured here.**
+[ikawrakow](https://github.com/ggerganov/llama.cpp/pull/5076)'s llama.cpp work established
+KL-divergence against the full-precision model as the gold standard for quantization damage, which
+is the discipline behind the matched-input epsilon comparison used above. **MPQ-DM / MPQ-Diff**
+([arXiv:2412.00144](https://arxiv.org/abs/2412.00144)) and **DiffPro**
+([arXiv:2511.11446](https://arxiv.org/abs/2511.11446)) are the mixed-precision-for-diffusion papers
+whose framing the per-layer criterion here borrows. **infosave2007 / cmf** is the third-party Rust
+engine behind a separate investigation on the same bench. **lmsysorg / SGLang** serves the
+vision-language model used for image quality evaluation.
+
+If you are on this list and think the description of your work is wrong, it probably is — open an
+issue and it gets corrected the same way every other claim here does.
 
 ## License
 
