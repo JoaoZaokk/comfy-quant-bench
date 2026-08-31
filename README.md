@@ -116,10 +116,23 @@ The third row is measured against the publisher's own BF16 twin
 (`Comfy-Org/MiniMax-H3`, 47.97 GiB, 351 of 351 layer names matching) over 20 layers spanning 5
 shapes and 4 depths. Per-layer error is flat in depth: block 0 and block 49 agree to four decimals.
 
-This is consistent with the mechanism the rest of this README measures — the activation half of
-W4A4 is 18.2× worse than W4A8's, against 2.1× for the weight half. It also explains why the two most
-downloaded public ConvRot checkpoints ship `int8` per-layer rather than `int4`: that reads as a
-deliberate accuracy trade, not a shortcut.
+**Read that table for what it is: three error norms.** An earlier draft of this section called it
+*consistent with the mechanism* measured further down — the activation half of W4A4 being 18.2×
+worse than W4A8's against 2.1× for the weight half. That was careless, because
+[The matrix: which axis actually decides](#the-matrix-which-axis-actually-decides) already revised exactly that framing: *"the error
+ratios were measuring the wrong thing. An error norm ranks recipes; it does not tell you which one
+still answers questions."* Citing a number this document itself retracted, in support of a result
+made of the same kind of number, is the failure that section exists to warn about.
+
+So the honest statement is narrower. The INT8 branch is consistently closer to the high-precision
+reference, three times, across two model families and two quantizers — and *closer* is all that
+measures. The question-battery below is the instrument that separates "closer" from "still works",
+and **it has never been run on these two branches.** Until it is, the row that would decide this is
+missing, and the agreement between the two most-downloaded public checkpoints shipping `int8` is
+circumstantial rather than corroborating.
+
+The same limit shows up twice on this page. An error norm could not tell HunyuanVideo's destroyed
+apple from Z-Image's good one either: 0.8255 against 0.7173, wrong way round.
 
 Native is not strictly worse. It is 1.41×–1.67× faster at M=1024 and 1.3×–1.74× *slower* at M=1 —
 the usual crossover shape. It buys large-batch throughput and costs accuracy.
