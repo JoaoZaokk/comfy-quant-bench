@@ -145,18 +145,25 @@ Also read [AGENTS.md](AGENTS.md) (root policy) and [ComfyUI/AGENTS.md](ComfyUI/A
 
   `calibrate_activations.py` now records the sigma of every sampled row (`sample_sigma`), and `quant_mixed.py` takes `--sigma-weight none|sigma|sigma2|high` (default `none`, unchanged). The weighted criterion is nearly the same criterion: Spearman **+0.9935** (`sigma2`) and **+0.9629** (`high`) against flat on `err_w4a4` over 170 Z-Image layers, moving 6 and 9 layers across the 0.15 threshold.
 
-  **The first comparison said it won 8/8 steps at 1.047x, and that was a confound, not a result.** The weighted build promoted 56 layers to 8-bit against the flat build's 53 — a bigger model, measured against a smaller one. Rebuilding the flat arm at a threshold that promotes exactly 56 and re-running against the same imposed BF16 trajectory, over three seeds:
+  **The first comparison said it won 8/8 steps at 1.047x, and that was a confound, not a result.** The weighted build promoted 56 layers to 8-bit against the flat build's 53 — a bigger model, measured against a smaller one. **`ab-so-vale-se-os-dois-tomaram-o-mesmo-caminho` again, with the held axis being the promotion budget.** Always match the budget before comparing two selection criteria.
+
+  **Rebuilt at exactly 56 promotions in all three arms and run over eight seeds, the three criteria are indistinguishable.** Paired design — within a seed the arms share the imposed BF16 trajectory:
 
   ```
-                    todos os passos      sigma ALTO         sigma BAIXO      passos
-  seed 1234   plano56  1.0045x        sigma_alto 1.0079x   plano56 1.0443x    6x2
-  seed 5678   plano56  1.0102x        sigma_alto 1.0005x   plano56 1.0511x    7x1
-  seed 4242   plano56  1.0188x        plano56    1.0116x   plano56 1.0438x    5x3
+  epsilon medio, 8 sementes    media       min       max    espalhamento entre sementes
+  plano56                    1.3326e-1  1.1220e-1 1.5577e-1        1.388x
+  sigma2                     1.3684e-1  1.1731e-1 1.5216e-1        1.297x
+  sigma_alto                 1.3685e-1  1.2276e-1 1.4695e-1        1.197x
+
+  diferenca pareada contra o plano:  sigma2 +3.37% (erro-padrao 3.95%, vence 4/8)
+                                 sigma_alto +3.46% (erro-padrao 3.93%, vence 2/8)
   ```
 
-  Flat wins overall in all three. At high sigma — where the weighting was *designed* to win — the direction flips between seeds at around 1%, i.e. nothing. At low sigma it loses a stable ~4.5%. So the whole apparent gain was the three extra 8-bit layers, and **`ab-so-vale-se-os-dois-tomaram-o-mesmo-caminho` again, with the held axis being the promotion budget.** Always match the budget before comparing two selection criteria.
+  The between-seed spread inside a single arm reaches **1.39x**; the between-criteria difference is **3.4%**. The effect sits inside its own noise, and the win counts are coin flips. The sign is consistent — both weighted criteria come out slightly *worse*, never better — but at eight seeds that is a hint, not a result.
 
-  Re-run with `tools/probe_epsilon_ckpt_ab.py`, which imposes the BF16 trajectory on N checkpoints at once. Not covered: one prompt, one model, three seeds, no perceptual metric; `sigma` and `sigma2` were measured as criteria but only `high` was built and sampled.
+  **This corrects the three-seed version of this paragraph**, which reported "flat wins 3/3" and read as a finding. It was a small-sample artifact: adding a third arm made the ranking change between seeds, and the winner across eight seeds is 3 / 3 / 2 split between the three.
+
+  Re-run with `tools/probe_epsilon_ckpt_ab.py`, which imposes the BF16 trajectory on N checkpoints at once. Not covered: one prompt, one model, one scheduler, eight seeds, no perceptual metric, and no formal hypothesis test — only the distance between the effect and its own spread.
 
   **Not covered:** one prompt, one seed, no perceptual metric, only Z-Image, only sm86, no SASS. And BF16 is the target, not the truth — it was never itself validated against float32.
 

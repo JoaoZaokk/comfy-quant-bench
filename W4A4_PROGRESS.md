@@ -3613,3 +3613,53 @@ comprimentos crescentes -- os prompts nao sao independentes, sao prefixos do mes
 qualidade: o erro do condicionamento cresce com o comprimento (o peso quantizado sozinho custa
 1,44e-1 no curto e 2,55e-1 no longo) e isso nao foi investigado. E nao diz onde fica o cruzamento
 em outro modelo ou outra placa.
+
+## 2026-08-31, parte 35 - oito sementes dizem que os tres criterios sao indistinguiveis, e isso corrige a parte 31
+
+A parte 31 comparou dois bracos (plano contra ponderado por sigma alto) em tres sementes, o plano
+ganhou nas tres, e o texto tratou isso como achado. Com o terceiro braco (`sigma2`) e mais cinco
+sementes, o ranking muda de semente para semente.
+
+Desenho pareado -- dentro de uma semente os tres bracos veem a MESMA trajetoria imposta pelo BF16,
+entao a comparacao que vale e a diferenca por semente, nao a media de cada braco solta. Todos os
+tres com o **mesmo orcamento**, 56 camadas promovidas.
+
+```
+epsilon medio, 8 sementes     media       min       max    espalhamento entre sementes
+plano56                     1,3326e-1  1,1220e-1 1,5577e-1        1,388x
+sigma2                      1,3684e-1  1,1731e-1 1,5216e-1        1,297x
+sigma_alto                  1,3685e-1  1,2276e-1 1,4695e-1        1,197x
+
+diferenca pareada contra o plano:  sigma2     +3,37%  (erro-padrao 3,95%,  vence 4/8)
+                                   sigma_alto +3,46%  (erro-padrao 3,93%,  vence 2/8)
+```
+
+**O espalhamento entre sementes dentro de um unico braco chega a 1,388x; a diferenca entre criterios
+e 3,4%.** O efeito esta dentro do proprio ruido. Vencedor por semente: plano56 em 1234, 31337 e 555;
+sigma2 em 5678, 4242 e 8080; sigma_alto em 777 e 90210. Tres, tres e dois.
+
+O sinal e consistente -- os dois ponderados saem um pouco PIORES, nunca melhores -- mas com oito
+sementes isso e uma pista, nao um resultado.
+
+**A licao e sobre tamanho de amostra, e o "3/3" da parte 31 e o exemplo.** Duas coisas conspiraram:
+so dois bracos (nao da para ver o ranking trocar com dois) e tres sementes contra um ruido de 39%.
+Um criterio de parada escrito antes de olhar teria pedido mais sementes; nao havia.
+
+### E o encoder destravado toma mesmo o ramo nativo
+
+Fechando a simetria com o lado da difusao: `qwen_3_4b_w4a4_convrot` destravado, mesma placa, um eixo
+(`COMFY_KITCHEN_FORCE_INT4_INT8_FALLBACK`, agora passado pelo probe e nao herdado do ambiente):
+
+```
+destravado nativo x destravado fallback-int8   rel-RMSE 1,384   cosseno 0,961   identicos? NAO
+controle: travado (dequantizado) x destravado nativo   rel-RMSE 0,599
+```
+
+Sao kernels distintos. O caminho do text encoder, uma vez destravado, chega ao MMA de 4 bits.
+
+### Nao coberto
+
+Um modelo, um prompt, um scheduler, oito sementes. Nao e teste formal de hipotese: e a distancia
+entre o efeito e o proprio espalhamento dele, que e o minimo para nao chamar de resultado uma
+diferenca que troca de sinal entre sementes. E `sigma` (linear) foi implementado e testado como
+aritmetica, mas nunca virou checkpoint.
