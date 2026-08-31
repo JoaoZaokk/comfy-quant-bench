@@ -3170,3 +3170,110 @@ numa maquina de 63.1, antes de qualquer bloco chegar na GPU.
 O mesmo da parte 27, e nada mudou: **benchmark casado contra o BF16 nao foi feito.** Alem disso o
 workflow v2 ainda nao rodou de ponta a ponta - parou no `CLIPTextEncode` por causa do `type`, e a
 correcao nao foi testada porque a GPU passou para a outra sessao.
+
+## 2026-08-31, parte 29 - o checkpoint emite 4 bits; o ComfyUI nunca deixa, em text encoder nenhum
+
+Tudo abaixo foi **executado** na 3090 (cc 8.6) com o lock `w4a4:winnougan_int4_dispatch`, contra
+`ComfyUI/models/text_encoders/qwen3vl_32b_minimax_h3-int4_convrot.safetensors` (13,20 GiB, 351
+camadas, `converted_by: Star Ultimate Model Converter`).
+
+### O que estava em aberto
+
+Os dois ConvRot publicos grandes (`Abiray/...FL2VA`, `...Ref2VA`) gravam `linear_dtype: "int8"` em
+cada camada, que e a primeira condicao do desvio em `convrot_w4a4_linear`, antes de qualquer teste
+de hardware. Este arquivo e a excecao: `linear_dtype` **ausente** nas 351, e ausente cai no default
+da assinatura, `"int4"`. Faltava executar.
+
+### O kernel: 15/15, o ramo nativo roda com os bytes deste arquivo
+
+`tools/probe_winnougan_int4.py`. Uma camada por forma convrot distinta (5 formas no modelo), pesos
+lidos por faixa de bytes do proprio arquivo -- nada e requantizado. Um eixo varia:
+`COMFY_KITCHEN_FORCE_INT4_INT8_FALLBACK`, lida no import, por isso um subprocesso por braco.
+
+```
+15/15 pares diferem entre nativo e fallback   -> sao dois kernels distintos
+native_mma_supported (executado)              -> True
+M=1     fallback ganha em 4 de 5 formas (1,04x a 2,16x)
+M=64    nativo   ganha em 4 de 5 formas (1,66x a 3,13x)
+M=1024  nativo   ganha em 5 de 5 formas (1,37x a 2,46x)
+```
+
+A curva do `m_crossover` de novo, na mesma direcao ja registrada nas partes anteriores.
+
+### O loader: carrega pelo caminho de estoque, e a minha primeira leitura estava errada
+
+`tools/probe_winnougan_load.py`. Hipotese inicial, por leitura: `load_text_encoder_state_dicts`
+chama `detect_layer_quantization` so no ramo do MiniMax **Music3**, nunca no `QWEN3VL_32B`, entao
+seria um PR de uma linha. **Derrubado pela execucao.** O ramo QWEN3VL_32B carrega e codifica sem
+tocar em nada: 1604 tensores, 351 `.comfy_quant`, `cond [1, 8, 5120]`, sem nan, pico de 14093 MiB.
+
+Erro meu no meio do caminho, registrado porque a mensagem engana: chamar
+`load_text_encoder_state_dicts` com um `load_torch_file` cru **nao** e o caminho de estoque. Ele
+pula `convert_old_quants` (`comfy/sd.py:1536`), nenhum `.comfy_quant` existe, e o erro que sai e
+`size mismatch 2560 contra 5120` -- que parece "modelo errado" e e "metadata nao aplicada". O
+caminho de estoque e `comfy.sd.load_clip`, que e o que `CLIPLoader` chama (`nodes.py:1031`).
+
+### O achado: o encode nao emite 4 bits, e nao e por causa deste arquivo
+
+Terceiro braco do mesmo probe, com `FORCE_INT4_INT8_FALLBACK=1` (`visto pelo modulo=True`): o
+condicionamento saiu **identico bit a bit**. Se os dois bracos dao o mesmo numero, nenhum dos dois
+passou pelo kernel. `tools/probe_te_fullprecision_mm.py` conta, em vez de ler:
+
+```
+Linear inspecionadas        100/100  MixedPrecisionOps.Linear, quant_format convrot_w4a4,
+                                     peso QuantizedTensor, layout TensorCoreConvRotW4A4Layout
+_convrot_w4a4_forward            0
+QuantizedTensor.dequantize     350
+```
+
+Zero. O peso fica 4 bits na VRAM e a **matematica e dequantizada**. Economia de memoria, nao de
+tempo.
+
+### Qual trava, medida termo a termo -- porque a primeira resposta obvia estava errada
+
+A leitura apontava `comfy/sd1_clip.py:114`, que fixa `full_precision_mm=True` para todo text
+encoder. Virei so esse termo: **nada mudou**, ainda 0 chamadas. Instrumentando os termos de
+`_use_quantized` (`comfy/ops.py:1372-1377`) na primeira passagem de uma Linear real:
+
+```
+input_ndim 3   input_is_qt False   layout_type TensorCoreConvRotW4A4Layout
+full_precision_mm True   comfy_force_cast_weights True   <- este
+```
+
+`comfy_force_cast_weights` vem de `model_patcher.py:1016`, que le `force_cast_weights`, ligado em
+`model_patcher.py:743` por `set_model_compute_dtype(dtype)` -- chamado em **`comfy/sd.py:269`,
+`self.patcher.set_model_compute_dtype(torch.float32)`, para todo objeto CLIP**, com o comentario
+"Match torch.float32 hardcode upcast in TE implemention".
+
+São **duas travas independentes**, e a que morde e a segunda. Soltando as duas nas 351 Linear:
+
+```
+                        fase 1 (estoque)      fase 2 (as duas soltas)
+_convrot_w4a4_forward              0                    350
+dequantize                       350                      0
+norma do cond               15724.97               14215.17
+tempo do encode (mediana de 5)  312,1 ms              114,3 ms   -> 4 bits 2,73x mais rapido
+                        [313,1 311,7 312,0 313,2 312,1]  [128,6 112,7 114,7 114,3 111,3]
+rel-RMSE fase2 contra fase1                        9,70e-2
+```
+
+### O que isso muda para este projeto
+
+A regra do `CLAUDE.md` -- "W4A4 significa execucao nativa ConvRot" -- e **inalcancavel por
+construcao para qualquer text encoder no ComfyUI de estoque**, independente do checkpoint. Isso
+inclui o perfil `gemma`, que e o carro-chefe do conversor e e carregado como text encoder. **Nao
+medido ainda:** se a conversao Gemma deste projeto sofre o mesmo (esperado que sim, pelo mesmo
+`sd.py:269`), e quanto custa em s/it no LTX. E o proximo teste.
+
+O modelo de difusao e outro caminho (`comfy/ops.py:1667`, que passa `disabled=` e nao
+`full_precision_mm`) e nao foi tocado aqui.
+
+### Nao coberto
+
+Sem SASS: "o ramo nativo roda" significa "produz numero diferente do fallback", nao "a instrucao
+`m16n8k64.s4` foi observada emitindo". Ativacao sintetica gaussiana no probe de kernel, sem os
+outliers que a rotacao existe para suprimir. **Sem referencia BF16 deste modelo nesta bancada**,
+entao o `9,70e-2` e contra o proprio braco dequantizado, e nao ha nenhuma afirmacao de fidelidade
+aqui. Um prompt, uma placa sm86. As travas foram soltas por monkeypatch pos-load, nao por um
+caminho que o ComfyUI ofereca -- `custom_operations` em `model_options` e a unica saida real, e
+nenhum no a expoe.

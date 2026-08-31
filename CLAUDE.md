@@ -134,6 +134,30 @@ Also read [AGENTS.md](AGENTS.md) (root policy) and [ComfyUI/AGENTS.md](ComfyUI/A
 
   **Not covered:** one prompt, one seed, no perceptual metric, only Z-Image, only sm86, no SASS. And BF16 is the target, not the truth — it was never itself validated against float32.
 
+  **And for a text encoder the rule is unreachable by construction, whatever the checkpoint says.** Measured 2026-08-31 on the 3090 against a real 13.20 GiB public W4A4 encoder (`qwen3vl_32b_minimax_h3-int4_convrot`, 350 `convrot_w4a4` layers, `linear_dtype` absent so the signature default `"int4"` applies). Called by hand, the kernel is genuinely native — 15/15 outputs differ from the forced INT8 fallback. Loaded through the stock `CLIPLoader` path and *counted* during a real encode:
+
+  ```
+  100/100 Linear   MixedPrecisionOps.Linear, quant_format convrot_w4a4, weight QuantizedTensor
+  _convrot_w4a4_forward        0
+  QuantizedTensor.dequantize 350
+  ```
+
+  Zero. The weight stays 4-bit in VRAM and the **math is dequantized** — memory saved, no time saved, kernel never reached.
+
+  **The obvious culprit is the wrong one, and flipping it changes nothing.** `comfy/sd1_clip.py:114` hardcodes `full_precision_mm=True` for every text encoder; setting it False left the count at 0. Instrumenting each term of `_use_quantized` (`comfy/ops.py:1372-1377`) on a real forward names the one that actually bites: **`comfy_force_cast_weights=True`**, which comes from `model_patcher.py:743` via `set_model_compute_dtype`, called at **`comfy/sd.py:269` for every CLIP object** — `set_model_compute_dtype(torch.float32)`, commented "Match torch.float32 hardcode upcast in TE implemention". Two independent locks; only releasing both fires the kernel:
+
+  ```
+                             stock        both released
+  _convrot_w4a4_forward          0                  350
+  dequantize                   350                    0
+  encode, median of 5      312.1 ms             114.3 ms   -> 4-bit 2.73x faster
+  rel-RMSE against the dequantized arm            9.70e-2
+  ```
+
+  **This lands on this project's own flagship**: the `gemma` profile output is loaded as a text encoder, so the same `sd.py:269` applies to it. Expected, **not yet measured** — that is the next test, along with what it costs in s/it on LTX. The diffusion model takes a different path (`comfy/ops.py:1667`, which passes `disabled=` rather than `full_precision_mm`) and was not touched here.
+
+  Not covered: no SASS; no BF16 reference for that model exists here, so the `9.70e-2` is against its own dequantized arm and is **not** a fidelity claim; one prompt, one card; the locks were released by post-load monkeypatch, not by anything ComfyUI offers — `custom_operations` in `model_options` is the only real escape and no node exposes it. Re-run with `tools/probe_winnougan_int4.py`, `tools/probe_winnougan_load.py` and `tools/probe_te_fullprecision_mm.py`.
+
 ## Say which one it was: traced, or executed
 
 Reading code and running code produce the same confident prose. That is the specific failure mode
