@@ -165,6 +165,11 @@ Per-layer error from calibration, measured with the real kernels on the real act
 | median ratio a4/a8 (what dropping activations to 4 bits costs) | 3.17 | 3.05 |
 | median `err_w4a4` | 0.1241 | 0.2136 |
 
+Both sides were re-captured on 2026-08-31 with provenance keys, each under its own render
+conditions, and both replicated: the largest drift in any field is 4.4%, and the a4/a8 ratio moved
++1.1% and -0.9%. Recomputed from same-day numbers alone: base 0.0390 against 0.0708, ratio 3.20
+against 3.02. **The ratio differs by 5.7% and the baseline by 82%**, which is the whole argument.
+
 **The activation penalty is the same in both.** What differs is where they start. Two other
 hypotheses died first, both backwards: Z-Image quantizes **97.7%** of its parameters against
 HunyuanVideo's 65.3%, and Z-Image's activations are far uglier — worst channel over median channel
