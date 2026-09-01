@@ -72,7 +72,10 @@ Same prompt, same seed (12345), same steps, resolution, sampler and scheduler:
 | `misto-t040` — 0.2147, destroyed | ![](images/misto_t040_0.2147_DESTRUIDA.png) |
 | pure ConvRot W4A4 — destroyed | ![](images/w4a4_puro_DESTRUIDO.png) |
 
-The rest of the ladder is in `images/` as well.
+`images/` carries the **whole** ladder that was measured — `t015`, `t021`, `t022` and the pure
+ConvRot W4A4 build as well. Their weights are **not** published here: they sit between or beyond the
+three files above and add tens of gigabytes without adding a finding. The pictures are the evidence;
+the three checkpoints are what is worth downloading.
 
 ---
 
