@@ -4075,3 +4075,100 @@ representar cada um, mas significa que as medianas absolutas cruzadas entre mode
 medidas sob condicoes identicas -- e nao podem ser, porque os dois nao rodam nas mesmas condicoes.
 A razao `a4/a8` e interna a cada modelo e nao tem esse problema, que e por isso que a conclusao se
 apoia nela.
+
+## 2026-08-31, parte 41 - o "1,055x mais lento" era de uma execucao, e esta refutado
+
+A parte 36 e o README publico afirmam que o ConvRot W4A4 e **1,055x mais lento** que o FP16 no
+HunyuanVideo. Aquilo veio de **uma execucao de cada lado**, e a propria ferramenta imprimiu
+`1 runs is a small sample for a quantity this noisy` na tela enquanto eu publicava.
+
+Refeito com tres sementes, mesma placa, mesmo prompt:
+
+```
+                    s/passo (3 sementes)   antes (1 execucao)
+FP16                              0,990                1,858
+ConvRot W4A4                      0,536                1,961
+                        1,85x MAIS RAPIDO     "1,055x mais lento"
+```
+
+**O sinal inverteu.** E o mesmo aconteceu com um numero que eu tinha chamado de "claramente
+contaminado" sem medir: o `hunyuan15-misto-t021` deu `11,812 s/passo` numa execucao e `0,635` em
+tres -- **18x** de diferenca.
+
+### Quanto esta bancada realmente consegue medir de tempo
+
+O MESMO par (Z-Image BF16 contra `zimage-v2-w4a4`) foi medido tres vezes, em condicoes diferentes:
+
+```
+1 semente, prompt da maca      1,50x
+2 sementes, outro prompt       1,90x
+3 sementes, prompt da maca     2,63x
+```
+
+A razao anda de **1,50x a 2,63x** para a mesma comparacao. Nao e ruido pequeno em volta de um
+valor: e o valor nao estando determinado pelo que foi controlado. **Esta bancada nao sustenta duas
+casas decimais em tempo**, e qualquer razao de velocidade daqui deve sair como faixa, com o numero
+de execucoes ao lado.
+
+O que NAO muda: as conclusoes cientificas nao dependiam de tempo. "W4A4 destroi o HunyuanVideo"
+reproduziu em toda execucao (divergencia 0,8426, espalhamento 0,0664 em 3 sementes). A linha de uso
+0,1837-0,2147 vem do erro por camada. "E o peso, nao a ativacao" vem da razao a4/a8, medida duas
+vezes em cada modelo.
+
+O que muda, e melhora: o W4A4 no Hunyuan **entrega a velocidade que promete** e destroi a saida.
+Isso e mais limpo que "lento e quebrado".
+
+### A licao, e ela e sobre confirmacao e nao sobre leitura
+
+O aviso estava na tela. Nao passou despercebido por descuido: o numero **casava com o que agosto
+dizia**, entao confirmacao de expectativa foi tratada como confirmacao de medida. Um numero que
+contrariasse teria sido repetido antes de publicar.
+
+## 2026-08-31, parte 42 - metrica de imagem existe agora, e ela recusa ordenar
+
+`tools/metricas_imagem.py`: PSNR, SSIM, MS-SSIM, grao (desvio-padrao do laplaciano) e LPIPS
+opcional. Ate hoje todo julgamento de imagem aqui era olho humano.
+
+**Ela confirma o corte com folga.** Nos seis bracos do Hunyuan, os quebrados ficam num mundo a
+parte -- MS-SSIM 0,26-0,29 e LPIPS 0,70-0,76 contra 0,62-0,78 e 0,43-0,56 dos bons. Nao e
+gradiente, e abismo.
+
+**E ela recusa ordenar os bons, discordando de mim e de si mesma:**
+
+```
+meu olho     t015 > t021 > t022
+MS-SSIM      t021 > t022 > t015
+LPIPS        t015 > t021 > t022
+```
+
+MS-SSIM e LPIPS invertem primeiro e terceiro.
+
+**O caso que fecha isso** veio do portao do Z-Image. `zimage-v2-mixed-t0.20` tirou o **pior**
+MS-SSIM (0,6537) e o **pior** PSNR (13,35) dos cinco, e a imagem dele e a melhor maca que esta
+bancada ja gerou. Nao e sutil e nao precisa de interpretacao: a metrica poe em ultimo, o olho poe
+em primeiro. E trajetoria livre indo para outro lugar, e o outro lugar tambem sendo otimo.
+
+Quinta confirmacao independente de que **imagem de trajetoria livre responde "quebrou ou nao" e nao
+responde "qual e melhor"** -- agora tambem contra metrica, e nao so contra olho.
+
+### Portao nos cinco que nunca tinham sido testados
+
+Todos passam: amostram ponta a ponta em 3 sementes e produzem imagem correta.
+
+```
+                  s/passo    GiB   divergencia (espalh.)   MS-SSIM (s1234)
+BF16                0,889  11,46             -                    -
+zimage-v2-w4a4      0,338   3,06   0,5131 (0,0726)            0,6680
+zimage-v2-mixed     0,390   3,18   0,3529 (0,1594)            0,8121
+mixed-t0.05         0,487   3,40   0,3372 (0,0956)            0,8489
+mixed-t0.10         0,454   3,32   0,2996 (0,1519)            0,8497
+mixed-t0.20         0,347   3,08   0,5202 (0,1573)            0,6537
+```
+
+O espalhamento da divergencia chega a 0,20 -- da ordem das diferencas entre os bracos. Nada aqui
+separa um do outro.
+
+### Nao coberto
+
+Uma semente por linha de metrica (s1234), um prompt, uma placa. Nenhuma das metricas foi validada
+contra julgamento humano nesta bancada. O `capybara_v0.1_w4a8` continua sem teste.
