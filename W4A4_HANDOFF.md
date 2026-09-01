@@ -27,7 +27,10 @@ This is the live ComfyUI Portable installation at `F:\COMFY_PORTABLE`. Always us
 pre-existing local CUDA 12.6 runtime DLL was copied into
 `python_embeded\Lib\site-packages\torch\lib\cudart64_12.dll`.~~
 
-**OBSOLETE. The file is gone, and it must not be put back.** This paragraph told a reader to
+**OBSOLETE — and the file is NOT gone: it was renamed to `cudart64_12.dll.disabled` and is still
+sitting there. Leave it disabled; do not restore it.** (This headline said "the file is gone" until
+2026-09-01, which is false and is the exact claim the correction three paragraphs below refutes. It
+is fixed here because a skimmer reads the bold line and stops.) This paragraph told a reader to
 restore a DLL that the stack no longer needs, which is the most expensive kind of stale doc —
 following it would reintroduce a CUDA 12.6 runtime beside a cu130 Torch. The accel wheels were
 reinstalled as cu130 builds on 2026-08-16 and link `torch_cuda.dll`, not `cudart64_12.dll`.
@@ -147,6 +150,26 @@ Results: structural PASS for 336 layers; every preserved tensor byte comparison 
 The native `CLIPLoader` with type `ltxv` also returned `comfy.sd.CLIP`, instantiated `Gemma3_12BModel_`, and reported exactly 336 modules with `quant_format='convrot_w4a4'`. It printed many missing vision-tower warnings because this text-encoder file contains no vision tower; compare against loading the BF16 source before deciding whether they are expected. On short interpreter shutdown, `ModelPatcher.__del__` printed an `ON_DETACH` AttributeError; loading itself exited code 0.
 
 ## Immediate next work
+
+### Estado em 2026-09-01 (leia isto antes da lista de 2026-08-19 abaixo)
+
+O avaliador em lote existe, em duas camadas, e a lista mais antiga desta secao nao o conhece.
+
+| camada | ferramenta | GPU? | o que decide |
+|---|---|---|---|
+| 1 | `tools/avaliar.py` | **nao** | cabecalho, sidecar, analise. 163 checkpoints em 0,68 s. Mediana do erro efetivo offline. |
+| 2 | ainda nao existe | sim | contar forward quantizado de verdade contra chamadas a `dequantize` |
+| 3 | `tools/avaliar_referencia.py` | sim | o arquivo NAO quantizado responde ao proprio condicionamento? |
+
+Os vereditos sao `REPROVADO` / `OLHAR` / `SEM VEREDITO`. **`APROVADO` nao existe** e a ausencia e
+deliberada: nenhum corte medido nesta bancada separa usavel de inutilizavel, nos dois eixos que
+temos. A camada 3 foi validada contra o par de verdade conhecida do Wan e separou destruido de bom
+por **3,19x**, com criterio pre-registrado em `bench/criterio_guarda_referencia.md`.
+
+Aberto e sem GPU: a camada 2 precisa de placa; a migracao dos conversores para `tools/_conversion.py`
+(ticket 08) nao precisa. Ver `W4A4_PROGRESS.md` partes 44 e 45.
+
+### A lista de 2026-08-19
 
 Two separate tracks. Everything in the first needs the GPU; the second does not.
 

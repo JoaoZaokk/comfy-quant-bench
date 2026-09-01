@@ -22,9 +22,14 @@ teorica. Cada uma declara, no proprio codigo, o que ela **nao** cobre (campo `ce
 declaracoes sao impressas em toda execucao -- passe ou falhe. Uma coluna de linhas verdes lida como
 "verificado" por quem cola o resultado na proxima sessao; ver CLAUDE.md, "Say which one it was".
 
-Esta camada **le**, nunca executa: nada aqui toca a GPU, carrega modelo ou roda kernel. As camadas
-`--dispatch` (conta forwards quantizados de verdade) e `--erro` (mede com kernel real) nao existem
-ainda; onde elas fariam falta, o laudo diz `SEM VEREDITO` naquele eixo em vez de calar.
+Esta camada **le**, nunca executa: nada aqui toca a GPU, carrega modelo ou roda kernel. A camada
+que conta forward quantizado de verdade (`--dispatch`) ainda nao existe; onde ela faria falta, o
+laudo diz `SEM VEREDITO` naquele eixo em vez de calar.
+
+A **camada 3 existe** e mora em `tools/avaliar_referencia.py`: ela usa GPU e pergunta se o arquivo
+NAO quantizado responde ao proprio condicionamento. E a guarda que teria abortado a rodada do Wan
+na primeira imagem em vez da quarta. Rode-a antes de acreditar em qualquer numero que sai daqui,
+porque todo numero desta camada e medido *contra* uma referencia que ela nao confere.
 
 USO
 ---
@@ -801,8 +806,11 @@ def digest(laudos: list[Laudo], ausentes: list[Path] | None = None) -> str:
         "- imagem: nenhuma renderizacao. Nenhum corte medido nesta bancada separa usavel de",
         "  inutilizavel -- 0,1837 correta contra 0,2147 destruida; 0,7173 boa contra 0,8255",
         "  destruida. So alguem olhando decide.",
-        "- braco de referencia: o arquivo NAO quantizado nunca foi exercitado aqui. No Wan foi o",
-        "  braco de referencia que estava quebrado, e custou quatro renderizacoes descobrir.",
+        "- braco de referencia: o arquivo NAO quantizado nao e exercitado NESTA camada. Isto",
+        "  deixou de ser um buraco em 2026-09-01: `tools/avaliar_referencia.py` (camada 3, com",
+        "  GPU) mede se a referencia responde ao proprio condicionamento, e no par de verdade",
+        "  conhecida do Wan separou o destruido do bom por 3,19x. Rode-a antes de acreditar em",
+        "  qualquer numero desta tabela.",
     ]
     return "\n".join(linhas) + "\n"
 
