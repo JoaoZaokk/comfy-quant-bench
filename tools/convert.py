@@ -31,8 +31,14 @@ importam esses modulos pelo nome, e quebram se sumirem --
     test_svdq_verify.py
 
 e `test_svdq_write_contract.py:229` lista os SETE nomes de arquivo literalmente. Este despachante
-e a porta da frente; os modulos seguem sendo os modulos. O contrato de ESCRITA que eles
-duplicavam e que virou um so, em `_conversion.py`.
+e a porta da frente; os modulos seguem sendo os modulos.
+
+CUIDADO: esta frase dizia que o contrato de ESCRITA que eles duplicavam "virou um so, em
+`_conversion.py`", o que le como trabalho feito. **Nao esta.** Contado em 2026-09-01: o
+`_conversion.py` existe e passa 32 testes contra arquivos de verdade, e o **unico** modulo que o
+importa e o proprio teste dele. Os cinco conversores continuam cada um com seu `.partial`,
+`os.replace` e `fsync`. Uma implementacao unica foi **escrita e testada**; ninguem trocou para ela
+ainda. Adotar e o trabalho aberto, e nao precisa de GPU.
 
 NAO COBERTO: este arquivo nao valida nada e nao converte nada -- so encaminha. Toda recusa,
 guarda e verificacao continua onde sempre esteve, na ferramenta escolhida. Ele tambem nao
