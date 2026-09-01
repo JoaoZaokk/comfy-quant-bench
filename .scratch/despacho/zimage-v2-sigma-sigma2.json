@@ -1,0 +1,25 @@
+{
+  "arquivo": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\diffusion_models\\zimage-v2-sigma-sigma2.safetensors",
+  "modo": "diffusion",
+  "camadas_no_arquivo": 170,
+  "formatos": {
+    "asym_w4a8_int8": 56,
+    "convrot_w4a4": 114
+  },
+  "veredito": "DESPACHA",
+  "mensagem": "8 forwards quantizados, 0 sem, 0 dequantize",
+  "numeros": {
+    "modulos_quantizados": 170,
+    "forwards_quantizados": 8,
+    "forwards_sem": 0,
+    "dequantize": 0,
+    "impl": {
+      "convrot_w4a4_linear=comfy_kitchen.backends.cuda": 8
+    },
+    "quant_format": {
+      "convrot_w4a4": 114,
+      "asym_w4a8_int8": 56
+    }
+  },
+  "segundos": 170.5
+}

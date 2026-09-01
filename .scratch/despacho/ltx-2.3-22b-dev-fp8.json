@@ -1,0 +1,12 @@
+{
+  "arquivo": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\checkpoints\\ltx-2.3-22b-dev-fp8.safetensors",
+  "modo": null,
+  "camadas_no_arquivo": 1496,
+  "formatos": {
+    "float8_e4m3fn": 1496
+  },
+  "veredito": "NAO_PROBAVEL",
+  "mensagem": "vive em `checkpoints/`, que o probe nao resolve -- limitacao da ferramenta, nao do arquivo",
+  "numeros": {},
+  "segundos": 0.0
+}

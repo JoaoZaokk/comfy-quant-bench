@@ -1,0 +1,12 @@
+{
+  "arquivo": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\checkpoints\\hidream_o1_image_dev_fp8_scaled.safetensors",
+  "modo": null,
+  "camadas_no_arquivo": 368,
+  "formatos": {
+    "float8_e4m3fn": 368
+  },
+  "veredito": "NAO_PROBAVEL",
+  "mensagem": "vive em `checkpoints/`, que o probe nao resolve -- limitacao da ferramenta, nao do arquivo",
+  "numeros": {},
+  "segundos": 0.0
+}

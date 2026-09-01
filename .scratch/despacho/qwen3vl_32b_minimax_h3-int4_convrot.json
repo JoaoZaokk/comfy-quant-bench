@@ -1,0 +1,32 @@
+{
+  "arquivo": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\text_encoders\\qwen3vl_32b_minimax_h3-int4_convrot.safetensors",
+  "modo": "te",
+  "camadas_no_arquivo": 351,
+  "formatos": {
+    "convrot_w4a4": 350,
+    "int8_tensorwise": 1
+  },
+  "veredito": "TRAVADO_PELO_COMFY",
+  "mensagem": "zero forwards quantizados, mas o ComfyUI trava todo text encoder por `full_precision_mm` (comfy/sd1_clip.py:114). A causa e o loader, nao o checkpoint. Memoria economizada, tempo nao.",
+  "numeros": {
+    "modulos_quantizados": 351,
+    "forwards_quantizados": 0,
+    "forwards_sem": 7,
+    "dequantize": 0,
+    "impl": {
+      "convrot_w4a4_linear=comfy_kitchen.backends.cuda": 7
+    },
+    "quant_format": {
+      "int8_tensorwise": 1,
+      "convrot_w4a4": 350
+    },
+    "comfy_force_cast_weights": {
+      "False": 351
+    },
+    "full_precision_mm": {
+      "None": 1,
+      "True": 350
+    }
+  },
+  "segundos": 23.8
+}
