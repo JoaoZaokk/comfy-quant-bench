@@ -505,7 +505,25 @@ Standard Safetensors. Per quantized layer: `<layer>.weight` as `I8` of shape `[r
 
 Header + sidecar + `.analysis.json` only — **163 checkpoints in 0.68 s**, no torch, no model load. It computes the median effective error entirely offline (the sidecar says which format each layer got; the analysis says that format's measured error on that layer) and reproduces every number this bench has published. Verdicts are `REPROVADO` / `OLHAR` / `SEM VEREDITO`; **`APROVADO` is deliberately absent**, because no cut on either axis separates usable from unusable here — 0.1837 correct against 0.2147 destroyed, 0.7173 fine against 0.8255 destroyed. It rejects, points and predicts. It does not approve.
 
-Two things it established on its first pass. **The Z-Image card had 0.1241 on the wrong row** — it belongs to `zimage-v2-w4a4` (170 convrot), not to the mixed build, which is 0.0774; confirmed across nine independent calibrations, corrected the same day. The band's `tolerado` value is unchanged, it just gained an owner, and it is the *most aggressive* build measured. And **the calibration seed moves the median 2-6%**: the same Wan checkpoint measures 0.051807 or 0.054631 depending on which calibration you use. Smaller than the band's own 45% width, so the per-model line survives — but a four-decimal number from one calibration claims precision this bench does not have, so the spread now travels beside it.
+**Layer 3, the reference-arm guard — needs the GPU:**
+
+```bash
+.\python_embeded\python.exe -s .\tools\avaliar_referencia.py --modelo <fp16>.safetensors --clip <te>.safetensors --clip-type wan --steps 25 --size 480 --frames 33 --vace-strength 0.0
+```
+
+It does not ask whether the image is good. It asks **whether the model responds to its own conditioning** — two unrelated prompts by two seeds on the *unquantized* file, and the statistic is `d_prompt / d_semente`, where the seed distance is the negative control that makes the ratio readable. Criterion and the three refutation conditions were written in `bench/criterio_guarda_referencia.md` **before** measuring. **Executed 2026-09-01, three families:**
+
+```
+braco                                     resposta   veredito       previsao   acertou
+Wan VACE 1.0  destruido, verdade          0,2477     REPROVADO      < 0,5      sim
+Wan VACE 0.0  bom, verdade                0,7911     OLHAR          > 0,8      NAO, por 1,1%
+Z-Image v2 BF16       bom                 1,3459     SEM VEREDITO   > 0,8      sim
+HunyuanVideo 1.5 FP16 bom                 2,8603     SEM VEREDITO   > 0,8      sim
+```
+
+All three refutation conditions stayed silent: **3.19x** separates the broken arm from the nearest healthy one, the reject threshold cleared all three healthy arms, and the destroyed one did not pass. **It would have aborted the Wan run on the first image instead of the fourth.** The mechanism shows raw, not only in the ratio: on the broken arm the prompt moves the latent **0.075** while the seed moves **0.250** — the model generates from noise and ignores what is asked. The `> 0.8` healthy prediction missed by 1.1% and **the threshold was not moved**; a threshold changed after seeing the number it was meant to classify is a description, not a guard. The reject side rests on **one** genuinely broken arm, and the ratio is noisy in absolute value (Hunyuan's two seeds gave 1.87 and 3.85), so what counts is distance from the threshold, not the second decimal.
+
+Two things layer 1 established on its first pass. **The Z-Image card had 0.1241 on the wrong row** — it belongs to `zimage-v2-w4a4` (170 convrot), not to the mixed build, which is 0.0774; confirmed across nine independent calibrations, corrected the same day. The band's `tolerado` value is unchanged, it just gained an owner, and it is the *most aggressive* build measured. And **the calibration seed moves the median 2-6%**: the same Wan checkpoint measures 0.051807 or 0.054631 depending on which calibration you use. Smaller than the band's own 45% width, so the per-model line survives — but a four-decimal number from one calibration claims precision this bench does not have, so the spread now travels beside it.
 
 ## Testing a converted model
 

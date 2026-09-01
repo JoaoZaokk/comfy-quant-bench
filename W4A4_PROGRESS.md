@@ -4359,3 +4359,74 @@ existem. Nenhuma renderizacao, entao nenhum veredito de qualidade. O braco **nao
 e exercitado, que e justamente a guarda que teria salvado quatro renderizacoes no Wan; ela precisa
 de GPU e ficou para a camada 3. As bandas sao tres pontos, e a monotonia no tamanho do modelo segue
 hipotese.
+
+## 2026-09-01, parte 45 - a guarda do braco de referencia: "este modelo esta ouvindo?"
+
+Camada 3 do avaliador, `tools/avaliar_referencia.py`. **Executada**, tres familias, quatro bracos.
+
+Ela nao pergunta se a imagem esta boa -- essa pergunta esta proibida aqui, porque nenhum corte
+medido separa usavel de inutilizavel. Ela pergunta se o modelo **responde ao proprio
+condicionamento**, que tem resposta.
+
+Dois prompts sem nada em comum, duas sementes, no modelo NAO quantizado:
+
+```
+d_prompt   quanto o PROMPT move o latente
+d_semente  quanto a SEMENTE move            <- controle negativo, e o que torna a medida legivel
+resposta   d_prompt / d_semente
+```
+
+Sem o denominador a medida nao vale: um `d_prompt` pequeno sozinho pode so significar que o modelo
+e estavel. Pequeno *em relacao ao que a semente move* significa que o condicionamento nao chega.
+
+### Criterio escrito antes, e ele se sustentou
+
+`bench/criterio_guarda_referencia.md`, com as tres condicoes que refutariam a guarda escritas antes
+de qualquer medicao.
+
+| braco | resposta | d_prompt | d_semente | veredito | previsao | acertou |
+|---|---|---|---|---|---|---|
+| Wan VACE 1.0 — **destruido**, verdade conhecida | **0,2477** | 0,075 / 0,055 | 0,250 / 0,285 | REPROVADO | `< 0,5` | sim |
+| Wan VACE 0.0 — **bom**, verdade conhecida | **0,7911** | 0,905 / 0,755 | 1,098 / 0,996 | OLHAR | `> 0,8` | **nao**, por 1,1% |
+| Z-Image v2 BF16 — bom | **1,3459** | 1,064 / 1,150 | 0,862 / 0,789 | SEM VEREDITO | `> 0,8` | sim |
+| HunyuanVideo 1.5 FP16 — bom | **2,8603** | 1,584 / 1,481 | 0,846 / 0,385 | SEM VEREDITO | `> 0,8` | sim |
+
+**As tres condicoes de refutacao ficaram todas em silencio.** 3,19x separam o quebrado do sadio
+mais proximo; o limiar de reprova nao rejeitou nenhum dos tres sadios; o destruido nao passou.
+**Ela teria abortado a rodada do Wan na primeira imagem em vez da quarta.**
+
+O mecanismo aparece cru, nao so na razao: no braco destruido o prompt move o latente **0,075** e a
+semente move **0,250**. O modelo gera a partir do ruido e ignora o que se pede. Nos tres sadios o
+prompt move de 0,76 a 1,58. E `|latente| 607,6` reproduz exato a medicao da parte 43.
+
+### A previsao do limite SAO errou e o limiar nao foi mexido
+
+O Wan bom deu 0,7911 contra os `> 0,8` previstos, e caiu em `OLHAR`. **O limiar continua 0,8.**
+Mudar um limiar depois de ver o numero que ele deveria classificar nao e calibrar, e descrever. Um
+limite superior defensavel precisa de bracos sadios novos, medidos depois -- nao dos mesmos que
+testaram este.
+
+O custo pratico do erro e pequeno: um braco sao ouve "olhe a imagem", que aqui e sempre verdade. O
+erro caro seria reprovar arquivo bom, e esse nao aconteceu.
+
+### Dois defeitos meus no caminho
+
+**A ferramenta saiu com codigo 1 e duas linhas de saida**, sem dizer por que. A `BenchGuard`
+recusou -- legitimamente, o 3080 Ti tinha 2,8 GiB de outro trabalho acima do teto de 2,0 -- e eu
+nao imprimia `guarda.refused`, como o `quality_ladder` faz. Mesmo defeito de cegueira silenciosa
+que a camada 1 tinha com o segundo dialeto, no mesmo dia. A saida documentada e
+`CUDA_VISIBLE_DEVICES`, que tira a placa da run e da guarda ao mesmo tempo.
+
+E o `d_semente` varia de **0,38 a 1,10** entre familias e ajustes, o que confirma que a estatistica
+tinha que ser a razao e nao o `d_prompt` sozinho -- um limiar absoluto sobre `d_prompt` teria
+classificado errado assim que mudasse de familia.
+
+### Nao coberto
+
+O lado da **reprova** se apoia em **um** braco quebrado de verdade, um caso com uma causa num
+modelo; a guarda pode nao reconhecer uma quebra de condicionamento com outro mecanismo. A razao e
+barulhenta em valor absoluto -- no Hunyuan as duas sementes deram 1,87 e 3,85, espalhamento 2,06x
+-- entao vale a distancia ao limiar, nao a segunda casa. Nada decodifica imagem: a medida e no
+latente. Uma placa, um scheduler, um tamanho por familia, dois prompts, duas sementes. E um modelo
+que legitimamente responde pouco ao prompt (refinador, upscaler, modelo de controle) reprovaria
+sem estar quebrado.
