@@ -4204,8 +4204,16 @@ dois bracos:
 | modelo | parametros | tolerado | nao tolerado |
 |---|---|---|---|
 | Wan 2.1 VACE | 1,3 B | 0,0546 | 0,0793 |
-| Z-Image v2 | ~6 B | 0,1241 | 0,2163 (capybara) |
-| HunyuanVideo 1.5 | ~13 B | 0,1837 | 0,2147 |
+| Z-Image v2 | ~6 B | 0,1241 | **nao medido** |
+| HunyuanVideo 1.5 (familia) | ~13 B | 0,1837 | 0,2147, e 0,2163 no capybara |
+
+**Correcao, 2026-09-01, no mesmo dia.** A tabela acima dizia `Z-Image v2 | 0,1241 | 0,2163 (capybara)`.
+O `capybara_v0.1` NAO e um checkpoint Z-Image. Lido do arquivo: 1364 tensores e 54 `double_blocks`,
+arquitetura do HunyuanVideo 1.5, contra 453 tensores e zero do Z-Image; e 16 653 435 264 bytes contra
+16 653 368 128 do `hunyuanvideo1.5_720p_t2v_fp16`, 67 KiB de diferenca. A evidencia era real e estava
+na fila errada. Ela passa para ~13 B, onde e a **segunda** quebra independente medida nessa
+arquitetura e concorda com o 0,2147. E deixa o teto do Z-Image vazio: 0,1241 funciona, e nada alem
+foi tentado. A monotonia da coluna do tolerado nao depende dessa celula e sobrevive.
 
 Monotona no tamanho, 2,4x a 3,4x entre as pontas. A leitura por capacidade entrou no criterio como
 argumento nao medido e sobreviveu **na forma oposta a que eu previ**: nao "modelo pequeno tem erro

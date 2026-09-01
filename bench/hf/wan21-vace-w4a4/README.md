@@ -74,17 +74,24 @@ Bracketing with mixed builds puts this model's line **between 0.0546 and 0.0793*
 | model | parameters | tolerated | not tolerated |
 |---|---|---|---|
 | **Wan 2.1 VACE** | **1.3 B** | **0.0546** | **0.0793** |
-| Z-Image v2 | ~6 B | 0.1241 | 0.2163 |
-| HunyuanVideo 1.5 | ~13 B | 0.1837 | 0.2147 |
+| Z-Image v2 | ~6 B | 0.1241 | *not measured* |
+| HunyuanVideo 1.5 family | ~13 B | 0.1837 | 0.2147, and 0.2163 on `capybara_v0.1` |
 
-**There is no threshold of the format. There is one per model**, and across these three points it
-grows monotonically with model size — 2.4x to 3.4x between the ends. The practical consequence is
-blunt: `--promote-error 0.15`, a default chosen on a 6B model and carried everywhere since, writes a
-file here that loads cleanly, dispatches natively, passes every structural check, and renders a
-smear.
+**There is no threshold of the format. There is one per model**, and across these three families the
+tolerated error grows monotonically with model size. The practical consequence is blunt:
+`--promote-error 0.15`, a default chosen on a 6B model and carried everywhere since, writes a file
+here that loads cleanly, dispatches natively, passes every structural check, and renders a smear.
 
 Three points make that a hypothesis, not a law. The next model may break it the way this one broke
 the last.
+
+> **Correction, 2026-09-01.** An earlier version of this table credited the 0.2163 break to Z-Image,
+> naming `capybara_v0.1` as a checkpoint in that family. It is not one. Read from the file,
+> `capybara_v0.1` has 1364 tensors and 54 `double_blocks` — HunyuanVideo 1.5's architecture, not
+> Z-Image's 453 tensors and zero. So that break belongs to the ~13B row, where it agrees with the
+> 0.2147 measured on Hunyuan itself, and **Z-Image's upper bound has never been measured**: all that
+> is known there is that 0.1241 works. The monotonicity in the tolerated column survives; one cell
+> of evidence moved rows and one cell became honestly empty.
 
 ---
 

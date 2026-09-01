@@ -150,11 +150,13 @@ Also read [AGENTS.md](AGENTS.md) (root policy) and [ComfyUI/AGENTS.md](ComfyUI/A
   ```
   modelo               parametros   tolerado   NAO tolerado
   Wan 2.1 VACE             1,3 B     0,0546        0,0793
-  Z-Image v2                ~6 B     0,1241        0,2163  (capybara)
-  HunyuanVideo 1.5         ~13 B     0,1837        0,2147
+  Z-Image v2                ~6 B     0,1241        NAO MEDIDO
+  HunyuanVideo 1.5         ~13 B     0,1837        0,2147  (e 0,2163 no capybara)
   ```
 
-  Monotone in model size, 2.4x to 3.4x between the ends. So **there is no threshold of the format — there is one per model**, and the practical consequence is that `--promote-error 0.15`, chosen on Z-Image and carried everywhere since, is **not a safe default**: on Wan it writes a file that loads, dispatches natively, passes every structural check, and renders a smear. Three points make the size reading a hypothesis, not a law.
+  **A linha do capybara estava na fila errada, e este arquivo a publicou assim.** `capybara_v0.1` foi tratado como checkpoint da familia Z-Image e seu 0,2163 virou o teto do Z-Image. Lido do arquivo em 2026-09-01: **1364 tensores e 54 `double_blocks`** — arquitetura do HunyuanVideo 1.5 — contra os **453 tensores e zero** do Z-Image. Confere tambem por tamanho: 16 653 435 264 bytes contra os 16 653 368 128 do `hunyuanvideo1.5_720p_t2v_fp16`, 67 KiB de diferenca. A quebra e real e passa para a linha de ~13 B, onde concorda com o 0,2147 medido no proprio Hunyuan — e **o teto do Z-Image nunca foi medido**: sabe-se que 0,1241 funciona, e nada alem disso foi tentado. A monotonia na coluna do tolerado sobrevive; uma celula mudou de linha e outra ficou honestamente vazia. Corrigido nos tres cards do HuggingFace e no README publico no mesmo dia.
+
+  Monotone in the tolerated column. So **there is no threshold of the format — there is one per model**, and the practical consequence is that `--promote-error 0.15`, chosen on Z-Image and carried everywhere since, is **not a safe default**: on Wan it writes a file that loads, dispatches natively, passes every structural check, and renders a smear. Three points make the size reading a hypothesis, not a law.
 
   **And the reference arm broke first, which cost four renders.** The FP16 Wan — no quantization at all — came out as woven fabric at 6 steps/1 frame, at 25/33, at cfg 6 and cfg 1, with and without `ModelSamplingSD3 shift 8` (which applies, and changes no sigma under the `simple` scheduler). The first run's `divergence 1.2365` measured nothing. Cause, one axis varied (`tools/probe_vace_strength.py`): `vace_strength` **1.0** gives `|latent| 607.6` and fabric, **0.0** gives `|latent| 1543.2` and a real workshop. `WAN21_Vace.extra_conds` (`comfy/model_base.py:1710-1737`) fills `vace_frames` with zeros when no VACE node is present, runs each block through `process_latent_in` — which subtracts the latent format's mean, so **zero becomes non-zero** — concatenates an all-ones mask, and applies it at full strength. **Any VACE checkpoint in a plain T2V workflow is destroyed, with no error and no warning.** `quality_ladder.py` now takes `--vace-strength`.
 

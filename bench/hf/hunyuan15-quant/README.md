@@ -89,11 +89,17 @@ That line is **not** a property of the format. Measured across three architectur
 | model | parameters | tolerated | not tolerated |
 |---|---|---|---|
 | Wan 2.1 VACE | 1.3 B | 0.0546 | 0.0793 |
-| Z-Image v2 | ~6 B | 0.1241 | 0.2163 |
-| **HunyuanVideo 1.5** | **~13 B** | **0.1837** | **0.2147** |
+| Z-Image v2 | ~6 B | 0.1241 | *not measured* |
+| **HunyuanVideo 1.5 family** | **~13 B** | **0.1837** | **0.2147**, and 0.2163 on `capybara_v0.1` |
 
-Monotone in model size, 2.4x to 3.4x between the ends — so a threshold chosen on one model is not
-transferable to another. Three points make that a hypothesis, not a law.
+Monotone in the tolerated column — so a threshold chosen on one model is not transferable to
+another. Three families make that a hypothesis, not a law.
+
+`capybara_v0.1` is a community checkpoint on **this** architecture, not a Z-Image one: read from the
+file it carries 1364 tensors and 54 `double_blocks`, against Z-Image's 453 and zero. An earlier
+version of this table put its 0.2163 break in the Z-Image row. Moving it here is the second
+independent break measured on this architecture, and it leaves Z-Image's upper bound **unmeasured**:
+what is known there is that 0.1241 works, and nothing more.
 
 **Latent divergence does not decide it either.** 0.8255 (destroyed) against 0.7173 (fine) is a 15%
 gap on that axis too, so no cut on latent distance separates usable from unusable. Only a render
