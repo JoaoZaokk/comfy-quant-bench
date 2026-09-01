@@ -29,9 +29,20 @@ As escalas por linha sao ignoradas nos tres -- sao o mesmo termo em todos e nao 
 NAO COBERTO
 -----------
 Erro de saida na ativacao calibrada, NAO imagem. Sem treino de recuperacao (a proposta original do
-dono; Wanda e o atalho sem treino). Sem SparseGPT. E **nada disto executa em tensor core esparso**:
-falta `cuSPARSELt` nesta maquina -- limitacao de biblioteca, nao da placa. Todo numero e erro
-numerico, nao velocidade.
+dono; Wanda e o atalho sem treino). Sem SparseGPT.
+
+CORRECAO 2026-09-01: este bloco dizia **nada disto executa em tensor core esparso -- falta
+cuSPARSELt nesta maquina**. As duas metades estavam erradas. Executa: `tools/sparse24_sm86/`
+compila o SparseGemm do CUTLASS aqui e mede **1,7x a 1,95x mais rapido que o denso bf16** nestes
+mesmos shapes. E o bloqueio nunca foi o cuSPARSELt -- o kernel do CUTLASS nao o usa. O que barrava
+era um tile dimensionado para a A100: `sizeof(GemmKernel::SharedStorage)` da config que o xformers
+distribui e **139.264 bytes** e esta placa aceita **101.376**. Mesmo tile com 2 estagios pede
+69.632 e roda. Era config, nao biblioteca, e nao a placa.
+
+O que continua verdade e limita esta tabela: os numeros abaixo sao erro de SAIDA na ativacao
+calibrada, nao imagem, e o tempo medido e do 2:4 em bf16 -- **a composicao 2:4 + W4A4 destas linhas
+nao tem kernel**, entao a coluna de bits/peso dela e uma conta de tamanho e nao uma medicao de
+velocidade.
 """
 from __future__ import annotations
 
@@ -174,8 +185,10 @@ def main() -> int:
 
     print()
     print("NAO COBERTO: erro de saida na ativacao calibrada, NAO imagem. Sem treino de recuperacao")
-    print("  e sem SparseGPT. E nada aqui executa em tensor core esparso -- falta cuSPARSELt nesta")
-    print("  maquina (biblioteca, nao placa), entao todo numero e erro numerico e nao velocidade.")
+    print("  e sem SparseGPT. Estas colunas sao ERRO, nao velocidade -- para o tempo do 2:4 em")
+    print("  bf16 (1,7x a 1,95x sobre o denso, medido) ver tools/sparse24_sm86/. A composicao")
+    print("  2:4 + W4A4 destas linhas NAO tem kernel, entao os bits/peso dela sao conta de")
+    print("  tamanho, nao medicao de velocidade.")
     return 0
 
 

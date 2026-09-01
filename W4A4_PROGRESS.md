@@ -4795,3 +4795,72 @@ Um prompt, uma semente, um tamanho, uma placa, uma versao de comfy-kitchen. Nenh
 gerada, entao nada aqui julga qualidade. O probe usa uma forma de peso por chamada e K=2048,
 divisivel por todos os valores testados -- nenhuma falha ali e de divisibilidade. E nao foi medido
 o que acontece com um checkpoint JA escrito em cg 1024.
+
+## 2026-09-01, parte 50 - 2:4 esparso roda na 3090 a 1,9x, e o que barrava era um `tile` da A100
+
+Fecha a unica pergunta que sobrou da linha de esparsidade: **paga em TEMPO?** Ate aqui todo numero
+publicado sobre 2:4 nesta bancada era erro numerico, e erro menor num formato mais lento nao compra
+nada. Registro completo em [bench/sparse24_na_sm86_2026-09-01.md](bench/sparse24_na_sm86_2026-09-01.md).
+
+**Medido, duas execucoes independentes, config `128x128x64 s3`, contra `torch.mm` denso em bf16:**
+
+    peso [N, K]                camadas   M=1024          M=5856
+    [10240, 3840] w1/w3            60    1,889 / 1,921   1,901 / 1,906
+    [11520, 3840] qkv              30    1,919 / 1,940   1,715 / 1,710
+    [ 3840,10240] w2               30    1,984 / 1,966   1,952 / 1,946
+    [ 3840, 3840] out              30    1,841 / 1,850   1,875 / 1,863
+
+As duas passadas concordam dentro de ~2%; o teto teorico do tensor core esparso e 2x e o medido
+chega a 1,98x. Crossover em M pequeno pela **terceira** vez nesta bancada: em M=128 a config de tile
+grande cai para 0,52x enquanto a menor se segura em 1,03x.
+
+**Tres ferramentas deste repo diziam que isso nao executava aqui, e as duas metades da frase estavam
+erradas.** Elas afirmavam *"nada disto executa em tensor core esparso -- falta cuSPARSELt nesta
+maquina"*. Executa; e o CUTLASS nao usa cuSPARSELt. O que barrava era um tile dimensionado para a
+A100, e a corrente que localiza isso tem um elo medido por passo:
+
+    can_implement() PASSA; a falha e na 190, o check depois de initialize()      fonte deles
+    falha identica em 12/12 formas e nos dois dtypes -> limite fixo              executado
+    gemm_sparse.h:438-446 -> cudaFuncSetAttribute -> kErrorInternal              fonte do CUTLASS
+    esta 3090 aceita 101.376 bytes de shared dinamica, recusa 100 KB             executado
+    sizeof(GemmKernel::SharedStorage) da config deles = 139.264 bytes            o COMPILADOR
+
+    limite da 3090                   101.376
+    256x128x64 s4 (a do xformers)    139.264   NAO CABE
+    256x128x64 s2                     69.632   cabe
+    128x128x64 s3                     76.800   cabe
+
+Mesmo tile, so menos estagios, e cabe. O xformers compila **uma config unica** (`gemm.cu:66` e
+`:280`) para sm_75/80/90 -- entao **toda Ampere e Ada de consumidor cai nesse buraco**, porque 3090
+e 4090 tem ~100 KB de shared contra os 160 KB da A100. O ultimo elo e o que separa isto de deducao:
+ler `GemmShape<256,128,64>` e fazer a conta na mao daria o mesmo numero, mas instanciar o template e
+imprimir `sizeof()` e leitura, nao aritmetica minha.
+
+**Pareado com o erro medido no mesmo dia**, os dois formatos sao pontos diferentes da curva e nao um
+melhor que o outro:
+
+    formato              bits/peso   erro      contra o denso bf16
+    denso bf16               16,0    --        1,00x
+    2:4 Wanda, bf16           9,0    0,0794    1,7x-1,95x  MEDIDO
+    W4A4 ConvRot              4,0    0,0923    1,83x-1,93x (medido antes)
+    2:4 + W4A4                3,0    0,1306    SEM KERNEL, nao medido
+
+2:4 e **1,16x mais fiel** que o W4A4 na mesma faixa de velocidade, custando 2,25x mais espaco. A
+linha que ganharia das duas e a composicao a 3 bits/peso, e ela exige um SparseGemm **INT4** -- que o
+CUTLASS suporta na sm_80 e que ninguem compilou nesta maquina.
+
+**O xformers foi instalado e removido.** `--no-deps -c constraints.txt` do `pip freeze`: exatamente
+1 adicao, 0 remocoes, 0 alteracoes; o freeze final e identico ao inicial, 329 pacotes, e o
+`_check_accel.py` voltou a `ALL GOOD`. O caminho final nem precisa dele -- usa o empacotador em
+Python puro do torch mais o kernel proprio. O que se aprendeu no caminho: o `0.0.34` nao inicializa
+contra o torch 2.13 (`PyInit` devolve NULL **sem setar erro**, pybind11 engole a excecao), o `0.0.35`
+pina `torch>=2.10` **aberto** e importa, os dev builds sao mais **novos** que o release, o
+`sparsify24` quebra em `torch_call_dispatcher("aten::permute")` antes de chegar no GEMM, e o
+`_sparse_semi_structured_mm` do proprio PyTorch responde `CUTLASS not supported` no Windows -- o que
+agora e execucao e nao leitura do `#if defined(_MSC_VER)`.
+
+**NAO COBERTO:** GEMM isolado, nao render -- nada aqui diz quanto de um passo de amostragem e GEMM.
+bf16, row-major, sem split-k, sem bias, uma placa. As quatro configs isolam um eixo por vez e **nao
+sao varredura de tuning**: a mais rapida que cabe nao foi procurada, entao estas razoes sao um PISO.
+Nao mede podar nem empacotar, nao mede memoria, nao ha SparseGPT nem treino de recuperacao (a
+proposta original do dono, ainda nao testada), e nada disto diz nada sobre qualidade de imagem.

@@ -90,13 +90,24 @@ def main() -> int:
         print(f"{'MEDIANA':32s} {st.median(acc['q']):8.4f} {st.median(acc['c']):8.4f} "
               f"{st.median(acc['w']):10.4f} {st.median(acc['a']):8.4f}")
         print()
-        print(f"  2:4 Wanda contra W4A4: {st.median(acc['w'])/st.median(acc['q']):.2f}x")
-        print(f"  ambos   contra W4A4: {st.median(acc['a'])/st.median(acc['q']):.2f}x")
+        # Razao abaixo de 1 vai INVERTIDA e com a direcao no nome. "0.86x" nao diz quem ganhou,
+        # e esta bancada ja registrou o custo de publicar um numero nessa forma.
+        def contra_w4a4(chave: str, rotulo: str) -> None:
+            r = st.median(acc[chave]) / st.median(acc["q"])
+            if r <= 1.0:
+                print(f"  {rotulo}: {1/r:.2f}x MAIS FIEL que o W4A4")
+            else:
+                print(f"  {rotulo}: {r:.2f}x MENOS fiel que o W4A4")
+        contra_w4a4("w", "2:4 Wanda")
+        contra_w4a4("a", "2:4 Wanda + W4A4")
     print()
     print("NAO COBERTO: erro de saida na ativacao calibrada, NAO imagem -- e esta bancada ja mediu")
     print("  que nenhum corte nesse eixo separa usavel de inutilizavel. Sem SparseGPT, sem treino de")
-    print("  recuperacao (a proposta original do dono), sem 2:4 executando em tensor core (falta")
-    print("  cuSPARSELt). Um modelo, uma calibragem, 12 camadas.")
+    print("  recuperacao (a proposta original do dono). Um modelo, uma calibragem, 12 camadas.")
+    print("  CORRIGIDO 2026-09-01: esta linha dizia que 2:4 nao executa em tensor core aqui por")
+    print("  falta de cuSPARSELt. Executa, e o CUTLASS nao usa cuSPARSELt -- o que barrava era um")
+    print("  tile dimensionado para a A100 (139.264 bytes de shared contra os 101.376 desta")
+    print("  placa). Medido em tools/sparse24_sm86/: 1,7x a 1,95x mais rapido que o denso bf16.")
     return 0
 
 

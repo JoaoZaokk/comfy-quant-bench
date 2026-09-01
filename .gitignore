@@ -54,6 +54,11 @@ __pycache__/
 tools/calib/
 tools/bench/
 
+# Saida de `torch.utils.cpp_extension.load`: .pyd, .o, .lib e o cache do ninja. Regeneravel em
+# ~60 s por `tools/sparse24_sm86/roda.bat`, e o .pyd sozinho passa de 1 MB. Entrou no stage na
+# primeira tentativa de commit porque o allowlist deste arquivo re-inclui `tools/` inteiro.
+tools/*/build/
+
 # bench/ guarda os CRITERIOS escritos antes de medir -- os arquivos em que toda a metodologia
 # deste repo se apoia -- no meio de 282 MB de PNG e de latentes `.pt` que sao saida regeneravel.
 # Ate 2026-09-01 nao havia re-inclusao nenhuma aqui, entao todo criterio que esta rastreado

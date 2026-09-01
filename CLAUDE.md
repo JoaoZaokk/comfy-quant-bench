@@ -23,6 +23,16 @@ escrevia sobre rigor.
    é **GA102, o mesmo silício** da 3090. Eu tinha um agente disponível e não usei. **Um limite que
    você não tentou contornar é uma hipótese, não um fato.**
 
+   **Fechado por medição em 2026-09-01, e a hipótese era falsa em toda linha.** 2:4 executa nesta
+   3090 a **1,7x–1,95x sobre o denso bf16**, medido em duas passadas independentes nos shapes reais
+   do Z-Image (`bench/sparse24_na_sm86_2026-09-01.md`). Não faltava kernel: o kernel estava dentro
+   do wheel Windows do xformers o tempo todo. Faltava um `tile` que coubesse — a config que eles
+   compilam pede **139.264 bytes** de memória compartilhada e esta placa aceita **101.376**, porque
+   foi dimensionada para a A100. Mesmo tile com dois estágios pede 69.632 e roda. E o `cuSPARSELt`,
+   que três ferramentas deste repo culpavam por escrito, **não é usado pelo CUTLASS** e nunca foi o
+   obstáculo. Três afirmações, todas erradas, todas na forma "não dá" — que é exatamente a forma que
+   esta regra proíbe.
+
 Mais dois do mesmo dia, para mostrar que não é caso isolado: (a) medi que Hadamard destrói o padrão
 2:4 e chamei de achado — era **tautologia**, rotação densa preenche zero de qualquer matriz, e
 faltava o controle; (b) disse "esparsidade custa 3x a quantização" comparando **erro de peso** de um
