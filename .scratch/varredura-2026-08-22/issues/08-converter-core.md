@@ -271,3 +271,38 @@ o que faz dele o piloto certo. Os quatro quantizadores precisam de uma janela de
 conversao real depois de migrados.
 
 Nao coberto por esta nota: nada foi migrado ainda, so contado.
+
+## O link do dono: RECEBIDO e RESPONDIDO em 2026-08-30. Nao perguntar de novo.
+
+Em 2026-08-22 o dono disse *"eu acho que te mandei um github sobre isso no passado"*. Ele mandou em
+**2026-08-30T08:13Z**, domingo de manha, ja com a ressalva de que nao tinha certeza:
+
+    https://github.com/RealJonathanYip/ComfyUI-QuantFunc
+    "nao sei, honestamente, mas e uma das abas que deixei abertas para ver depois"
+
+Respondido as 08:17 do mesmo dia: **nao e o ticket 08.** E engine de inferencia C++/CUDA em processo
+worker (`quantfunc.dll`), que quantiza **em runtime**, "zero Python model dependencies". Este ticket
+e sobre cinco **escritores de checkpoint** que divergiram num contrato de oito partes; o QuantFunc
+nem escreve safetensors com contrato. Coisas diferentes.
+
+O que provavelmente deixou a aba aberta: SVDQ offline + NVFP4, 2x-11x. **NVFP4 e Blackwell e esta
+bancada e Ampere sm_86.** Vale como referencia de arquitetura, nao como base deste ticket.
+
+**Proveniencia:** veredito por **LEITURA do README**, nao por execucao. A diferenca aqui e
+categorica (engine de inferencia contra escritor de checkpoint), entao o README basta para
+sustenta-la — mas o rotulo fica, porque nesta bancada trace e medicao nao se parecem no texto.
+
+**Consequencia para o ticket:** nao ha terceiro desenho esperando. O `_conversion.py` que ja existe
+**e** a forma, e o que falta e so a adocao. A pergunta que bloqueava esta fechada.
+
+### Como esta pergunta foi feita duas vezes, que e a licao
+
+A memoria do projeto registrou "pergunta pendente ao dono" as **07:52:41Z** de 2026-08-30. Ele
+respondeu **21 minutos depois**. A memoria nunca foi atualizada, e em 2026-09-01 ela foi carregada
+e a pergunta refeita ao dono — que ja tinha respondido. Custou o tempo dele.
+
+O cortex nao ajudou e nao ajudaria: `cortex serve` esta fora do ar, a busca cai para FTS5 keyword,
+e ela devolveu **zero** hits para este assunto. O que achou foi um grep direto nos transcritos
+locais (`~/.claude/projects/<slug>/*.jsonl`), que sao arquivos comuns. **Ausencia no cortex nao e
+ausencia no historico** — o mesmo defeito que este repo cataloga em
+`arquivo-plausivel-nao-e-o-caminho`.
