@@ -1,7 +1,7 @@
 # 07 - Subgraph expansion is unimplemented, and it blocks 27 of the owner's 46 workflows
 
 Type: grilling
-Status: ready-for-human
+Status: resolved
 Blocked by: -
 Provenance: EXECUTED 2026-08-23 against a RUNNING ComfyUI 0.33 on the 3090
 
@@ -169,3 +169,90 @@ meio-certa produz um grafo que RODA e devolve imagem plausivel errada, e o servi
 **Nao coberto por esta verificacao:** nada foi expandido; nenhum prompt foi submetido; a opcao C na
 leitura "dirigir o frontend em navegador headless" nao foi investigada, so a leitura "existe
 endpoint". `validate_prompt` e validacao, nao execucao.
+
+---
+
+## DECISAO DO DONO: **A**. Implementado e verificado contra o frontend, 2026-09-01.
+
+Palavras dele: *"A 7; emenda depois no 2"*.
+
+### O criterio que o ticket exigiu foi cumprido, e ele foi cumprido literalmente
+
+O ticket pedia *"um teste que prove que um subgrafo convertido produz o MESMO prompt que o proprio
+frontend do ComfyUI submeteria, nao meramente um prompt que roda"*. As referencias vieram do
+frontend de verdade: ComfyUI subido em 127.0.0.1:8199, navegador aberto nele, e
+`window.comfyAPI.app.app.graphToPrompt()` chamado depois de `loadGraphData` em workflows reais do
+dono. As saidas estao em `tests/fixtures/subgrafo_referencia/`.
+
+    5 referencias COM subgrafo + 2 CONTROLES sem subgrafo nenhum
+    tests/test_subgrafo_contra_frontend.py   8 passaram, 0 falharam
+
+**Identidade do conjunto de nos: alcancada.** Mesmos ids, mesmas classes, em todos -- inclusive no
+`LTX25_VIDEO_INPAINT_TWO_STAGE_DUALGPU`, que tem **69 nos expandidos de 76**. O unico no fora da
+conta e um cuja classe o servidor genuinamente nao tem instalada (`Image To Mask`), que o frontend
+emite com `class_type` nulo.
+
+### O numero que o ticket existe para mover
+
+    antes    14 de 46 convertiam    (nenhum com subgrafo)
+    agora    52 de 79 convertem     (22 deles COM subgrafo)
+
+Os 27 fatais que restam sao **todos** de contagem de widget (`N widget values for M widget slots`),
+que e outro buraco, ja listado neste ticket como categoria separada.
+
+### A convencao de id veio do frontend, nao foi inventada
+
+`<id_da_instancia>:<id_interno>` -- `175:164`, `175:165`. Ids frescos e sequenciais teriam passado
+em qualquer teste que so exigisse "roda", e por isso o criterio do ticket foi escrito como foi.
+
+### Eu conclui o oposto sobre widget promovido, e a comparacao derrubou
+
+Primeira leitura, apoiada no `Seedance_2_Extend_Video`: os nos internos ja carregam os proprios
+`widgets_values`, logo a instancia e so espelho de UI e **nao ha tabela de promocao a implementar**.
+Isso contrariava o ticket, que chama a promocao de "onde mora o perigo".
+
+**O ticket estava certo e eu estava errado.** Aquele subgrafo nao tem NENHUMA entrada
+widget-tipada, entao instancia e interno nao podiam discordar -- conferi exatamente o caso em que o
+eixo estava segurado. Onde ha entrada widget, a instancia VENCE:
+
+    instancia 5407   widgets_values  ltx-2.5-22b-distilled-transformer-bf16.safetensors
+    no interno 5602  widgets_values  ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors
+    frontend usa     ...-bf16
+
+Usar o interno carregaria um **modelo diferente do que a UI mostra**, e o grafo rodaria -- que e
+palavra por palavra o risco que este ticket descreve. Consertado: o valor da instancia e gravado no
+no interno, e a posicao dentro de `widgets_values` sai de `widget_slots()`, a mesma funcao que o
+conversor usa para ler, importada e nao reescrita.
+
+### Um segundo defeito, achado pela mesma comparacao
+
+Instancia em `mode=4` (bypass) estava sendo expandida. O frontend descarta o conteudo inteiro: no
+`image_qwen_image_layered` ele emite 18 nos e eu emitia 28. Instancias mudas/bypass agora ficam
+intactas, e o tratamento de mute que o conversor **ja tem** cuida delas -- nao ha uma segunda regra
+de mute para manter em dia.
+
+### Os CONTROLES sao o que impede a conclusao errada
+
+Duas das sete referencias sao workflows **sem subgrafo nenhum**, e elas TAMBEM divergem do frontend
+em valor (10 diferencas somadas). Sem elas, este ticket teria atribuido a expansao diferencas que
+sao buracos anteriores do conversor: widget so-de-UI (`tokens`), widget composto
+(`model.duration`), e o no virtual `Reroute` que o frontend resolve ATRAVES. O teste afirma
+identidade de CONJUNTO DE NOS e diz, no proprio corpo, por que nao afirma identidade de valor.
+
+### Onde o codigo mora
+
+`worker/comfylite/subgrafo.py`, passe separado que roda ANTES do conversor: `ui_to_api` nao aprendeu
+o que e um subgrafo, ele recebe um grafo em que instancia de subgrafo ja nao existe.
+
+Uma definicao com `definitions.subgraphs[].widgets` nao vazia e **recusada**, nao expandida:
+mecanismo separado, zero das 65 definicoes do dono o usa, logo nunca foi verificado contra o
+frontend -- e palpite ali produz exatamente o grafo que roda e esta errado.
+
+**Status: resolved.**
+
+### Nao coberto
+
+Subgrafo ANINHADO: o caminho existe (ponto-fixo com limite) e **nenhuma referencia tem um** --
+nenhuma chave do frontend veio com dois `:`. Existe e nao esta provado. Um frontend (1.49.6), um
+dia, sete workflows. E nenhuma imagem foi gerada: prompt identico ao do frontend diz que submetemos
+o mesmo, nao que a imagem presta.
