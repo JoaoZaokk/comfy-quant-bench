@@ -432,3 +432,67 @@ camadas; fica anotado como coisa a conferir, nao como base de conclusao.
   2:4 em hardware desde a 8.0). Todo numero acima e erro numerico, **nao** ganho de velocidade.
 - **Imagem.** Erro de saida em ativacao calibrada nao e render, e esta bancada ja mediu que nenhum
   corte nesse eixo separa usavel de inutilizavel.
+
+---
+
+# Sexta rodada: 2:4 nao roda aqui por causa do WINDOWS, nao da placa
+
+O dono cobrou: *"executa, aceita A40, que e anterior mas mesma serie da 3090. O que falta e o
+kernel, e eu nao vi voce mandando ninguem procurar."* Ele estava certo nas duas metades -- A40 e
+**GA102**, o mesmo silicio da 3090, e eu tinha declarado o limite sem procurar a volta.
+
+## O diagnostico, verificado na fonte primaria
+
+**MEDIDO AQUI**, no proprio wheel instalado:
+
+    torch.__config__.show()                          USE_CUSPARSELT=OFF
+    'cusparseLt' em torch_cuda.dll (391 MB)          0 ocorrencias
+    'CUTLASS not supported' no mesmo binario         2 ocorrencias
+    'cusparse' (a OUTRA biblioteca)                  387 ocorrencias
+    sm_86 no gencode                                 presente
+
+**LIDO** no codigo do PyTorch: `cuSPARSELtOps.cpp` poe tudo sob `#if AT_CUSPARSELT_ENABLED()` com
+chamadas diretas a `cusparseLtInit/Matmul` e **sem** `dlopen`/`LoadLibrary` -- entao instalar o
+pacote pip `nvidia-cusparselt-cu13` (existe wheel Windows, 157,9 MB) **nao muda nada**: e decisao de
+compilacao, nao de runtime. E `SparseSemiStructuredOps.cu` guarda os kernels CUTLASS com
+`#if defined(USE_ROCM) || defined(_MSC_VER)`, ou seja **toda** build Windows/MSVC cai no
+`TORCH_CHECK(false, "CUTLASS not supported")`. Dentro do ramo habilitado ha um
+`TORCH_CHECK(is_sm8x)`: a 3090 e **exatamente** o alvo suportado -- no Linux.
+
+**Entao: a placa suporta, o codigo suporta, e a plataforma descarta.**
+
+## Os caminhos, em ordem de custo
+
+- **WSL2** -- o wheel Linux **ja traz** cuSPARSELt, e a 3090 ja e usada de dentro do WSL pelo
+  `glm-w4`. Zero compilacao. Esbarra na regra do `CLAUDE.md` de nao mexer no WSL, entao e **decisao
+  do dono**.
+- **xformers `ops.sp24`** com `BACKEND_CUTLASS` -- kernel proprio, fora da guarda `_MSC_VER` do
+  PyTorch. **NAO CONFIRMADO** se ha wheel `win_amd64` para a versao que casa com torch 2.13. Ha
+  precedente numa discussao do ComfyUI com receita Win64 para torch 2.2/xformers 0.0.24, que
+  **alega** funcionar e **nao publica numero de 2:4**.
+- **ctypes direto no `cusparseLt.dll`** -- a API e host-side como a do cuBLAS e aceita
+  `tensor.data_ptr()`, zero compilacao. **Nao existe binding publico**; seria escrever do zero.
+- **Extensao propria** -- `nvcc` 13.2 e MSVC existem nesta maquina, entao e possivel. Caro.
+
+## O que NAO existe, e economiza tempo saber
+
+- **torchao nao ajuda**: `import torchao._C` levanta `ModuleNotFoundError`, nao ha `.pyd`, e
+  `sparse_api.py` chama o mesmo `torch.sparse.to_sparse_semi_structured` -- mesmo beco. O unico
+  CUTLASS 2:4 dele e `..._sm9x_f8`, isto e **sm90+ e fp8**.
+- **Triton nao emite `mma.sp`**: a issue pedindo 2:4 esta **aberta**, e foi criada pelo proprio
+  mantenedor de sparsity do PyTorch.
+- **Ninguem publicou 2:4 em difusao.** EcoDiff poda SDXL e FLUX mas e poda **estrutural**, nao 2:4.
+  SparseDM **alega** -50% de MACs e ~1,2x medido em GPU, sem nomear 2:4 nem a arquitetura. Esse 1,2x
+  e o unico numero de tempo encontrado, e e alegacao de terceiro.
+
+## Forma: os nossos K passam
+
+**LIDO** em `torch/sparse/semi_structured.py` instalado: cuSPARSELt exige multiplos de (16,16) para
+fp16/bf16 e (32,32) para int8; CUTLASS exige (32,64) e (16,128). Nossos K -- 256, 3840, 10240 --
+passam em todas as combinacoes. `float32` nao aparece em nenhum dos dois dicionarios.
+
+## Nao coberto
+
+Nada disto foi executado alem das medicoes marcadas: nenhum pacote instalado, nenhum wheel testado,
+WSL nao tocado. O caminho xformers tem um "nao confirmado" no meio dele que decide se e barato ou
+caro.
