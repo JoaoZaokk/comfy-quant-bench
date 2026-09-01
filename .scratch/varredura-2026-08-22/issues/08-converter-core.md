@@ -188,3 +188,41 @@ O nucleo existe e esta testado, e a porta unica existe. **Os sete ainda nao fora
 ele.** Enquanto nao forem, o contrato continua escrito oito vezes -- sete nos conversores e uma no
 nucleo -- e isso e pior do que sete, nao melhor, porque agora ha uma copia que se parece com a
 fonte da verdade sem ser. Migrar e o trabalho seguinte, e este ticket segue aberto ate la.
+
+---
+
+## Divergencia nova, achada em 2026-08-31: duas `PROFILE_PATTERNS` com as MESMAS chaves e significados incompativeis
+
+Ao varrer o disco atras de modelos com perfil conhecido, este comando devolveu **zero candidatos**:
+
+```python
+todos = {}
+for d in (quant_w4a4.PROFILE_PATTERNS, quant_w4a8.PROFILE_PATTERNS,
+          calibrate_activations.PROFILE_PATTERNS):
+    todos.update(d)
+```
+
+E devolveu zero porque as tabelas colidem. Mesma chave, alvos diferentes:
+
+```
+quant_w4a4  hunyuan_video_15  ->  ^double_blocks\.\d+\....\.weight$    NOME DE TENSOR
+calibrate   hunyuan_video_15  ->  ^double_blocks\.\d+\.(?:img|txt)_attn\.(?:qkv|proj)...$   CAMINHO DE MODULO
+```
+
+A primeira casa chaves do cabecalho safetensors. A segunda casa a arvore de modulos **depois** que o
+ComfyUI renomeia na carga (`img_attn_qkv` vira `img_attn.qkv`, e sem `.weight`). Sao para coisas
+diferentes e as duas estao certas no proprio contexto -- o problema e que **compartilham o nome**.
+
+O `update()` fez a segunda ganhar, e a varredura passou a testar padroes de modulo contra chaves de
+arquivo. Nada casou, e **nada avisou**: nao houve erro, nao houve aviso, so um zero plausivel.
+Custou tres rodadas de depuracao, e a primeira delas tinha `except Exception: pass`, que engoliu a
+evidencia -- o defeito que este repo cataloga como "ausencia num grep nunca e ausencia no sistema".
+
+Isto e a mesma classe de divergencia que este ticket ja lista (`read_tensor` com duas
+implementacoes, `SAFETENSORS_DTYPE` com duas tabelas), com um agravante: as outras divergem em
+comportamento e esta diverge em SIGNIFICADO. Um `from X import PROFILE_PATTERNS` pega a tabela
+errada sem nenhum sinal.
+
+Conserto quando o nucleo for adiante: nomes distintos (`PADROES_TENSOR` e `PADROES_MODULO`) ou um so
+lugar que exponha os dois explicitamente. Nao renomear pela metade -- duas tabelas com nomes
+parecidos e pior que duas com o mesmo nome.

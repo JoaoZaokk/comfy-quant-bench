@@ -54,12 +54,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 #      `import comfy.cli_args`, que e tarde. Neutralizar o argv sem forcar o parse ali nao
 #      adianta, e nao restaurar depois deixa o `parse_args()` daqui sem nenhum argumento.
 # Entao: neutraliza, liga, FORCA o parse, restaura.
+#      E o argv neutro e o unico lugar onde da para escolher o dtype de calculo do difusor: o
+#      ComfyUI decide isso no parse e nao expoe depois. `--bf16-unet` existe aqui porque o
+#      `capybara_v0.1` tem pesos BF16 enquanto o `hunyuanvideo1.5` da MESMA arquitetura tem F16 --
+#      o ComfyUI escolhe fp16 para essa familia e o forward morre com
+#      `mat1 and mat2 must have the same dtype, but got Half and BFloat16` na `time_in`, que nem e
+#      uma camada quantizada. Derruba os DOIS bracos, referencia inclusive, entao nao e defeito de
+#      quantizacao nenhum: e o dtype do arquivo.
 _ARGV = sys.argv[:]
-sys.argv = ["main.py"]
+_DTYPE = [a for a in _ARGV if a in ("--bf16-unet", "--fp16-unet", "--fp32-unet")]
+sys.argv = ["main.py", *_DTYPE]
 import comfy.options  # noqa: E402
 comfy.options.enable_args_parsing()
 import comfy.cli_args  # noqa: E402,F401  -- e aqui que o parse acontece
-sys.argv = _ARGV
+sys.argv = [a for a in _ARGV if a not in _DTYPE]
 
 import torch  # noqa: E402
 
