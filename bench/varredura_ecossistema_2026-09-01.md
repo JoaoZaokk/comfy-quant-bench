@@ -312,3 +312,57 @@ prioridade: antes de perseguir 2:4, o ganho por bit esta muito melhor onde ja es
 **Ressalva que anda junto:** e poda por magnitude PURA, sem reconstrucao. SparseGPT e Wanda
 atualizam os pesos restantes para compensar e derrubam bastante esse erro -- 0,3617 e o teto
 ingenuo, nao o custo de um metodo serio. Uma camada, uma metrica, sem render.
+
+---
+
+# Quarta rodada: "ninguem poe modulacao em 4 bits" era CONSENSO, nao medicao
+
+O dono desmontou o argumento: *"ninguem usa w4 porque nao faz sentido, ou porque poucas pessoas tem
+a receita da Coca-Cola?"* Ele esta certo. Tres fontes independentes evitarem `adaLN_modulation` a 4
+bits pode significar que todas copiaram a mesma suposicao. **Eu usei consenso como evidencia**, que
+e exatamente o que esta bancada proibe.
+
+E da para medir. `tools/probe_erro_por_tipo_de_camada.py` quantiza com o kernel REAL, recupera o
+peso efetivo passando a identidade pelo `convrot_w4a4_linear` (em vez de desempacotar o INT4 a mao,
+o que seria um segundo decodificador que pode divergir do kernel justamente onde importa) e compara
+com o original.
+
+**MEDIDO AQUI**, Z-Image, 30 blocos, amostra de 8 por tipo:
+
+    tipo                       n       K    mediana     min      max
+    adaLN_modulation.0        30     256     0,1263    0,1263   0,1267   <- o MENOR
+    attention.qkv             30    3840     0,1569    0,1566   0,1576
+    feed_forward.w1           30    3840     0,1568    0,1567   0,1570
+    feed_forward.w3           30    3840     0,1568    0,1566   0,1570
+    feed_forward.w2           30   10240     0,1671    0,1666   0,1687
+    attention.out             30    3840     0,1685    0,1643   0,1810
+
+    adaLN contra a mediana dos demais: 0,81x
+
+**`adaLN_modulation` e a camada MAIS FACIL de quantizar do bloco**, nao a mais dificil. Pelo erro de
+peso, o argumento para excluir nao existe -- e o argumento que eu tinha escrito duas secoes acima
+("erro ali multiplica no bloco inteiro") estava apoiado em plausibilidade mecanica, nao em numero.
+E o padrao que o `CLAUDE.md` cataloga na tabela de "escrito como fato / o que era de verdade".
+
+## O que isto NAO prova, e e a parte honesta
+
+Erro de **peso** nao e erro de **saida**. A modulacao alimenta escala e deslocamento do bloco
+inteiro, entao o mesmo erro relativo pode custar muito mais ali do que numa MLP -- multiplicar tudo
+por um fator 1% errado nao e como errar 1% numa projecao. O argumento da amplificacao continua de pe
+e continua **nao medido**.
+
+E ele e mensuravel com o maquinario que ja existe: `calibrate_activations.py` captura ativacao real
+por forward-pre-hook e `quant_mixed.py` mede `err_w4a4` contra float32 nessas ativacoes. Hoje o
+perfil `zimage` **nao inclui** `adaLN_modulation` entre as candidatas, entao essas camadas nunca
+foram medidas em ativacao real. Incluir as 31 e refazer a analise responde a pergunta de verdade.
+
+Uma diferenca estrutural a carregar junto: `adaLN_modulation.0` tem **K=256**, exatamente UM grupo
+de ConvRot, contra K=3840 e 10240 das demais. Regime diferente, e o numero acima pode nao
+generalizar para outro modelo.
+
+## A ordem correta de acreditar, depois desta rodada
+
+1. Erro de peso diz que 4 bits em `adaLN` e barato -- **medido**.
+2. Se a amplificacao a jusante torna isso caro -- **nao medido, e e a pergunta que importa**.
+3. Se a imagem muda -- **nao medido**; e nesta bancada nenhum corte de erro separa usavel de
+   inutilizavel, entao so um render olhado por alguem decide.
