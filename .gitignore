@@ -54,7 +54,31 @@ __pycache__/
 tools/calib/
 tools/bench/
 
-bench/quality_ladder/*.png
+# bench/ guarda os CRITERIOS escritos antes de medir -- os arquivos em que toda a metodologia
+# deste repo se apoia -- no meio de 282 MB de PNG e de latentes `.pt` que sao saida regeneravel.
+# Ate 2026-09-01 nao havia re-inclusao nenhuma aqui, entao todo criterio que esta rastreado
+# chegou por `git add -f` e todo criterio NOVO ficava de fora em silencio:
+#
+#     git check-ignore -v bench/criterio_camada2_despacho.md
+#     .gitignore:5:/*    bench/criterio_camada2_despacho.md
+#
+# Achado ao commitar a camada 2 e ver o proprio criterio dela nao entrar. Junto veio o
+# `bench/criterio_hunyuan_misto.md`, que estava solto no disco a dias -- a UM `git clean -xdf`
+# de sumir. E exatamente a armadilha que este arquivo ja documenta logo abaixo para o
+# `.scratch/`, e esta durava mais tempo.
+#
+# O criterio de o que entra: markdown (criterios, cards do HuggingFace, licencas) entra;
+# imagem, latente e log ficam de fora. Um `.json` de resultado que alguem queira rastrear
+# continua sendo `git add -f` deliberado, como o `bench/guarda_referencia.json`.
+!/bench/
+/bench/*
+!/bench/*.md
+!/bench/hf/
+/bench/hf/*
+!/bench/hf/*/
+/bench/hf/*/*
+!/bench/hf/*/*.md
+!/bench/hf/*/*.txt
 
 # The local issue tracker. Ignored for four days, which meant 26 tickets and the map
 # existed only on disk -- one `git clean -xdf` from gone. Tracked now.
