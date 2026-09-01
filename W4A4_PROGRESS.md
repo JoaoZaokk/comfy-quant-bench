@@ -4534,3 +4534,102 @@ mudou a saida, nao que a saida presta. Uma placa, um build de comfy-kitchen (0.2
 `--no-codebook`, `--keep-bf16-error`, nem `sigma_weight` diferente de `none`. O `quant_int8` e o
 `svdq_to_bf16` carregam e despacham, e so: nada compara a saida deles contra nada. E o caminho de
 escrita do `smooth` segue sem ter rodado.
+
+## 2026-09-01, parte 47 - camada 2 do avaliador: 26 de 37 despacham, e a regra errou justo no arquivo que fundou o achado
+
+A camada 1 le cabecalho e sidecar e ve o campo `backend` dizer
+`comfy_kitchen.backends.cuda`. Esse campo registra a **conversao**, nao o load de hoje, e o cego da
+propria checagem sempre disse isso. Entre aquelas conversoes e agora mudaram comfy-kitchen
+(0.2.23 -> 0.2.31), ComfyUI (0.29 -> 0.33) e torch (2.12.1 -> 2.13.0), e nenhum deles avisa quando
+um formato deixa de resolver.
+
+`tools/avaliar_despacho.py` (camada 2) carrega pelo caminho normal do ComfyUI e CONTA. Ela nao
+reimplementa a contagem: chama o `tools/probe_quant_dispatch.py`, que ja resolveu os dois erros
+dificeis -- ler o kwarg que o proprio `ops.py` calcula em vez de re-derivar `_use_quantized`, e
+instrumentar DEPOIS do load, porque o load dequantiza de forma legitima.
+
+Criterio, previsoes e tres condicoes de refutacao em `bench/criterio_camada2_despacho.md`,
+escritos antes de rodar. **As tres ficaram caladas.**
+
+### 37 alvos
+
+    26  DESPACHA              todo checkpoint de difusao desta bancada, 0 dequantize
+     6  TRAVADO_PELO_COMFY    os seis text encoders
+     2  SEM VEREDITO          MiniMax_H3_{FL2VA,Ref2VA} do Abiray -- morrem em 7-9 s
+     2  NAO_PROBAVEL          vivem em `checkpoints/`, que o probe nao resolve
+     1  NAO_DESPACHA          flux-2-klein-base-4b-fp8
+
+Os 26 incluem **treze builds nunca carregados aqui antes** -- os quatro `zimage-v2-mixed-t0.*`, os
+tres `zimage-v2-sigma-*`, os cinco `hunyuan15-misto-t*` e os tres Wan -- mais tres arquivos de
+terceiros: os `LTX25-distilled-DiT-comfy-*` do riftcast (1440 camadas cada), o
+`DasiwaWAN22I2V14BLightspeed` (400 `int8_tensorwise`) e o `minimax_h3_..._w4a8_convrot` do
+Winnougan. **O campo `backend` do sidecar continua descrevendo a execucao de hoje**, que era a
+duvida que abriu esta camada.
+
+### Dois defeitos da ferramenta, e o segundo e o que permitiu achar o primeiro
+
+**Sao DUAS travas de text encoder, e a regra so conhecia uma.** O `CLAUDE.md` documenta as duas --
+`comfy_force_cast_weights` (de `comfy/sd.py:269`) e `full_precision_mm` (hardcodado em
+`comfy/sd1_clip.py:114` para todo text encoder). A regra pedia so a primeira:
+
+    5 encoders                            force_cast {'True': N}                    -> TRAVADO
+    qwen3vl_32b_minimax_h3-int4_convrot   force_cast {'False': 351}
+                                          fpmm       {'True': 350}                  -> NAO_DESPACHA
+
+Esse sexto e **o mesmo arquivo com que esta bancada ESTABELECEU a trava dos encoders**, em
+2026-08-31. Ele saia `NAO_DESPACHA`, que le como defeito do checkpoint e mandaria alguem
+reconverter um arquivo publico que esta bom. Basta uma das duas travas para a matematica cair,
+entao a regra passou a pedir uma das duas e a NOMEAR qual, porque as duas tem origem e conserto
+diferentes.
+
+**O laudo nao gravava a evidencia do proprio veredito.** `TRAVADO_PELO_COMFY` depende INTEIRAMENTE
+de uma dessas travas, e o JSON gravado nao trazia o campo -- dava para ler `NAO_DESPACHA` e nao ter
+como conferir por que nao foi `TRAVADO`. Um veredito cuja evidencia nao esta no relatorio e uma
+opiniao. Gravadas as duas travas, as seis linhas afetadas foram remedidas.
+
+A ordem importa: **enquanto o campo nao era gravado, a unica coisa visivel era um veredito
+plausivel**. O primeiro defeito so apareceu porque o segundo foi consertado.
+
+### O achado: fp8 roda dequantizado, e o contador de `impl` diz na cara
+
+    flux-2-klein-base-4b-fp8   difusao   78 camadas float8_e4m3fn
+      forwards quantizados  0
+      dequantize            8
+      impl                  dequantize_per_tensor_fp8=comfy_kitchen.backends.cuda  x8
+      force_cast            {'False': 78}      <- NAO e a trava do CLIP
+      full_precision_mm     {'True': 78}
+
+E modelo de DIFUSAO, nao encoder, e `comfy_force_cast_weights` esta False -- entao nao e a trava
+que prende os text encoders. A operacao literalmente chamada e a de dequantizar. **Economia de
+VRAM, nao de tempo.** O criterio tinha marcado fp8 como "nao sei" antes de rodar; agora tem
+resposta, por outro arquivo que nao o previsto (o `ltx-2.3-22b-dev-fp8` caiu em `NAO_PROBAVEL`).
+
+Aberto, e nao vou adivinhar: de onde vem `full_precision_mm=True` num modelo de difusao. O
+`CLAUDE.md` registra que `comfy/ops.py:1667` passa `disabled=` e nao `full_precision_mm` nesse
+caminho. Uma amostra, um checkpoint fp8, uma placa.
+
+### De quebra: o lock da GPU mentia na mensagem, e o teste que faltava
+
+Ao tomar a placa para esta camada:
+
+    lock is stale (pid 62788 dead, hb 9223372036854775807s ago) -- reclaiming from claude-glm-w4a16-quant
+
+Aquele numero e `[int64]::MaxValue` e e a assinatura EXATA do roubo de lock de 2026-08-21 que o
+proprio `gpu_lock.ps1` documenta. **Nao houve roubo**: o pid 62788 estava morto e a 3090 livre, e a
+garantia nao depende do `hb` -- o `$alive` sai do `Pid`, parseado a parte. A diferenca com 2026-08-21
+e que la Owner e Pid tambem vinham vazios; aqui so o `hb` faltou.
+
+Consertado para dizer `hb nunca carimbado`, e o teste que faltava foi escrito: **irmao VIVO com
+`hb` ausente nao e roubado**, verificado contra um processo real. `test_gpu_lock.py`: 36 checagens,
+era 31.
+
+### Nao coberto
+
+`--forward-only` chama os modulos REAIS que o loader produziu, com entrada sintetica da forma certa,
+e so os **8 primeiros** -- prova que aqueles modulos despacham, nao que uma geracao inteira dispare.
+As contagens de trava, essas sim, cobrem todos os modulos. Quatro dos 37 seguem sem resposta (2
+`NAO_PROBAVEL`, 2 `SEM VEREDITO`) e ausencia de veredito nao e aprovacao nem reprova. O contador
+`impl:` conta o que o registry RESOLVEU, nao o que executou -- no `qwen3vl` ele marca
+`convrot_w4a4_linear=...cuda: 7` com zero forwards quantizados E zero dequantize, entao aquela linha
+nao deve ser lida como kernel rodando. Nada aqui fala de qualidade nem de fidelidade: `DESPACHA` nao
+e aprovacao, e nesta bancada o HunyuanVideo 1.5 W4A4 despacha e o render e destruido.

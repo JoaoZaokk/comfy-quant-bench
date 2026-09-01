@@ -275,6 +275,12 @@ def main():
     p.add_argument("--frames", type=int, default=9,
                    help="so vale para modelo de video (latent_dimensions == 3)")
     p.add_argument("--device", type=int, default=0)
+    # O relatorio ja existe como dict e ja atravessa um `@@JSON@@` do subprocesso interno para
+    # este; ele so nunca foi reemitido para FORA. Sem esta flag, quem chama em lote tem de
+    # reparsear o relatorio humano -- e um relatorio humano muda de formato por motivo cosmetico,
+    # entao o parser quebraria em silencio numa mudanca que nao mexeu em nenhuma medicao.
+    p.add_argument("--json", action="store_true",
+                   help="reemite o relatorio bruto numa linha `@@JSON@@`, para chamada em lote")
     a = p.parse_args()
 
     env = dict(os.environ)
@@ -295,6 +301,12 @@ def main():
         print(proc.stdout[-3000:])
         print(proc.stderr[-3000:], file=sys.stderr)
         raise SystemExit(f"nao devolveu JSON (rc={proc.returncode})")
+
+    # Antes do relatorio humano, e nao depois: os dois caminhos de saida abaixo (o `return` do
+    # `rep["erro"]` e o fim normal) precisam ter emitido. Emitir no fim perderia exatamente o
+    # caso do erro, que e o mais importante para quem chama em lote.
+    if a.json:
+        print("@@JSON@@" + json.dumps(rep))
 
     print("=" * 78)
     print(f"{rep['ckpt']}   modo {rep['mode']}   device cuda:{a.device}"

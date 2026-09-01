@@ -298,6 +298,54 @@ def main() -> int:
               r.stdout.strip()[-160:])
         check("and says so instead of claiming the run died",
               "UNIDENTIFIABLE" in r.stdout or "refusing" in r.stdout.lower())
+
+        rule("8. a lock with `dono=` and `pid=` but NO `hb=` reads as 'nunca carimbado'")
+        # OBSERVADO 2026-09-01, na maquina real: um lock deixado por uma sessao irma morta
+        # (`claude-glm-w4a16-quant`, pid 62788) tinha dono e pid legiveis e `hb=` ausente, e a
+        # mensagem saiu como `hb 9223372036854775807s ago`. Aquele numero e [int64]::MaxValue e e
+        # a assinatura EXATA do roubo de 2026-08-21 que este arquivo testa acima -- so que la
+        # Owner e Pid tambem vinham vazios. Reclamar estava certo (o pid estava morto), mas a
+        # mensagem manda a proxima pessoa caçar um bug de parse que nao houve.
+        #
+        # As duas metades sao testadas separadas de proposito, porque so a segunda e a garantia:
+        # a legibilidade e cosmetica, a protecao do irmao VIVO nao e, e ela nao pode depender de
+        # `hb` ter sido lido.
+        sb.kill_beat()
+        sb.lock.write_text("dono=irmao:sem-hb" + NL + "pid=999999" + NL
+                           + "desde=x" + NL + "owner_kind=controller" + NL, encoding="ascii")
+        r = sb.pwsh("$s = Get-GpuLockState; "
+                    "Write-Output \"HB=$(Format-GpuLockHb $s)\"; "
+                    "Write-Output \"LIDO=$($s.HbLido)\"; Write-Output \"DONO=$($s.Owner)\"")
+        check("Get-GpuLockState nao inventa uma idade para um hb ausente",
+              "HB=nunca carimbado" in r.stdout and "LIDO=False" in r.stdout,
+              r.stdout.strip()[-140:])
+        check("e o dono continua sendo lido (e o que separa isto do defeito de 2026-08-21)",
+              "DONO=irmao:sem-hb" in r.stdout, r.stdout.strip()[-140:])
+        r = sb.pwsh("$got = Take-GpuLock -Owner 'outro:tentativa'; Write-Output \"TOOK=$got\"")
+        check("com pid morto e hb ausente, reclamar e correto e a mensagem diz por que",
+              "TOOK=True" in r.stdout and "nunca carimbado" in r.stdout
+              and "9223372036854775807" not in r.stdout, r.stdout.strip()[-160:])
+        sb.kill_beat()
+
+        # A garantia, testada a parte: pid VIVO e hb ausente tem de segurar. Se isto cair, o
+        # `hb` ilegivel virou porta de roubo, que e a coisa que este arquivo inteiro existe para
+        # impedir.
+        vivo = subprocess.Popen([sys.executable, "-s", "-c",
+                                 "import time; time.sleep(30)"])
+        try:
+            sb.lock.write_text("dono=irmao:vivo-sem-hb" + NL + f"pid={vivo.pid}" + NL
+                               + "desde=x" + NL + "owner_kind=controller" + NL, encoding="ascii")
+            antes = sb.lock.read_text(encoding="utf-8")
+            r = sb.pwsh("$got = Take-GpuLock -Owner 'outro:roubo'; Write-Output \"TOOK=$got\"")
+            check("um irmao VIVO com hb ausente NAO e roubado", "TOOK=False" in r.stdout,
+                  r.stdout.strip()[-160:])
+            check("e o lock dele fica intacto",
+                  sb.lock.is_file() and sb.lock.read_text(encoding="utf-8") == antes,
+                  "intacto" if sb.lock.is_file() else "O LOCK DO IRMAO FOI APAGADO")
+        finally:
+            vivo.terminate()
+            vivo.wait(timeout=20)
+        sb.kill_beat()
         sb.kill_beat()
 
     print()

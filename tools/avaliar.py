@@ -22,9 +22,15 @@ teorica. Cada uma declara, no proprio codigo, o que ela **nao** cobre (campo `ce
 declaracoes sao impressas em toda execucao -- passe ou falhe. Uma coluna de linhas verdes lida como
 "verificado" por quem cola o resultado na proxima sessao; ver CLAUDE.md, "Say which one it was".
 
-Esta camada **le**, nunca executa: nada aqui toca a GPU, carrega modelo ou roda kernel. A camada
-que conta forward quantizado de verdade (`--dispatch`) ainda nao existe; onde ela faria falta, o
-laudo diz `SEM VEREDITO` naquele eixo em vez de calar.
+Esta camada **le**, nunca executa: nada aqui toca a GPU, carrega modelo ou roda kernel. Onde essa
+limitacao morde, o laudo diz `SEM VEREDITO` naquele eixo em vez de calar.
+
+A **camada 2 existe** desde 2026-09-01 e mora em `tools/avaliar_despacho.py`, tomando o lugar do
+`--dispatch` que este texto prometia. Ela e um programa separado de proposito: adicionar GPU aqui
+custaria o unico argumento desta camada, que e rodar 163 checkpoints em 0,68 s sem torch. Ela le a
+SAIDA desta -- so visita quem aqui apareceu com camada quantizada -- carrega pelo caminho normal do
+ComfyUI e conta forward quantizado contra `dequantize`. E o unico jeito de saber se o campo
+`backend` do sidecar, que registra uma conversao passada, ainda descreve o que acontece hoje.
 
 A **camada 3 existe** e mora em `tools/avaliar_referencia.py`: ela usa GPU e pergunta se o arquivo
 NAO quantizado responde ao proprio condicionamento. E a guarda que teria abortado a rodada do Wan
@@ -519,7 +525,8 @@ def checar_backend(ck: Checkpoint) -> Iterator[Achado]:
 
     Este campo e o unico registro do preflight que o conversor fez. Ele prova o que aconteceu na
     hora da conversao; nao prova o que acontece ao carregar hoje, com outra versao de
-    comfy-kitchen. Por isso o cego acima -- e por isso a camada `--dispatch` existe no plano.
+    comfy-kitchen. Por isso o cego acima -- e por isso `tools/avaliar_despacho.py` (camada 2)
+    existe: ela carrega e conta, que e a unica forma de fechar esta lacuna.
     """
     if not ck.formatos:
         return
@@ -803,6 +810,9 @@ def digest(laudos: list[Laudo], ausentes: list[Path] | None = None) -> str:
     linhas += [
         "- dispatch: nada aqui carrega o modelo, entao ninguem contou forward quantizado nem",
         "  chamada a `dequantize`. Um arquivo pode passar tudo acima e rodar dequantizado.",
+        "  Isto deixou de ser um buraco em 2026-09-01: `tools/avaliar_despacho.py` (camada 2, com",
+        "  GPU) carrega pelo caminho normal do ComfyUI e conta. Rode-a antes de acreditar no campo",
+        "  `backend` de qualquer sidecar -- ele registra a conversao, nao a execucao de hoje.",
         "- imagem: nenhuma renderizacao. Nenhum corte medido nesta bancada separa usavel de",
         "  inutilizavel -- 0,1837 correta contra 0,2147 destruida; 0,7173 boa contra 0,8255",
         "  destruida. So alguem olhando decide.",

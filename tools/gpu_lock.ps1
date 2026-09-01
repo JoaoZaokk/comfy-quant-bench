@@ -92,8 +92,27 @@ function Get-GpuLockState {
         Pid       = $lockPid
         Kind      = $kind
         Unreadable = ($kind -eq 'unknown')
+        # Distinguir "carimbado ha muito tempo" de "nunca carimbado" e o ponto de HbLido.
+        # OBSERVADO 2026-09-01: um lock deixado por uma sessao irma morta (`claude-glm-w4a16-quant`,
+        # pid 62788) trouxe `dono=` e `pid=` legiveis e `hb=` ausente, e a mensagem saiu como
+        #     lock is stale (pid 62788 dead, hb 9223372036854775807s ago)
+        # Aquele numero e `[int64]::MaxValue` e e EXATAMENTE a assinatura do roubo de 2026-08-21,
+        # que este arquivo documenta em detalhe -- so que ali Owner e Pid tambem vinham vazios, e
+        # aqui nao. O reclaim estava certo (o pid estava morto de verdade e a placa livre), mas
+        # quem ler a mensagem vai caçar um bug de parse que nao aconteceu.
+        #
+        # A garantia de seguranca NAO depende disto e continua valendo: `$alive` sai do `Pid`,
+        # que e parseado a parte, entao um irmao VIVO com `hb` ilegivel segue protegido. O que se
+        # conserta aqui e so a legibilidade -- que e o que decide se a proxima pessoa acredita na
+        # ferramenta.
+        HbLido    = [bool]$hb
         StaleFor  = if ($hb) { [DateTimeOffset]::Now.ToUnixTimeSeconds() - [int64]$hb } else { [int64]::MaxValue }
     }
+}
+
+function Format-GpuLockHb {
+    param($State)
+    if ($State.HbLido) { "$($State.StaleFor)s ago" } else { "nunca carimbado" }
 }
 
 function Take-GpuLock {
@@ -103,7 +122,7 @@ function Take-GpuLock {
     if ($s -and -not $Force) {
         $alive = $s.Pid -and (Get-Process -Id $s.Pid -EA SilentlyContinue)
         if ($alive -or $s.StaleFor -lt $StaleLimitSec) {
-            Write-Host "lock HELD by $($s.Owner) (pid $($s.Pid) alive=$([bool]$alive), hb $($s.StaleFor)s ago, kind $($s.Kind)) -- not taking"
+            Write-Host "lock HELD by $($s.Owner) (pid $($s.Pid) alive=$([bool]$alive), hb $(Format-GpuLockHb $s), kind $($s.Kind)) -- not taking"
             return $false
         }
         # A lock we cannot read, or one that names nobody, is NOT a lock we may reclaim.
@@ -116,7 +135,7 @@ function Take-GpuLock {
             Write-Host "  Inspect it: Get-Content $script:LockPath"
             return $false
         }
-        Write-Host "lock is stale (pid $($s.Pid) dead, hb $($s.StaleFor)s ago) -- reclaiming from $($s.Owner)"
+        Write-Host "lock is stale (pid $($s.Pid) dead, hb $(Format-GpuLockHb $s)) -- reclaiming from $($s.Owner)"
     }
 
     # Detached heartbeat: rewrites the file every 15 s stamping its OWN pid, so
@@ -181,7 +200,7 @@ function Assert-GpuLock {
     param([Parameter(Mandatory)][string]$Owner, [switch]$Force)
     if (-not (Take-GpuLock -Owner $Owner -Force:$Force)) {
         $s = Get-GpuLockState
-        throw "GPU lock held by $($s.Owner) (pid $($s.Pid), hb $($s.StaleFor)s ago) -- refusing to run GPU work."
+        throw "GPU lock held by $($s.Owner) (pid $($s.Pid), hb $(Format-GpuLockHb $s)) -- refusing to run GPU work."
     }
 }
 

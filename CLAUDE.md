@@ -527,6 +527,38 @@ Standard Safetensors. Per quantized layer: `<layer>.weight` as `I8` of shape `[r
 
 Header + sidecar + `.analysis.json` only — **163 checkpoints in 0.68 s**, no torch, no model load. It computes the median effective error entirely offline (the sidecar says which format each layer got; the analysis says that format's measured error on that layer) and reproduces every number this bench has published. Verdicts are `REPROVADO` / `OLHAR` / `SEM VEREDITO`; **`APROVADO` is deliberately absent**, because no cut on either axis separates usable from unusable here — 0.1837 correct against 0.2147 destroyed, 0.7173 fine against 0.8255 destroyed. It rejects, points and predicts. It does not approve.
 
+**Layer 2, does the quantized math actually run TODAY — needs the GPU:**
+
+```bash
+.\python_embeded\python.exe -s .\tools\avaliar_despacho.py --controles
+```
+
+The sidecar's `backend` field records the **conversion**, not today's load, and comfy-kitchen, ComfyUI and torch have all moved since. `tools/avaliar_despacho.py` loads through ComfyUI's normal path and counts, reusing `probe_quant_dispatch.py` rather than reimplementing the count. Criterion, predictions and three refutation conditions in `bench/criterio_camada2_despacho.md`, written before running; **all three stayed silent**. Executed 2026-09-01 over the 37 checkpoints layer 1 marked as quantized:
+
+```
+26  DESPACHA              every diffusion checkpoint on this bench, 0 dequantize
+ 6  TRAVADO_PELO_COMFY    all six text encoders
+ 2  SEM VEREDITO          the two Abiray MiniMax -- die in 7-9 s, not a forward
+ 2  NAO_PROBAVEL          live in `checkpoints/`, which the probe cannot resolve
+ 1  NAO_DESPACHA          flux-2-klein-base-4b-fp8
+```
+
+So the `backend` field still describes today's execution — including **thirteen builds never loaded here before** and three third-party files (riftcast's `LTX25-distilled-DiT-comfy-*`, 1440 layers each; `DasiwaWAN22I2V14BLightspeed`; Winnougan's `minimax_h3_..._w4a8_convrot`).
+
+**`DESPACHA` is not approval.** It answers one binary question — was the kernel called? — and nothing else. On this bench HunyuanVideo 1.5 W4A4 dispatches natively and the render is destroyed. `APROVADO` stays absent from every layer of the evaluator.
+
+**fp8 runs dequantized, and the `impl` counter says so outright.** `flux-2-klein-base-4b-fp8`, a *diffusion* model with `comfy_force_cast_weights=False` — so not the CLIP lock — makes 0 quantized forwards, 8 `dequantize`, and the op literally called is `dequantize_per_tensor_fp8=comfy_kitchen.backends.cuda`. Memory saved, time not. Open, and not worth guessing at: where `full_precision_mm=True` comes from on a diffusion model, given `comfy/ops.py:1667` passes `disabled=` and not `full_precision_mm` on that path.
+
+**There are TWO text-encoder locks, and the rule that knew only one misclassified the very file that established the finding.** This file documents both — `comfy_force_cast_weights` (from `comfy/sd.py:269`) and `full_precision_mm` (hardcoded at `comfy/sd1_clip.py:114` for every text encoder) — and layer 2's first rule asked only for the first:
+
+```
+5 encoders                            force_cast {'True': N}                 -> TRAVADO
+qwen3vl_32b_minimax_h3-int4_convrot   force_cast {'False': 351}
+                                      fpmm       {'True': 350}               -> NAO_DESPACHA
+```
+
+That sixth file is the one this bench measured on 2026-08-31 to establish the lock in the first place. `NAO_DESPACHA` reads as a defect in the checkpoint and would send someone to reconvert a public file that is fine. Either lock alone drops the math, so the rule now asks for either and **names which**. And the defect that let the other one hide: the report did not record the field its own verdict rested on — a verdict whose evidence is not in the report is an opinion.
+
 **Layer 3, the reference-arm guard — needs the GPU:**
 
 ```bash
