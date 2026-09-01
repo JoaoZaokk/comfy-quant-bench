@@ -513,7 +513,24 @@ with the W4A4 error is **+0.10**. What correlates is the W4A8 error (+0.978).
 
   `quant_int8` and `svdq_to_bf16` have **no earlier output on disk**, so their acceptance is weaker and says so: a real conversion plus a load through ComfyUI's normal loader. int8 counts 432 `int8_tensorwise` modules with **8/8 quantized forwards, 0 dequantize** on `comfy_kitchen.backends.cuda`; the recovered BF16 loads as `Lumina2`, 6 154 908 736 params, 34 fused qkv keys — for *this* architecture the docstring's fused-layout warning does not bite, because ComfyUI's own `Lumina2` wants `attention.qkv`.
 
-  **`quant_w4a4_smooth` still has not written a byte through the new path, and that is a missing model, not a code problem.** Neither input it needs is on this machine — no `gemma_3_12B_it_heretic.safetensors` (the BF16 source) and no Gemma in `convrot_w4a4` for `--calibrate-with` (recursive `-Force` search, both roots, so `.disabled` is visible). Two ways around it were tried and both closed on a measurement: the fp8 twin calibrates fine (96 norms, ~3 min) then dies on `KeyError: 'F8_E4M3'`; the Gemma-3 1B is a valid *source* but `load_clip` detects it as `lumina2` and the tokenizer raises `invalid tokenizer`. Unblocking costs a ~22 GiB download — the owner's call.
+  **`quant_w4a4_smooth` ran end to end on 2026-09-01, and verifying it found two defects in the VERIFIER.** The owner said to stop listing the blocker and download the model. `DreamFast/gemma-3-12b-it-heretic`, matched by **exact size** rather than by name — 23 545 681 250 bytes, the number the w4a8 sidecar already recorded. One conversion then unblocked both missing inputs: `quant_w4a4 --profile gemma` over the BF16 produced the `--calibrate-with`. Smooth wrote 6.91 GiB in 23.3 s, 96/96 norms observed, and the channel outlier ratio went **82.52 → 9.60**.
+
+  Its acceptance then **failed the file twice, and both times the verifier was wrong** — which is the part worth keeping, because both defects had existed for as long as `smooth` has and could only surface by running it to completion:
+
+  - **`Source comparison` reported 96 corrupted tensors** — exactly 48 `input_layernorm` + 48 `pre_feedforward_layernorm`, and nothing else. Rewriting the norm *is* the SmoothQuant mechanism (`norm ← (norm+1)/λ − 1`, `W ← W·λ`), so "preserved == byte-identical" is true for `quant_w4a4` and false by construction here. The fix is not an exemption: for those norms the check **inverts** — they must have changed. A byte-identical norm in a SmoothQuant file means λ=1 there, i.e. the smoothing did nothing, and the file still loads and dispatches.
+  - **`--kernel-smoke` failed at rel-RMSE 16.21 against a 0.90 ceiling.** The smoke compares against `F.linear(x, W_source)` while the file stores `W·λ` — two different functions, not two implementations of one. **Tested before fixing**, recovering λ from the converter's own formula inverted (`λ = (norm_src+1)/(norm_out+1)`, nothing stored):
+
+  ```
+  λ recovered                              min 4.90  max 103.47  mean 13.60  (3840 channels)
+  reference F.linear(x, W_source)          rel-RMSE 15.3650   <- failed
+  reference F.linear(x, W_source · λ)      rel-RMSE  0.2127   <- Gemma's normal band
+  ```
+
+  72x. Fixed, and λ is now **printed in the report** (min/max/mean) so a reader can check the correction instead of trusting it. Final: structure PASS, source comparison PASS, backend `comfy_kitchen.backends.cuda`, `relative_rmse 0.18702`. `o_proj` and `down_proj` stay outside the correction on purpose — they are quantized but not smoothed, since no norm feeds them directly, and the function returns `None` for them so the strict comparison still applies.
+
+  **A verifier that fails a correct file teaches people to switch verifiers off** — the same argument this repo makes about a WARN resting on a hypothesis. The migration created neither defect; it created the occasion to find them.
+
+  Still open, and now cheap: nothing compared the `_w4a4_convrot` and `_w4a4_smooth` files against each other, so the question smooth exists to answer — *is channel smoothing the largest term of the SVDQuant recipe?* — is unanswered with both files sitting on disk.
 
   **The negative control in that converter's own refusal test is what found two real defects**, which is the reusable part. The control exists so a converter that died on every invocation could not pass all the refusal cases; it failed, and the failure was the finding. `smooth` had **no zero-layer guard** — pointed at a Wan it printed `Layers: 0 quantized: 0` and exited **0**, so `--dry-run`, the thing you run *before* spending hours, answered SUCCESS for a conversion with nothing to convert (the other four already refused: `quant_w4a4.py:386`, `quant_w4a8.py:248`, `quant_int8.py:139`, `quant_mixed.py:581`). And it had **no dtype guard** — it validated names only, then crashed ~3 minutes later inside another file's `read_tensor`; it now refuses in **1.8 s**, and `tools/test_smooth_guards.py` (7/7) asserts that *time*, because the regression to catch is moving the check back after calibration.
 

@@ -1,7 +1,7 @@
 # 08 - One converter core: five converters re-implement the same eight-part contract and the parts diverge
 
 Type: grilling
-Status: in-progress
+Status: resolved
 Blocked by: 05, 07
 Severity: medium
 Provenance: TRACED, then EXECUTED 2026-08-22 on the 3090
@@ -497,3 +497,77 @@ ninguem leia "nao reconverti" como "reconverti e deu diferente".
 ~22 GiB (o Gemma 3 12B BF16) mais uma conversao W4A4 dele para servir de calibragem. E decisao do
 dono: rede, disco e tempo. Sem isso, o ticket fecha com uma linha explicita dizendo que seis dos
 sete foram verificados executando e o setimo so nas recusas.
+
+---
+
+## FECHADO, 2026-09-01. O setimo escritor rodou, e a verificacao dele achou dois defeitos no VERIFICADOR.
+
+O dono mandou baixar o Gemma em vez de continuar listando o bloqueio. Baixado por
+`tools/hf_parallel_get.py` de `DreamFast/gemma-3-12b-it-heretic`, casado por **tamanho exato** e
+nao por nome -- 23 545 681 250 bytes, o numero que o sidecar do w4a8 ja registrava. 628 tensores
+BF16, 48 camadas, K=3840.
+
+Uma conversao destravou as duas entradas que faltavam: `quant_w4a4 --profile gemma` sobre o BF16
+produziu o `--calibrate-with`, e entao:
+
+    quant_w4a4_smooth   6,91 GiB escritos em 23,3 s
+    calibragem          6 prompts, 96/96 normas observadas
+    outlier de canal    82,52 -> 9,60      (a suavizacao funcionando)
+
+**`conv.guard()` e `conv.commit()` do smooth executaram pela primeira vez desde a migracao.** Era o
+unico item que faltava no criterio de fechamento.
+
+### A aceitacao reprovou o arquivo, e o errado era o verificador -- duas vezes
+
+**1. `Source comparison` acusou 96 tensores corrompidos.** Exatamente 48 `input_layernorm.weight` +
+48 `pre_feedforward_layernorm.weight`, **e nada mais**. Reescrever a norma **e o mecanismo** do
+SmoothQuant (`norm <- (norm+1)/lambda - 1`, `W <- W*lambda`), entao a regra "preservado ==
+byte-identico" e verdadeira para o `quant_w4a4` e falsa por construcao para o `smooth`.
+
+A correcao nao foi isentar e seguir: para essas normas a checagem **inverte** -- elas TEM de ter
+mudado. Norma byte-identica num arquivo SmoothQuant significa lambda = 1 naquela camada, ou seja, a
+suavizacao nao fez nada ali, e o arquivo carrega e despacha do mesmo jeito. Essa e a falha
+silenciosa que ninguem veria.
+
+**2. O `--kernel-smoke` reprovou com rel-RMSE 16,21 contra teto 0,90.** Hipotese: o smoke compara o
+kernel contra `F.linear(x, W_FONTE)`, mas o arquivo guarda `W * lambda` -- duas FUNCOES diferentes,
+nao duas implementacoes da mesma. **Testada antes de consertar**, recuperando lambda da propria
+formula invertida (`lambda = (norm_src + 1)/(norm_out + 1)`, nada guardado em metadado):
+
+    lambda recuperado                          min 4,90  max 103,47  media 13,60  (3840 canais)
+    referencia F.linear(x, W_fonte)            rel-RMSE 15,3650   <- reprovava
+    referencia F.linear(x, W_fonte * lambda)   rel-RMSE  0,2127   <- faixa normal do Gemma
+
+72x. Consertado no `verify_w4a4.py`, e o lambda agora vai **impresso no laudo** (min/max/media),
+para o leitor conferir a correcao em vez de confiar nela. Verificacao final do arquivo:
+
+    Structural verification  PASS (336 convrot_w4a4)
+    Source comparison        PASS
+    Backend                  convrot_w4a4_linear -> comfy_kitchen.backends.cuda
+    relative_rmse            0,18702   (teto 0,90)
+
+`o_proj` e `down_proj` continuam fora da correcao de proposito: sao quantizados e **nao**
+suavizados, porque nao ha norma direto na frente deles. A funcao devolve `None` para eles e a
+comparacao estrita volta a valer.
+
+### Por que isto importa mais que o proprio ticket
+
+Um verificador que reprova um arquivo correto ensina a desligar verificador -- e o mesmo argumento
+que este repo ja faz sobre um WARN apoiado em hipotese. Os dois defeitos existiam desde que o
+`smooth` existe e **so podiam aparecer rodando o smooth ate o fim**, que e precisamente o que nunca
+tinha acontecido. A migracao nao criou nenhum dos dois; ela criou a ocasiao de encontra-los.
+
+### Criterio de fechamento, item a item
+
+    decisao escrita                                  FEITO (2026-08-31, NUCLEO)
+    um escritor so                                   FEITO (a funcao antiga foi apagada)
+    mesmo conjunto de guardas em todo conversor       FEITO (e consertou 3 divergencias reais)
+    bytes de dado conferidos                          FEITO: 5 pares sha256 identicos
+    o setimo escritor                                 FEITO: rodou, e passa verify --kernel-smoke
+
+**Status: resolved.**
+
+Nao coberto: nenhuma imagem, nenhum encode real com o arquivo suavizado, e nenhuma comparacao de
+qualidade entre o `_w4a4_convrot` e o `_w4a4_smooth` -- a pergunta que o smooth existe para
+responder ("channel smoothing e o maior termo do SVDQuant?") continua **aberta**, e agora tem os
+dois arquivos no disco para responde-la.

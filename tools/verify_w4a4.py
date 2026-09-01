@@ -541,20 +541,77 @@ def compare_ranges(left_handle, left_start: int, right_handle, right_start: int,
     return True
 
 
+def normas_suavizadas(model: Path, source_header: dict | None) -> frozenset[str]:
+    """Quais normas o SmoothQuant reescreveu, ou vazio se este nao for um arquivo SmoothQuant.
+
+    A lista de grupos vem de `quant_w4a4_smooth.GROUPS`, IMPORTADA e nao copiada: se alguem
+    acrescentar um terceiro grupo la, esta verificacao acompanha sozinha. Copiar os dois nomes
+    para ca seria a mesma divergencia que o ticket 08 passou o dia inteiro desfazendo.
+
+    O gatilho e o campo `quantization` do sidecar. Um arquivo sem sidecar, ou com sidecar que nao
+    diz SmoothQuant, cai no conjunto vazio e a regra estrita continua valendo para tudo -- que e o
+    lado seguro: na duvida, cobra byte-identidade.
+    """
+    sidecar = model.with_suffix(".quant.json")
+    if not sidecar.is_file() or source_header is None:
+        return frozenset()
+    try:
+        manifesto = json.loads(sidecar.read_text(encoding="utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return frozenset()
+    if "smoothquant" not in str(manifesto.get("quantization", "")).lower():
+        return frozenset()
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from quant_w4a4_smooth import GROUPS, LAYER_RE
+    camadas = sorted({m.group(1) for k in source_header if (m := LAYER_RE.match(k))})
+    return frozenset(f"model.layers.{n}.{norma}.weight"
+                     for n in camadas for norma in GROUPS)
+
+
 def validate_preserved_bytes(
     model: Path,
     source: Path,
     model_header: dict,
     source_header: dict,
     layers: dict,
+    smoothed_norms: frozenset[str] = frozenset(),
 ) -> list[str]:
+    """Todo tensor nao quantizado tem de sair byte a byte igual -- MENOS as normas do SmoothQuant.
+
+    `smoothed_norms` existe porque a regra "preservado == identico" e verdadeira para o
+    `quant_w4a4`, e FALSA por construcao para o `quant_w4a4_smooth`, cujo mecanismo inteiro e
+    reescrever a norma que alimenta cada projecao:
+
+        norm_weight   <- (norm_weight + 1)/lambda - 1
+        linear_weight <- linear_weight * lambda
+
+    MEDIDO em 2026-09-01, na primeira corrida ponta a ponta do smooth depois da migracao do
+    ticket 08: 96 ERROR, exatamente 48 `input_layernorm.weight` + 48 `pre_feedforward_layernorm.weight`
+    e **nada mais**, num arquivo correto. Um verificador que reprova um arquivo bom ensina a
+    desligar verificador -- e o mesmo argumento que este repo ja faz sobre um WARN apoiado em
+    hipotese.
+
+    A correcao NAO e isentar e seguir. Para essas normas a checagem **inverte**: elas TEM de ter
+    mudado. Uma norma byte-identica num arquivo SmoothQuant significa lambda = 1 naquela camada,
+    ou seja, a suavizacao nao fez nada ali -- que e exatamente a falha silenciosa que ninguem veria,
+    porque o arquivo carrega, despacha e gera imagem plausivel.
+    """
     errors = []
     quantized_weights = {f"{name}.weight" for name in layers}
+    nao_mudaram = []
     model_base = data_start(model)
     source_base = data_start(source)
     with model.open("rb") as model_handle, source.open("rb") as source_handle:
         for name, source_info in source_header.items():
             if name in quantized_weights:
+                continue
+            if name in smoothed_norms:
+                output_info = model_header[name]
+                s0, s1 = source_info["data_offsets"]
+                o0, o1 = output_info["data_offsets"]
+                if o1 - o0 == s1 - s0 and compare_ranges(
+                        model_handle, model_base + o0, source_handle, source_base + s0, s1 - s0):
+                    nao_mudaram.append(name)
                 continue
             output_info = model_header[name]
             source_start, source_end = source_info["data_offsets"]
@@ -568,7 +625,45 @@ def validate_preserved_bytes(
                 size,
             ):
                 errors.append(f"{name}: preserved tensor bytes changed")
+    if nao_mudaram:
+        errors.append(
+            f"{len(nao_mudaram)} de {len(smoothed_norms)} normas do SmoothQuant sairam "
+            f"byte-identicas a fonte (ex.: {nao_mudaram[0]}) -- lambda foi 1 nessas camadas e a "
+            f"suavizacao nao fez nada ali. O arquivo carrega e despacha assim mesmo.")
     return errors
+
+
+def smoothquant_lambda(model: Path, source: Path, layer_name: str,
+                       model_header: dict, source_header: dict):
+    """O lambda por canal de entrada que o SmoothQuant dobrou na norma, ou None se nao for um.
+
+    Recuperado, nao lido de metadado: `norm_out = (norm_src + 1)/lambda - 1`, entao
+    `lambda = (norm_src + 1)/(norm_out + 1)`. Isso vale contra o arquivo que EXISTE em vez de
+    contra o que o sidecar diz que existe -- se alguem reescrever as normas por outro caminho, o
+    numero aqui acompanha.
+
+    Devolve None -- e a comparacao volta a ser a estrita -- quando o sidecar nao diz SmoothQuant,
+    quando a camada nao pertence a nenhum grupo suavizado (`o_proj` e `down_proj` sao quantizados
+    e NAO suavizados, de proposito: nao ha norma direto na frente deles), ou quando as normas nao
+    estao nos dois arquivos. Na duvida, cobra o estrito.
+    """
+    if not normas_suavizadas(model, source_header):
+        return None
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from quant_w4a4_smooth import GROUPS, LAYER_RE
+    match = LAYER_RE.match(layer_name)
+    if not match:
+        return None
+    sufixo = layer_name[match.end():]
+    norma = next((n for n, membros in GROUPS.items() if sufixo in membros), None)
+    if norma is None:
+        return None
+    chave = f"model.layers.{match.group(1)}.{norma}.weight"
+    if chave not in source_header or chave not in model_header:
+        return None
+    n_src = load_tensor_cuda(source, source_header[chave]).float()
+    n_out = load_tensor_cuda(model, model_header[chave]).float()
+    return (n_src + 1.0) / (n_out + 1.0)
 
 
 def kernel_smoke(
@@ -594,6 +689,22 @@ def kernel_smoke(
         return load_tensor_cuda(model, info, view=view)
 
     weight = load_tensor_cuda(source, source_header[f"{layer_name}.weight"])
+    # SmoothQuant guarda `W * lambda` no Linear e compensa na norma que alimenta a camada. Comparar
+    # o kernel contra `F.linear(x, W_FONTE)` compara entao duas FUNCOES diferentes, nao duas
+    # implementacoes da mesma, e o smoke reprova um arquivo correto.
+    #
+    # MEDIDO 2026-09-01, `model.layers.0.self_attn.q_proj` do Gemma 3 12B suavizado:
+    #
+    #     referencia F.linear(x, W_fonte)           rel-RMSE 15.3650   <- reprovava
+    #     referencia F.linear(x, W_fonte * lambda)  rel-RMSE  0.2127   <- faixa normal do Gemma
+    #
+    # lambda nao precisa ser guardado: sai da propria formula do conversor, invertida, a partir
+    # das duas normas -- `norm_out = (norm_src + 1)/lambda - 1`, logo
+    # `lambda = (norm_src + 1)/(norm_out + 1)`. Recuperado aqui: min 4.90, max 103.47, media 13.60
+    # sobre 3840 canais, magnitude que sozinha explica um RMSE de 15.
+    lam = smoothquant_lambda(model, source, layer_name, model_header, source_header)
+    if lam is not None:
+        weight = weight * lam.to(weight.dtype)
     x = torch.randn((2, weight.shape[1]), device="cuda", dtype=weight.dtype)
     kwargs = fmt.smoke_kwargs(layer_name, config, load, x, options)
     implementation = ck.registry.get_implementation(fmt.linear_op, kwargs=kwargs)
@@ -606,6 +717,8 @@ def kernel_smoke(
         "op": fmt.linear_op,
         "backend": f"{implementation.__module__}.{implementation.__name__}",
         "output_dtype": str(output.dtype),
+        "smoothquant_lambda": None if lam is None else
+            {"min": lam.min().item(), "max": lam.max().item(), "mean": lam.mean().item()},
         "relative_rmse": error.square().mean().sqrt().div(reference.float().square().mean().sqrt()).item(),
         "max_abs_error": error.abs().max().item(),
     }
@@ -662,7 +775,8 @@ def run(args: argparse.Namespace, coverage: Coverage) -> int:
         first_layer.setdefault(config["format"], layer_name)
 
     if source:
-        errors = validate_preserved_bytes(model, source, model_header, source_header, layers)
+        errors = validate_preserved_bytes(model, source, model_header, source_header, layers,
+                                          normas_suavizadas(model, source_header))
         if errors:
             for error in errors:
                 print(f"ERROR: {error}")

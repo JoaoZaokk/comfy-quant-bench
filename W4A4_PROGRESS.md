@@ -4633,3 +4633,71 @@ As contagens de trava, essas sim, cobrem todos os modulos. Quatro dos 37 seguem 
 `convrot_w4a4_linear=...cuda: 7` com zero forwards quantizados E zero dequantize, entao aquela linha
 nao deve ser lida como kernel rodando. Nada aqui fala de qualidade nem de fidelidade: `DESPACHA` nao
 e aprovacao, e nesta bancada o HunyuanVideo 1.5 W4A4 despacha e o render e destruido.
+
+## 2026-09-01, parte 48 - o setimo escritor rodou, e a verificacao dele achou dois defeitos no VERIFICADOR
+
+O `quant_w4a4_smooth` era o unico dos sete que nunca tinha escrito um byte pelo caminho migrado,
+por falta de modelo. O dono cortou a discussao -- *"quinta vez que tu fala A MESMA COISA. Baixa
+essa porra logo"* -- e estava certo: eu tinha transformado um download em um bloqueio recorrente.
+
+Baixado de `DreamFast/gemma-3-12b-it-heretic` por `tools/hf_parallel_get.py`, casado por **tamanho
+exato** e nao por nome: 23 545 681 250 bytes, o numero que o sidecar do w4a8 ja registrava. 628
+tensores BF16, 48 camadas, K=3840. Uma conversao (`quant_w4a4 --profile gemma`) produziu o
+`--calibrate-with` que faltava, entao **um download destravou as duas entradas**.
+
+    quant_w4a4_smooth   6,91 GiB em 23,3 s
+    calibragem          6 prompts, 96/96 normas
+    outlier de canal    82,52 -> 9,60
+
+`conv.guard()` e `conv.commit()` do smooth executaram pela primeira vez desde a migracao. O ticket
+08 fechou.
+
+### A aceitacao reprovou o arquivo duas vezes, e as duas o errado era o verificador
+
+**1. `Source comparison`: 96 tensores "corrompidos".** Exatamente 48 `input_layernorm.weight` + 48
+`pre_feedforward_layernorm.weight`, e nada mais -- que e a prova de que a conversao fez exatamente o
+que devia. Reescrever a norma E o mecanismo do SmoothQuant (`norm <- (norm+1)/lambda - 1`,
+`W <- W*lambda`), entao a regra "preservado == byte-identico" e verdadeira para o `quant_w4a4` e
+falsa por construcao aqui.
+
+O conserto nao foi isentar: para essas normas a checagem **inverte** -- elas TEM de ter mudado.
+Norma byte-identica num arquivo SmoothQuant significa lambda = 1 naquela camada, ou seja a
+suavizacao nao fez nada ali, e o arquivo carrega, despacha e gera imagem plausivel do mesmo jeito.
+Isentar e seguir teria trocado um falso negativo por um ponto cego.
+
+**2. `--kernel-smoke`: rel-RMSE 16,21 contra teto 0,90.** Hipotese: o smoke compara contra
+`F.linear(x, W_FONTE)` e o arquivo guarda `W * lambda` -- duas FUNCOES diferentes, nao duas
+implementacoes da mesma. **Testada antes de consertar**, recuperando lambda da formula do proprio
+conversor invertida (`lambda = (norm_src + 1)/(norm_out + 1)`), sem depender de nada guardado em
+metadado:
+
+    lambda recuperado                          min 4,90  max 103,47  media 13,60  (3840 canais)
+    referencia F.linear(x, W_fonte)            rel-RMSE 15,3650   <- reprovava
+    referencia F.linear(x, W_fonte * lambda)   rel-RMSE  0,2127   <- faixa normal do Gemma
+
+72x, e 0,2127 cai exatamente onde o smoke do Gemma sempre caiu. Consertado, e o lambda agora vai
+**impresso no laudo** (min/max/media): quem le confere a correcao em vez de confiar nela. Laudo
+final: estrutura PASS, comparacao com a fonte PASS, backend `comfy_kitchen.backends.cuda`,
+`relative_rmse 0,18702`.
+
+`o_proj` e `down_proj` ficam fora da correcao de proposito -- sao quantizados e **nao** suavizados,
+porque nao ha norma direto na frente deles -- e para eles a funcao devolve `None` e a comparacao
+estrita continua valendo.
+
+### Por que isto vale mais que fechar o ticket
+
+**Um verificador que reprova um arquivo correto ensina a desligar verificador**, que e o mesmo
+argumento que este repo ja faz sobre um WARN apoiado em hipotese. Os dois defeitos existiam desde
+que o `smooth` existe e **so podiam aparecer rodando o smooth ate o fim** -- exatamente o que nunca
+tinha acontecido. A migracao nao criou nenhum dos dois; ela criou a ocasiao.
+
+E a ordem importou: a primeira reprova (96 normas) parecia um conversor corrompendo o modelo. So
+contar que eram 48x2 e nada mais transformou "o conversor quebrou" em "o verificador nao conhece o
+formato".
+
+### Nao coberto
+
+Nenhuma imagem, nenhum encode real com o arquivo suavizado, e **nenhuma comparacao entre o
+`_w4a4_convrot` e o `_w4a4_smooth`** -- a pergunta que o smooth existe para responder (*channel
+smoothing e o maior termo do SVDQuant?*) continua aberta, e agora tem os dois arquivos no disco
+para responde-la. Uma camada no smoke, um seed, M=2, entrada gaussiana.
