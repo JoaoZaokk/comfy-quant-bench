@@ -53,12 +53,46 @@ Same prompt, same seed, same sampler, `vace_strength 0`, 25 steps, 33 frames, 48
 | `misto015` — unusable | ![](images/seed1_misto015_borrado.png) |
 | pure W4A4 — destroyed | ![](images/seed1_w4a4_puro_DESTRUIDO.png) |
 
-Second seed, reference against the good build:
+### Read this before you read the pictures: the FP16 reference is not a good image
+
+The reference above is dark and muddy. It holds together — a person at a bench, a window, objects —
+but nobody would call it sharp. **The whole ladder on this page is relative to that**, not to a
+pretty picture, and the "good" build is good *compared to a mediocre reference*.
+
+### The second seed, kept on the page because deleting it would be cherry-picking
 
 | | |
 |---|---|
-| FP16 reference | ![](images/seed3_fp16_referencia.png) |
-| `misto005` | ![](images/seed3_misto005_bom.png) |
+| FP16 reference, seed 3 | ![](images/seed3_fp16_referencia.png) |
+| `misto005`, seed 3 | ![](images/seed3_misto005_bom.png) |
+
+**The reference there is broken**: melted, duplicated head, smeared arm, washed-out table. And the
+*quantized* `misto005` at that same seed looks **better** than it. Quantization does not improve a
+model, so that pair is not measuring quantization — it is measuring a bad draw in the unquantized
+arm.
+
+It stays on the page anyway, because seed 3 is also the **hardest seed for every build** by the
+ladder's own divergence numbers — `misto005` scores 0.3299 there against 0.1925 on seed 1, and pure
+W4A4 scores 0.4653 against 0.3112. Pulling the one seed where the quantized files did worst, on the
+grounds that its reference was bad, is exactly the move that turns an honest page into a sales page.
+So it is here, labelled for what it is.
+
+What this costs the page, stated plainly: **the tolerated / not-tolerated band below (0.0546 vs
+0.0793) was judged by eye against these references.** The seed-1 ladder was re-checked image by
+image and is real and progressive — coherent reference, good `misto005`, smeared `misto015`, brown
+and subjectless pure W4A4, and every one of those four images was verified by hash to come from
+runs sharing 25 steps, 480px and the same seed. The band is still the best number that exists for
+this model. It is no longer a number to quote without re-rendering the reference first.
+
+One more thing a reader deserves: `images/seed1_fp16_referencia.png` and
+`images/armadilha_vace_strength_0.0.png` are the **same file**. The `vace_strength` demonstration
+reuses the ladder's own FP16 render rather than a separate one. Nothing is wrong with the pixels;
+it is stated so nobody mistakes one image in two roles for two independent pieces of evidence.
+
+The bench that produced this file has a rule for exactly this — *when the unquantized arm breaks
+too, the number is not about quantization* — written on the same page as the image that violates it.
+Checking the first reference cost one render. Not checking the **second** one cost a wrong public
+page, and it was the owner who caught it, not the bench.
 
 ---
 

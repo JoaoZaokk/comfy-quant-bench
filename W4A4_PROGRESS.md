@@ -4191,10 +4191,36 @@ dois bracos:
 
 | build | erro efetivo mediano | 4 bits / 8 bits | GiB | divergencia | resultado |
 |---|---|---|---|---|---|
-| referencia FP16 | - | - | 4,01 | - | oficina nitida, pessoa na bancada |
+| referencia FP16 | - | - | 4,01 | - | **ver a correcao abaixo: NAO e nitida** |
 | `--promote-error 0,05` | 0,0546 | 2 / 298 | 2,15 | 0,2612 | **correta** |
 | `--promote-error 0,15` | 0,0793 | 134 / 166 | 2,11 | 0,3022 | estrutura volta, tudo borrado, inutilizavel |
 | W4A4 puro | 0,1602 | 300 / 0 | 2,07 | 0,3949 | destruida, sem sujeito |
+
+> ### CORRECAO 2026-09-01, apontada pelo dono: eu descrevi a referencia como nitida e ela nao e
+>
+> A celula acima dizia **"oficina nitida, pessoa na bancada"**. Olhando os PNGs publicados:
+>
+> - `seed1_fp16_referencia.png` -- escura e turva, mas coerente: pessoa na bancada, janela, objetos.
+>   Nao e nitida.
+> - `seed3_fp16_referencia.png` -- **quebrada**. Cabeca derretida e duplicada, braco em borrao, mesa
+>   lavada.
+>
+> E o que fecha o caso: **`seed3_misto005_bom.png`, que e o build QUANTIZADO, parece melhor que a
+> referencia FP16 da mesma semente.** Quantizacao nao melhora modelo. Se o filho parece melhor que o
+> pai, o par nao esta pareado, e a linha da seed3 nao sustenta afirmacao nenhuma -- ela saiu do card.
+>
+> O que sobrevive: a escada da **seed1** foi reconferida imagem a imagem e e real e progressiva --
+> referencia coerente, `misto005` boa, `misto015` borrada, W4A4 puro marrom e sem sujeito. A tabela
+> abaixo vale para a seed1.
+>
+> O que fica sob suspeita: a banda 0,0546 / 0,0793 foi julgada **a olho contra essa referencia**.
+> Com uma das duas referencias quebrada, a banda continua sendo o melhor numero que existe para este
+> modelo e deixa de ser um numero em que eu confie sem re-renderizar.
+>
+> A licao ja estava escrita duas secoes abaixo -- *"quando o braco nao quantizado tambem quebra, o
+> numero nao e sobre quantizacao"* -- e eu a escrevi na mesma pagina em que publiquei a imagem que a
+> viola. Olhar a referencia custou uma imagem da primeira vez; nao olhar a SEGUNDA referencia custou
+> um card publico errado.
 
 **A linha do Wan fica entre 0,0546 e 0,0793.** O misto em 0,0793 ja e pior que o Z-Image em
 0,1241, que sai bom.
