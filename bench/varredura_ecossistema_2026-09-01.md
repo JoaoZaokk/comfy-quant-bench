@@ -366,3 +366,69 @@ generalizar para outro modelo.
 2. Se a amplificacao a jusante torna isso caro -- **nao medido, e e a pergunta que importa**.
 3. Se a imagem muda -- **nao medido**; e nesta bancada nenhum corte de erro separa usavel de
    inutilizavel, entao so um render olhado por alguem decide.
+
+---
+
+# Quinta rodada: "esparsidade custa 3x a quantizacao" era MEU erro, e a ordem inverte
+
+Proposta do dono: **esparsificar -> reequilibrar com 2 a 5 treinos leves -> quantizar**. Ele esta
+certo sobre a ordem, e e a receita padrao (o ASP da NVIDIA e podar, retreinar, deployar 2:4).
+
+Eu tinha respondido que "esparsidade custa ~3x o que a quantizacao custa" apoiado no numero 0,3617.
+**Aquilo nao valia**: comparou erro de PESO da poda contra erro de SAIDA da quantizacao -- duas
+metricas diferentes -- e usou poda por magnitude crua, que e o metodo que ninguem serio usa.
+
+## O atalho antes do treino: Wanda, sem gradiente e sem dado
+
+**SparseGPT** e **Wanda** fazem a recuperacao em UM passo, sem otimizador e sem treino: so precisam
+de ativacao calibrada, que esta bancada ja captura por forward-pre-hook. Wanda troca o criterio de
+poda de `|W|` para `|W| * ||X_j||_2` -- um peso pequeno que multiplica uma ativacao enorme importa
+mais que um peso grande que multiplica quase zero, e a magnitude sozinha nao ve isso.
+
+**MEDIDO AQUI**, 8 camadas, calibragem real do Z-Image: Wanda ganha **2,39x** da poda crua, em 8 de
+8, entre 2,25x e 3,69x.
+
+## Tudo na MESMA metrica, mesmas camadas, mesmas ativacoes
+
+`tools/probe_esparso_vs_quant.py`, 12 camadas, erro de saida na ativacao calibrada:
+
+    camada                          W4A4   2:4 cru  2:4 Wanda   ambos
+    layers.0.attention.qkv         0,0812   0,1670    0,0665    0,0967
+    layers.0.attention.out         0,0410   0,1793    0,1510    0,1615
+    layers.0.feed_forward.w1       0,0894   0,1774    0,0790    0,1127
+    layers.0.feed_forward.w3       0,1347   0,2165    0,0717    0,1395
+    layers.0.feed_forward.w2       0,4699   0,3146    0,0015    0,3840
+    layers.1.attention.qkv         0,0640   0,1422    0,0507    0,0759
+    layers.1.feed_forward.w2       0,0962   0,1379    0,0022    0,0876
+    ...
+    MEDIANA                        0,0923   0,1891    0,0794    0,1306
+
+**A esparsidade 2:4 com Wanda custa MENOS que a quantizacao a 4 bits** -- 0,0794 contra 0,0923,
+0,86x. A poda crua custa 2x, e era dali que sai o meu "3x". O controle da poda crua e o que separa
+"o criterio importa" de "deu sorte": sem ele, um numero bom de Wanda nao se distinguiria de acaso.
+
+**Os dois juntos: 0,1306**, apenas 1,42x o W4A4 sozinho -- removendo metade dos pesos E indo a 4
+bits.
+
+## O sinal por camada vale mais que a mediana
+
+    feed_forward.w2    W4A4 0,4699   2:4 Wanda 0,0015    <- praticamente de graca
+    attention.out      W4A4 0,0410   2:4 Wanda 0,1510    <- exatamente o oposto
+
+Os dois metodos sao **complementares por camada**, e isso e precisamente o que o `quant_mixed.py`
+existe para explorar -- so que hoje ele escolhe entre W4A4 e W4A8, nao entre quantizar e podar. Uma
+selecao por camada de tres vias (W4A4 / W4A8 / 2:4+quant) e a extensao obvia, e o maquinario de
+medicao ja esta pronto.
+
+O `0,4699` do `feed_forward.w2` e um outlier forte contra a mediana publicada de 0,1241 sobre 170
+camadas; fica anotado como coisa a conferir, nao como base de conclusao.
+
+## O que continua NAO medido
+
+- **O treino de recuperacao**, que era a proposta original. Wanda e o atalho sem treino; 2 a 5
+  passos leves iriam mais longe e ninguem testou aqui.
+- **SparseGPT**, que ainda resolve minimos quadrados por coluna e vai alem do Wanda.
+- **Execucao real em tensor core esparso**: falta `cuSPARSELt` (biblioteca, nao placa -- a sm86 tem
+  2:4 em hardware desde a 8.0). Todo numero acima e erro numerico, **nao** ganho de velocidade.
+- **Imagem.** Erro de saida em ativacao calibrada nao e render, e esta bancada ja mediu que nenhum
+  corte nesse eixo separa usavel de inutilizavel.
