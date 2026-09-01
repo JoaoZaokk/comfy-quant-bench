@@ -1,7 +1,7 @@
 # 02 - Scaffold ComfyLite beside ComfyUI without touching the bench
 
 Type: task
-Status: ready-for-agent
+Status: resolved
 Blocked by: 01
 Provenance: EXECUTED for git and ports; OBSERVED for the toolchain
 
@@ -155,3 +155,67 @@ answering `404: Not Found` in a browser. Both were real and both are gone:
 
 Still open on this ticket: **the Tauri window**, unchanged. `cargo tauri dev` is a full link against
 `~/.cargo` on C: with 55.4 GiB free.
+
+---
+
+## FECHADO 2026-09-01: a janela abriu, e o que a bloqueava tinha deixado de existir
+
+Gap 2 era o unico aberto: *"`cargo tauri dev` e um link completo contra `~/.cargo` no C: com 55,4
+GiB livres. Isso e decisao de espaco em disco, entao espera."*
+
+**Medido hoje, antes de tentar: C: tem 225,3 GiB livres.** O motivo da espera evaporou em algum
+momento entre 2026-08-22 e hoje, e o ticket teria ficado parado indefinidamente porque ninguem
+remede o numero que causou a pausa. Regra da casa, aplicada a um bloqueio e nao so a uma tabela:
+contar, nao citar. Para dimensionar: `~/.cargo` inteiro sao **1,8 GiB** e o `target/` ja existente
+**0,8 GiB** -- nunca foi perto de apertado, e o link levou **1m09s**.
+
+    cargo tauri build --debug --no-bundle
+      Finished `dev` profile in 1m 09s
+      comfylite.exe   12,4 MB
+
+`--no-bundle` de proposito: `bundle.targets` e `["nsis"]`, e a clausula pede uma JANELA, nao um
+instalador. Construir o NSIS so acrescentaria uma dependencia entre a medicao e o que se quer medir.
+
+### A janela, verificada por Win32 e nao pelo titulo
+
+Titulo bate, mas titulo e o que um processo declara. Consultado `user32`:
+
+    pid       65392
+    titulo    ComfyLite
+    handle    4920674
+    visivel   True
+    largura   1416      (config pede 1400 de cliente + decoracao)
+    altura    939       (config pede 900 + barra de titulo)
+    posicao   -1770,388
+
+Mais **32 processos `msedgewebview2`** vivos, que e o runtime realmente carregado e nao apenas um
+`.exe` que subiu.
+
+**A posicao X e NEGATIVA**: a janela abriu no monitor da ESQUERDA. `center: true` centraliza no
+monitor em que ela nasce. Vale registrar porque "abri e nao vi nada" tem uma causa banal aqui.
+
+### O worker, ligado do jeito que o launcher liga
+
+`python_embeded\python.exe -s worker\main.py` (nao `-m comfylite.server`, que levanta
+`ModuleNotFoundError` -- o pacote nao esta no path assim; o proprio `comfylite.bat` documenta a
+forma certa na sua mensagem de erro). `/api/health` **200**, `/` **200** servindo `ui/dist`.
+
+### Estado das oito clausulas
+
+    ComfyLite/ com .git proprio            OK
+    primeiro commit                        OK   2ec234f
+    .gitattributes cobrindo .rs/.svelte/.. OK
+    .gitignore cobrindo target/node_modules OK
+    shell Tauri 2 que compila e ABRE JANELA OK   <- era a unica aberta
+    porta em 8210-8250, de config, loopback OK   8221
+    git status da raiz limpo para ComfyLite OK
+    toolchain completa                      OK
+
+**Status: resolved.**
+
+### Nao coberto
+
+Ninguem olhou o CONTEUDO da janela: handle valido, tamanho certo e WebView2 vivo nao dizem que os
+tres paineis pintaram. O que ja estava provado (e continua sendo a evidencia disso) e o
+`npm run dev` em 5173 renderizando dado real do worker, registrado acima. Um `--release`, um
+instalador NSIS e um segundo monitor com DPI diferente nao foram tentados.
