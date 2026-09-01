@@ -573,3 +573,64 @@ wgmma), e a conclusao la foi *"tirar o gate nao gera kernel lento, gera erro de 
 do PyTorch tem `TORCH_CHECK(is_sm8x)` no ramo habilitado: foi **feito** para sm86. Transferir a
 conclusao teria enterrado o assunto errado. **MEDIDO**: aquele diretorio nao existe mais e nada foi
 compilado ali -- nao havia build provado nesta maquina antes de hoje.
+
+---
+
+# Oitava rodada: o caminho do xformers esta vivo, medido no binario e na placa
+
+Wheel `xformers-0.0.34-cp39-abi3-win_amd64.whl` (98,4 MiB) baixado para o scratchpad e aberto como
+zip. **Nada instalado**, o stack pinado nao foi tocado.
+
+## Os kernels 2:4 estao no wheel Windows, e nao dependem do cuSPARSELt
+
+Ha dois `_C.pyd`. O de 315,5 MiB e o FlashAttention-3 e nao interessa. O que importa e
+`xformers/_C.pyd`, 8,0 MiB -- **MEDIDO** por contagem de simbolo no binario:
+
+    sparse24                       3140
+    _sparse24_apply                 320
+    sparse24_sparsify_both_ways     705
+    cusparseLt                        0   <- nao depende da lib que falta aqui
+
+E `xformers/ops/sp24.py` (28 KB) esta no pacote.
+
+## As arquiteturas compiladas: sem sm_86 e sem PTX
+
+**MEDIDO** com `cuobjdump --list-elf` e `--list-ptx` do CUDA 13.2:
+
+    sm_75   10 cubins
+    sm_80   10 cubins
+    sm_90   10 cubins
+    PTX     NENHUM
+
+Sem PTX nao ha JIT de resgate. A questao passou a ser: **um cubin sm_80 roda numa placa sm_86?** A
+documentacao da NVIDIA diz que sim -- compatibilidade para a frente dentro da mesma major -- mas
+doc nao e medicao, e hoje ja errei tres vezes afirmando por leitura.
+
+## Medido, com o build que agora funciona
+
+Recompilei o kernel trivial de `tools/cudatest/` com **`-gencode=arch=compute_80,code=sm_80` e so
+isso**: sem sm_86, sem PTX de resgate. Confirmado o que saiu:
+
+    ELF file 1: soma.cuda.1.sm_80.cubin
+    rodou na 3090 (sm_86), erro maximo contra o torch = 0.000e+00
+
+**Cubin sm_80 puro executa na sm_86.** Logo os kernels `sparse24` daquele wheel rodam nesta placa.
+
+## O que resta desconhecido, e e pouco
+
+- O metadata do 0.0.34 pina `torch==2.10.0` e o nosso e 2.13.0; o CHANGELOG deles **alega** migracao
+  para a API/ABI estavel do PyTorch, "compativel com qualquer versao posterior". Instalar exigiria
+  `--no-deps`, e **instalar e decisao do dono** -- e mudanca de pacote, com a mesma disciplina de
+  `constraints.txt` que usamos no pytest/ruff.
+- Se ha ganho de TEMPO. Tudo que esta medido ate aqui e erro numerico.
+- `xformers/ops/sp24.py` tambem tem um ramo cusparselt via `torch.backends.cusparselt.is_available()`
+  que aqui da False; o ramo CUTLASS proprio nao depende disso, mas isso e leitura de codigo.
+
+## A corrente inteira, do comeco
+
+    1  poda 2:4 guiada por ativacao custa MENOS erro que quantizar a 4 bits   MEDIDO  0,0794 vs 0,0923
+    2  os kernels 2:4 do PyTorch estao desligados no Windows                  MEDIDO  + causa raiz
+    3  o xformers traz kernels proprios, no wheel Windows, sem cusparseLt     MEDIDO  no binario
+    4  os cubins sao sm_75/80/90 sem PTX                                      MEDIDO  cuobjdump
+    5  cubin sm_80 roda na sm_86                                              MEDIDO  na placa
+    6  da para compilar extensao CUDA aqui, se precisar do proprio            MEDIDO  57 s, erro 0
