@@ -226,3 +226,48 @@ errada sem nenhum sinal.
 Conserto quando o nucleo for adiante: nomes distintos (`PADROES_TENSOR` e `PADROES_MODULO`) ou um so
 lugar que exponha os dois explicitamente. Nao renomear pela metade -- duas tabelas com nomes
 parecidos e pior que duas com o mesmo nome.
+
+## Estado da ADOCAO, medido em 2026-09-01
+
+A decisao esta tomada e o nucleo esta escrito e testado. **O que falta e ninguem ter trocado para
+ele**, e o ticket nao dizia isso em lugar nenhum.
+
+```
+tools/_conversion.py              existe, 8 partes do contrato
+tools/test_conversion_core.py     32 checagens, 0 falhas, EXECUTADO
+importadores em producao          ZERO
+```
+
+O unico modulo em toda a arvore que faz `import _conversion` e o proprio teste dele. Medido com
+`rg "_conversion" -g "*.py"`: tres ocorrencias, duas em docstring e uma no teste.
+
+E os cinco conversores continuam cada um com o seu:
+
+```
+quant_w4a4.py         3 ocorrencias de (.partial|os.replace|fsync)
+quant_w4a4_smooth.py  3
+quant_int8.py         3
+quant_mixed.py        3
+to_native.py          3
+```
+
+**O docstring do `convert.py` dizia que o contrato "virou um so"**, o que le como trabalho feito.
+Corrigido no mesmo dia, junto com a afirmacao gemea no `CLAUDE.md`. Uma implementacao unica foi
+escrita e testada; a troca nao aconteceu.
+
+### O que isto muda no criterio de fechamento
+
+Nada -- o criterio ja exigia que todo conversor passasse pelo nucleo com o mesmo conjunto de
+guardas, e ele continua nao satisfeito. O registro existe para que ninguem leia
+"`_conversion.py` existe e passa 32 testes" como "os conversores usam".
+
+### Ordem sugerida para a adocao, e por que ela comeca no `to_native`
+
+`to_native.py` **nao quantiza** -- e um remapeamento de nomes -- entao nao passa pelo preflight
+nativo e **roda inteiro sem GPU**. Ele tambem tem uma saida ja existente no disco
+(`beyond-reality-zimage-v2_native.safetensors`) para comparar **byte a byte** contra o resultado da
+versao migrada. E o unico dos seis onde a migracao pode ser verificada de ponta a ponta sem placa,
+o que faz dele o piloto certo. Os quatro quantizadores precisam de uma janela de GPU para uma
+conversao real depois de migrados.
+
+Nao coberto por esta nota: nada foi migrado ainda, so contado.
