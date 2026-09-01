@@ -538,7 +538,23 @@ with the W4A4 error is **+0.10**. What correlates is the W4A8 error (+0.978).
 
   Not covered: the three Z-Image builds from before 2026-08-22 are **not reconvertible** — their analyses carry no `source_identity_sha256` and `quant_mixed` refuses rather than skipping the check. That is the guard working; "did not reconvert" is not "reconverted and differed".
 
-  **Measured 2026-08-22, on the 3090, so nobody re-derives it:** the resolved implementation is *invariant* to `convrot_groupsize` and to dummy-vs-real probe tensors. All four combinations — cg 64 and 256, `torch.empty` and real quantized tensors — resolve to `comfy_kitchen.backends.cuda`, and both real calls succeed. So `quant_w4a4.py`'s hardcoded 64/64 preflight against a 256 conversion is untidy, **not** wrong; and `_native_probe.py`'s own docstring claim that dummy kwargs let the check pass where a real call would not **did not reproduce** for these two ops on this build. That is "did not reproduce under the only conditions anyone has tried", not "is false" — the mechanism at `registry.py:246` may still bite elsewhere. `tools/probe_backend_resolution.py` re-runs it.
+  **Measured 2026-08-22, on the 3090, so nobody re-derives it:** the resolved implementation is *invariant* to `convrot_groupsize` and to dummy-vs-real probe tensors. All four combinations — cg 64 and 256, `torch.empty` and real quantized tensors — resolve to `comfy_kitchen.backends.cuda`, and both real calls succeed.
+
+  **That last clause is true of W4A4 and false of W4A8, and the paragraph did not separate them.** Measured 2026-09-01 with `tools/probe_convrot_groupsize.py`, K=2048 so no failure below is about divisibility:
+
+  ```
+  cg     quantize_convrot_w4a4_weight   convrot_w4a4_linear   quantize_w4a8_int8_weight
+  16     ok                             ok                    RuntimeError
+  64     ok                             ok                    RuntimeError
+  128    ValueError (power of 4)        --                    RuntimeError
+  256    ok                             ok                    ok
+  512    ValueError (power of 4)        --                    RuntimeError
+  1024   ok                             ok                    RuntimeError
+  ```
+
+  So **W4A4 accepts 16 / 64 / 256 / 1024 end to end — quantize *and* execute — while W4A8 accepts only 256.** The error the W4A8 path raises is `convrot rotate kernel only supports group_size 256`, which names no format and reads as a property of the ConvRot kernel; it is not. I was one paragraph away from recording "256 is the only usable value" until the probe refuted it.
+
+  The practical consequence: `quant_mixed` measures **both** formats per layer to choose between them, so it touches the W4A8 path even when the result will be 170/170 in W4A4 — which pins it to cg 256. `quant_w4a4`, which would accept 1024, has no `zimage` profile. That is why the Z-Image ceiling could not be probed on this axis; see `bench/criterio_teto_zimage.md`. So `quant_w4a4.py`'s hardcoded 64/64 preflight against a 256 conversion is untidy, **not** wrong; and `_native_probe.py`'s own docstring claim that dummy kwargs let the check pass where a real call would not **did not reproduce** for these two ops on this build. That is "did not reproduce under the only conditions anyone has tried", not "is false" — the mechanism at `registry.py:246` may still bite elsewhere. `tools/probe_backend_resolution.py` re-runs it.
 - **Streaming writes, never mmap.** Output header offsets are computed up front, then tensors are streamed: quantized layers are read by byte range → CUDA → `ck.quantize_convrot_w4a4_weight` → written; everything else is `copy_range`'d verbatim in 16 MiB chunks. **Do not reintroduce `safe_open` / mmap for large sources.** On this Windows host mapping the 21.93 GiB Gemma source failed with `os error 1455` and twice crashed `torch_cpu.dll` with `0xc0000005`.
 - **Atomic output.** Writes go to `<output>.partial`, then `os.replace`. Refuses stale partials, refuses existing outputs/sidecars, refuses a source that already has `_quantization_metadata`.
 - **Profiles are strict allowlists**, not heuristics. `PROFILE_PATTERNS` matches only `model.layers.N.self_attn.{q,k,v,o}_proj.weight` and `model.layers.N.mlp.{gate,up,down}_proj.weight`; embeddings, norms, `lm_head`, and vision towers are excluded. Only `gemma` and `qwen` exist today. **Do not extend a profile to a new architecture without confirming that architecture's loader and layer config** — Flux, Hunyuan, SeedVR2, and Z-Image each need their own recipe.

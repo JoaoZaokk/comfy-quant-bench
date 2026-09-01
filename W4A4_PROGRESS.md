@@ -4701,3 +4701,97 @@ Nenhuma imagem, nenhum encode real com o arquivo suavizado, e **nenhuma comparac
 `_w4a4_convrot` e o `_w4a4_smooth`** -- a pergunta que o smooth existe para responder (*channel
 smoothing e o maior termo do SVDQuant?*) continua aberta, e agora tem os dois arquivos no disco
 para responde-la. Uma camada no smoke, um seed, M=2, entrada gaussiana.
+
+## 2026-09-01, parte 49 - janela autonoma de GPU: a celula do Z-Image segue vazia, e o obstaculo agora tem nome
+
+O dono abriu uma janela de ~1 h e saiu, pedindo para testar modelos, quantizar o que desse, medir
+na 3090 e registrar o que deu certo E o que deu errado, com o motivo. Isto e o registro.
+
+Escopo dito na hora, e vale repetir: **163 checkpoints / 1 TiB nao cabem numa hora.** Uma conversao
+do Hunyuan leva 20 s, um render leva minutos, e prometer "todos" seria uma mentira que so apareceria
+na volta.
+
+### O que deu certo
+
+    quantiza_qwen25vl7b_w4a4   OK   27 s   6,33 GiB   perfil qwen, nunca tinha versao quantizada
+    avaliar (offline)          OK    1 s   47 checkpoints
+    ladder_zimage              OK  375 s   divergencia 0,7505
+
+### O que deu errado, e por que
+
+**As duas conversoes de `convrot_groupsize` foram RECUSADAS, e a recusa estava certa:**
+
+    The analysis was measured with convrot_groupsize=256 but this run uses 1024.
+    The per-layer errors would not describe what gets written.
+
+A analise mede o erro de cada camada NUM cg. Usar a de 256 para escolher camadas de um build 1024
+descreveria outra coisa. Guarda de proveniencia funcionando.
+
+**Remedindo a analise no cg certo, veio o erro de verdade:**
+
+    cg 1024   RuntimeError: convrot rotate kernel only supports group_size 256
+    cg  256   OK, mediana err_w4a4 = 0,1266
+    cg   64   mesma mensagem
+
+O `cg 256` e o controle de sanidade e passa: 0,1266 contra os 0,1241 publicados, **+2,0%**, dentro
+dos 2-6% que a semente da calibragem move.
+
+### O achado, que so apareceu porque eu fui conferir antes de publicar
+
+Eu ia registrar "256 e o unico valor utilizavel; `--convrot-groupsize` tem um valor so". Escrevi
+`tools/probe_convrot_groupsize.py` para medir o alcance da afirmacao antes de escreve-la, e **ele
+me refutou**:
+
+    cg     quantize_convrot_w4a4_weight   convrot_w4a4_linear   quantize_w4a8_int8_weight
+    16     ok                             ok                    RuntimeError
+    64     ok                             ok                    RuntimeError
+    128    ValueError (potencia de 4)     --                    RuntimeError
+    256    ok                             ok                    ok
+    512    ValueError (potencia de 4)     --                    RuntimeError
+    1024   ok                             ok                    RuntimeError
+
+**O limite nao e do kernel ConvRot; e do caminho W4A8.** O W4A4 aceita 16, 64, 256 e 1024 de ponta a
+ponta -- quantizar E executar. O W4A8 aceita 256 e nada mais. A mensagem diz "convrot rotate kernel"
+sem nomear o formato, e e exatamente por isso que ela induz a generalizacao errada.
+
+Isso tambem **corrige pela metade** o que o `CLAUDE.md` registra de
+`tools/probe_backend_resolution.py` ("cg 64 e 256 resolvem e as duas chamadas reais funcionam"):
+verdade para o W4A4, falso para o W4A8, e o texto nao separava os dois.
+
+### Por que a celula do Z-Image continua vazia
+
+O unico conversor com perfil `zimage` e o `quant_mixed`, e ele mede os DOIS formatos por camada para
+escolher entre eles -- entao toca o W4A8 mesmo produzindo 170/170 em W4A4, e fica pinado em cg 256.
+O `quant_w4a4`, que aceitaria 1024, nao tem perfil zimage.
+
+Preencher a celula custa um perfil `zimage` no `quant_w4a4`. Nao fiz numa janela autonoma: o
+`CLAUDE.md` proibe estender perfil sem confirmar loader e configuracao de camada, e as duas tabelas
+`PROFILE_PATTERNS` da arvore tem significados INCOMPATIVEIS (nome de tensor contra caminho de
+modulo) -- copiar a do `quant_mixed` e a armadilha ja catalogada.
+
+Antes a celula estava vazia por ninguem ter tentado. Agora esta vazia com o obstaculo medido.
+
+### Duas coisas abertas que a janela expos
+
+**O `s/step` contradiz o publicado.** No ladder, uma corrida:
+
+    beyond-reality-zimage-v2_native   1,827 s/step   11,46 GiB
+    zimage-v2-w4a4                    8,728 s/step    3,06 GiB   <- 4,8x MAIS LENTO
+
+O `CLAUDE.md` publica **1,83x-1,93x mais rapido** para esse par. Uma corrida so, e a propria
+ferramenta imprime que 1 e amostra pequena para uma grandeza ruidosa. **Nao mexi no numero
+publicado**; fica como divergencia a investigar, nao como correcao.
+
+**As imagens nao saem, e a falha e do `quality_ladder`.** O decode do VAE morre em
+`AttributeError: 'NoneType' object has no attribute 'hostbuf_allocate'` -- o comfy-aimdo. O arquivo
+passa `disable_dynamic=True` em todo load de modelo, com um comentario longo explicando esse mesmo
+erro, mas `comfy.sd.VAE.__init__` nao aceita esse parametro e exige o aimdo inicializado de
+verdade. A ferramenta ao menos falha bem: *"AS IMAGENS FALHARAM (AttributeError), mas a medicao
+acima esta gravada e continua valida"*, e a medicao nao depende do decode.
+
+### Nao coberto
+
+Um prompt, uma semente, um tamanho, uma placa, uma versao de comfy-kitchen. Nenhuma imagem foi
+gerada, entao nada aqui julga qualidade. O probe usa uma forma de peso por chamada e K=2048,
+divisivel por todos os valores testados -- nenhuma falha ali e de divisibilidade. E nao foi medido
+o que acontece com um checkpoint JA escrito em cg 1024.
