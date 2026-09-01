@@ -92,3 +92,80 @@ Closed when the owner decides between:
 
 Recommendation: **A**, and treat "same prompt the frontend would submit" as the acceptance test rather
 than "it ran".
+
+---
+
+## VERIFICACAO, 2026-09-01. A opcao C esta MORTA, e o numero do titulo mudou.
+
+Pedido pelo dono: verificar este ticket antes de decidir, porque nao precisa de GPU. Tudo abaixo
+foi **EXECUTADO**, nao lido -- as duas primeiras perguntas rodam sem servidor e sem placa.
+
+### C ("pedir para o ComfyUI achatar") nao existe, e a mensagem dele seria PIOR que a nossa
+
+Listadas **todas** as rotas HTTP do servidor (`server.py`, `app/`, `comfy_api/`, `api_server/`):
+nao ha nenhuma que receba um workflow em formato UI e devolva prompt em formato API. O que existe
+com "subgraph" no nome e o `app/subgraph_manager.py`, e ele serve um **catalogo** de subgrafos de
+custom nodes e templates (`/global_subgraphs`, `/global_subgraphs/{id}`) -- nao achata nada. O
+`subgraph` do `execution.py` e outro conceito: expansao dinamica em runtime, quando um no devolve
+um `GraphBuilder`.
+
+Ausencia numa lista nao e ausencia no sistema, entao a `validate_prompt` foi chamada **de verdade**,
+em processo, com 854 classes carregadas e uma instancia de subgrafo:
+
+    aceita?   False
+    tipo      missing_node_type
+    mensagem  Node 'instancia' not found. The custom node may not be installed.
+
+**Isso e um argumento a favor de recusar no conversor**, nao contra. Se o ComfyLite parasse de
+recusar e simplesmente postasse, o dono receberia *"o custom node pode nao estar instalado"* para um
+workflow cujos nos estao **todos** instalados -- diagnostico errado, e ele iria caçar um pacote que
+nao falta. A recusa atual nomeia a causa real.
+
+### O numero: nao sao mais 27 de 46
+
+Contagem estatica hoje, sem servidor (um workflow tem instancia de subgrafo quando algum no tem
+`type` igual a um id de `definitions.subgraphs`, ou um uuid):
+
+    .json em ComfyUI/user/default/workflows/   79
+    COM instancia de subgrafo                  39
+    sem                                        39
+    ilegivel                                   1   <- ver abaixo, e virou conserto
+
+O ticket dizia **27 de 46 (59%)**; hoje sao **39 de 79 (49%)**. A colecao cresceu 72% em nove dias.
+A conclusao qualitativa **nao muda** -- metade da colecao continua bloqueada, e os bloqueados
+continuam sendo os leves do dia a dia (Z-Image, Qwen-edit, Flux) -- mas o numero especifico nao
+sobrevive a uma semana, e este repo ja tem regra para isso: contar, nao citar.
+
+Ressalva: os 46 do ticket eram "workflow files reais" e podem ter passado por um filtro que esta
+contagem nao aplica; e a contagem estatica so reproduz a causa DOMINANTE (27 dos 32 fatais). Os
+outros fatais (widget count mismatch) dependem do `/object_info` vivo e nao estao aqui.
+
+### Um defeito achado no caminho, ja consertado: BOM
+
+O 1 arquivo ilegivel acima e `SeedVR2/JOAO_SeedVR2_VIDEO_3080Ti_safe_720p_Q8.json`, cujos tres
+primeiros bytes sao `ef bb bf` -- BOM de UTF-8. O `tools/comfy_run_workflow.py`, que o ticket 05
+chama de "the real asset", lia com `encoding="utf-8"` e **nao conseguia abrir esse workflow**:
+
+    utf-8      FALHA  Unexpected UTF-8 BOM (decode using utf-8-sig)
+    utf-8-sig  OK     11 nos
+
+Nao e arquivo de teste nem caso hipotetico: e um workflow real do dono, e editor do Windows grava
+BOM sem perguntar. Consertado para `utf-8-sig`, que le os dois casos (sem BOM os codecs sao
+identicos). `--object-info-file` levou o mesmo tratamento por consistencia, e esta dito no codigo
+que ali foi prevencao e nao medicao.
+
+O teste novo (`test_main_reads_a_workflow_that_carries_a_utf8_bom`) roda o MESMO workflow com e sem
+BOM e exige o mesmo codigo de saida -- testar so o caso com BOM provaria que ele nao explode, nao
+que o codec novo deixou o caso comum intacto. **Provado que pega o defeito**: revertendo o codec de
+proposito, o teste falha com o `Unexpected UTF-8 BOM` exato; com o conserto, passa.
+
+### O que isso faz com a decisao
+
+Restam **A** (implementar a expansao) e **B** (deixar recusado). C sai da mesa por medicao, nao por
+opiniao. A recomendacao do ticket continua **A**, com o criterio de aceitacao sendo "o MESMO prompt
+que o frontend submeteria", nao "rodou" -- e a verificacao acima reforca isso: uma expansao
+meio-certa produz um grafo que RODA e devolve imagem plausivel errada, e o servidor nao vai avisar.
+
+**Nao coberto por esta verificacao:** nada foi expandido; nenhum prompt foi submetido; a opcao C na
+leitura "dirigir o frontend em navegador headless" nao foi investigada, so a leitura "existe
+endpoint". `validate_prompt` e validacao, nao execucao.

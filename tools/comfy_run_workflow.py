@@ -594,7 +594,10 @@ def resolve_object_info(comfy: "Comfy", args: argparse.Namespace) -> dict:
     from wait_for_server.
     """
     if args.object_info_file:
-        object_info = json.loads(Path(args.object_info_file).read_text(encoding="utf-8"))
+        # `utf-8-sig` pelo mesmo motivo do `--workflow` em `main()`, e por consistencia: este
+        # arquivo tambem chega pela mao do usuario. Aqui nao houve BOM medido -- so o do workflow
+        # foi -- entao isto e prevencao, e esta dito como tal.
+        object_info = json.loads(Path(args.object_info_file).read_text(encoding="utf-8-sig"))
         print(f"/object_info: {len(object_info)} node classes (loaded from "
               f"{args.object_info_file}, NOT the server -- only valid for offline --dump-api "
               f"testing)")
@@ -641,7 +644,16 @@ def refuse_on_fatal(notes: list["Note"], force: bool) -> bool:
 
 def main() -> int:
     args = build_argparser().parse_args()
-    wf = json.loads(Path(args.workflow).read_text(encoding="utf-8"))
+    # `utf-8-sig`, nao `utf-8`: le os dois casos. Sem BOM os dois codecs sao identicos; COM BOM o
+    # `utf-8` entrega ﻿ como primeiro caractere e o `json.loads` levanta
+    # `Unexpected UTF-8 BOM (decode using utf-8-sig)` antes de ver um unico no.
+    #
+    # MEDIDO em 2026-09-01, ao verificar o ticket 07 do ComfyLite: dos 79 workflows do dono em
+    # `ComfyUI/user/default/workflows/`, UM tem BOM --
+    # `SeedVR2/JOAO_SeedVR2_VIDEO_3080Ti_safe_720p_Q8.json`, primeiros bytes `ef bb bf`. Este
+    # conversor nao conseguia abri-lo. Nao e caso hipotetico nem arquivo de teste: e um workflow
+    # real, e editores do Windows gravam BOM sem perguntar.
+    wf = json.loads(Path(args.workflow).read_text(encoding="utf-8-sig"))
     comfy = Comfy(args.server)
 
     try:

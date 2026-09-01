@@ -1,7 +1,7 @@
 # 05 - Compatibility Runtime first: what ComfyLite can reuse, and the three recorded failures of the alternative
 
 Type: grilling
-Status: ready-for-human
+Status: resolved
 Blocked by: 01
 Provenance: TRACED
 
@@ -63,3 +63,14 @@ not mention it.
 
 Closed on a decision: Compatibility-first or not, and whether the census requirement goes into the
 handoff. No code required to close.
+
+---
+
+## DECIDIDO PELO DONO, 2026-09-01: COMPATIBILITY
+
+Palavras dele: *"mvp e compatibility"*. Fecha do jeito que a recomendacao pedia, e sem ressalva.
+
+Consequencia imediata, ja registrada no ticket 04: o Compatibility Mode **nao toca a placa** -- o
+ComfyUI ja segura o cartao como um processo so. Entao a participacao no lock (`04`) deixa de ser
+requisito do MVP e vira requisito das fases que tocam GPU (autotuner de atencao, analisador de
+LoRA, planejador multi-GPU, ProbeRunner).

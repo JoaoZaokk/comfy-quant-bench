@@ -312,6 +312,42 @@ def test_main_refuses_fatal_without_force_and_does_not_touch_network():
         assert rc == 4, f"expected refusal exit code 4, got {rc}"
 
 
+def test_main_reads_a_workflow_that_carries_a_utf8_bom():
+    """MEDIDO 2026-09-01: um dos 79 workflows reais do dono comeca com `ef bb bf` --
+    `SeedVR2/JOAO_SeedVR2_VIDEO_3080Ti_safe_720p_Q8.json`. Com `encoding="utf-8"` o `json.loads`
+    morre em `Unexpected UTF-8 BOM` antes de olhar um unico no, entao o arquivo era simplesmente
+    inabrivel por esta ferramenta. Editor do Windows grava BOM sem perguntar, entao isto reaparece.
+
+    O par de casos e o ponto: o MESMO workflow, com e sem BOM, tem de dar o MESMO codigo de saida.
+    Testar so o caso com BOM provaria que ele nao explode, nao que `utf-8-sig` deixou o caso comum
+    intacto -- e trocar codec e exatamente o tipo de conserto que quebra o outro lado em silencio.
+    """
+    import tempfile
+    wf = {"nodes": [{"id": 1, "type": "TotallyUnknownNodeXYZ", "mode": 0, "inputs": [],
+                     "widgets_values": []}], "links": []}
+    saidas = {}
+    with tempfile.TemporaryDirectory() as td:
+        tdp = Path(td)
+        oi_path = tdp / "oi.json"
+        oi_path.write_text(json.dumps({}), encoding="utf-8")
+        for rotulo, codec in (("sem_bom", "utf-8"), ("com_bom", "utf-8-sig")):
+            wf_path = tdp / f"wf_{rotulo}.json"
+            wf_path.write_text(json.dumps(wf), encoding=codec)
+            cru = wf_path.read_bytes()
+            assert (cru[:3] == b"\xef\xbb\xbf") == (rotulo == "com_bom"), \
+                f"{rotulo}: o fixture nao tem o BOM que deveria ter, primeiros bytes {cru[:3]!r}"
+            saved_argv = sys.argv
+            sys.argv = ["comfy_run_workflow.py", "--workflow", str(wf_path),
+                        "--object-info-file", str(oi_path)]
+            try:
+                saidas[rotulo] = crw.main()
+            finally:
+                sys.argv = saved_argv
+    assert saidas["com_bom"] == saidas["sem_bom"] == 4, (
+        f"BOM mudou o resultado: {saidas}. Com utf-8 puro o caso com_bom levantava "
+        f"JSONDecodeError em vez de devolver 4.")
+
+
 # --------------------------------------------------------------------------------------------
 # Ticket 04: cache detection uses the server's own duration, not client wall, and a cache hit
 # gets its own exit code. The /prompt + /history path needs a live server (see NOT_COVERED),

@@ -77,3 +77,23 @@ ComfyUI has been asked at least once. Do not build B.
 Closed when the owner picks A, B or C. If A: additionally when a scan against a running ComfyUI marks
 those 11 `.gguf` files effective-visible, and against a stopped one leaves the field NULL rather than
 guessing.
+
+---
+
+## POR QUE ERRA, respondido ao dono em 2026-09-01
+
+Pergunta dele, direta: *"por que 06 erra?"*
+
+`.gguf` **nao esta em `supported_pt_extensions`**. Quem o acrescenta e o proprio custom node, no
+import DELE (`ComfyUI-GGUF/nodes.py:22-33`, `update_folder_names_and_paths("unet_gguf", ...)`). O
+worker do ComfyLite importa **so** `folder_paths` e nenhum codigo de custom node -- de proposito,
+porque importar codigo arbitrario de terceiro e risco maior do que uma categoria faltando. Logo ele
+enxerga a tabela **antes** de qualquer node rodar.
+
+Em uma linha: **tabela estatica nao e tabela efetiva**, e o nome da coluna promete a segunda. A
+costura do ticket 01 esta certa; o alcance dela e menor do que `visible_to_comfyui` sugere.
+
+A escolha entre A / B / C continua sendo do dono. Recomendacao inalterada: **A** (perguntar a um
+ComfyUI vivo via `/object_info`, com a coluna partida em `visible_core` e `visible_effective`, esta
+ultima NULL enquanto ninguem perguntou). **Nao construir B** -- e exatamente a tabela copiada a mao
+que o ticket 01 rejeitou.

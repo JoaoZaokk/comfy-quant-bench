@@ -59,3 +59,25 @@ Closed when ComfyLite acquires the lock in the format that wins `varredura-2026-
 `tools/gpu_lock.py` directly rather than a reimplementation; a refusal degrades to non-GPU work and says
 so in the UI; every benchmark record carries the device name actually used; and any ComfyUI process
 ComfyLite spawns is killed as a tree.
+
+---
+
+## DESBLOQUEADO, 2026-09-01
+
+Este ticket dizia estar bloqueado por `varredura-2026-08-22/issues/01` -- o defeito de FORMATO do
+lock, onde `gpu_lock.py` escrevia JSON e `gpu_lock.ps1` lia `key=value`. Aquele ticket esta
+**resolved**: o lado Python passou a escrever `key=value`, de proposito, porque ensinar o `.ps1` a
+ler JSON reproduziria o mesmo roubo apontando para um irmao rodando codigo da semana passada.
+
+Houve uma **quarta correcao em 2026-09-01**, e ela e informacao nova para este ticket: um lock com
+`dono=` e `pid=` legiveis mas `hb=` AUSENTE saia como `hb 9223372036854775807s ago`, que e a
+assinatura exata do roubo de 2026-08-21. Nao houve roubo -- `$alive` vem do `Pid`, parseado a parte,
+entao irmao VIVO segue protegido -- mas faltava justamente o teste dessa garantia, agora escrito
+(`test_gpu_lock.py`, 36 checagens).
+
+**Para o ComfyLite isso quer dizer:** o formato a adotar e `key=value` com os cinco campos
+(`dono`, `pid`, `desde`, `hb`, `owner_kind`), e um terceiro participante tem de tratar `hb` ausente
+como "nunca carimbado", nunca como idade infinita.
+
+E, pela decisao do 05 (Compatibility), **este ticket sai do caminho critico do MVP**: quem segura a
+placa e o ComfyUI, num processo so. Volta a valer nas fases que tocam GPU.
