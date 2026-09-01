@@ -1,0 +1,56 @@
+Tencent Hunyuan is licensed under the Tencent Hunyuan Community License Agreement, Copyright © 2025 Tencent. All Rights Reserved. The trademark rights of "Tencent Hunyuan" are owned by Tencent or its affiliate.
+
+--------------------------------------------------------------------------------
+STATEMENT OF MODIFICATIONS (Tencent Hunyuan Community License Agreement, s.3(b))
+--------------------------------------------------------------------------------
+
+The .safetensors files in this repository ARE MODIFIED FILES. They are not the
+files Tencent published.
+
+They are derived from `hunyuanvideo1.5_720p_t2v_fp16`, an FP16 single-file
+repackaging of tencent/HunyuanVideo-1.5, by quantizing selected Linear weights
+of the transformer to 4-bit or 8-bit integer formats native to ComfyUI
+(`convrot_w4a4` and `asym_w4a8_int8`).
+
+What was changed, per modified file:
+
+  - Selected `double_blocks.N.*` Linear weights were replaced by an INT8
+    container holding packed values plus a per-row FP32 scale tensor, and a
+    per-layer quantization record was written into the safetensors
+    `__metadata__`.
+  - Which layers, and to which of the two formats, differs per file and is
+    recorded in that file's accompanying `.quant.json` sidecar.
+  - Every tensor NOT selected for quantization is preserved byte for byte from
+    the source and was verified as byte-identical.
+  - No weights were retrained, fine-tuned, merged, pruned or otherwise altered
+    in value beyond the quantization described above.
+
+Three of these files produce degraded or unusable output. That is deliberate and
+is stated in the model card: they are published as measured negative results,
+not as usable checkpoints.
+
+--------------------------------------------------------------------------------
+NON-AFFILIATION (Tencent Hunyuan Community License Agreement, s.3(e))
+--------------------------------------------------------------------------------
+
+These files were produced by JoaoZaokk (https://huggingface.co/JoaoZaokk) using
+comfy-quant-bench (https://github.com/JoaoZaokk/comfy-quant-bench).
+
+Tencent is NOT affiliated with, associated with, sponsoring, or endorsing this
+repository, its contents, the quantization method used, or the measurements
+reported in it. No relationship, affiliation, sponsorship or endorsement by
+Tencent is claimed or implied. The name "Tencent Hunyuan" appears here solely to
+identify the upstream model these files are derived from, as the License
+requires.
+
+--------------------------------------------------------------------------------
+TERRITORY
+--------------------------------------------------------------------------------
+
+The Tencent Hunyuan Community License Agreement DOES NOT APPLY IN THE EUROPEAN
+UNION, THE UNITED KINGDOM, AND SOUTH KOREA, and the rights it grants are
+expressly limited to the Territory it defines, which excludes those three.
+
+A full copy of the Agreement is included in this repository as
+LICENSE_TENCENT_HUNYUANVIDEO15.txt, as required by s.3(a). Read it before using
+these files.
