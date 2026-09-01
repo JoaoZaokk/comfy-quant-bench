@@ -43,6 +43,7 @@ that the gap between them is invisible to every structural check and costs almos
 
 | repository | contents | licence |
 | --- | --- | --- |
+| [Beyond-Reality-Z-Image-v2-W4A4-ConvRot](https://huggingface.co/JoaoZaokk/Beyond-Reality-Z-Image-v2-W4A4-ConvRot) | the model where 4 bits works: 11.46 → 3.06 GiB, *faster* per step than BF16, both builds usable | Apache 2.0 |
 | [Qwen3-4B-W4A4-ConvRot](https://huggingface.co/JoaoZaokk/Qwen3-4B-W4A4-ConvRot) | the ComfyUI text encoder, 7.49 → 2.42 GiB, conditioning cosine 0.9896–0.9900 against BF16 | Apache 2.0 |
 | [Wan2.1-VACE-1.3B-W4A4-ConvRot](https://huggingface.co/JoaoZaokk/Wan2.1-VACE-1.3B-W4A4-ConvRot) | three builds — 0.0546 usable, 0.0793 unusable, 0.1602 destroyed — and the `vace_strength` trap | Apache 2.0 |
 | [HunyuanVideo-1.5-720p-T2V-Quantized](https://huggingface.co/JoaoZaokk/HunyuanVideo-1.5-720p-T2V-Quantized) | W4A8 usable, 0.1837 grainy, 0.2147 destroyed | Tencent Hunyuan Community — **not permissive, excludes EU/UK/South Korea** |
@@ -51,13 +52,20 @@ Read the Hunyuan repository's licence before downloading from it: it is redistri
 Tencent's own agreement, with the full text, the required notice, a statement of modifications and a
 non-affiliation statement included there.
 
-**Not published, and it is a licence question rather than a measurement one.** The
-`Beyond_Reality Z-Image v2` and `capybara_v0.1` checkpoints are community fine-tunes distributed on
-Civitai. Their base models are permissive — [Tongyi-MAI/Z-Image-Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo)
-is Apache 2.0 — but the fine-tuners set their own redistribution terms on their own pages, and
-nobody here has read them. Deriving a checkpoint does not erase the licence of whoever trained it.
-Z-Image is the model most of this repo's calibration work was done on, so its absence from that
-table is conspicuous and deliberate.
+**Licence provenance, since two of these are community fine-tunes.** `Beyond Reality` is by
+**Nurburgring**, [Apache 2.0 on Civitai](https://civitai.com/models/1090420/beyond-reality) and
+mirrored at [Nurburgring/BEYOND_REALITY_Z_IMAGE](https://huggingface.co/Nurburgring/BEYOND_REALITY_Z_IMAGE)
+under the same licence, over an Apache 2.0 base. `capybara_v0.1` is by **Glanty**, MIT at
+[Glanty/Capybara](https://huggingface.co/Glanty/Capybara) — but it is a **HunyuanVideo 1.5
+architecture** checkpoint (1364 tensors, 54 `double_blocks`, read from the file), so whether
+Tencent's licence travels with it upstream of Glanty's MIT declaration is a question for its author,
+not one this repo can answer. It is therefore measured here and **not** redistributed.
+
+**Correction, 2026-09-01.** This repo previously placed `capybara_v0.1` in the Z-Image family, and
+its 0.2163 break was published as Z-Image's upper bound. It is not a Z-Image checkpoint. The break is
+real and belongs to the ~13B HunyuanVideo row, where it agrees with the 0.2147 measured on Hunyuan
+itself — and **Z-Image's upper bound is consequently unmeasured**: all that is known there is that
+0.1241 works.
 
 ## When W4A4 works, and when it does not
 
@@ -732,8 +740,12 @@ Ultimate Model Converter** tool that signs one of these files. Their published c
 what this bench had to go on; disagreeing with a measurement of them is not a criticism of them.
 
 **Model authors.** [Tongyi-MAI / Alibaba](https://huggingface.co/Tongyi-MAI) for **Z-Image**, on
-which every real-activation calibration here was done, and **tonera** for the
-`Beyond_Reality Z-Image v2` checkpoint that is this bench's main subject.
+which every real-activation calibration here was done, and
+[**Nurburgring**](https://huggingface.co/Nurburgring/BEYOND_REALITY_Z_IMAGE) for the
+`Beyond_Reality Z-Image v2` fine-tune that is this bench's main subject. *(This line credited
+**tonera** for that checkpoint until 2026-09-01. tonera's contribution is
+[an independent SVDQuant of the same fine-tune](https://huggingface.co/tonera/Beyond_Reality_Zimage_v2_svdq),
+which is a different piece of work and is credited as such — the fine-tune itself is Nurburgring's.)*
 [Tencent](https://huggingface.co/tencent) for **HunyuanVideo 1.5** — the counter-example model, and
 the one in the photograph at the top. [Google](https://huggingface.co/google) for **Gemma 3 12B**,
 the project's first real conversion. [Alibaba / Qwen](https://huggingface.co/Qwen) for **Qwen3-4B**
