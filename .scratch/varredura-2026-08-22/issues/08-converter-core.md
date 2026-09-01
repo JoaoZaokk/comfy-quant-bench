@@ -388,3 +388,112 @@ a convencao existente.
 teste junto. Redirecionar aquele teste para `Conversion.commit` e entao remover a funcao. Os tres
 cenarios ja tem cobertura equivalente em `test_conversion_core.py` (partes 3b, 5, 6, 7), entao o
 redirecionamento e para preservar as anotacoes de proveniencia daquele arquivo.
+
+**Essa pendencia FECHOU** em `f80f3de`: o teste foi redirecionado e depois a funcao apagada, 87
+linhas, junto com `COPY_CHUNK` e `DTYPE_NAMES`, que so ela usava.
+
+---
+
+## A JANELA DE GPU RODOU, 2026-09-01. Quatro pares byte-identicos.
+
+Executado na 3090 com `CUDA_VISIBLE_DEVICES=0` e `Assert-GpuLock` a mao (conversor nao passa por
+`_timing.compare()`, entao nao toma o lock sozinho). O criterio estava escrito antes, em
+`bench/janela_gpu_migracao.md`: **qualquer diferenca reprova, inclusive so de header.**
+
+| conversor | fonte | saida | sha256 |
+|---|---|---|---|
+| `quant_w4a4` | hunyuanvideo1.5 fp16 | 8 507 690 240 B | `A3485DAA…A4732FBF` **identico** |
+| `quant_w4a8` | hunyuanvideo1.5 fp16 | 8 847 567 376 B | `3ED43444…A41E76D7` **identico** |
+| `quant_mixed` | wan2.1 vace 1.3B | 2 310 437 144 B | `212B9111…0B40A142` **identico** |
+| `quant_mixed` | beyond-reality-zimage-v2 | 3 403 133 032 B | `4463AC4E…2113CF5C` **identico** |
+
+O quarto par nao estava no plano e foi acrescentado de proposito: sem ele o `quant_mixed` estaria
+provado numa arquitetura so. Wan (300 camadas, 2 w4a4 / 298 w4a8) e Z-Image (170 camadas, 117 /
+53) exercitam ramos de selecao bem diferentes do mesmo codigo.
+
+### Os tres sem par, e a aceitacao mais fraca que isso obriga
+
+| conversor | o que rodou | resultado |
+|---|---|---|
+| `quant_int8` | conversao real + carga pelo loader normal + contagem de despacho | 432 modulos `int8_tensorwise`, **8/8 forwards quantizados, 0 dequantize**, `int8_linear=comfy_kitchen.backends.cuda` |
+| `svdq_to_bf16` | recuperou 11,46 GiB do `svdq-int4_r32-z-image-turbo` + carga pelo loader normal | carregou como `Lumina2`, 6 154 908 736 params, bf16, 34 chaves qkv fundidas |
+| `quant_w4a4_smooth` | **nao rodou** | ver abaixo |
+
+Isso e "carrega e despacha", **nao** e byte a byte, e a diferenca importa: nada nas duas linhas
+acima compara contra uma saida anterior, porque nao existe uma.
+
+Nota util sobre o `svdq_to_bf16`: o docstring dele avisa que manter o layout FUSIONADO significa
+que "qualquer loader le" e falso. Para **esta** arquitetura o aviso nao morde -- o `Lumina2` do
+ComfyUI usa `attention.qkv`, entao o fundido e exatamente o que ele quer. O aviso continua valendo
+para loaders que esperam `to_q`/`to_k`/`to_v` separados.
+
+### O `smooth` nao rodou, e o motivo nao e o codigo
+
+As DUAS entradas que ele exige nao estao nesta maquina. Medido com busca recursiva `-Force` nos
+dois roots (`ComfyUI/models` e o share `D:`), que enxerga `.disabled` e ocultos:
+
+- nao ha `gemma_3_12B_it_heretic.safetensors` (o BF16 fonte) -- so fp8, w4a8, LoRAs e GGUF;
+- nao ha **nenhum** checkpoint Gemma no formato `convrot_w4a4` para `--calibrate-with`.
+
+Duas saidas foram tentadas e as duas fecharam por motivo medido, nao por desistencia:
+
+- **fonte fp8 + calibragem no gemeo w4a8**: a calibragem rodou INTEIRA (96 normas, 6 prompts,
+  ~3 min de 3090) e so entao morreu com `KeyError: 'F8_E4M3'` dentro de `quant_w4a8.read_tensor`;
+- **Gemma-3 1B, que e fonte valida** (BF16 puro, 26 camadas, nomes exatos), **nao serve de
+  calibragem**: `comfy.sd.load_clip` o detecta como `lumina2`/`gemma3_4b` em vez de LTXV e o
+  tokenizer levanta `ValueError: invalid tokenizer`.
+
+Entao **`conv.guard()` e `conv.commit()` do `smooth` continuam sem ter rodado depois da
+migracao**, e isso esta impresso no fim de `tools/test_smooth_guards.py` toda execucao, para que
+7/7 OK nunca leia como "o smooth foi verificado".
+
+### O caso de CONTROLE achou dois defeitos reais no `smooth`
+
+O teste de recusas foi escrito com um controle negativo -- argumentos validos tem de PASSAR da
+guarda -- porque sem ele um conversor que morresse em toda invocacao passaria em todas as
+recusas. **O controle falhou, e a falha era o achado.**
+
+- **Guarda vazia ausente.** Apontado para um Wan 2.1, o `smooth` imprimia `Layers: 0 quantized: 0`
+  e saia com **rc=0**. `LAYER_RE` nao casa nada, `selected` e `norm_keys` saem vazias, e a
+  checagem de `missing` compara duas listas vazias e aprova. Um `--dry-run` -- que e exatamente o
+  que se roda ANTES de gastar horas -- respondia SUCESSO para uma conversao sem nada a converter.
+  Os outros quatro ja recusavam (`quant_w4a4.py:386`, `quant_w4a8.py:248`, `quant_int8.py:139`,
+  `quant_mixed.py:581`); so este nao.
+- **Guarda de dtype ausente.** Validava NOMES e nunca o dtype, e `load()` le por `read_tensor`,
+  cujo `TORCH_DTYPES` so tem BF16/F16/F32. Custo do erro tardio: ~3 min de GPU jogados fora e um
+  rastro apontando para outro arquivo. Depois do conserto **recusa em 1,8 s**, e o teste cobra
+  esse tempo (limite 60 s) justamente para pegar a regressao de mover a checagem para depois da
+  calibragem.
+
+`tools/test_smooth_guards.py`, novo: **7/7, 0 falhas**, seis recusas mais o controle.
+
+### Coisa que so a corrida ensina
+
+**O `convrot_groupsize` tem de ser potencia de 4, nao de 2.** Tentar 128 no Gemma 1B (cujo K=1152
+e divisivel por 128) levanta `ValueError: Regular Hadamard size must be a power of 4, got 128` em
+`comfy_kitchen/tensor/int8_utils.py:22`. Explica por que 64 e 256 sao os unicos valores usados
+nesta arvore. **O preflight de backend pegou isso antes de qualquer trabalho** -- que e a coisa
+mais util que ele fez o dia inteiro.
+
+### Um par que NAO da para reconverter, por decisao e nao por defeito
+
+`zimage-v2-mixed`, `zimage-v2-w4a4` e os `zimage-v2-mixed-t0.*` foram construidos com analises
+anteriores a 2026-08-22, que nao carregam `source_identity_sha256`. O `quant_mixed` **recusa** uma
+analise sem chave de proveniencia em vez de pular a checagem -- que era exatamente como a guarda
+antiga passava. Reproduzi-los exige recalibrar. A guarda esta certa; o registro existe para que
+ninguem leia "nao reconverti" como "reconverti e deu diferente".
+
+### Estado do criterio de fechamento
+
+    grep -c "def write_streamed_checkpoint" tools/*.py devolve 1     -> FEITO (e zero: a funcao
+                                                                        foi apagada, o nucleo e o
+                                                                        unico escritor)
+    o conjunto de guardas de todo conversor e o mesmo conjunto       -> FEITO
+    nenhum byte de dado quantizado conferido                         -> RESOLVIDO: quatro pares
+                                                                        byte-identicos, dois
+                                                                        carregam e despacham
+
+**Falta so o `smooth` escrever um byte pelo caminho novo**, e isso depende de um download de
+~22 GiB (o Gemma 3 12B BF16) mais uma conversao W4A4 dele para servir de calibragem. E decisao do
+dono: rede, disco e tempo. Sem isso, o ticket fecha com uma linha explicita dizendo que seis dos
+sete foram verificados executando e o setimo so nas recusas.

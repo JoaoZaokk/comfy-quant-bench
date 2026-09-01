@@ -48,7 +48,9 @@ import _conversion as C  # noqa: E402
 import torch  # noqa: E402
 
 from quant_w4a4 import human_size  # noqa: E402
-from quant_w4a8 import SAFETENSORS_DTYPE, copy_range, read_header, read_tensor  # noqa: E402
+from quant_w4a8 import (  # noqa: E402
+    SAFETENSORS_DTYPE, TORCH_DTYPES, copy_range, read_header, read_tensor,
+)
 
 # The two norm groups. Every consumer of a norm shares one lambda.
 GROUPS = {
@@ -156,6 +158,36 @@ def main() -> int:
     missing = [k for k in selected + norm_keys if k not in header]
     if missing:
         raise SystemExit(f"Source lacks {len(missing)} expected tensors, e.g. {missing[0]}")
+    # `missing` nao pega o caso vazio: numa fonte sem nenhuma chave `model.layers.N.`, `layer_ids`
+    # sai vazia, `selected` e `norm_keys` saem vazias e `missing` tambem -- entao a checagem acima
+    # aprova. Medido em 2026-09-01 apontando este conversor para um Wan 2.1: imprimiu
+    # `Layers: 0   quantized: 0` e saiu com rc=0, ou seja, um `--dry-run` responde SUCESSO para
+    # uma conversao que nao tem o que converter. Os outros quatro escritores ja recusavam
+    # (`quant_w4a4.py:386`, `quant_w4a8.py:248`, `quant_int8.py:139`, `quant_mixed.py:581`);
+    # so este nao. Achado pelo caso de CONTROLE de um teste de recusas, nao por um caso que
+    # procurava o defeito -- o controle existia para provar que os outros casos falhavam pela
+    # guarda certa, e de quebra mostrou uma guarda que faltava.
+    if not selected:
+        raise SystemExit(
+            f"Source has no `model.layers.N.` tensors: this converter is Gemma-3-shaped "
+            f"(esperava {'/'.join(GROUPS)} alimentando "
+            f"{', '.join(m for members in GROUPS.values() for m in members)}). "
+            f"Nada a converter em {source.name}.")
+    # A checagem acima confere NOMES; nada aqui conferia o DTYPE, e `load()` le por
+    # `quant_w4a8.read_tensor`, cujo `TORCH_DTYPES` so tem BF16/F16/F32. Medido em 2026-09-01
+    # apontando este conversor para o gemma_3_12B_it_heretic_fp8_e4m3fn: passou por toda a
+    # `refuse_unsafe`, passou pelo preflight de backend, rodou os seis prompts de calibragem
+    # ate o fim (96 normas, ~3 min de GPU) e so entao morreu com `KeyError: 'F8_E4M3'` dentro
+    # de `read_tensor` -- rastro que aponta para o quant_w4a8, nao para a fonte que o usuario
+    # escolheu. O custo do erro tardio e o trabalho jogado fora; a informacao para recusar ja
+    # estava no cabecalho, antes de tudo.
+    ilegiveis = sorted({header[k]["dtype"] for k in selected + norm_keys
+                        if header[k]["dtype"] not in TORCH_DTYPES})
+    if ilegiveis:
+        raise SystemExit(
+            f"Source carries dtypes this converter cannot read: {', '.join(ilegiveis)}. "
+            f"Aceita {', '.join(sorted(TORCH_DTYPES))} -- passe o checkpoint de alta precisao, "
+            f"nao uma versao ja comprimida.")
 
     print(f"Source: {source}")
     print(f"Layers: {len(layer_ids)}   quantized: {len(selected)}   "

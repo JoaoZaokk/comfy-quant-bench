@@ -110,3 +110,87 @@ passaram a valer para os sete de uma vez.
 Nenhuma imagem. Byte-identidade prova que a migracao nao mudou a saida; **nao** prova que a saida
 presta -- isso nunca foi verdade nesta bancada e continua nao sendo. Para qualidade, o caminho e
 `tools/avaliar_referencia.py` no braco nao quantizado e depois um render olhado por alguem.
+
+---
+
+# RESULTADO -- executado 2026-09-01 na 3090
+
+Criterio acima escrito antes. Nada dele foi mexido depois de ver numero.
+
+## Passou: quatro pares, sha256 do arquivo inteiro
+
+| conversor | fonte | bytes | sha256 |
+|---|---|---|---|
+| `quant_w4a4` | hunyuanvideo1.5 fp16 | 8 507 690 240 | `A3485DAA…A4732FBF` |
+| `quant_w4a8` | hunyuanvideo1.5 fp16 | 8 847 567 376 | `3ED43444…A41E76D7` |
+| `quant_mixed` | wan2.1 vace 1.3B | 2 310 437 144 | `212B9111…0B40A142` |
+| `quant_mixed` | beyond-reality-zimage-v2 | 3 403 133 032 | `4463AC4E…2113CF5C` |
+
+O par do Z-Image nao estava planejado e foi acrescentado porque, sem ele, o `quant_mixed` ficaria
+provado numa arquitetura so. Wan seleciona 2 w4a4 / 298 w4a8; Z-Image seleciona 117 / 53 -- ramos
+bem diferentes do mesmo codigo.
+
+Parametros vieram do `.quant.json` de cada saida, como o plano exigia. O do Wan precisou tambem da
+analise (`bench/wan21_mixed.analysis.json`), casada por `source_identity_sha256` e nao por nome.
+
+## Nao deu para reconverter: as tres saidas Z-Image pre-proveniencia
+
+`zimage-v2-mixed`, `zimage-v2-w4a4` e `zimage-v2-mixed-t0.*` foram feitos com analises anteriores a
+2026-08-22, sem `source_identity_sha256`. O `quant_mixed` recusa uma analise sem chave de
+proveniencia, em vez de pular a checagem -- que era como a guarda velha passava. Reproduzi-los exige
+recalibrar. **Isto nao e uma reprova**: e a guarda funcionando, e esta escrito para que ninguem leia
+"nao reconverti" como "reconverti e deu diferente".
+
+## Aceitacao mais fraca, dita como tal
+
+| conversor | o que rodou | resultado |
+|---|---|---|
+| `quant_int8` | conversao real (10,45 GiB) + loader normal + contagem de despacho | 432 modulos `int8_tensorwise`, 8/8 forwards quantizados, 0 dequantize, `comfy_kitchen.backends.cuda` |
+| `svdq_to_bf16` | recuperou 11,46 GiB do `svdq-int4_r32-z-image-turbo` + loader normal | carregou como `Lumina2`, 6 154 908 736 params, bf16, 34 qkv fundidas |
+
+Nenhuma das duas compara contra saida anterior, porque nao existe uma. "Carrega e despacha" nao e
+"byte a byte".
+
+## `quant_w4a4_smooth`: NAO rodou, e o motivo nao e o codigo
+
+As duas entradas exigidas nao estao nesta maquina -- nao ha `gemma_3_12B_it_heretic.safetensors`
+(BF16) nem nenhum Gemma `convrot_w4a4` para `--calibrate-with`. Busca recursiva com `-Force` nos
+dois roots, que enxerga `.disabled`.
+
+**O BF16 ja esteve aqui, e isso importa para o custo.** O dono lembrava que "o gemma inteiro nunca
+esteve aqui"; o sidecar diz o contrario e e evidencia direta:
+`gemma_3_12B_it_heretic_w4a8.quant.json` registra `source_size = 23 545 681 250` (21,93 GiB) lido
+de `text_encoders/gemma_3_12B_it_heretic.safetensors`, numa conversao de 25,5 s **nesta 3090**,
+cuja saida de 7,53 GiB esta no disco ate hoje. Entao rebaixar nao e apostar num arquivo hipotetico:
+e restaurar um estado que ja funcionou. (O `os error 1455` que o `CLAUDE.md` registra ao mapear
+"a fonte Gemma de 21,93 GiB" e o mesmo arquivo.)
+
+Duas saidas foram tentadas, as duas fecharam por motivo medido:
+
+- fonte fp8 + calibragem no gemeo w4a8: calibragem rodou inteira (96 normas) e morreu depois com
+  `KeyError: 'F8_E4M3'`;
+- Gemma-3 1B e fonte valida mas nao serve de calibragem: `load_clip` o detecta como `lumina2` e o
+  tokenizer levanta `invalid tokenizer`.
+
+Entao `conv.guard()` e `conv.commit()` do `smooth` **continuam sem ter rodado**. Destravar custa um
+download de ~22 GiB mais uma conversao W4A4 dele -- decisao do dono.
+
+## Dois defeitos reais achados pelo caso de CONTROLE
+
+O teste de recusas do `smooth` tem um controle negativo: argumentos validos tem de PASSAR da guarda.
+Sem ele, um conversor que morresse em toda invocacao passaria em todas as recusas. **O controle
+falhou, e a falha era o achado.**
+
+1. **Sem guarda de "zero camadas".** Apontado para um Wan, o `smooth` imprimia `Layers: 0` e saia
+   com rc=0 -- um `--dry-run` respondendo SUCESSO para uma conversao sem nada a converter. Os outros
+   quatro ja recusavam.
+2. **Sem guarda de dtype.** Validava nomes, nunca o dtype, e morria ~3 min depois dentro do
+   `read_tensor` de outro arquivo. Agora recusa em **1,8 s**, e o teste cobra esse tempo.
+
+`tools/test_smooth_guards.py`, novo: 7/7. Suite completa depois das edicoes: **13 suites, 13 exit 0**.
+
+## Coisa que so a corrida ensina
+
+`convrot_groupsize` tem de ser potencia de **4**, nao de 2: 128 levanta `Regular Hadamard size must
+be a power of 4` em `comfy_kitchen/tensor/int8_utils.py:22`. Explica 64 e 256 serem os unicos
+valores usados aqui. O preflight de backend pegou antes de qualquer trabalho.

@@ -4430,3 +4430,107 @@ barulhenta em valor absoluto -- no Hunyuan as duas sementes deram 1,87 e 3,85, e
 latente. Uma placa, um scheduler, um tamanho por familia, dois prompts, duas sementes. E um modelo
 que legitimamente responde pouco ao prompt (refinador, upscaler, modelo de controle) reprovaria
 sem estar quebrado.
+
+## 2026-09-01, parte 46 - a janela de GPU do ticket 08: quatro pares byte-identicos, e um controle que achou dois defeitos
+
+A migracao dos sete escritores para `tools/_conversion.py` tinha sido provada sem placa em dois
+pontos (o arquivo inteiro do `to_native`, o header do `quant_w4a4`). O que faltava era o dado
+quantizado: **nenhum kernel tinha rodado em verificacao nenhuma**, e um conversor que planeje o
+header certo e escreva peso errado passa em tudo que existia.
+
+Criterio escrito antes em `bench/janela_gpu_migracao.md`: reconverter para caminho novo, comparar o
+arquivo inteiro, **qualquer diferenca reprova, inclusive so de header**.
+
+### Passou
+
+| conversor | fonte | bytes | sha256 |
+|---|---|---|---|
+| `quant_w4a4` | hunyuanvideo1.5 fp16 | 8 507 690 240 | `A3485DAA...A4732FBF` |
+| `quant_w4a8` | hunyuanvideo1.5 fp16 | 8 847 567 376 | `3ED43444...A41E76D7` |
+| `quant_mixed` | wan2.1 vace 1.3B | 2 310 437 144 | `212B9111...0B40A142` |
+| `quant_mixed` | beyond-reality-zimage-v2 | 3 403 133 032 | `4463AC4E...2113CF5C` |
+
+O par do Z-Image nao estava no plano. Foi acrescentado porque sem ele o `quant_mixed` estaria
+provado numa arquitetura so, e os dois exercitam ramos de selecao bem diferentes do mesmo codigo:
+Wan escolhe 2 w4a4 / 298 w4a8, Z-Image escolhe 117 / 53.
+
+Os parametros sairam do `.quant.json` de cada saida. O do Wan precisou tambem da analise, casada
+por `source_identity_sha256` e nao por nome de arquivo.
+
+### Os dois sem par, com aceitacao mais fraca e dita como tal
+
+`quant_int8` (10,45 GiB, hunyuan) e `svdq_to_bf16` (11,46 GiB recuperados do
+`svdq-int4_r32-z-image-turbo`) nunca escreveram nada que ainda esteja aqui, entao nao ha contra o
+que comparar. Aceitacao: conversao real mais carga pelo loader normal do ComfyUI.
+
+    quant_int8      432 modulos int8_tensorwise, 8/8 forwards quantizados, 0 dequantize,
+                    int8_linear = comfy_kitchen.backends.cuda
+    svdq_to_bf16    carregou como Lumina2, 6 154 908 736 params, bf16, 34 chaves qkv fundidas
+
+O docstring do `svdq_to_bf16` avisa que manter o layout fundido torna falso o "qualquer loader le".
+Para **esta** arquitetura o aviso nao morde: o `Lumina2` do ComfyUI usa `attention.qkv`, entao o
+fundido e exatamente o que ele quer. Continua valendo para loaders que esperam `to_q`/`to_k`/`to_v`.
+
+### O `smooth` nao rodou, e nao e o codigo
+
+As duas entradas que ele exige nao estao nesta maquina. Busca recursiva com `-Force` nos dois roots,
+que enxerga ocultos e `.disabled`: nao ha `gemma_3_12B_it_heretic.safetensors` (o BF16 fonte) e nao
+ha **nenhum** Gemma em `convrot_w4a4` para `--calibrate-with`. Duas saidas foram tentadas, as duas
+fecharam por medicao:
+
+- **fonte fp8 + calibragem no gemeo w4a8**: a calibragem rodou INTEIRA -- 96 normas, 6 prompts,
+  ~3 min de 3090 -- e so entao morreu com `KeyError: 'F8_E4M3'` dentro de `quant_w4a8.read_tensor`;
+- **Gemma-3 1B** e fonte valida (BF16 puro, 26 camadas, nomes exatos) mas nao serve de calibragem:
+  `comfy.sd.load_clip` o detecta como `lumina2`/`gemma3_4b` em vez de LTXV e o tokenizer levanta
+  `ValueError: invalid tokenizer`.
+
+Entao `conv.guard()` e `conv.commit()` do `smooth` **continuam sem ter rodado depois da migracao**.
+Destravar custa ~22 GiB de download mais uma conversao W4A4 dele. Decisao do dono.
+
+### O caso de CONTROLE achou dois defeitos reais, e essa e a parte reaproveitavel
+
+O teste de recusas foi escrito com um controle negativo -- argumentos validos tem de PASSAR da
+guarda -- porque sem ele **um conversor que morresse em toda invocacao passaria em todas as
+recusas**. O controle falhou, e a falha era o achado.
+
+**Guarda de "zero camadas" ausente.** Apontado para um Wan 2.1, o `smooth` imprimia
+`Layers: 0   quantized: 0` e saia com **rc=0**. `LAYER_RE` nao casa nada, `selected` e `norm_keys`
+saem vazias, e a checagem de `missing` compara duas listas vazias e aprova. Um `--dry-run` -- que e
+exatamente o que se roda ANTES de gastar horas -- respondia SUCESSO para uma conversao sem nada a
+converter. Os outros quatro ja recusavam: `quant_w4a4.py:386`, `quant_w4a8.py:248`,
+`quant_int8.py:139`, `quant_mixed.py:581`.
+
+**Guarda de dtype ausente.** Validava NOMES e nunca o dtype, e `load()` le por `read_tensor`, cujo
+`TORCH_DTYPES` so tem BF16/F16/F32. O custo do erro tardio eram ~3 min de GPU jogados fora e um
+rastro apontando para outro arquivo, nao para a fonte que a pessoa escolheu -- a informacao para
+recusar estava no cabecalho o tempo todo. Depois do conserto **recusa em 1,8 s**, e
+`tools/test_smooth_guards.py` cobra esse tempo (limite 60 s) para pegar a regressao de mover a
+checagem para depois da calibragem.
+
+`tools/test_smooth_guards.py`, novo: **7/7**, seis recusas mais o controle. Suite completa depois
+das edicoes: **13 suites, 13 exit 0**.
+
+### Coisa que so a corrida ensina
+
+**`convrot_groupsize` tem de ser potencia de 4, nao de 2.** No Gemma 1B, cujo K=1152 e divisivel por
+128, passar 128 levanta `ValueError: Regular Hadamard size must be a power of 4, got 128` em
+`comfy_kitchen/tensor/int8_utils.py:22`. Explica por que 64 e 256 sao os unicos valores usados nesta
+arvore. **O preflight de backend pegou antes de qualquer trabalho** -- a coisa mais util que ele fez
+o dia inteiro.
+
+### Um par que nao da para reconverter, por decisao e nao por defeito
+
+`zimage-v2-mixed`, `zimage-v2-w4a4` e os `zimage-v2-mixed-t0.*` foram feitos com analises anteriores
+a 2026-08-22, sem `source_identity_sha256`. O `quant_mixed` recusa uma analise sem chave de
+proveniencia em vez de pular a checagem -- que era exatamente como a guarda antiga passava.
+Reproduzi-los exige recalibrar. A guarda esta certa, e o registro existe para que ninguem leia "nao
+reconverti" como "reconverti e deu diferente".
+
+### Nao coberto
+
+Nenhuma imagem foi gerada e nenhuma qualidade foi julgada: byte-identidade prova que a migracao nao
+mudou a saida, nao que a saida presta. Uma placa, um build de comfy-kitchen (0.2.31), um torch
+(2.13.0+cu130). Os quatro pares cobrem tres arquiteturas e dois formatos; nao cobrem `--no-convrot`,
+`--no-codebook`, `--keep-bf16-error`, nem `sigma_weight` diferente de `none`. O `quant_int8` e o
+`svdq_to_bf16` carregam e despacham, e so: nada compara a saida deles contra nada. E o caminho de
+escrita do `smooth` segue sem ter rodado.
