@@ -93,6 +93,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out", type=Path, default=PORTABLE_ROOT / "bench" / "quality_ladder")
     parser.add_argument("--frames", type=int, default=1,
                         help="frames for a video model; ignored when the latent format is 2-D")
+    parser.add_argument("--vace-strength", type=float, default=None,
+                        help="forca do ramo VACE, aplicada igual em todos os bracos. Use 0.0 para "
+                             "amostrar um checkpoint VACE como T2V comum: o default do ComfyUI e "
+                             "1.0 sobre quadros zerados, e isso destroi a saida -- inclusive a da "
+                             "referencia nao quantizada.")
+    parser.add_argument("--shift", type=float, default=None,
+                        help="shift do ModelSamplingSD3, aplicado igual em todos os bracos. "
+                             "Obrigatorio para Wan (fabrica usa 8.0); sem ele a referencia "
+                             "nao-quantizada tambem sai destruida.")
     parser.add_argument("--clip-device", choices=["default", "cpu"], default="default",
                         help="'cpu' keeps the text encoder off the card entirely. LTX 2.5's is a "
                              "24 GiB gemma4-12B, which does not share a 24 GiB card with anything")
@@ -140,6 +149,16 @@ def encode(args, folder_paths, comfy_sd, comfy_mm, prompts):
         negative = [list(clip.encode_from_tokens_scheduled(clip.tokenize(args.negative))[0])]
         positive[0][0] = positive[0][0].clone().cpu()
         negative[0][0] = negative[0][0].clone().cpu()
+        # Um checkpoint VACE amostrado SEM no VACE nao fica "sem controle": `WAN21_Vace.extra_conds`
+        # (comfy/model_base.py:1710-1737) preenche `vace_frames` com zeros, passa cada bloco por
+        # `process_latent_in` -- que subtrai a media do formato latente e portanto transforma zero
+        # em valor NAO nulo --, concatena uma mascara toda de UNS e aplica com `vace_strength=1.0`.
+        # Medido em 2026-09-01 no wan2.1_vace_1.3B_fp16, um eixo variado, mesma semente:
+        #     forca 1.0 -> trama tecida, |latente| 607,6      forca 0.0 -> oficina, |latente| 1543,2
+        # Sem isto a referencia NAO quantizada tambem sai destruida, e a comparacao nao mede nada.
+        if args.vace_strength is not None:
+            for cond in (positive, negative):
+                cond[0][1]["vace_strength"] = [args.vace_strength]
         out.append((positive, negative))
     del clip
     comfy_mm.soft_empty_cache()
@@ -202,6 +221,20 @@ def sample_all(args, name, conditioning, comfy_sample, comfy_sd, comfy_mm, folde
 
     if model is None:
         model = comfy_sd.load_diffusion_model(path, disable_dynamic=True)
+    # O `ModelSamplingSD3` e o no que os workflows de fabrica de modelo de flow inserem, e existe
+    # aqui para que este ladder possa reproduzir um workflow real.
+    #
+    # CUIDADO com o que ele NAO faz. Entrou nesta ferramenta em 2026-09-01 como hipotese para o
+    # Wan 2.1 sair destruido, e a hipotese estava errada: com shift 8.0 o latente veio
+    # BIT-IDENTICO ao sem shift. O patch aplica -- `get_model_object("model_sampling").shift`
+    # vira 8.0 -- mas `comfy.samplers.calculate_sigmas(ms, "simple", 25)` devolve exatamente os
+    # mesmos sigmas, porque o scheduler `simple` nao consulta o shift. A causa real era
+    # `vace_strength`; ver `--vace-strength` abaixo. Aplicado igual em todos os bracos, que e o
+    # unico jeito de a comparacao continuar casada.
+    if args.shift is not None:
+        from comfy_extras.nodes_model_advanced import ModelSamplingSD3
+        model = ModelSamplingSD3().patch(model, args.shift)[0]
+        print(f"  ModelSamplingSD3 shift={args.shift}", flush=True)
     latent_format = model.model.latent_format
     side = max(args.size // 8, 8)
     if getattr(latent_format, "latent_dimensions", 2) == 3:

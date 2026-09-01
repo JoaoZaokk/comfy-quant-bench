@@ -4172,3 +4172,92 @@ separa um do outro.
 
 Uma semente por linha de metrica (s1234), um prompt, uma placa. Nenhuma das metricas foi validada
 contra julgamento humano nesta bancada. O `capybara_v0.1_w4a8` continua sem teste.
+
+## 2026-09-01, parte 43 - terceira familia derruba a linha universal, e ela vira uma linha por modelo
+
+Wan 2.1 VACE 1.3B, o unico ponto barato que arriscava a regra em vez de confirma-la dentro de
+casa: perfil `wan_2_1` ja existia, checkpoint ja no disco, terceira arquitetura. Criterio escrito
+antes em `bench/criterio_wan21.md`, com a previsao "mediana acima de 0,21, W4A4 puro quebra".
+
+**A previsao errou.** Mediana `err_w4a4` = **0,1602** sobre 300 camadas, ativacao real
+(`calib/wan21_2026-09-01.calib.pt`, recalibrado porque o de 2026-08-19 e anterior as chaves de
+proveniencia e o `quant_mixed` o recusa, de proposito). Caiu na faixa do meio, 0,15-0,21, que
+nenhum modelo tinha ocupado e onde a regra prevê "correta, granulada".
+
+### A imagem contradiz a regra, e nao por pouco
+
+Tres sementes, 25 passos, 33 quadros, 480x480, `vace_strength 0`, mesmo prompt e mesma semente nos
+dois bracos:
+
+| build | erro efetivo mediano | 4 bits / 8 bits | GiB | divergencia | resultado |
+|---|---|---|---|---|---|
+| referencia FP16 | - | - | 4,01 | - | oficina nitida, pessoa na bancada |
+| `--promote-error 0,05` | 0,0546 | 2 / 298 | 2,15 | 0,2612 | **correta** |
+| `--promote-error 0,15` | 0,0793 | 134 / 166 | 2,11 | 0,3022 | estrutura volta, tudo borrado, inutilizavel |
+| W4A4 puro | 0,1602 | 300 / 0 | 2,07 | 0,3949 | destruida, sem sujeito |
+
+**A linha do Wan fica entre 0,0546 e 0,0793.** O misto em 0,0793 ja e pior que o Z-Image em
+0,1241, que sai bom.
+
+### A regra da parte 39 nao e do formato, e do modelo
+
+| modelo | parametros | tolerado | nao tolerado |
+|---|---|---|---|
+| Wan 2.1 VACE | 1,3 B | 0,0546 | 0,0793 |
+| Z-Image v2 | ~6 B | 0,1241 | 0,2163 (capybara) |
+| HunyuanVideo 1.5 | ~13 B | 0,1837 | 0,2147 |
+
+Monotona no tamanho, 2,4x a 3,4x entre as pontas. A leitura por capacidade entrou no criterio como
+argumento nao medido e sobreviveu **na forma oposta a que eu previ**: nao "modelo pequeno tem erro
+por camada maior" -- o Wan tem o menor dos tres -- e sim "modelo pequeno aguenta menos erro por
+camada". Com tres pontos isso e hipotese, nao lei; o proximo modelo pode derruba-la como este
+derrubou a anterior.
+
+Consequencia pratica imediata: **`--promote-error 0,15` nao e um default seguro.** Ele foi
+escolhido no Z-Image e transportado; no Wan produz um arquivo que carrega, despacha, passa em todo
+verificador estrutural e gera borrao.
+
+### Quatro renderizacoes gastas antes de perceber que a referencia estava quebrada
+
+A referencia **FP16, sem quantizacao nenhuma**, saiu como uma trama tecida em 6 passos/1 quadro,
+em 25/33, em cfg 6 e cfg 1, com e sem `ModelSamplingSD3 shift 8` (que aplica -- `shift` vira 8.0 --
+mas nao muda sigma nenhum no scheduler `simple`, medido). A primeira rodada reportou
+`divergence 1,2365`, o pior numero ja visto nesta bancada, e ele nao media qualidade nenhuma.
+
+Causa, um eixo variado (`tools/probe_vace_strength.py`):
+
+    vace_strength 1.0 (default do ComfyUI)   |latente| 607,6    trama tecida
+    vace_strength 0.0                        |latente| 1543,2   oficina, pessoa, cena
+
+`WAN21_Vace.extra_conds` (`comfy/model_base.py:1710-1737`) preenche `vace_frames` com **zeros**
+quando nao ha no VACE, passa cada bloco por `process_latent_in` -- que subtrai a media do formato
+latente, entao **zero vira valor nao nulo** --, concatena mascara toda de **UNS**, e aplica com
+forca **1,0**. Nao e "sem controle": e controle constante em forca total. Qualquer checkpoint VACE
+num workflow T2V comum sai destruido, sem erro e sem aviso. `quality_ladder.py` ganhou
+`--vace-strength`.
+
+Licao que ja esta em `CLAUDE.md` e foi cara de novo: **quando o braco nao quantizado tambem quebra,
+o numero nao e sobre quantizacao.** Olhar a referencia primeiro custa uma imagem; nao olhar custou
+quatro renderizacoes e quase uma conclusao publicada.
+
+### Confirmado de passagem
+
+- **Despacho real:** `probe_quant_dispatch.py --forward-only` conta 300 modulos quantizados, 12/12
+  forwards com matematica quantizada, 0 `dequantize`, `linear_dtype int4`,
+  `comfy_kitchen.backends.cuda`. O `WARNING: unet unexpected [...comfy_quant]` no load e
+  **cosmetico** -- os tensores sao consumidos antes e reclamados depois. Confundi-lo com falha de
+  carga custaria a rodada inteira.
+- **Razao a4/a8 = 2,932**, contra 2,996 / 3,021 / 3,202. Terceira familia independente:
+  espalhamento 9% enquanto o erro absoluto varia 78%. "E o peso, nao a ativacao" ganha um ponto
+  fora de casa.
+- **Velocidade troca de sinal com o lote, de novo.** 1 quadro: 0,204 contra 0,363 s/passo, W4A4
+  **1,78x mais lento**. 33 quadros: 0,870 contra 0,653, W4A4 **1,33x mais rapido**. Curva
+  `m_crossover`, agora num modelo de video.
+
+### Nao coberto
+
+Um prompt, tres sementes (duas no braco 0,05), 480x480, 33 quadros, um scheduler, uma placa. O
+checkpoint e **fp16** e e uma variante **VACE rodada como T2V comum**, que nao e o uso para o qual
+foi treinada -- a tolerancia medida pode ser do modo, nao do modelo. Os `vace_blocks` ficam fora do
+perfil por construcao e permaneceram fp16; com forca 0 nao contribuem, entao nao houve carona.
+Nenhuma metrica perceptual: "correta", "borrada" e "destruida" sao julgamento de quem olhou.

@@ -145,6 +145,23 @@ Also read [AGENTS.md](AGENTS.md) (root policy) and [ComfyUI/AGENTS.md](ComfyUI/A
 
   Not covered: one seed, one prompt, 480x480, one frame, no perceptual metric, no SASS, and only `convrot_groupsize` 256 in this round. Re-run with `tools/quant_w4a4.py --profile hunyuan_video_15` then `tools/quality_ladder.py`; see `W4A4_PROGRESS.md` part 36.
 
+  **A per-layer error threshold was derived from that work, and a third architecture family broke it on 2026-09-01.** The rule read: median `err_w4a4` above 0.21 breaks, below 0.15 works, between the two is correct-but-grainy. Wan 2.1 VACE 1.3B measures **0.1602** — the untested middle — and the render is destroyed, no subject, no bench. Bracketing it with mixed builds puts Wan's line **between 0.0546 and 0.0793**:
+
+  ```
+  modelo               parametros   tolerado   NAO tolerado
+  Wan 2.1 VACE             1,3 B     0,0546        0,0793
+  Z-Image v2                ~6 B     0,1241        0,2163  (capybara)
+  HunyuanVideo 1.5         ~13 B     0,1837        0,2147
+  ```
+
+  Monotone in model size, 2.4x to 3.4x between the ends. So **there is no threshold of the format — there is one per model**, and the practical consequence is that `--promote-error 0.15`, chosen on Z-Image and carried everywhere since, is **not a safe default**: on Wan it writes a file that loads, dispatches natively, passes every structural check, and renders a smear. Three points make the size reading a hypothesis, not a law.
+
+  **And the reference arm broke first, which cost four renders.** The FP16 Wan — no quantization at all — came out as woven fabric at 6 steps/1 frame, at 25/33, at cfg 6 and cfg 1, with and without `ModelSamplingSD3 shift 8` (which applies, and changes no sigma under the `simple` scheduler). The first run's `divergence 1.2365` measured nothing. Cause, one axis varied (`tools/probe_vace_strength.py`): `vace_strength` **1.0** gives `|latent| 607.6` and fabric, **0.0** gives `|latent| 1543.2` and a real workshop. `WAN21_Vace.extra_conds` (`comfy/model_base.py:1710-1737`) fills `vace_frames` with zeros when no VACE node is present, runs each block through `process_latent_in` — which subtracts the latent format's mean, so **zero becomes non-zero** — concatenates an all-ones mask, and applies it at full strength. **Any VACE checkpoint in a plain T2V workflow is destroyed, with no error and no warning.** `quality_ladder.py` now takes `--vace-strength`.
+
+  One counting trap that nearly ended the run early: loading a quantized Wan prints `WARNING: unet unexpected [...comfy_quant]` for all 300 layers. It is **cosmetic** — the tensors are consumed before that check and complained about after. `probe_quant_dispatch.py --forward-only` counts 300 quantized modules, 12/12 quantized forwards, 0 dequantize, native int4 on the CUDA backend.
+
+  Not covered: one prompt, three seeds, one scheduler, one card, no perceptual metric; the checkpoint is **fp16** and is a **VACE variant run as plain T2V**, so the tolerance measured may belong to the mode rather than to the model. See `bench/criterio_wan21.md` (criterion written before the result) and `W4A4_PROGRESS.md` part 43.
+
   **The "is 1.49x visible?" question is now answered, and answering it corrected how this bench measures.** Three measurements of the same pair, 2026-08-30/31:
 
   ```
