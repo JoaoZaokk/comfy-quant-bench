@@ -4864,3 +4864,66 @@ bf16, row-major, sem split-k, sem bias, uma placa. As quatro configs isolam um e
 sao varredura de tuning**: a mais rapida que cabe nao foi procurada, entao estas razoes sao um PISO.
 Nao mede podar nem empacotar, nao mede memoria, nao ha SparseGPT nem treino de recuperacao (a
 proposta original do dono, ainda nao testada), e nada disto diz nada sobre qualidade de imagem.
+
+## 2026-09-01, parte 51 - INT4 esparso a 7,6x e 2,5 bits/peso, e a mascara do int4 nao e por valor
+
+Continuacao direta da parte 50, mesmo dia. Aquela deixou uma celula explicitamente vazia -- a
+composicao a ~3 bits/peso, *"sem kernel, nao medido"*. `tools/sparse24_sm86/sp24_int.cu` e
+`roda_int.py` preenchem, e o caminho corrigiu duas coisas que este repo tinha errado. Registro em
+[bench/sparse24_na_sm86_2026-09-01.md](bench/sparse24_na_sm86_2026-09-01.md).
+
+**Velocidade, contra o mesmo denominador (denso bf16), controle BIT-EXATO:**
+
+    peso [N,K]         M      int8 denso   2:4 int8   2:4 int4
+    [10240, 3840]   1024          1,048x     3,949x     6,588x
+    [10240, 3840]   5856          0,978x     4,116x     7,622x
+    [11520, 3840]   1024          1,029x     4,002x     7,009x
+    [ 3840, 3840]   5856          0,965x     3,999x     6,977x
+
+A escada e internamente consistente, que e a melhor evidencia de que nao e artefato: 2:4 bf16 sobre
+denso bf16 da 1,9x (esparsidade), 2:4 int8 sobre 2:4 bf16 da 2,1x (16->8 bits), 2:4 int4 sobre 2:4
+int8 da 1,75x (8->4 bits). Cada metade de largura vale ~2x, que e o que o tensor core faz. **E
+`torch._int_mm` denso da 1,0x, as vezes 0,85x** -- o ganho nao vem de ser inteiro, vem do tensor core
+esparso; quem assumir "int8 e 2x" erra nesta placa.
+
+**A unidade de mascara do INT4 e o PAR, nao o valor.** `params_de_cada()` pergunta ao compilador e os
+tres numeros divergem: `kElementsPerElementE` e 8 no bf16, 16 no int8 e **32 no int4**. O plano era
+reusar o empacotador do PyTorch; o portao que compara os parametros disparou e impediu -- **e o
+portao estava certo**. `k/2/32` sao 64 elementos logicos por uint32, ou seja 4 bits de metadata por 8
+valores, metade da densidade do int8, o que so fecha com a mascara em pares. Nao foi deduzido ate o
+fim: com o kernel na mao e a referencia inteira exata, as duas granularidades foram TESTADAS -- por
+elemento falha 6/6, por par bate exato 6/6, e a codificacao saiu junto
+(`nibble = idx0 | (idx1 << 2)`, `{(0,1):4, (0,2):8, (0,3):12, (1,2):9, (1,3):13, (2,3):14}`).
+Consequencia: **2,5 bits/peso, nao os 3,0 que este repo estimou.**
+
+**E a sonda que descobriu isso era cega para metade do problema, por construcao.** Ela usou padrao
+UNIFORME, e padrao uniforme e invariante a reordenamento -- eu escrevi essa propriedade no docstring
+dela e mesmo assim tratei o 6/6 como se cobrisse o layout. Nao cobria: `LayoutE` e
+`ColumnMajorInterleaved<2>`. Sem o scatter o kernel **roda, nao avisa, e erra 65407 de 65536**.
+
+**Erro, um eixo por vez** (`tools/probe_esparso_granularidade.py`, 24 camadas, ativacao real):
+
+    formato                       bits/peso    erro    contra o W4A4   velocidade
+    W4A4 ConvRot (hoje)                 4,0  0,0956               --   1,83x-1,93x
+    2:4 elemento, magnitude, bf16       9,0  0,1849       1,93x pior   1,7x-1,95x
+    2:4 PAR, magnitude, bf16            9,0  0,2587       2,71x pior   (sem kernel)
+    2:4 PAR + int4                      2,5  0,2646       2,77x pior   5,0x-7,6x
+    2:4 PAR, Wanda + int4               2,5  0,1391       1,46x pior   5,0x-7,6x
+
+    custo isolado da GRANULARIDADE (par vs elemento):   1,40x
+    custo isolado da LARGURA (int4 sobre par):          1,02x   <- quase de graca
+    ganho do criterio WANDA na granularidade de par:    2,20x
+
+A poda domina; os 4 bits custam 2%. **Correcao de um numero meu:** citei 0,0794 para "2:4 por
+elemento" -- aquilo era **Wanda**, e a linha de magnitude e 0,1849, que confere com o `2:4 cru` de
+`probe_esparso_vs_quant.py` (0,1891). Comparar as duas sem dizer o criterio foi erro meu.
+
+**A troca:** 2,5 bits/peso e 5x-7,6x, contra os 4,0 bits e 1,9x do W4A4, por 1,46x de erro. 1,6x
+menor e ~3,7x mais rapido. O 0,1391 cai na faixa que esta bancada nunca testou no Z-Image -- sabe-se
+que 0,1241 funciona e o teto nunca foi medido.
+
+**NAO COBERTO, e o buraco que mais importa:** o int4 destas linhas e SIMETRICO POR LINHA e **nao e
+ConvRot**. A rotacao e justamente o que leva o W4A4 a 0,0956, entao a coluna de erro pune o esparso
+por uma razao que nao e a esparsidade. **ConvRot + poda por par + int4 nao foi medido, nao tem
+obstaculo conhecido, e e o proximo passo.** Alem disso: GEMM isolado e nao render, uma placa, sem
+varredura de tuning, sem treino de recuperacao, sem SparseGPT, nenhuma imagem.
