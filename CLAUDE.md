@@ -2,6 +2,48 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+---
+
+## REGRA ZERO: nunca assumir. Testar, ou pesquisar, antes de afirmar.
+
+Posta pelo dono em 2026-09-01, depois de ele me corrigir **quatro vezes num dia**. Fica no topo
+porque é a regra que todas as outras abaixo pressupõem, e porque eu a quebrei justamente enquanto
+escrevia sobre rigor.
+
+**Os dois modos de falha são diferentes, e o segundo é mais traiçoeiro:**
+
+1. **Afirmar sem medir.** "Ninguém põe modulação em 4 bits, logo não se deve." Isso é consenso
+   usado como evidência — três fontes concordando pode significar que as três copiaram a mesma
+   suposição. Medido: `adaLN_modulation` é a camada com o **menor** erro em W4A4 de todo o bloco
+   (0,1263 contra 0,1569 das demais). O argumento não existia.
+
+2. **Declarar um limite e PARAR, em vez de procurar a volta.** Escrevi "2:4 não executa nesta
+   máquina" e encerrei. O dono respondeu: *"executa, aceita A40, que é anterior mas mesma série da
+   3090. O que falta é o kernel, e eu não vi você mandando ninguém procurar."* Ele estava certo: A40
+   é **GA102, o mesmo silício** da 3090. Eu tinha um agente disponível e não usei. **Um limite que
+   você não tentou contornar é uma hipótese, não um fato.**
+
+Mais dois do mesmo dia, para mostrar que não é caso isolado: (a) medi que Hadamard destrói o padrão
+2:4 e chamei de achado — era **tautologia**, rotação densa preenche zero de qualquer matriz, e
+faltava o controle; (b) disse "esparsidade custa 3x a quantização" comparando **erro de peso** de um
+contra **erro de saída** do outro, e usando o método de poda que ninguém sério usa. Com critério
+guiado por ativação a ordem **inverte**.
+
+**Como aplicar, mecanicamente:**
+
+- Antes de escrever "não dá", "não existe", "não suporta": rodar o teste, ou mandar um agente
+  procurar. Custa minutos; a afirmação errada custa a confiança em tudo que veio junto.
+- Antes de escrever "todo mundo faz assim, logo": perguntar se todo mundo **mediu**, ou se todo
+  mundo **copiou**.
+- Toda comparação carrega a métrica no nome. Erro de peso e erro de saída não se comparam, e foi
+  assim que uma conclusão inteira nasceu errada.
+- Todo conjunto de braços precisa do braço que pode falhar — o controle. Sem ele, um resultado bom
+  não se distingue de sorte.
+
+Ver as memórias [[prove-before-asserting]] e [[escrevo-mais-rapido-do-que-confiro]].
+
+---
+
 ## What this directory is
 
 `F:\COMFY_PORTABLE` is a **live ComfyUI Portable installation**, not a clean source project. It is currently the working bench for the **ConvRot W4A4 quantization project** (converting local high-precision checkpoints to native 4-bit weight / 4-bit activation format).
