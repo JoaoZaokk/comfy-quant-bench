@@ -733,19 +733,28 @@ def avaliar(caminho: Path, indice: list[tuple[dict, Path]]) -> Laudo:
     return Laudo(caminho, veredito, achados, fatos_de(ck), cego)
 
 
-def coletar(alvos: list[Path]) -> list[Path]:
+def coletar(alvos: list[Path]) -> tuple[list[Path], list[Path]]:
+    """Devolve (arquivos, alvos_ausentes).
+
+    Os ausentes voltam para o chamador em vez de so virarem aviso no stderr, porque esta
+    ferramenta foi feita para rodar desacompanhada: um `.md` que nao diz que um alvo nao foi
+    percorrido le como cobertura completa. Nesta bancada isso e concreto -- `D:` e um compartilhamento
+    SMB de rede com ~408 GiB de modelos, e "o D: esta fora do ar" e um estado normal, nao quebrado.
+    """
     arquivos: list[Path] = []
+    ausentes: list[Path] = []
     for alvo in alvos:
         if alvo.is_dir():
             arquivos += sorted(alvo.rglob("*.safetensors"))
         elif alvo.is_file():
             arquivos.append(alvo)
         else:
+            ausentes.append(alvo)
             print(f"aviso: nao existe, ignorado: {alvo}", file=sys.stderr)
-    return arquivos
+    return arquivos, ausentes
 
 
-def digest(laudos: list[Laudo]) -> str:
+def digest(laudos: list[Laudo], ausentes: list[Path] | None = None) -> str:
     linhas = [
         "# Avaliacao em lote, camada 1 (cabecalho, sidecar, analise)",
         "",
@@ -756,6 +765,14 @@ def digest(laudos: list[Laudo]) -> str:
         "| veredito | arquivo | mediana erro | familia | achados |",
         "|---|---|---|---|---|",
     ]
+    if ausentes:
+        linhas[5:5] = [
+            "",
+            f"> **ATENCAO: {len(ausentes)} alvo(s) NAO foram percorridos** porque nao existem no "
+            "disco agora. Esta lista esta incompleta:",
+            "",
+            *[f"> - `{alvo}`" for alvo in ausentes],
+        ]
     for laudo in sorted(laudos, key=lambda x: (x.ordem, str(x.caminho))):
         if laudo.erro_leitura:
             linhas.append(f"| NAO LEU | `{laudo.caminho.name}` | - | - | {laudo.erro_leitura} |")
@@ -805,7 +822,7 @@ def main() -> int:
     pastas = a.calib or [raiz / "calib", raiz / "bench"]
     indice = indexar_analises(pastas)
 
-    arquivos = coletar([alvo.resolve() for alvo in a.alvos])
+    arquivos, ausentes = coletar([alvo.resolve() for alvo in a.alvos])
     if not arquivos:
         print("nenhum .safetensors encontrado", file=sys.stderr)
         return 2
@@ -818,12 +835,12 @@ def main() -> int:
             destino = a.saida / f"{laudo.caminho.stem}.json"
             destino.write_text(json.dumps(laudo.para_json(), indent=2, ensure_ascii=False),
                                encoding="utf-8")
-        (a.saida / "digest.md").write_text(digest(laudos), encoding="utf-8")
+        (a.saida / "digest.md").write_text(digest(laudos, ausentes), encoding="utf-8")
 
     if a.json:
         print(json.dumps([laudo.para_json() for laudo in laudos], indent=2, ensure_ascii=False))
     else:
-        print(digest(laudos))
+        print(digest(laudos, ausentes))
 
     contagem: dict[str, int] = {}
     for laudo in laudos:
