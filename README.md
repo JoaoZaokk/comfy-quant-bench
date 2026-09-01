@@ -48,11 +48,25 @@ the opposite. Same format, same kernel, same converter, same `convrot_groupsize`
 
 | | ConvRot W4A4, per sampling step | image |
 | --- | --- | --- |
-| HunyuanVideo 1.5, 480×480, 6 steps | **1.055× slower** than FP16 | destroyed |
-| Z-Image, 1024×1024, 8 steps | **1.50× faster** than BF16 | correct |
+| HunyuanVideo 1.5, 480×480, 6 steps | **1.85× faster** than FP16 | destroyed |
+| Z-Image, 1024×1024, 8 steps | **2.6× faster** than BF16 | correct |
 
-Each cell's image and number come from the same run. Z-Image also measures 1.83×–1.93× faster per
-step over two seeds on a different prompt, and 3.60×–3.75× lighter on disk.
+**A correction, and it is about how these were measured.** An earlier version of this table said
+HunyuanVideo's W4A4 was *1.055× slower* than FP16. That came from a single run per arm, and the
+tool printed `1 runs is a small sample for a quantity this noisy` while it was being published.
+Re-measured over three seeds the sign inverts: 0.990 against 0.536 s/step. The claim was not missed
+through carelessness — it agreed with the August result, so confirmation of expectation was taken
+for confirmation of measurement.
+
+**How precisely this bench can measure time, stated honestly.** The same Z-Image pair measured
+1.50×, 1.90× and 2.63× across one, two and three seeds under different prompts. That is not small
+noise around a value; it is the value not being determined by what was controlled. Read every speed
+ratio here as a range with its run count attached, and never to two decimals.
+
+None of the findings depend on timing: the destroyed output reproduced in every run (divergence
+0.8426, spread 0.0664 over three seeds), the usable line comes from per-layer error, and "it is the
+weight" comes from the a4/a8 ratio. What changes is that W4A4 on HunyuanVideo **delivers the speed
+it promises** and destroys the output, which is a cleaner statement than slow *and* broken.
 
 So the sentence this README used to open with — *do not use W4A4* — was generalized from one model.
 The narrower statement survives and is now stronger: **ConvRot W4A4 destroys HunyuanVideo 1.5**, and
