@@ -43,6 +43,8 @@ PORTABLE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PORTABLE_ROOT / "ComfyUI"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import _conversion as C  # noqa: E402
+
 import torch  # noqa: E402
 
 from quant_w4a4 import human_size  # noqa: E402
@@ -137,22 +139,12 @@ def main() -> int:
         raise SystemExit(f"No such source: {source}")
     output = (args.output or source.with_name(f"{source.stem}_w4a4_smooth.safetensors")).resolve()
     sidecar = output.with_suffix(".quant.json")
-    if output == source:
-        raise SystemExit("Refusing to overwrite the source model")
-    if output.exists() or sidecar.exists():
-        raise SystemExit(f"Refusing to overwrite existing output or sidecar: {output}")
     if not torch.cuda.is_available():
         raise SystemExit("CUDA is unavailable")
 
-    header, metadata = read_header(source)
-    if metadata.get("_quantization_metadata"):
-        raise SystemExit("Refusing to requantize a checkpoint that already carries metadata")
-    # Same inline-marker guard as quant_w4a4.py / quant_w4a8.py / quant_int8.py: a checkpoint can
-    # carry per-layer `.comfy_quant` tensors and no `__metadata__` at all.
-    inline_quant = sum(1 for name in header if name.endswith(".comfy_quant"))
-    if inline_quant:
-        raise SystemExit(f"Refusing to requantize: source carries {inline_quant} inline "
-                         "'.comfy_quant' markers, so it is already quantized")
+    conv = C.Conversion(source, output, sidecar)
+    conv.refuse_unsafe()
+    header, metadata = conv.header, conv.metadata
 
     layer_ids = sorted({int(LAYER_RE.match(k).group(1)) for k in header if LAYER_RE.match(k)})
     selected, norm_keys = [], []
@@ -267,56 +259,26 @@ def main() -> int:
     output_metadata["quantization"] = "ConvRot W4A4"
     output_metadata["smoothquant_alpha"] = str(args.alpha)
 
-    target = {"__metadata__": output_metadata}
-    offset, plan = 0, []
+    # Tres casos, na mesma ordem de antes. As normas reescritas sao BF16 e o codigo manual as
+    # escrevia com `.view(torch.int16)` declarando "BF16" a mao; o nucleo faz as duas coisas
+    # sozinho (`header_dtype` diz BF16, `as_bytes` usa o view), entao o tensor vai cru.
+    entradas = []
     for name, info in header.items():
         if name in selected_set:
-            for key, tensor in ((name, quantized[name]), (f"{name}_scale", scales[name])):
-                nbytes = tensor.numel() * tensor.element_size()
-                target[key] = {"dtype": SAFETENSORS_DTYPE[tensor.dtype], "shape": list(tensor.shape),
-                               "data_offsets": [offset, offset + nbytes]}
-                plan.append(("write", tensor))
-                offset += nbytes
+            entradas.append(C.plan_write(name, quantized[name]))
+            entradas.append(C.plan_write(f"{name}_scale", scales[name]))
         elif name in new_norms:
-            tensor = new_norms[name]
-            nbytes = tensor.numel() * tensor.element_size()
-            target[name] = {"dtype": "BF16", "shape": list(tensor.shape),
-                            "data_offsets": [offset, offset + nbytes]}
-            plan.append(("write", tensor.view(torch.int16)))
-            offset += nbytes
+            entradas.append(C.plan_write(name, new_norms[name]))
         else:
-            start, end = info["data_offsets"]
-            size = end - start
-            target[name] = {"dtype": info["dtype"], "shape": info["shape"],
-                            "data_offsets": [offset, offset + size]}
-            plan.append(("copy", (start, size)))
-            offset += size
+            entradas.append(C.plan_copy(name, info))
 
-    payload = json.dumps(target, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-    payload += b" " * (-len(payload) % 8)
-    partial = output.with_suffix(output.suffix + ".partial")
-    if partial.exists():
-        raise SystemExit(f"Refusing to overwrite stale partial: {partial}")
-    try:
-        with source.open("rb") as source_handle, partial.open("xb") as out_handle:
-            data_start = 8 + struct.unpack("<Q", source_handle.read(8))[0]
-            out_handle.write(struct.pack("<Q", len(payload)))
-            out_handle.write(payload)
-            body_start = out_handle.tell()
-            for kind, item in plan:
-                if kind == "write":
-                    out_handle.write(memoryview(item.numpy()).cast("B"))
-                else:
-                    start, size = item
-                    copy_range(source_handle, out_handle, data_start + start, size)
-            if out_handle.tell() - body_start != offset:
-                raise RuntimeError("length mismatch")
-            out_handle.flush()
-            os.fsync(out_handle.fileno())
-        os.replace(partial, output)
-    finally:
-        if partial.exists():
-            partial.unlink()
+    # Esta ferramenta era a UNICA das sete sem parte 8 nenhuma -- sem guarda de RAM e sem guarda
+    # de disco -- e e a que mais acumula: pesos quantizados, escalas E as normas reescritas, todos
+    # em memoria antes de escrever o primeiro byte. Agora ela tem as duas.
+    acumulado = sum(x.numel() * x.element_size()
+                    for d in (quantized, scales, new_norms) for x in d.values())
+    conv.guard(source.stat().st_size, accumulated=acumulado, label="W4A4 SmoothQuant")
+    conv.commit(entradas, output_metadata)
 
     elapsed = time.perf_counter() - started
     sidecar.write_text(json.dumps({

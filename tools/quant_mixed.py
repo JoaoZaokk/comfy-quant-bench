@@ -62,6 +62,8 @@ PORTABLE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PORTABLE_ROOT / "ComfyUI"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import _conversion as C  # noqa: E402
+
 import psutil  # noqa: E402
 import torch  # noqa: E402
 import torch.nn.functional as F  # noqa: E402
@@ -427,15 +429,12 @@ def main() -> int:
 
     output = (args.output or source.with_name(f"{source.stem}_mixed.safetensors")).resolve()
     sidecar = output.with_suffix(".quant.json")
-    if output == source:
-        raise SystemExit("Refusing to overwrite the source model")
-    if not args.dry_run and (output.exists() or sidecar.exists()):
-        raise SystemExit(f"Refusing to overwrite existing output or sidecar: {output}")
-
-    header, metadata = read_header(source)
-    if metadata.get("_quantization_metadata"):
-        raise SystemExit("Refusing to requantize a checkpoint that already has quantization "
-                         "metadata")
+    # `refuse_unsafe()` e INCONDICIONAL -- este era o unico conversor que condicionava a recusa de
+    # saida existente a `not args.dry_run`, e isso faz o ensaio seco pular a checagem que a
+    # execucao real faria, que e a unica coisa que um ensaio serve para ser.
+    conv = C.Conversion(source, output, sidecar)
+    conv.refuse_unsafe()
+    header, metadata = conv.header, conv.metadata
     inline_quant = sum(1 for name in header if name.endswith(".comfy_quant"))
     if inline_quant:
         raise SystemExit(f"Refusing to requantize: source carries {inline_quant} inline "
@@ -763,9 +762,6 @@ def main() -> int:
         return 0
 
     # ---- quantize ----------------------------------------------------------------------------
-    partial = output.with_suffix(output.suffix + ".partial")
-    if partial.exists():
-        raise SystemExit(f"Refusing to overwrite stale partial output: {partial}")
     quant_names = [n for n in selected if decision[n.removesuffix(".weight")] != "bf16"]
     if not quant_names:
         raise SystemExit("Every layer was left at bf16; there is nothing to write")
@@ -774,7 +770,7 @@ def main() -> int:
     # correct for a streaming design and understates a two-pass one by the layer count -- it
     # asked for 2.25 GiB against an accumulation of 2.92 GiB on the smallest model in this
     # project, and would understate a large model by several times.
-    from _ram_guard import check, convrot_w4a4_bytes, w4a8_bytes
+    from _ram_guard import convrot_w4a4_bytes, w4a8_bytes
 
     accumulated = 0
     for name in quant_names:
@@ -783,11 +779,7 @@ def main() -> int:
             accumulated += convrot_w4a4_bytes(rows, cols)
         else:
             accumulated += w4a8_bytes(rows, cols, args.group_size, codebook=True)
-    refusal = check(psutil.virtual_memory().available, accumulated, label="mixed conversion")
-    if refusal:
-        raise SystemExit(refusal)
-    if shutil.disk_usage(output.parent).free < source.stat().st_size:
-        raise SystemExit("Insufficient disk space")
+    conv.guard(source.stat().st_size, accumulated=accumulated, label="mixed conversion")
 
     started = time.perf_counter()
     quantized: dict[str, dict] = {}
@@ -844,63 +836,28 @@ def main() -> int:
         {"format_version": "1.0", "layers": layers_meta}, separators=(",", ":"))
     output_metadata["quantization"] = "mixed convrot_w4a4 / asym_w4a8_int8"
 
-    target = {"__metadata__": output_metadata}
-    offset = 0
-    plan = []
+    # Duas formas por camada, na mesma ordem de antes. O `.view(torch.uint8)` que o codigo manual
+    # fazia para fp8 saiu: `header_dtype` ja devolve "U8" para float8_e4m3fn e `as_bytes` ja usa a
+    # view -- e a forma declarada continua a do tensor original, porque a view de fp8 para uint8
+    # tem exatamente a mesma forma.
+    entradas = []
     quant_set = set(quant_names)
     for name, info in header.items():
-        if name in quant_set:
-            stem = name.removesuffix(".weight")
-            entry = quantized[name]
-            if entry["format"] == "convrot_w4a4":
-                pieces = [(name, entry["qdata"]), (f"{stem}.weight_scale", entry["scale"])]
-            else:
-                pieces = [(name, entry["qdata"]),
-                          (f"{stem}.weight_s_rel", entry["s_rel"]),
-                          (f"{stem}.weight_s_channel", entry["s_channel"])]
-                if entry["codebook"] is not None:
-                    pieces.append((f"{stem}.weight_codebook", entry["codebook"]))
-            for key, tensor in pieces:
-                store = tensor.view(torch.uint8) if tensor.dtype == torch.float8_e4m3fn else tensor
-                nbytes = store.numel() * store.element_size()
-                target[key] = {"dtype": SAFETENSORS_DTYPE[store.dtype],
-                               "shape": list(tensor.shape),
-                               "data_offsets": [offset, offset + nbytes]}
-                plan.append(("write", store))
-                offset += nbytes
+        if name not in quant_set:
+            entradas.append(C.plan_copy(name, info))
+            continue
+        stem = name.removesuffix(".weight")
+        entry = quantized[name]
+        entradas.append(C.plan_write(name, entry["qdata"]))
+        if entry["format"] == "convrot_w4a4":
+            entradas.append(C.plan_write(f"{stem}.weight_scale", entry["scale"]))
         else:
-            start, end = info["data_offsets"]
-            size = end - start
-            target[name] = {"dtype": info["dtype"], "shape": info["shape"],
-                            "data_offsets": [offset, offset + size]}
-            plan.append(("copy", (start, size)))
-            offset += size
+            entradas.append(C.plan_write(f"{stem}.weight_s_rel", entry["s_rel"]))
+            entradas.append(C.plan_write(f"{stem}.weight_s_channel", entry["s_channel"]))
+            if entry["codebook"] is not None:
+                entradas.append(C.plan_write(f"{stem}.weight_codebook", entry["codebook"]))
 
-    payload = json.dumps(target, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-    payload += b" " * (-len(payload) % 8)
-
-    try:
-        with source.open("rb") as source_handle, partial.open("xb") as out_handle:
-            header_size = struct.unpack("<Q", source_handle.read(8))[0]
-            data_start = 8 + header_size
-            out_handle.write(struct.pack("<Q", len(payload)))
-            out_handle.write(payload)
-            body_start = out_handle.tell()
-            for kind, item in plan:
-                if kind == "write":
-                    out_handle.write(memoryview(item.numpy()).cast("B"))
-                else:
-                    start, size = item
-                    copy_range(source_handle, out_handle, data_start + start, size)
-            written = out_handle.tell() - body_start
-            if written != offset:
-                raise RuntimeError(f"length mismatch: wrote {written}, planned {offset}")
-            out_handle.flush()
-            os.fsync(out_handle.fileno())
-        os.replace(partial, output)
-    finally:
-        if partial.exists():
-            partial.unlink()
+    conv.commit(entradas, output_metadata)
 
     elapsed = time.perf_counter() - started
     manifest = {

@@ -306,3 +306,85 @@ e ela devolveu **zero** hits para este assunto. O que achou foi um grep direto n
 locais (`~/.claude/projects/<slug>/*.jsonl`), que sao arquivos comuns. **Ausencia no cortex nao e
 ausencia no historico** — o mesmo defeito que este repo cataloga em
 `arquivo-plausivel-nao-e-o-caminho`.
+
+## ADOCAO FEITA, 2026-09-01. O ticket NAO fecha ainda, e o motivo esta escrito aqui.
+
+Os **sete** escritores passaram a usar `tools/_conversion.py`. Auditado por contagem, nao por
+memoria:
+
+```
+conversor            importa nucleo  commit  guard  refuse_unsafe  .partial proprio
+quant_w4a4                 sim          1      1         1              0
+quant_w4a8                 sim          1      1         1              0
+quant_int8                 sim          1      1         1              0
+quant_w4a4_smooth          sim          1      1         1              0
+quant_mixed                sim          1      1         2              0
+to_native                  sim          1      1         1              0
+svdq_to_bf16               sim          1      1         1              2  (ver pendencia)
+```
+
+### O criterio de fechamento, item a item
+
+O criterio dizia: fecha com uma decisao escrita, **e** so quando houver um unico escritor e todo
+conversor tiver o mesmo conjunto de guardas.
+
+- **Decisao**: tomada em 2026-08-31, NUCLEO. Feito.
+- **Um escritor so**: `Conversion.commit` e o unico no caminho de producao. Feito, com uma
+  pendencia nomeada abaixo.
+- **Mesmo conjunto de guardas**: todos chamam `conv.guard(disco, accumulated=...)`. Feito -- e
+  isto **corrigiu divergencias reais**, nao so mudou de lugar:
+  - `quant_w4a4_smooth` era o unico dos sete **sem guarda de RAM e sem guarda de disco**, e e o
+    que mais acumula (pesos, escalas E normas reescritas). Ganhou as duas.
+  - `svdq_to_bf16` era o unico **sem recusa nenhuma de saida existente**. Ganhou, com
+    `allow_quantized_source=True`, porque a entrada dele e quantizada por construcao.
+  - `quant_mixed` era o unico que condicionava a recusa de saida existente a `not --dry-run`, o
+    que fazia o ensaio seco pular a checagem que a execucao real faria. Agora e incondicional.
+
+**Mesmo assim nao fecho**, porque nenhum byte de DADO quantizado foi conferido: o kernel nao rodou
+em verificacao nenhuma. Fechar aqui seria fechar sobre codigo lido, e o criterio deste repo e o
+oposto disso.
+
+### O que ja esta provado sem GPU
+
+| conversor | como | resultado |
+|---|---|---|
+| `to_native` | reconverteu e comparou o arquivo inteiro | **sha256 identico, 11,46 GiB** |
+| `quant_w4a4` | header reconstruido sem kernel, comparado byte a byte | **identico, 238 264 bytes, 432 camadas** |
+| todos | 9 suites | passam |
+
+A segunda linha e `tools/verificar_migracao.py`, e ela existe porque `plan_lazy` carrega dtype,
+forma e nbytes explicitamente -- o plano inteiro sai sem chamar kernel. Os quatro que ACUMULAM nao
+tem esse verificador: as formas de saida deles (`s_rel`, `s_channel`, `codebook`) saem do kernel.
+
+### O que falta, com criterio escrito antes
+
+`bench/janela_gpu_migracao.md`, escrito antes de qualquer corrida com placa: os pares a
+reconverter, os parametros que precisam sair do `.quant.json` de cada saida, e a regra de que
+**qualquer diferenca reprova** -- inclusive diferenca so de header, ja que a convencao foi
+alinhada de proposito para permitir comparacao byte a byte.
+
+### Duas coisas que a migracao expos, e que ler o codigo nao teria exposto
+
+**O nucleo tinha um buraco.** `to_native` funde `to_{q,k,v}` num `qkv`, entao um destino nasce de
+varias faixas da fonte, e o nucleo so tinha `plan_copy` de faixa unica. Dai `plan_copy_many`.
+
+**O nucleo era MAIS FRACO que o que substitui.** `commit()` abria o `.partial` com `"wb"`, que
+trunca, onde os seis escritores usam `"xb"`. Pego pelo `test_svdq_write_contract` durante a
+propria migracao -- que e o risco real de extrair um contrato: a extracao perde uma garantia e
+ninguem nota. E aquele teste exigia o literal `"xb"` dentro de cada um dos sete arquivos, o que
+teria bloqueado exatamente a migracao que este ticket existe para fazer; passou a afirmar a
+garantia (o escritor carrega, ou delega a um nucleo que carrega) e cobra o literal do nucleo.
+
+**E a convencao do header teve que ser decidida por contagem, nao por gosto.** Cinco de cinco
+quantizadores escrevem `__metadata__` PRIMEIRO com `ensure_ascii=False`; o nucleo fazia o
+contrario nos dois. Adotar o nucleo teria mudado em silencio o layout de todo checkpoint
+reconvertido -- e destruido a unica verificacao forte que a migracao tem. O nucleo passou a seguir
+a convencao existente.
+
+### Pendencia nomeada
+
+`svdq_to_bf16.write_checkpoint()` saiu do caminho de producao mas continua no arquivo: o
+`test_svdq_write_contract.py` a exercita direto em tres cenarios, e apagar a funcao apagaria o
+teste junto. Redirecionar aquele teste para `Conversion.commit` e entao remover a funcao. Os tres
+cenarios ja tem cobertura equivalente em `test_conversion_core.py` (partes 3b, 5, 6, 7), entao o
+redirecionamento e para preservar as anotacoes de proveniencia daquele arquivo.

@@ -19,6 +19,7 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import _conversion as C  # noqa: E402
 from _native_probe import native_backend_ready  # noqa: E402
 
 
@@ -266,65 +267,75 @@ def write_tensor(output_handle, tensor: torch.Tensor) -> None:
     output_handle.write(memoryview(array).cast("B"))
 
 
-def write_streamed_checkpoint(
-    source: Path,
-    partial: Path,
-    header: dict,
-    metadata: dict[str, str],
-    selected: list[str],
-    layers: dict,
-    ck,
-    convrot_groupsize: int = CONVROT_GROUP_SIZE,
-) -> None:
-    target_header, expected_data_bytes = output_header(header, metadata, selected, layers)
-    header_bytes = encoded_header(target_header)
+def output_metadata(metadata: dict[str, str], layers: dict) -> dict[str, str]:
+    """O `__metadata__` de saida. Separado do plano porque `verificar_migracao.py` precisa dele."""
+    result = dict(metadata)
+    result["_quantization_metadata"] = json.dumps({"format_version": "1.0", "layers": layers},
+                                                  separators=(",", ":"))
+    result["quantization"] = "ConvRot W4A4"
+    return result
+
+
+def planejar(source_handle, header: dict, selected: list[str], ck,
+             convrot_groupsize: int = CONVROT_GROUP_SIZE) -> list:
+    """As entradas do nucleo, na MESMA ordem que `output_header()` produzia.
+
+    Nada quantiza aqui. `plan_lazy` carrega dtype, forma e nbytes explicitamente, entao o plano --
+    e portanto o header inteiro -- sai sem tocar a GPU; os produtores so rodam dentro de
+    `commit()`. E isso que permite `tools/verificar_migracao.py` conferir o layout desta ferramenta
+    contra os arquivos que ela ja escreveu, sem placa nenhuma.
+
+    Cada camada selecionada vira DUAS entradas (`qdata`, depois `weight_scale`) e o kernel roda
+    UMA vez: o produtor do peso guarda as escalas num dicionario que o produtor seguinte consome.
+    Isso amarra os dois a ordem em que `commit()` os chama; o segundo levanta com uma mensagem
+    explicita se for chamado fora de ordem, em vez de escrever lixo silenciosamente.
+    """
+    source_handle.seek(0)
+    source_data_start = 8 + struct.unpack("<Q", source_handle.read(8))[0]
     selected_set = set(selected)
-    with source.open("rb") as source_handle:
-        source_header_size = struct.unpack("<Q", source_handle.read(8))[0]
-        source_data_start = 8 + source_header_size
-        with partial.open("xb") as output_handle:
-            output_handle.write(struct.pack("<Q", len(header_bytes)))
-            output_handle.write(header_bytes)
-            data_start = output_handle.tell()
-            for index, (name, info) in enumerate(header.items(), 1):
-                if name in selected_set:
-                    start, end = info["data_offsets"]
-                    source_tensor, raw = read_tensor_range(
-                        source_handle,
-                        source_data_start + start,
-                        end - start,
-                        info["dtype"],
-                        info["shape"],
-                    )
-                    weight = source_tensor.to(device="cuda")
-                    qdata, scales = ck.quantize_convrot_w4a4_weight(
-                        weight,
-                        convrot_groupsize=convrot_groupsize,
-                        quant_group_size=QUANT_GROUP_SIZE,
-                        stochastic_rounding=0,
-                    )
-                    qdata = qdata.cpu().contiguous()
-                    scales = scales.cpu().contiguous()
-                    expected_q_shape = (info["shape"][0], info["shape"][1] // 2)
-                    if qdata.dtype != torch.int8 or tuple(qdata.shape) != expected_q_shape:
-                        raise RuntimeError(f"Unexpected packed weight for {name}: {qdata.dtype} {tuple(qdata.shape)}")
-                    if scales.dtype != torch.float32 or tuple(scales.shape) != (info["shape"][0],):
-                        raise RuntimeError(f"Unexpected scales for {name}: {scales.dtype} {tuple(scales.shape)}")
-                    write_tensor(output_handle, qdata)
-                    write_tensor(output_handle, scales)
-                    del source_tensor, raw, weight, qdata, scales
-                    torch.cuda.empty_cache()
-                    print(f"[{index}/{len(header)}] quantized {name}", flush=True)
-                else:
-                    start, end = info["data_offsets"]
-                    copy_range(source_handle, output_handle, source_data_start + start, end - start)
-            actual_data_bytes = output_handle.tell() - data_start
-            if actual_data_bytes != expected_data_bytes:
+    entradas = []
+    for name, info in header.items():
+        if name not in selected_set:
+            entradas.append(C.plan_copy(name, info))
+            continue
+
+        rows, columns = info["shape"]
+        pendente: dict = {}
+
+        def produz_peso(name=name, info=info, pendente=pendente):
+            start, end = info["data_offsets"]
+            source_tensor, raw = read_tensor_range(
+                source_handle, source_data_start + start, end - start,
+                info["dtype"], info["shape"])
+            weight = source_tensor.to(device="cuda")
+            qdata, scales = ck.quantize_convrot_w4a4_weight(
+                weight, convrot_groupsize=convrot_groupsize,
+                quant_group_size=QUANT_GROUP_SIZE, stochastic_rounding=0)
+            qdata = qdata.cpu().contiguous()
+            scales = scales.cpu().contiguous()
+            expected_q_shape = (info["shape"][0], info["shape"][1] // 2)
+            if qdata.dtype != torch.int8 or tuple(qdata.shape) != expected_q_shape:
                 raise RuntimeError(
-                    f"Output data length mismatch: wrote {actual_data_bytes}, expected {expected_data_bytes}"
-                )
-            output_handle.flush()
-            os.fsync(output_handle.fileno())
+                    f"Unexpected packed weight for {name}: {qdata.dtype} {tuple(qdata.shape)}")
+            if scales.dtype != torch.float32 or tuple(scales.shape) != (info["shape"][0],):
+                raise RuntimeError(f"Unexpected scales for {name}: {scales.dtype} {tuple(scales.shape)}")
+            pendente["scales"] = scales
+            del source_tensor, raw, weight
+            torch.cuda.empty_cache()
+            return qdata
+
+        def produz_escala(name=name, pendente=pendente):
+            if "scales" not in pendente:
+                raise RuntimeError(
+                    f"{name}: o produtor da escala rodou antes do produtor do peso. As duas "
+                    "entradas desta camada tem que ser escritas em ordem pelo commit().")
+            return pendente.pop("scales")
+
+        entradas.append(C.plan_lazy(name, "I8", [rows, columns // 2],
+                                    rows * columns // 2, produz_peso))
+        entradas.append(C.plan_lazy(f"{name.removesuffix('.weight')}.weight_scale", "F32",
+                                    [rows], rows * 4, produz_escala))
+    return entradas
 
 
 def version_info(portable_root: Path) -> dict:
@@ -349,10 +360,6 @@ def main() -> int:
     portable_root = Path(__file__).resolve().parent.parent
     output = (args.output or source.with_name(f"{source.stem}_w4a4_convrot.safetensors")).resolve()
     sidecar = output.with_suffix(".quant.json")
-    if output == source:
-        raise SystemExit("Refusing to overwrite the source model")
-    if output.exists() or sidecar.exists():
-        raise SystemExit(f"Refusing to overwrite existing output or sidecar: {output}")
 
     backend = None
     if not args.dry_run:
@@ -365,18 +372,12 @@ def main() -> int:
             )
 
     header, metadata = read_header(source)
-    if metadata.get("_quantization_metadata"):
-        raise SystemExit("Refusing to requantize a checkpoint that already has quantization metadata")
     # Comfy-Org and Lightricks ship per-layer `.comfy_quant` tensors with no `__metadata__` at
     # all, so the check above misses them entirely. Real example on this machine:
     # `gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors` has metadata
     # ['gemma_config','format'] and 328 inline markers. Today the allowlist happens to select
     # nothing and it exits with the misleading "profile selected no compatible layers"; that luck
     # runs out on a partially quantized checkpoint, which is exactly what quant_mixed.py writes.
-    inline_quant = sum(1 for name in header if name.endswith(".comfy_quant"))
-    if inline_quant:
-        raise SystemExit(f"Refusing to requantize: source carries {inline_quant} inline "
-                         "'.comfy_quant' markers, so it is already quantized")
     if args.auto_detect and args.profile != "auto":
         print(f"--auto-detect overrides --profile {args.profile}")
     profile = (detect_profile(source, list(header))
@@ -400,20 +401,6 @@ def main() -> int:
 
     if not torch.cuda.is_available():
         raise SystemExit("CUDA is unavailable")
-    free_disk = shutil.disk_usage(output.parent).free
-    free_ram = psutil.virtual_memory().available
-    if free_disk < estimated_size + 1024**3:
-        raise SystemExit(f"Insufficient disk: {human_size(free_disk)} free, {human_size(estimated_size)} estimated")
-    largest_selected = max(
-        header[name]["data_offsets"][1] - header[name]["data_offsets"][0]
-        for name in selected
-    )
-    required_ram = largest_selected * 3 + 2 * 1024**3
-    if free_ram < required_ram:
-        raise SystemExit(
-            f"Insufficient available RAM for streaming conversion: {human_size(free_ram)} free, "
-            f"{human_size(required_ram)} required"
-        )
 
     import comfy_kitchen as ck
 
@@ -427,15 +414,22 @@ def main() -> int:
     }
 
     output.parent.mkdir(parents=True, exist_ok=True)
-    partial = output.with_suffix(output.suffix + ".partial")
-    if partial.exists():
-        raise SystemExit(f"Refusing to overwrite stale partial output: {partial}")
-    try:
-        write_streamed_checkpoint(source, partial, header, metadata, selected, layers, ck, args.convrot_groupsize)
-        os.replace(partial, output)
-    finally:
-        if partial.exists():
-            partial.unlink()
+    conv = C.Conversion(source, output, sidecar)
+    conv.refuse_unsafe()
+    # Transmite, entao a RAM que importa e o maior tensor sozinho, nao a soma: tres copias dele
+    # (bytes lidos, tensor de origem, resultado) mais a folga que a propria guarda adiciona.
+    largest_selected = max(header[name]["data_offsets"][1] - header[name]["data_offsets"][0]
+                           for name in selected)
+    conv.guard(estimated_size, accumulated=largest_selected * 3, label="quant_w4a4 (streaming)")
+
+    def progresso(indice: int, total: int, chave: str) -> None:
+        if chave.endswith(".weight_scale"):
+            return
+        print(f"[{indice}/{total}] {chave}", flush=True)
+
+    with source.open("rb") as source_handle:
+        entradas = planejar(source_handle, header, selected, ck, args.convrot_groupsize)
+        conv.commit(entradas, output_metadata(metadata, layers), progress=progresso)
 
     elapsed = time.perf_counter() - started
     versions = version_info(portable_root)

@@ -275,6 +275,39 @@ def plan_copy_many(key: str, dtype: str, shape: list[int],
                  sum(tamanho for _, tamanho in ranges))
 
 
+def header_bytes(entries: Iterable[Entry], metadata: dict | None = None) -> tuple[bytes, int]:
+    """Parte 4: o header serializado e o total de bytes de dado planejados.
+
+    Funcao PURA e publica de proposito. Ela nao le a fonte, nao chama nenhum produtor e nao toca
+    GPU -- so precisa das formas, que `plan_lazy` ja carrega explicitamente. Isso e o que torna
+    possivel verificar uma migracao sem placa: monta-se as entradas do conversor migrado a partir
+    do header da FONTE, chama-se isto, e compara-se com os bytes de header do arquivo que aquele
+    conversor ja escreveu. Header identico prova que o plano e o layout nao mudaram; so o dado
+    quantizado fica para a janela de GPU. Ver `tools/verificar_migracao.py`.
+
+    `__metadata__` PRIMEIRO e `ensure_ascii=False`, e as duas escolhas sao sobre BYTES, nao sobre
+    estilo. O dict do Python preserva ordem de insercao e o JSON sai nessa ordem, entao mover
+    `__metadata__` para o fim muda os bytes do header de todo arquivo escrito por aqui. Contado em
+    2026-09-01: **cinco de cinco** conversores quantizadores desta bancada escrevem
+    `{"__metadata__": ...}` primeiro e serializam com `ensure_ascii=False`. O nucleo fazia o
+    contrario nos dois, e adota-lo teria mudado em silencio o layout de todo checkpoint
+    reconvertido -- destruindo justamente a verificacao descrita acima.
+
+    O nucleo segue a convencao existente; nao impoe uma nova.
+    """
+    offset = 0
+    out_header: dict = {}
+    if metadata:
+        out_header["__metadata__"] = metadata
+    for e in entries:
+        out_header[e.key] = {"dtype": e.dtype, "shape": e.shape,
+                             "data_offsets": [offset, offset + e.nbytes]}
+        offset += e.nbytes
+    blob = json.dumps(out_header, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    blob += b" " * ((8 - len(blob) % 8) % 8)
+    return blob, offset
+
+
 @dataclass
 class Conversion:
     """Escreve um safetensors a partir de outro, cumprindo as oito partes.
@@ -336,18 +369,7 @@ class Conversion:
         """
         entries = list(entries)
 
-        # parte 4: o header inteiro antes de um byte de dado
-        offset = 0
-        out_header: dict = {}
-        for e in entries:
-            out_header[e.key] = {"dtype": e.dtype, "shape": e.shape,
-                                 "data_offsets": [offset, offset + e.nbytes]}
-            offset += e.nbytes
-        planned = offset
-        if metadata:
-            out_header["__metadata__"] = metadata
-        blob = json.dumps(out_header, separators=(",", ":")).encode("utf-8")
-        blob += b" " * ((8 - len(blob) % 8) % 8)
+        blob, planned = header_bytes(entries, metadata)
 
         partial = self.partial
         written = 0

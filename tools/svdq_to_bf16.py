@@ -98,8 +98,11 @@ from pathlib import Path
 
 PORTABLE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PORTABLE_ROOT / "ComfyUI"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import torch  # noqa: E402
+
+import _conversion as C  # noqa: E402
 
 DTYPE_NAMES = {torch.bfloat16: "BF16", torch.float16: "F16", torch.float32: "F32"}
 COPY_CHUNK = 16 * 1024 * 1024
@@ -484,6 +487,20 @@ def write_checkpoint(src: Path, data_start: int, out: Path, partial: Path,
                      entries: list, blob: bytes, planned: int) -> None:
     """Stream the planned file out, and refuse to hand over anything that is not the plan.
 
+    FORA DO CAMINHO DE PRODUCAO DESDE 2026-09-01. `main()` nao chama mais esta funcao: o contrato
+    de escrita mudou-se para `_conversion.Conversion.commit`, e os sete escritores desta bancada
+    passam por la. Ela continua aqui por UM motivo, e nao por conservadorismo -- o
+    `test_svdq_write_contract.py` a exercita diretamente em tres cenarios (round-trip honesto,
+    escrita truncada, `.partial` pre-existente), e apagar a funcao apagaria o teste junto.
+
+    FOLLOW-UP nomeado, para nao virar codigo morto permanente: redirecionar aquele teste para
+    `_conversion.Conversion.commit` e entao remover esta funcao. Os tres cenarios ja tem cobertura
+    equivalente em `test_conversion_core.py` (partes 5, 6, 7 e a 3b do `.partial` exclusivo), entao
+    o redirecionamento e sobre preservar as anotacoes de proveniencia daquele arquivo, nao sobre
+    recuperar cobertura perdida.
+
+    O paragrafo abaixo descreve o estado ANTERIOR a migracao e fica como registro.
+
     This was the only writer in `tools/` without the contract the other six share. Find them with
 
         grep -n '"xb"' tools/*.py
@@ -752,21 +769,10 @@ def main() -> int:
     # Header first, then stream: the recovered weights alone are several times the size of the
     # input, and building the whole file in memory before writing is how a conversion turns into
     # an OOM on a machine that shares RAM with other work.
-    entries: list[tuple[str, dict, object]] = []
-    offset = 0
-    for key in passthrough:
-        info = header[key]
-        size = info["data_offsets"][1] - info["data_offsets"][0]
-        entries.append((key, {"dtype": info["dtype"], "shape": info["shape"],
-                              "data_offsets": [offset, offset + size]}, ("copy", info)))
-        offset += size
-    for key, tensor in recovered.items():
-        size = tensor.numel() * tensor.element_size()
-        entries.append((key, {"dtype": DTYPE_NAMES[tensor.dtype], "shape": list(tensor.shape),
-                              "data_offsets": [offset, offset + size]}, ("write", tensor)))
-        offset += size
+    entradas = [C.plan_copy(key, header[key]) for key in passthrough]
+    entradas += [C.plan_write(key, tensor) for key, tensor in recovered.items()]
 
-    out_header = {key: info for key, info, _ in entries}
+    kept = None
     if metadata:
         kept = dict(metadata)
         # The quantisation_config described a file that no longer exists in this form. Leaving it
@@ -775,13 +781,16 @@ def main() -> int:
         kept["dequantized_from"] = src.name
         kept["dequantized_note"] = ("weights recovered from SVDQuant by identity probe; "
                                     "quality is that of the INT4 source, not of any BF16 original")
-        out_header["__metadata__"] = kept
 
-    blob = json.dumps(out_header, separators=(",", ":")).encode("utf-8")
-    blob += b" " * ((8 - len(blob) % 8) % 8)
-
-    print(f"writing {out.name} ({(offset + len(blob) + 8) / 2**30:.2f} GiB)", flush=True)
-    write_checkpoint(src, data_start, out, partial, entries, blob, offset)
+    # `allow_quantized_source=True`: a ENTRADA desta ferramenta e quantizada por construcao -- e o
+    # ponto dela. Sem esta bandeira o nucleo recusaria, com razao, todo arquivo que ela existe para
+    # ler. Era tambem a unica das sete sem recusa nenhuma de saida.
+    blob, planejado = C.header_bytes(entradas, kept)
+    print(f"writing {out.name} ({(planejado + len(blob) + 8) / 2**30:.2f} GiB)", flush=True)
+    conv = C.Conversion(src, out)
+    conv.refuse_unsafe(allow_quantized_source=True)
+    conv.guard(planejado)
+    conv.commit(entradas, kept)
     print(f"done: {out}")
     print("reminder: this carries INT4 quality at BF16 size. It is only worth keeping for a "
           "model you do not have a BF16 original of.")

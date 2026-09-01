@@ -37,6 +37,8 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import _conversion as C  # noqa: E402
+
 from _native_probe import native_backend_ready  # noqa: E402
 
 PROFILE_PATTERNS = {
@@ -238,21 +240,9 @@ def main() -> int:
     portable_root = Path(__file__).resolve().parent.parent
     output = (args.output or source.with_name(f"{source.stem}_w4a8.safetensors")).resolve()
     sidecar = output.with_suffix(".quant.json")
-    if output == source:
-        raise SystemExit("Refusing to overwrite the source model")
-    if output.exists() or sidecar.exists():
-        raise SystemExit(f"Refusing to overwrite existing output or sidecar: {output}")
-
-    header, metadata = read_header(source)
-    if metadata.get("_quantization_metadata"):
-        raise SystemExit("Refusing to requantize a checkpoint that already has quantization metadata")
-    # Comfy-Org and Lightricks ship per-layer `.comfy_quant` tensors with no `__metadata__` at all,
-    # so the check above misses them entirely. Only the high-precision dtype filter in
-    # selected_layers would catch it, and that is luck rather than a guard.
-    inline_quant = sum(1 for name in header if name.endswith(".comfy_quant"))
-    if inline_quant:
-        raise SystemExit(f"Refusing to requantize: source carries {inline_quant} inline "
-                         "'.comfy_quant' markers, so it is already quantized")
+    conv = C.Conversion(source, output, sidecar)
+    conv.refuse_unsafe()
+    header, metadata = conv.header, conv.metadata
     profile = detect_profile(source, list(header)) if args.profile == "auto" else args.profile
     selected = selected_layers(header, profile, args.group_size, args.convrot_groupsize)
     if not selected:
@@ -280,9 +270,7 @@ def main() -> int:
     import comfy_kitchen as ck
 
     started = time.perf_counter()
-    partial = output.with_suffix(output.suffix + ".partial")
-    if partial.exists():
-        raise SystemExit(f"Refusing to overwrite stale partial output: {partial}")
+    partial = conv.partial
 
     # Pass one: quantize every selected layer, holding only the small scale tensors in memory.
     selected_set = set(selected)
@@ -290,16 +278,11 @@ def main() -> int:
     # Two-pass design: pass one fills `quantized` with every layer, pass two writes. The old
     # `largest * 3 + 2 GiB` is the streaming estimate from quant_w4a4.py and understates this by
     # the layer count -- measured at 2.375 GiB asked against 10.777 GiB accumulated.
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from _ram_guard import check, w4a8_bytes
+    from _ram_guard import w4a8_bytes
 
     accumulated = sum(w4a8_bytes(*header[n]["shape"], args.group_size,
                                  codebook=not args.no_codebook) for n in selected)
-    refusal = check(psutil.virtual_memory().available, accumulated, label="W4A8 conversion")
-    if refusal:
-        raise SystemExit(refusal)
-    if shutil.disk_usage(output.parent).free < source.stat().st_size:
-        raise SystemExit("Insufficient disk space")
+    conv.guard(source.stat().st_size, accumulated=accumulated, label="W4A8 conversion")
 
     with source.open("rb") as source_handle:
         source_header_size = struct.unpack("<Q", source_handle.read(8))[0]
@@ -346,58 +329,25 @@ def main() -> int:
         {"format_version": "1.0", "layers": layers}, separators=(",", ":"))
     output_metadata["quantization"] = "asym_w4a8_int8"
 
-    target = {"__metadata__": output_metadata}
-    offset = 0
-    plan = []
+    # `plan_write` deriva dtype e forma do proprio tensor, exatamente como o codigo manual fazia
+    # com `header_dtype(tensor)` e `list(tensor.shape)`. A ordem das chaves e a mesma: peso,
+    # s_rel, s_channel, e o codebook so quando ele existe.
+    entradas = []
     for name, info in header.items():
-        if name in selected_set:
-            base = name.removesuffix(".weight")
-            entry = quantized[name]
-            pieces = [(f"{name}", entry["qdata"]),
-                      (f"{base}.weight_s_rel", entry["s_rel"]),
-                      (f"{base}.weight_s_channel", entry["s_channel"])]
-            if entry["codebook"] is not None:
-                pieces.append((f"{base}.weight_codebook", entry["codebook"]))
-            for key, tensor in pieces:
-                nbytes = tensor.numel() * tensor.element_size()
-                target[key] = {"dtype": header_dtype(tensor),
-                               "shape": list(tensor.shape),
-                               "data_offsets": [offset, offset + nbytes]}
-                plan.append(("write", tensor))
-                offset += nbytes
-        else:
-            start, end = info["data_offsets"]
-            size = end - start
-            target[name] = {"dtype": info["dtype"], "shape": info["shape"],
-                            "data_offsets": [offset, offset + size]}
-            plan.append(("copy", (start, size)))
-            offset += size
+        if name not in selected_set:
+            entradas.append(C.plan_copy(name, info))
+            continue
+        base = name.removesuffix(".weight")
+        entry = quantized[name]
+        entradas.append(C.plan_write(name, entry["qdata"]))
+        entradas.append(C.plan_write(f"{base}.weight_s_rel", entry["s_rel"]))
+        entradas.append(C.plan_write(f"{base}.weight_s_channel", entry["s_channel"]))
+        if entry["codebook"] is not None:
+            entradas.append(C.plan_write(f"{base}.weight_codebook", entry["codebook"]))
 
-    payload = json.dumps(target, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-    payload += b" " * (-len(payload) % 8)
-
-    try:
-        with source.open("rb") as source_handle, partial.open("xb") as out_handle:
-            source_header_size = struct.unpack("<Q", source_handle.read(8))[0]
-            data_start = 8 + source_header_size
-            out_handle.write(struct.pack("<Q", len(payload)))
-            out_handle.write(payload)
-            body_start = out_handle.tell()
-            for kind, item in plan:
-                if kind == "write":
-                    out_handle.write(as_bytes(item))
-                else:
-                    start, size = item
-                    copy_range(source_handle, out_handle, data_start + start, size)
-            written = out_handle.tell() - body_start
-            if written != offset:
-                raise RuntimeError(f"length mismatch: wrote {written}, planned {offset}")
-            out_handle.flush()
-            os.fsync(out_handle.fileno())
-        os.replace(partial, output)
-    finally:
-        if partial.exists():
-            partial.unlink()
+    # Sem try/finally aqui: `commit()` ja tem o seu, e aninhar dois so daria duas chances de
+    # apagar o mesmo arquivo.
+    conv.commit(entradas, output_metadata)
 
     elapsed = time.perf_counter() - started
     manifest = {

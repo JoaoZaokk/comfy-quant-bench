@@ -202,21 +202,33 @@ def test_main_refuses_a_stale_partial_before_doing_any_work(root: Path) -> None:
     def line_of(predicate) -> int:
         return next((i for i, line in enumerate(lines, 1) if predicate(line)), -1)
 
-    refusal = line_of(lambda l: "refusing to overwrite stale partial output" in l)
     # The CALL, not the definition. The first version of this test searched for
     # `write_checkpoint(src` and matched `def write_checkpoint(src: Path, ...)` four hundred lines
     # earlier, then reported the guard as coming AFTER the writer. The test was wrong and the code
     # was right -- which is the reason to make the needle unambiguous rather than to loosen the
     # assertion until it passes.
-    call = line_of(lambda l: "write_checkpoint(" in l and not l.lstrip().startswith("def "))
+    #
+    # Updated 2026-09-01, when `svdq_to_bf16` adopted `_conversion`. `main()` no longer calls
+    # `write_checkpoint` at all: it builds core entries and calls `conv.commit()`, and the refusal
+    # is `conv.refuse_unsafe(allow_quantized_source=True)` rather than a hand-written line. So the
+    # ordering assertion now targets whichever writer main() actually uses, and the local
+    # `write_checkpoint` -- kept only so the three scenarios above still have something to drive --
+    # is no longer required to be called. Asserting the old shape would have meant asserting that
+    # the migration had not happened.
+    commit = line_of(lambda l: "conv.commit(" in l)
+    refuse = line_of(lambda l: "conv.refuse_unsafe(" in l)
+    guard = line_of(lambda l: "conv.guard(" in l)
     definition = line_of(lambda l: l.lstrip().startswith("def write_checkpoint("))
+    legacy_call = line_of(lambda l: "write_checkpoint(" in l and not l.lstrip().startswith("def "))
 
-    check("main() refuses a stale partial", refusal != -1, f"line {refusal}")
-    check("the writer is called exactly once, and not where it is defined",
-          call != -1 and definition != -1 and call != definition,
-          f"def at line {definition}, call at line {call}")
-    check("and the refusal comes before that call", -1 < refusal < call,
-          f"refusal line {refusal}, writer call line {call}")
+    check("main() writes through the shared core", commit != -1, f"commit at line {commit}")
+    check("and refuses before writing", -1 < refuse < commit,
+          f"refuse at {refuse}, commit at {commit}")
+    check("and guards before writing", -1 < guard < commit,
+          f"guard at {guard}, commit at {commit}")
+    check("the legacy writer is defined but no longer on the production path",
+          definition != -1 and legacy_call == -1,
+          f"def at line {definition}, stray call at line {legacy_call}")
 
 
 def test_the_contract_is_still_the_same_shape_as_its_six_siblings(root: Path) -> None:
