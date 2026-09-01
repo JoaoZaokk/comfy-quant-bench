@@ -496,3 +496,80 @@ passam em todas as combinacoes. `float32` nao aparece em nenhum dos dois diciona
 Nada disto foi executado alem das medicoes marcadas: nenhum pacote instalado, nenhum wheel testado,
 WSL nao tocado. O caminho xformers tem um "nao confirmado" no meio dele que decide se e barato ou
 caro.
+
+---
+
+# Setima rodada: da para compilar aqui, e o "por que nao" tem resposta
+
+## 1. Compila. MEDIDO, e o meu palpite estava errado
+
+Eu tinha escrito que `nvcc` 13.2 contra torch `cu130` "costuma dar dor de cabeca". **Nao era isso.**
+A primeira tentativa morreu assim:
+
+    CUDA\v13.2\include\cccl\cuda\std\__cccl\preprocessor.h(20): fatal error C1189:
+    #error: MSVC/cl.exe with traditional preprocessor is used ...
+    Please switch to the standard conforming preprocessor by passing `/Zc:preprocessor`
+
+O CCCL do CUDA 13.2 recusa o pre-processador tradicional do MSVC, e a mensagem diz a solucao. Com
+`-Xcompiler /Zc:preprocessor`:
+
+    compilou em 57 s
+    erro maximo contra o torch = 0.000e+00
+    VEREDITO: compila e executa correto nesta maquina
+
+`tools/cudatest/` guarda o caso. Isso **destrava todo caminho que depende de compilar** -- extensao
+propria, binding de cusparseLt, kernel 2:4 nosso -- e ate agora ninguem sabia se dava.
+
+Nao coberto: kernel trivial, sem template pesado e sem tensor core. Nao diz que CUTLASS compilaria.
+
+## 2. `USE_CUSPARSELT=OFF` e AUSENCIA, nao decisao
+
+Eu tratei a flag como causa. Ela e sintoma. **LIDO** no PyTorch:
+
+- `CMakeLists.txt:398` -- o default e **ON**
+- `cmake/public/cuda.cmake:213-227` -- se `find_package(CUSPARSELT)` falha, emite
+  `WARNING "Cannot find cuSPARSELt library. Turning the option off"` e desliga. Degradacao
+  silenciosa, nao um `if(WIN32)`.
+- `cmake/Modules/FindCUSPARSELT.cmake` tem ramo `if(MSVC)` com `cusparseLt.lib` -- Windows previsto.
+- CI Linux instala cusparselt e poe `USE_CUSPARSELT=1`. CI Windows instala CUDA, cuDNN e ZLIB --
+  **nenhum cusparselt**. `USE_CUSPARSELT` em `.github/`: **0 ocorrencias**.
+- Issue pedindo Windows: **#120319, ABERTA desde 2024-02-21, zero comentarios**.
+
+**NAO ACHEI** razao tecnica registrada. A resposta e: a lib nao esta na maquina de build e ninguem
+nunca a adicionou. Copiar a DLL para `torch/lib` nao resolve -- `cuSPARSELtOps.cpp` decide em
+compilacao.
+
+## 3. O guard `_MSC_VER`: achado o commit, e a justificativa nao existe
+
+**LIDO**: commit `36c1cc962aae` (PR #120434, "Update cutlass from 3.3.0 to 3.4.1") trocou
+`#ifndef USE_ROCM` por `#if defined(USE_ROCM) || defined(_MSC_VER) || CUDA_VERSION < 11080`, junto
+com a troca de API do CUTLASS 3.4. Nem a mensagem do commit nem os PRs mencionam MSVC ou Windows.
+
+Na issue **#125302**, o proprio autor dos kernels diz que ha "uma checagem de compile-time
+desabilitando a versao CUTLASS quando construido com MSVC" -- **sem citar erro de compilador**. A
+issue foi fechada em 2025-05-12 com "can no longer be reproduced", e **o guard continua em `main`**:
+fechamento falso.
+
+**NAO ACHEI** relato de build MSVC bem-sucedido nem erro de template documentado. "Exclusao
+preventiva que ficou" e inferencia, nao algo escrito por eles.
+
+## 4. O caminho curto: xformers tem kernel 2:4 PROPRIO
+
+**LIDO**: `xformers/csrc/sparse24/gemm.cu:61` diz `cutlass::arch::Sm80; // Only CC 8.x devices are
+supported` -- **cobre a sm86**. E `_MSC_VER` aparece **0 vezes no repo inteiro**; o `setup.py` so
+exclui FlashAttention-3 no Windows.
+
+Wheels `win_amd64` reais: 0.0.34 (103,2 MB, pina `torch==2.10.0`) e 0.0.35 (2,6 MB, `torch>=2.10`).
+O CHANGELOG da 0.0.34 **alega** migracao para a API/ABI estavel do PyTorch. **NAO MEDIDO** se
+importa aqui.
+
+## 5. O cortex nao serviu, e o historico serviu -- com uma armadilha
+
+`cortex_search` devolveu **zero**, com aviso de `cortex serve` fora do ar. Grep direto nos `.jsonl`
+locais achou o material: 69 ocorrencias de CUTLASS num transcrito desta bancada.
+
+**Mas era outro CUTLASS.** O trabalho anterior foi o **W4A8 do vLLM**, que exige Hopper (TMA,
+wgmma), e a conclusao la foi *"tirar o gate nao gera kernel lento, gera erro de compilacao"*. O 2:4
+do PyTorch tem `TORCH_CHECK(is_sm8x)` no ramo habilitado: foi **feito** para sm86. Transferir a
+conclusao teria enterrado o assunto errado. **MEDIDO**: aquele diretorio nao existe mais e nada foi
+compilado ali -- nao havia build provado nesta maquina antes de hoje.
