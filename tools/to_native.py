@@ -31,27 +31,27 @@ produce. A single mismatch aborts.
 from __future__ import annotations
 
 import argparse
-import json
-import os
-import struct
 import sys
 from pathlib import Path
 
 PORTABLE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PORTABLE_ROOT / "ComfyUI"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import torch  # noqa: E402
 
+# O contrato de escrita de oito partes, escrito uma vez. Esta ferramenta foi a PRIMEIRA a adotar
+# o nucleo (2026-09-01) porque e a unica das seis que nao quantiza -- roda inteira sem GPU --, e
+# por isso a migracao dela pode ser verificada de ponta a ponta comparando byte a byte contra a
+# saida que ja existia no disco. As outras cinco precisam de uma janela de placa.
+#
+# Ela tambem foi a que expos o unico buraco do nucleo: `to_native` funde `to_{q,k,v}` num `qkv`,
+# entao um destino nasce de VARIAS faixas do source, e o nucleo so tinha `plan_copy` de uma faixa
+# so. Dai `plan_copy_many`.
+import _conversion as C  # noqa: E402
+
 TORCH_DTYPES = {"BF16": torch.bfloat16, "F16": torch.float16, "F32": torch.float32,
                 "I8": torch.int8, "U8": torch.uint8}
-
-
-def read_header(path: Path) -> tuple[dict, dict[str, str]]:
-    with path.open("rb") as handle:
-        size = struct.unpack("<Q", handle.read(8))[0]
-        header = json.loads(handle.read(size))
-    metadata = header.pop("__metadata__", {}) or {}
-    return header, metadata
 
 
 def build_map(arch: str, header: dict) -> dict:
@@ -99,14 +99,17 @@ def main() -> int:
     output = args.output.resolve()
     if not source.is_file():
         raise SystemExit(f"No such file: {source}")
-    if output == source:
-        raise SystemExit("Refusing to overwrite the source model")
-    if not args.dry_run and output.exists():
-        raise SystemExit(f"Refusing to overwrite existing output: {output}")
 
-    header, metadata = read_header(source)
-    if metadata.get("_quantization_metadata") or any(k.endswith(".comfy_quant") for k in header):
-        raise SystemExit("Refusing: remap the high-precision checkpoint, not a quantized one")
+    conv = C.Conversion(source, output)
+    header, metadata = conv.header, conv.metadata
+    # A recusa de fonte ja quantizada vale tambem em --dry-run: um plano tirado de um checkpoint
+    # quantizado nao e um plano valido, mesmo que nada va ser escrito. As outras duas (saida
+    # existente, partial obsoleto) so fazem sentido quando vai haver escrita -- mas entao elas vem
+    # ANTES do plano, e nao depois: recusar so no fim faz o usuario esperar a construcao do plano
+    # para ouvir "esse arquivo ja existe". Foi o que aconteceu na primeira versao desta migracao.
+    C.refuse_already_quantized(header, metadata)
+    if not args.dry_run:
+        conv.refuse_unsafe()
 
     sd_map = build_map(args.arch, header)
 
@@ -176,55 +179,29 @@ def main() -> int:
     if args.dry_run:
         return 0
 
-    target = {"__metadata__": dict(metadata)} if metadata else {}
-    offset = 0
-    order = []
+    # Partes 1-8 do contrato, no nucleo. O que esta ferramenta fazia a mao ficava sem a parte 8:
+    # ela NAO tinha guarda de disco nenhuma, e escrever 11 GiB num volume cheio dava um erro de
+    # escrita no meio do laco em vez de uma recusa antes de comecar. `conv.guard()` fecha isso.
+    entradas = []
     for name in sorted(resolved):
         entry = resolved[name]
-        size = sum(header[src]["data_offsets"][1] - header[src]["data_offsets"][0]
-                   for src in entry["sources"])
-        target[name] = {"dtype": entry["dtype"], "shape": entry["shape"],
-                        "data_offsets": [offset, offset + size]}
-        order.append(name)
-        offset += size
+        fontes = entry["sources"]
+        if len(fontes) == 1:
+            entradas.append(C.plan_copy(name, header[fontes[0]]))
+        else:
+            faixas = [(header[src]["data_offsets"][0],
+                       header[src]["data_offsets"][1] - header[src]["data_offsets"][0])
+                      for src in fontes]
+            entradas.append(C.plan_copy_many(name, entry["dtype"], entry["shape"], faixas))
 
-    payload = json.dumps(target, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-    payload += b" " * (-len(payload) % 8)
-    partial = output.with_suffix(output.suffix + ".partial")
-    if partial.exists():
-        raise SystemExit(f"Refusing to overwrite stale partial output: {partial}")
     output.parent.mkdir(parents=True, exist_ok=True)
+    conv.guard(sum(e.nbytes for e in entradas), label="to_native")
 
-    chunk = 16 * 1024 * 1024
-    try:
-        with source.open("rb") as handle, partial.open("xb") as out:
-            header_size = struct.unpack("<Q", handle.read(8))[0]
-            data_start = 8 + header_size
-            out.write(struct.pack("<Q", len(payload)))
-            out.write(payload)
-            body_start = out.tell()
-            for index, name in enumerate(order, 1):
-                for src in resolved[name]["sources"]:
-                    start, end = header[src]["data_offsets"]
-                    handle.seek(data_start + start)
-                    remaining = end - start
-                    while remaining:
-                        block = handle.read(min(chunk, remaining))
-                        if not block:
-                            raise RuntimeError(f"unexpected end of source reading {src}")
-                        out.write(block)
-                        remaining -= len(block)
-                if index % 100 == 0 or index == len(order):
-                    print(f"[{index}/{len(order)}] written", flush=True)
-            written = out.tell() - body_start
-            if written != offset:
-                raise RuntimeError(f"length mismatch: wrote {written}, planned {offset}")
-            out.flush()
-            os.fsync(out.fileno())
-        os.replace(partial, output)
-    finally:
-        if partial.exists():
-            partial.unlink()
+    def progresso(indice: int, total: int, _chave: str) -> None:
+        if indice % 100 == 0 or indice == total:
+            print(f"[{indice}/{total}] written", flush=True)
+
+    conv.commit(entradas, dict(metadata) if metadata else None, progress=progresso)
 
     print(f"wrote {output} ({output.stat().st_size / 2**30:.2f} GiB)")
     print("This is still BF16. Generate with it at a fixed seed and compare against the source "

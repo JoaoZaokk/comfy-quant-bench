@@ -254,6 +254,27 @@ def plan_copy(key: str, info: dict) -> Entry:
                  end - start)
 
 
+def plan_copy_many(key: str, dtype: str, shape: list[int],
+                   ranges: Iterable[tuple[int, int]]) -> Entry:
+    """UM tensor de saida montado por N faixas do source, concatenadas NA ORDEM DADA.
+
+    Existe por causa do `to_native.py`, que funde `attention.to_{q,k,v}` num `attention.qkv` -- o
+    unico dos seis conversores cujo destino nao e um-para-um com a origem. Sem isto ele so caberia
+    no nucleo via `plan_lazy`, que puxaria o tensor fundido inteiro para a RAM e perderia a
+    propriedade que faz este nucleo servir: a copia continua sendo transmitida em blocos, sem
+    materializar nada.
+
+    A ordem da lista E o layout do tensor de saida. Trocar duas faixas produz um arquivo com o
+    tamanho certo, o header certo e os pesos embaralhados -- e nenhuma das partes 6, 7 ou 8 pega
+    isso, porque todas as tres olham para bytes. Quem chama e responsavel pela ordem.
+    """
+    ranges = [(int(inicio), int(tamanho)) for inicio, tamanho in ranges]
+    if not ranges:
+        raise ValueError(f"{key}: plan_copy_many sem nenhuma faixa")
+    return Entry(key, dtype, list(shape), ("copy_many", ranges),
+                 sum(tamanho for _, tamanho in ranges))
+
+
 @dataclass
 class Conversion:
     """Escreve um safetensors a partir de outro, cumprindo as oito partes.
@@ -330,8 +351,19 @@ class Conversion:
 
         partial = self.partial
         written = 0
+        # `"xb"`, nunca `"wb"`: criacao EXCLUSIVA. `refuse_stale_partial` ja checa antes, mas entre
+        # a checagem e a abertura cabe outro processo; so o modo exclusivo fecha essa janela.
+        #
+        # Aberto FORA do `try` de proposito. Se o arquivo ja existe, o FileExistsError sobe sem
+        # passar pelo `finally`, que apagaria o `.partial` de QUEM ESTA ESCREVENDO AGORA.
+        #
+        # Esta linha era `"wb"` ate 2026-09-01, e nisso o nucleo era mais FRACO que os seis
+        # conversores que ele substitui -- todos abrem `"xb"`. Pego por
+        # `test_svdq_write_contract.py` na migracao do primeiro deles, que e exatamente o risco de
+        # extrair um contrato: a extracao pode perder uma garantia sem ninguem notar.
+        out = open(partial, "xb")
         try:
-            with open(self.source, "rb") as src, open(partial, "wb") as out:
+            with open(self.source, "rb") as src, out:
                 src_data = 8 + struct.unpack("<Q", src.read(8))[0]
                 out.write(struct.pack("<Q", len(blob)))
                 out.write(blob)
@@ -341,6 +373,10 @@ class Conversion:
                         start, size = payload
                         copy_range(src, out, src_data + start, size)
                         written += size
+                    elif kind == "copy_many":
+                        for start, size in payload:
+                            copy_range(src, out, src_data + start, size)
+                            written += size
                     else:
                         tensor = payload() if callable(payload) else payload
                         buf = as_bytes(tensor)

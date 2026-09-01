@@ -202,6 +202,54 @@ def main() -> int:
     checa(not ruim.exists(), "saida NAO criada quando a escrita falha")
     checa(not conv2.partial.exists(), "partial removido tambem no fracasso")
 
+    print("\n-- parte 5b: um destino montado por VARIAS faixas do source (plan_copy_many)")
+    # Nomes proprios em tudo (`fonte_qkv`, `conv_qkv`, ...). Este arquivo inteiro compartilha UM
+    # `tmp` e um `fonte` criados no topo de `main()`, e blocos posteriores os reusam -- a parte 7
+    # abre `fonte` de novo. A primeira versao deste bloco reatribuiu `fonte` e `saida`, e a parte 7
+    # morreu com um TypeError que nao falava de nada disso. Nao reciclar nome aqui.
+    fonte_qkv = tmp / "fonte_qkv.safetensors"
+    q = torch.arange(0, 8, dtype=torch.float32).reshape(2, 4)
+    k = torch.arange(100, 108, dtype=torch.float32).reshape(2, 4)
+    v = torch.arange(200, 208, dtype=torch.float32).reshape(2, 4)
+    escreve_safetensors(fonte_qkv, {"to_q.weight": q, "to_k.weight": k, "to_v.weight": v})
+    conv_qkv = C.Conversion(fonte_qkv, tmp / "saida_qkv.safetensors")
+    hdr_qkv = conv_qkv.header
+    faixas = [(hdr_qkv[n]["data_offsets"][0],
+               hdr_qkv[n]["data_offsets"][1] - hdr_qkv[n]["data_offsets"][0])
+              for n in ("to_q.weight", "to_k.weight", "to_v.weight")]
+    entrada_qkv = C.plan_copy_many("qkv.weight", "F32", [6, 4], faixas)
+    checa(entrada_qkv.nbytes == sum(t for _, t in faixas), "nbytes soma todas as faixas")
+    conv_qkv.commit([entrada_qkv])
+    fundido = le_tudo(conv_qkv.output)["qkv.weight"]
+    checa(list(fundido.shape) == [6, 4], "forma declarada e a que chega ao disco")
+    checa(torch.equal(fundido, torch.cat([q, k, v], dim=0)),
+          "concatenacao na ORDEM DADA, byte a byte")
+    # `levanta()` so aceita SystemExit, que e como o nucleo sinaliza RECUSA ao usuario. Faixa vazia
+    # e erro de quem chama, nao recusa, e o nucleo ja usa ValueError para isso (`write_sidecar`
+    # sem sidecar). Entao a checagem e direta.
+    try:
+        C.plan_copy_many("x", "F32", [1], [])
+        checa(False, "lista de faixas vazia e recusada")
+    except ValueError as exc:
+        checa("sem nenhuma faixa" in str(exc), "lista de faixas vazia e recusada", str(exc))
+
+    print("\n-- parte 3b: o .partial e criado EXCLUSIVAMENTE, nao truncado")
+    # `refuse_stale_partial` checa antes, mas entre a checagem e a abertura cabe outro processo.
+    # Aqui o partial e criado com conteudo e SEM passar pela recusa, indo direto ao commit: com
+    # `"wb"` isso truncava o arquivo de quem estivesse escrevendo; com `"xb"` levanta.
+    alvo_exc = tmp / "exclusivo.safetensors"
+    parcial_exc = alvo_exc.with_suffix(alvo_exc.suffix + ".partial")
+    parcial_exc.write_bytes(b"escrita de outro processo")
+    conv_exc = C.Conversion(fonte, alvo_exc)
+    try:
+        conv_exc.commit([C.plan_write("x", torch.zeros(2, 2))])
+        checa(False, "commit recusa .partial que ja existe")
+    except FileExistsError:
+        checa(True, "commit recusa .partial que ja existe")
+    checa(parcial_exc.exists() and parcial_exc.read_bytes() == b"escrita de outro processo",
+          "o .partial do OUTRO processo sobrevive -- o finally nao o apagou")
+    parcial_exc.unlink()
+
     print("\n-- parte 8: guardas dizem quanto falta")
     try:
         C.guard_disk(tmp, 10 ** 15)

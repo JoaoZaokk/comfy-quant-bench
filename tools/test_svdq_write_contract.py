@@ -220,17 +220,34 @@ def test_main_refuses_a_stale_partial_before_doing_any_work(root: Path) -> None:
 
 
 def test_the_contract_is_still_the_same_shape_as_its_six_siblings(root: Path) -> None:
-    """`grep -n '"xb"' tools/*.py` -- the docstring's own check, mechanised.
+    """Every writer creates its `.partial` exclusively -- itself, or through the shared core.
 
     Not a line-number assertion: those rotted four times in one session here while sibling agents
-    edited the same files. This asserts the SYMBOL is present in each writer, which is what the
-    docstring actually promises.
+    edited the same files. This asserts the GUARANTEE, which is what the docstring promises.
+
+    The `or delegates` half was added on 2026-09-01, when `to_native.py` became the first writer
+    to adopt `_conversion.py` and stopped carrying `"xb"` of its own. Asserting the literal in
+    each file would have made this test block the very migration ticket 08 exists to do -- a check
+    that punishes the fix teaches people to delete the check.
+
+    It is not a weakening, and the same migration proved why the assertion has to stay: the core
+    was opening `"wb"`, so it was **weaker** than all six writers it replaces, and this test is
+    what caught it. So the core is held to the same literal.
     """
     siblings = ["quant_w4a4.py", "quant_w4a8.py", "quant_int8.py",
                 "quant_w4a4_smooth.py", "quant_mixed.py", "to_native.py", "svdq_to_bf16.py"]
-    missing = [n for n in siblings
-               if '"xb"' not in (HERE / n).read_text(encoding="utf-8")]
-    check("every writer opens its partial exclusively", missing == [], f"missing in {missing}")
+    core = (HERE / "_conversion.py").read_text(encoding="utf-8")
+    check("the shared write core opens its partial exclusively", '"xb"' in core)
+    missing = []
+    for name in siblings:
+        body = (HERE / name).read_text(encoding="utf-8")
+        if '"xb"' in body:
+            continue
+        if "import _conversion" in body and '"xb"' in core:
+            continue
+        missing.append(name)
+    check("every writer opens its partial exclusively, itself or via the core",
+          missing == [], f"missing in {missing}")
 
     body = (HERE / "svdq_to_bf16.py").read_text(encoding="utf-8")
     for needle, label in (("os.fsync", "fsync before replace"),
