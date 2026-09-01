@@ -495,6 +495,18 @@ Standard Safetensors. Per quantized layer: `<layer>.weight` as `I8` of shape `[r
 
 `inspect_quant.py <file>` at root is a quick header dump (tensor count, dtype histogram, metadata, scale-like keys).
 
+**There are TWO dialects, and a tool that reads only the first is blind in silence.** The section above describes `__metadata__._quantization_metadata`. A checkpoint may instead ship the per-layer JSON *as tensors* — `<layer>.comfy_quant`, UTF-8 bytes, same content — which is what `comfy/utils.py` produces at load and `comfy/ops.py` dispatches on. Both are valid and a file can carry only the second. Measured 2026-09-01: `LTX25-distilled-DiT-comfy-w4a4` (riftcast, **1440** genuinely 4-bit layers) and both `MiniMax_H3_*_pruned_mixed_int4_int8_convrot` files (117 int4 + 83 `int8_tensorwise`) carry **no `_quantization_metadata` at all**. A reader that checks only the metadata reports **zero quantized layers on a fully quantized file** — and reports it as a clean result, which is the dangerous part. Reading the second dialect costs one seek and ~50 bytes per layer, no torch: see `ler_dialeto_por_tensor` in `tools/avaliar.py`. `quant_audit.py`'s `read_quant_dialects` reads three *metadata* dialects and still does not read this one.
+
+**Batch evaluation, no GPU:**
+
+```bash
+.\python_embeded\python.exe -s .\tools\avaliar.py ComfyUI\models --saida .scratch\avaliacao
+```
+
+Header + sidecar + `.analysis.json` only — **163 checkpoints in 0.68 s**, no torch, no model load. It computes the median effective error entirely offline (the sidecar says which format each layer got; the analysis says that format's measured error on that layer) and reproduces every number this bench has published. Verdicts are `REPROVADO` / `OLHAR` / `SEM VEREDITO`; **`APROVADO` is deliberately absent**, because no cut on either axis separates usable from unusable here — 0.1837 correct against 0.2147 destroyed, 0.7173 fine against 0.8255 destroyed. It rejects, points and predicts. It does not approve.
+
+Two things it established on its first pass. **The Z-Image card had 0.1241 on the wrong row** — it belongs to `zimage-v2-w4a4` (170 convrot), not to the mixed build, which is 0.0774; confirmed across nine independent calibrations, corrected the same day. The band's `tolerado` value is unchanged, it just gained an owner, and it is the *most aggressive* build measured. And **the calibration seed moves the median 2-6%**: the same Wan checkpoint measures 0.051807 or 0.054631 depending on which calibration you use. Smaller than the band's own 45% width, so the per-model line survives — but a four-decimal number from one calibration claims precision this bench does not have, so the spread now travels beside it.
+
 ## Testing a converted model
 
 Structural verification is not acceptance. Every output must additionally pass, in order: normal ComfyUI loader compatibility (real node, not a hand-rolled load), a prompt-encoding smoke test through a long-lived ComfyUI process, and a matched-parameter benchmark against the BF16 source (identical prompt, seed, steps, resolution, sampler, scheduler, frames) recording disk, VRAM, load time, s/it, GPU utilization, power, warnings, and visual quality. Workflows for this live in `ComfyUI/user/default/workflows/` (e.g. `Video-LTX2_MultiGPU.app.json` for the Gemma text encoder).

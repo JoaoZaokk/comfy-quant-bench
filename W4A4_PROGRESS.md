@@ -4269,3 +4269,93 @@ checkpoint e **fp16** e e uma variante **VACE rodada como T2V comum**, que nao e
 foi treinada -- a tolerancia medida pode ser do modo, nao do modelo. Os `vace_blocks` ficam fora do
 perfil por construcao e permaneceram fp16; com forca 0 nao contribuem, entao nao houve carona.
 Nenhuma metrica perceptual: "correta", "borrada" e "destruida" sao julgamento de quem olhou.
+
+## 2026-09-01, parte 44 - o avaliador em lote, e o que ele achou na primeira passada
+
+`tools/avaliar.py`, camada 1. Le cabecalho, sidecar e `.analysis.json`. **Sem GPU, sem torch, sem
+carregar modelo: 163 checkpoints em 0,68 s**, entao "deixar rodando em tudo" nem chega a ser um
+trabalho em lote.
+
+A mediana do erro efetivo sai inteira do disco, porque as duas metades ja estao la: o sidecar diz
+que formato cada camada levou e a analise diz o erro medido daquele formato naquela camada. Ela
+reproduz todos os numeros que esta bancada publicou:
+
+```
+Wan 2.1 VACE      0,0546   0,0793   0,1602
+HunyuanVideo 1.5  0,0739   0,1837   0,2147   0,2230
+capybara_v0.1                       0,2163
+```
+
+`APROVADO` nao existe no conjunto de vereditos. Sao `REPROVADO`, `OLHAR` e `SEM VEREDITO`, porque
+nenhum corte medido aqui separa usavel de inutilizavel nos dois eixos que temos -- 0,1837 correta
+contra 0,2147 destruida, 0,7173 boa contra 0,8255 destruida. O numero reprova sozinho, aponta e
+preve; nao aprova.
+
+### Achou um numero publicado na linha errada, no primeiro dia
+
+O card do Z-Image no HuggingFace creditava **0,1241 ao build misto** e deixava o W4A4 puro em
+branco. E o contrario, e a inversao aparece em **nove calibragens independentes**:
+
+```
+build                     camadas          faixa nas 9 calibragens
+zimage-v2-w4a4         170 convrot            0,1213 - 0,1285
+zimage-v2-mixed        115 int4 / 55 int8     0,0771 - 0,0839
+```
+
+A identificacao dos arquivos no card estava certa (as contagens de camada batem exatas); so o
+numero estava na outra linha. O README do GitHub sempre esteve certo -- `170 / 0 | 0,1241 |
+correct` -- e foi o card que o contradizia. **Nada mais se mexe**: 0,1241 continua sendo um build
+que funciona, e agora sabe-se que e o *mais agressivo* medido, entao o `tolerado` do Z-Image nao
+muda de valor, so ganha dono. Corrigido no card no mesmo dia.
+
+Mesma classe do erro do capybara, achado do mesmo jeito: por algo que **recalcula em vez de citar**.
+
+### A semente da calibragem move a mediana 2% a 6%
+
+Nunca tinha sido medido. Duas calibragens de `wan2.1_vace_1.3B_fp16` diferindo so na semente (1234
+contra 12345) dao 0,051807 e 0,054631 no mesmo checkpoint. No Z-Image, nove calibragens espalham
+5,7% no W4A4 puro e 8,8% no misto.
+
+O espalhamento e menor que a propria banda (a faixa do Wan vai de 0,0546 a 0,0793, 45%), entao a
+linha por modelo sobrevive com folga. Mas um numero de quatro casas saido de uma calibragem so
+reivindica precisao que esta bancada nao tem, e agora ele viaja com o espalhamento ao lado. A
+ferramenta so levanta achado quando as calibragens cairiam em **lados diferentes** da linha.
+
+### Quatro defeitos da propria ferramenta, achados rodando
+
+O que fez a construcao valer foi rodar em arquivos de terceiros, nao so nos nossos.
+
+**Ela era cega em silencio para o segundo dialeto.** `LTX25-distilled-DiT-comfy-w4a4` -- 1440
+camadas de 4 bits de verdade -- saiu `SEM VEREDITO` sem um unico achado, que le como "nada a ver
+aqui". Ele nao traz `_quantization_metadata` nenhum: traz um tensor `<camada>.comfy_quant` com o
+JSON, que e o outro dialeto que o ComfyUI aceita. **Qualquer ferramenta desta bancada que so leia
+o metadata do arquivo enxerga zero camada quantizada num arquivo inteiramente quantizado.** Ler o
+segundo dialeto custa um seek e ~50 bytes por camada.
+
+**As regras de int4 aplicadas a todo formato reprovaram um FP8 publico e valido** (`flux-2-klein`,
+container F8_E4M3 nao empacotado, escala escalar). Uma checagem que reprova arquivo bom ensina a
+desligar checagem.
+
+**Comparar mediana crua com tabela arredondada** marcou como suspeito exatamente o build do Wan que
+*definiu* o valor tolerado: 0,054631 > 0,0546.
+
+**A mediana sumia de quem passava**, porque so era reportada dentro de um achado. Ela e fato, nao
+achado.
+
+E a regra de escala do `int8_tensorwise` foi escrita errada **tres vezes seguidas**, cada vez a
+partir do primeiro arquivo que eu tinha lido, cada vez reprovando arquivo bom: `[linhas]` do
+ConvRot acusou o Dasiwa inteiro; `[linhas, 1]` do Dasiwa acusou o `embed_tokens` do encoder MiniMax
+que esta bancada ja mediu rodando kernel nativo 15/15; `[linhas,1] se per_row senao []` acusou as
+561 camadas do Gemma 4 E2B, que tem `[linhas, 1]` sem declarar `per_row`. Os dois formatos existem
+no mundo real e nada no JSON da camada diz qual e o certo, entao a ferramenta **parou de afirmar**:
+aceita os dois e declara no campo `cego` que nao pega escala torta nesse formato. Um quarto palpite
+seria o mesmo erro pela quarta vez.
+
+### Nao coberto
+
+Nada aqui executa. Ninguem contou forward quantizado nem chamada a `dequantize`, entao um arquivo
+pode passar tudo acima e rodar dequantizado -- e as camadas `--dispatch` e `--erro` do plano nao
+existem. Nenhuma renderizacao, entao nenhum veredito de qualidade. O braco **nao** quantizado nunca
+e exercitado, que e justamente a guarda que teria salvado quatro renderizacoes no Wan; ela precisa
+de GPU e ficou para a camada 3. As bandas sao tres pontos, e a monotonia no tamanho do modelo segue
+hipotese.
