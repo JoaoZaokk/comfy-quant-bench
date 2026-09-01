@@ -15,7 +15,13 @@ como tecnica.
 O valor e o **mapa do ecossistema** que ele juntou sem querer. Sempre ir ao upstream: os forks dele
 estao ate 8 meses atrasados e com zero commits proprios.
 
-## 1. A lista de camadas do Z-Image: encontrada, e ERRADA para nos
+## 1. A lista de camadas do Z-Image: encontrada -- e esta secao foi CORRIGIDA pela segunda rodada
+
+> **Leia a segunda rodada, no fim deste arquivo, antes de agir por esta secao.** O que esta abaixo
+> conclui que a lista de terceiro esta "errada para nos". Lendo o **dtype por camada** do build
+> OFICIAL do Comfy-Org, a conclusao correta e outra: eles quantizam `adaLN_modulation` a **INT8**, e
+> nos a deixamos em BF16 porque o resto vai a **INT4**. Ninguem poe modulacao em 4 bits. Sao dois
+> pontos do mesmo trade, nao um certo e um errado.
 
 Este era o bloqueio da janela de GPU de hoje -- `quant_w4a4.py` nao tem perfil `zimage`. Duas fontes
 independentes deram a lista, e **elas se contradizem entre si**:
@@ -155,3 +161,154 @@ esta escrito "alega". As unicas linhas MEDIDO AQUI sao as contagens de camada co
 checkpoint, o `EXTRA_RESERVED_VRAM` em `model_management.py:853`, a assinatura de `clone()` em
 `model_patcher.py:430` e o grep de `custom_nodes/`. Cinco agentes leram; um sexto olhando os mesmos
 repos poderia discordar.
+
+---
+
+# Segunda rodada: o conversor que fez um arquivo nosso, e a resposta oficial do Z-Image
+
+## `jlucasmcrell/ltx25-quant-lab` construiu dois arquivos do nosso disco -- PROVADO
+
+O dono apontou `jlucasmcrell`. E o mesmo `joeygambino` que o `CLAUDE.md` ja cita: todos os commits
+dos 7 repos dele sao `joeygambino <jlucasmcrell@gmail.com>`. O `MANIFEST.json` do `ltx25-quant-lab`
+publica tamanho e sha256; conferido contra o disco -- **MEDIDO AQUI**:
+
+    LTX25-distilled-DiT-comfy-w4a4   11 236 345 048 B   aed01441...ac44d   IDENTICO
+    LTX25-distilled-DiT-comfy-w4a8   12 520 362 840 B   7f7c0fc3...a7776   IDENTICO
+
+Byte a byte. O `LTX25-distilled-DiT-comfy-w4a4` -- que o `CLAUDE.md` cita como "um segundo W4A4
+publico que realmente executa 4 bits", 1440 camadas -- tem procedencia fechada: ferramenta, metodo
+e autor.
+
+**Metodo deles (LIDO):** sem calibragem, sem ativacoes, sem hook. Chamam
+`QuantizedTensor.from_float(w, layout)` do proprio ComfyUI e gravam `<layer>.comfy_quant` como
+tensor uint8 -- o segundo dialeto.
+
+**A ideia que vale mais que o arquivo: `canon_layers()`.** Em vez de manter lista por arquitetura,
+abrem o release oficial ja quantizado, leem o cabecalho e extraem as chaves terminadas em
+`.comfy_quant`. Espelham a escolha do autor do modelo em vez de adivinhar.
+
+**A lacuna deles que nos ja fechamos:** o README diz que `w4a4` e `nvfp4` foram construidos e
+testados em Blackwell e que "nenhum dos dois foi rodado aqui em Ada ou Ampere". Nos rodamos o w4a4
+deles na sm86 e ele **despacha nativo** -- camada 2, 1440 camadas, 8/8 forwards quantizados, 0
+dequantize. Material para issue ou PR: informacao que so nos temos.
+
+## A resposta OFICIAL do Z-Image, obtida com 91 KB em vez de 6,2 GB
+
+`canon_layers()` aplicado ao `Comfy-Org/z_image_turbo` (7,1 M downloads). O build
+`z_image_turbo_int8_convrot.safetensors` tem 6,2 GB, mas o cabecalho fica no comeco: um
+`Range: bytes=0-7` da o tamanho, um segundo Range traz os **91 000 bytes** do header. Nenhum peso
+baixado. **MEDIDO AQUI -- o oficial quantiza 202 camadas:**
+
+    30x layers.N.{adaLN_modulation.0, attention.out, attention.qkv, feed_forward.w1/w2/w3}
+     +  context_refiner.0-1.* e noise_refiner.* (inclusive o adaLN do noise_refiner)
+    fora: final_layer, x_embedder, cap_embedder, t_embedder
+
+Contra as contagens da primeira rodada:
+
+    HSWQ allowlist          208
+    tritant Z-Image-Turbo   180
+    OFICIAL Comfy-Org       202
+    NOSSO zimage-v2-w4a4    170
+
+## E aqui a leitura muda, contra o que a primeira rodada escreveu
+
+A primeira rodada concluiu que copiar a lista de terceiro "teria quantizado 30 camadas que evitamos
+de proposito", como se eles estivessem errados. **Comparando o dtype POR CAMADA, a conclusao e
+outra:**
+
+    OFICIAL   layers.0.adaLN_modulation.0   I8    [15360, 256]   <- INT8, largura cheia
+    NOSSO     layers.0.adaLN_modulation.0   BF16  [15360, 256]   <- nao quantizado
+    NOSSO     layers.0.feed_forward.w1      I8    [10240, 1920]  <- INT4 empacotado (3840/2)
+
+O oficial **nao** poe modulacao em 4 bits: poe em **8**. Nos deixamos em BF16 e pomos o resto em 4.
+Dois pontos do mesmo trade, nao um certo e um errado -- e **ninguem quantiza `adaLN_modulation` a 4
+bits**, o que endossa a nossa exclusao em vez de contradize-la.
+
+**A opcao nova que isso abre:** o `quant_mixed.py` poderia promover `adaLN_modulation` a **W4A8** em
+vez de deixar em BF16 -- casando o espirito do build oficial (8 bits na modulacao) sem perder os 4
+bits no resto. Sao 31 camadas hoje intocadas, testaveis com o maquinario existente e sem perfil novo.
+
+## Correcao de rota sobre o `DistorchMemoryManager`
+
+A primeira rodada descreveu a armadilha de um jeito que da a entender que ela esta ativa aqui. **Nao
+esta**: `grep -rnE "EXTRA_RESERVED|set_extra_reserved_vram"` em `custom_nodes/` da **zero**,
+inclusive dentro dos `.disabled` (761 arquivos `.py` no escopo, verificado). Nao ha o que remover.
+
+## `Scottcjn/ComfyUI-TurboQuant`: o nome promete o que o codigo nao faz
+
+**Nao quantiza peso nenhum** -- so K/V. E nao ha cache: comprime K e V e **descomprime na linha
+seguinte**, dentro do mesmo `attn_patch`. Round-trip puro; o `llms.txt` deles admite que "nao e um
+KV cache persistente ainda". Em difusao isso e coerente: o DiT recomputa a atencao a cada passo. O
+README **alega** 4,6x de VRAM; 4,57x e a razao do formato (128 floats fp16 = 256 B -> 56 B), nao uma
+medicao.
+
+## Nao coberto nesta rodada
+
+Os sha256 e os cabecalhos foram medidos; **o codigo do `ltx25-quant-lab` foi so LIDO** e nenhuma
+alegacao de qualidade deles foi reproduzida. O header oficial diz quais camadas e em que dtype --
+**nao** diz por que, e nao substitui medir. A ideia de promover `adaLN_modulation` a W4A8 tem zero
+medicoes.
+
+---
+
+# Terceira rodada: esparsidade 2:4, e duas conclusoes minhas derrubadas em seguida
+
+Pergunta do dono: *"a gente nunca fez o teste bf16/fp16 > sparsity > quantizacao, correto?"*
+
+**Correto, nunca fizemos.** A unica "sparsity" na arvore e o **SpargeAttn** -- esparsidade de
+ATENCAO em runtime, pulando blocos, medida no `nunchaku_compare.py`. Peso: zero. Sem poda, sem 2:4,
+sem SparseGPT nem Wanda.
+
+## O bloqueio de hoje e de BIBLIOTECA, nao de placa -- MEDIDO AQUI
+
+    cusparse64_12.dll                          existe, 143 MB   <- e cuSPARSE, outra lib
+    torch.backends.cusparselt.is_available()   False, version None
+    to_sparse_semi_structured(...)             RuntimeError: cuSPARSELt not supported on your machine
+    compute capability                         8.6  -- 2:4 e suportado por HARDWARE desde 8.0
+
+O dono confirmou que cuSPARSELt roda em sm86. Instalar e mudanca de pacote (decisao dele), e da
+para fazer com o mesmo `-c constraints.txt` que usamos no pytest/ruff.
+
+## Meu primeiro teste era TAUTOLOGICO, e o dono apontou
+
+Medi que aplicar a rotacao Hadamard num peso 2:4 destroi o padrao (zeros 0,500 -> 0,000; grupos
+exatos 1,000 -> 0,000) e escrevi que "esparsidade antes da ConvRot nao sobrevive". A pergunta dele
+desmonta: *"hadamard faz isso, verdade, mas o que ele faria se nao tivesse zeros?"*
+
+**Faltou o controle.** Rotacao densa preenche zero de QUALQUER matriz -- isso nao e um fato sobre
+esparsidade, e o que rotacao faz. Apresentei uma trivialidade como achado.
+
+## O teste que presta, e ele derruba a MINHA hipotese seguinte
+
+Hipotese: a rotacao espalha magnitude, entao podar 2 de 4 depois doeria mais. **MEDIDO AQUI**, peso
+real `layers.0.feed_forward.w1` do Z-Image, [10240, 3840]:
+
+    rotacao e inversivel                    erro round-trip 1,77e-07
+    A  podar 2:4 direto                     erro relativo 0,3617
+    B  rodar -> podar 2:4 -> desrodar       erro relativo 0,3641
+
+    razao (2 menores)/(2 maiores) por grupo de 4:
+      denso original      0,3485
+      depois da rotacao   0,3496
+
+**Praticamente identicos.** A rotacao NAO uniformiza a magnitude do peso, e a hipotese morre. Faz
+sentido em retrospecto: Hadamard de um peso quase-gaussiano continua quase-gaussiano (invariancia
+rotacional da gaussiana). O ConvRot existe contra outlier de ATIVACAO, nao contra distribuicao de
+peso -- e este numero e a primeira medicao disso nesta bancada.
+
+**Consequencia pratica:** a ordem nao importa para o erro, e existe receita viavel que eu tinha
+descartado cedo demais -- **rodar -> podar 2:4 no dominio rodado -> quantizar**. Ali o peso
+armazenado e 2:4 E rodado, entao o tensor core esparso funciona, e o custo de precisao e o mesmo de
+podar direto.
+
+## O numero que realmente decide
+
+    podar 2:4 nesta camada      erro relativo 0,3617
+    nosso W4A4 inteiro          mediana       0,1241
+
+**A esparsidade custa ~3x o que a quantizacao a 4 bits custa**, numa camada real. Isso reordena a
+prioridade: antes de perseguir 2:4, o ganho por bit esta muito melhor onde ja estamos.
+
+**Ressalva que anda junto:** e poda por magnitude PURA, sem reconstrucao. SparseGPT e Wanda
+atualizam os pesos restantes para compensar e derrubam bastante esse erro -- 0,3617 e o teto
+ingenuo, nao o custo de um metodo serio. Uma camada, uma metrica, sem render.
