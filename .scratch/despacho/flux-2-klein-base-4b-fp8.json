@@ -6,7 +6,7 @@
     "float8_e4m3fn": 78
   },
   "veredito": "NAO_DESPACHA",
-  "mensagem": "zero forwards quantizados com 8 dequantize e as travas em {'False': 78} -- economia de memoria, nao de tempo",
+  "mensagem": "zero forwards quantizados com 8 dequantize, force_cast em {'False': 78} e full_precision_mm em {'True': 78} -- economia de memoria, nao de tempo",
   "numeros": {
     "modulos_quantizados": 78,
     "forwards_quantizados": 0,
@@ -25,5 +25,5 @@
       "True": 78
     }
   },
-  "segundos": 21.4
+  "segundos": 25.5
 }

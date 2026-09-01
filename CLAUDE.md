@@ -387,11 +387,31 @@ socket: <asyncio.TransportSocket fd=3000, family=2, type=1, proto=6, laddr=('127
 
 Tests (run from the root; `pytest.ini` lives in `ComfyUI/` with `pythonpath = .`).
 
-**Neither `pytest` nor `ruff` is installed in the embedded interpreter** — verified 2026-08-18,
-both fail with `No module named ...`. The commands below are the correct ones *once they are*,
-and installing either is a package change, so it is the user's call. Test files written for this
-project (`tools/test_svdq_verify.py`, the suites under `Comfy-WaveSpeed-Fixed/tests/`) therefore
-carry their own runner and are executed directly:
+**`pytest` 9.1.1 and `ruff` 0.16.5 ARE installed since 2026-09-01** — the owner asked for them. This
+section said for two weeks that neither existed, which was true from 2026-08-18 until then.
+
+**Installed with the whole stack pinned, and that is the part worth copying.** A `-c constraints.txt`
+built from `pip freeze` (287 pins) means a resolver cannot move anything that already exists while
+satisfying the new packages. Diff of the freeze afterwards: **exactly four additions** — `pytest`,
+`ruff`, `pluggy`, `iniconfig` — nothing removed, nothing changed, and torch 2.13.0+cu130 /
+numpy 2.4.6 / safetensors 0.8.0 / transformers 4.57.6 all re-imported with `cuda.device_count() == 2`.
+Do the same for any future install here; a bare `pip install` on this stack is what the
+*do-not-mass-upgrade* rule exists to prevent.
+
+**`ruff` earned itself back in ten minutes.** First run over `tools/`: 538 findings, and one of them
+was a `NameError` **committed the same hour** — `avaliar_despacho.py` referenced a variable renamed
+during a rule rewrite, so every freshly-computed `NAO_DESPACHA` would have raised instead of
+producing a verdict. It did not show up in the table because the only row with that verdict came
+from cache. Fixed and verified by forcing a non-cached run. The rest of the 538 is mostly noise
+worth reading rather than fixing wholesale: 182 unused-`noqa`, 81 unsorted imports, but also
+**64 blind-except** — the exact `except Exception: pass` that this repo records as having swallowed
+evidence for three debugging rounds — and 30 `function-uses-loop-variable`, concentrated in the
+benchmark files. Do **not** mass-apply `--fix`: 322 are auto-fixable and that would be a large diff
+across a toolchain whose numbers are published.
+
+Test files written for this project (`tools/test_svdq_verify.py`, the suites under
+`Comfy-WaveSpeed-Fixed/tests/`) still carry their own runner and are executed directly, because
+they were written when pytest was absent:
 
 ```bash
 .\python_embeded\python.exe -m pytest ComfyUI\tests-unit

@@ -196,9 +196,13 @@ def julgar(alvo: Alvo, rep: dict | None, motivo: str) -> tuple[str, str, dict]:
                 + " e ".join(f"`{n}` ({onde[n]})" for n in presas)
                 + ". A causa e o loader, nao o checkpoint. Memoria economizada, tempo nao.",
                 numeros)
+    # `forca`/`fpmm`, nao `travas`: a variavel foi renomeada quando a regra passou a conhecer as
+    # DUAS travas, e este f-string ficou com o nome antigo -- `NameError` em todo NAO_DESPACHA
+    # calculado do zero. Nao estourou na tabela porque a unica linha desse veredito veio do cache,
+    # medida antes da reescrita. Achado pelo `ruff` (F821) dez minutos depois de ele ser instalado.
     return (NAO_DESPACHA,
-            f"zero forwards quantizados com {dq} dequantize e as travas em {travas or 'nada'} -- "
-            f"economia de memoria, nao de tempo", numeros)
+            f"zero forwards quantizados com {dq} dequantize, force_cast em {forca or 'nada'} e "
+            f"full_precision_mm em {fpmm or 'nada'} -- economia de memoria, nao de tempo", numeros)
 
 
 NAO_COBERTO = [
