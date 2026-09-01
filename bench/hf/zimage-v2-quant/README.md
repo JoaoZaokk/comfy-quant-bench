@@ -31,12 +31,24 @@ Method, tools and the full measurement log: **https://github.com/JoaoZaokk/comfy
 
 | file | median effective error | format | GiB | latent divergence | s/step | verdict |
 |---|---|---|---|---|---|---|
-| `zimage-v2-w4a4.safetensors` | — | 170 × `convrot_w4a4` | 3.06 | 0.7854 | 0.585 | good |
-| `zimage-v2-mixed.safetensors` | **0.1241** | 115 × 4-bit / 55 × 8-bit | 3.18 | 0.7216 | 0.637 | good |
+| `zimage-v2-w4a4.safetensors` | **0.1241** | 170 × `convrot_w4a4` | 3.06 | 0.7854 | 0.585 | good |
+| `zimage-v2-mixed.safetensors` | **0.0774** | 115 × 4-bit / 55 × 8-bit | 3.18 | 0.7216 | 0.637 | good |
 
 Source: 11.46 GiB BF16, 8 steps, 1024×1024, two seeds. "Effective error" is, per layer, the measured
 relative error of the format that layer *actually* received, on the real activations it saw during
 sampling.
+
+Both numbers are the median over 170 layers, recomputed from disk across **nine independent
+calibrations** of this source. The spread between calibrations is real and travels with the number:
+pure W4A4 lands in **0.1213–0.1285** and mixed in **0.0771–0.0839** — about 6% and 9%, driven by
+the calibration's own seed and step count. A single calibration is not a measurement here either.
+
+> **Correction, 2026-09-01.** An earlier version of this table put the 0.1241 next to the *mixed*
+> build and left pure W4A4 blank. It is the other way round, in all nine calibrations. The error
+> was caught by `tools/avaliar.py`, which recomputes the median from the sidecar and the analysis
+> file instead of quoting it, on its first full pass over this bench. Nothing else moves: 0.1241 is
+> still a build that works, so the tolerated value in the table below is unchanged, and the mixed
+> build was already labelled good on its picture.
 
 Pure W4A4 is 4% smaller and 8% faster per step; mixed sits closer to the reference latent. **Neither
 of those facts tells you which picture you prefer** — see the warning below.
@@ -76,8 +88,9 @@ breaks is **not a property of the format**:
 Monotone in the tolerated column. Three families make that a hypothesis, not a law.
 
 **Z-Image's upper bound is honestly empty**, and that gap is worth stating rather than papering
-over: what is known is that 0.1241 works and that pure W4A4 works. Where it stops working has not
-been measured on this model. An earlier version of this table filled that cell with 0.2163, credited
+over: what is known is that 0.1241 works, and that value is the *most aggressive* build measured
+here — pure W4A4, every one of its 170 layers at 4 bits. Nothing above it was ever tried, so where
+this model stops working has not been measured. An earlier version of this table filled that cell with 0.2163, credited
 to `capybara_v0.1` as a Z-Image checkpoint. Read from the file, `capybara_v0.1` carries 1364 tensors
 and 54 `double_blocks` — HunyuanVideo 1.5's architecture — against Z-Image's 453 tensors and zero.
 The evidence was real; it was in the wrong row.
