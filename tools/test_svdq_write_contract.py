@@ -1,4 +1,22 @@
-"""The write contract on `svdq_to_bf16.write_checkpoint`, re-runnably.
+"""The write contract on `_conversion.Conversion.commit`, re-runnably.
+
+REDIRECIONADO EM 2026-09-01. Este arquivo testava `svdq_to_bf16.write_checkpoint`, que era a copia
+local do contrato naquela ferramenta. Os sete escritores desta bancada passaram a usar
+`tools/_conversion.py`, entao os tres cenarios abaixo apontam para o nucleo e a funcao local foi
+APAGADA -- 82 linhas, junto com `COPY_CHUNK` e `DTYPE_NAMES`, que so ela usava. O que se
+testa e o mesmo: escrita honesta ida-e-volta, escrita curta, e `.partial` pre-existente.
+
+**Um dos tres inverteu de proposito, e a inversao e o ponto.** O cenario do `.partial` pre-existente
+afirmava que o `finally` do escritor limpava o arquivo de outro processo. O nucleo abre o `.partial`
+FORA do `try` exatamente para que isso nao aconteca: se ele ja existe, o `FileExistsError` sobe sem
+passar pelo `finally`, e o arquivo de quem esta escrevendo agora sobrevive. O teste agora afirma a
+sobrevivencia. Nao e o teste que afrouxou; e o comportamento que ficou mais seguro.
+
+O texto abaixo descreve por que este arquivo nasceu, e continua valendo.
+
+---
+
+The write contract on `svdq_to_bf16.write_checkpoint`, re-runnably.
 
 WHY THIS FILE EXISTS, separately from `test_svdq_verify.py`. That file's `__main__` runs a GPU
 battery, so it cannot be the home for a check that must be runnable while a sibling session holds
@@ -41,7 +59,7 @@ sys.path.insert(0, str(HERE.parent / "ComfyUI"))
 
 import torch  # noqa: E402
 
-import svdq_to_bf16 as sv  # noqa: E402
+import _conversion as C  # noqa: E402
 
 PASS: list[str] = []
 FAIL: list[str] = []
@@ -81,32 +99,15 @@ def build_source(path: Path, tensors: dict[str, torch.Tensor]) -> tuple[int, dic
     return 8 + len(payload), header
 
 
-def plan(src_header: dict, produced: dict[str, torch.Tensor],
-         copied: list[str]) -> tuple[list, bytes, int]:
-    """The (entries, header blob, planned bytes) triple `write_checkpoint` takes.
+def plan(src_header: dict, produced: dict[str, torch.Tensor], copied: list[str]) -> list:
+    """As entradas do nucleo: faixas copiadas primeiro, tensores produzidos depois.
 
-    Built here rather than imported so the test drives the writer directly and does not depend on
-    the SVDQuant recovery path, which needs a real fused checkpoint.
+    Montadas aqui e nao importadas, para que o teste dirija o ESCRITOR diretamente e nao dependa do
+    caminho de recuperacao do SVDQuant, que precisa de um checkpoint fundido de verdade.
     """
-    entries: list = []
-    out_header: dict = {}
-    offset = 0
-    for name in copied:
-        info = src_header[name]
-        size = info["data_offsets"][1] - info["data_offsets"][0]
-        out_header[name] = {"dtype": info["dtype"], "shape": info["shape"],
-                            "data_offsets": [offset, offset + size]}
-        entries.append((name, None, ("copy", info)))
-        offset += size
-    for name, tensor in produced.items():
-        raw_len = tensor.numel() * tensor.element_size()
-        out_header[name] = {"dtype": "F32", "shape": list(tensor.shape),
-                            "data_offsets": [offset, offset + raw_len]}
-        entries.append((name, None, ("write", tensor)))
-        offset += raw_len
-    blob = json.dumps(out_header, separators=(",", ":")).encode("utf-8")
-    blob += b" " * (-len(blob) % 8)
-    return entries, blob, offset
+    entradas = [C.plan_copy(name, src_header[name]) for name in copied]
+    entradas += [C.plan_write(name, tensor) for name, tensor in produced.items()]
+    return entradas
 
 
 def fixture(root: Path):
@@ -114,19 +115,20 @@ def fixture(root: Path):
     tensors = {"kept.a": torch.arange(4, dtype=torch.float32),
                "kept.b": torch.arange(3, dtype=torch.float32) * 10}
     src = root / "src.safetensors"
-    data_start, header = build_source(src, tensors)
+    _, header = build_source(src, tensors)
     produced = {"recovered.w": torch.arange(5, dtype=torch.float32) * 100}
-    entries, blob, planned = plan(header, produced, ["kept.a", "kept.b"])
-    return src, data_start, entries, blob, planned, tensors, produced
+    return src, header, plan(header, produced, ["kept.a", "kept.b"]), tensors, produced
 
 
 # ---------------------------------------------------------------------------------------------
 
 def test_an_honest_write_round_trips(root: Path) -> None:
-    src, data_start, entries, blob, planned, tensors, produced = fixture(root)
-    out, partial = root / "out.safetensors", root / "out.safetensors.partial"
+    src, _, entries, tensors, produced = fixture(root)
+    out = root / "out.safetensors"
 
-    sv.write_checkpoint(src, data_start, out, partial, entries, blob, planned)
+    conv = C.Conversion(src, out)
+    conv.commit(entries)
+    partial = conv.partial
 
     check("the output exists", out.is_file())
     check("the partial is gone", not partial.exists(),
@@ -148,19 +150,28 @@ def test_a_truncated_write_raises_and_leaves_nothing(root: Path) -> None:
     tail comes back as garbage. Without `written == planned` this file would have been
     `os.replace`d into position and the tool would have printed `done:`.
     """
-    src, data_start, entries, blob, planned, _, _ = fixture(root)
-    out, partial = root / "short.safetensors", root / "short.safetensors.partial"
+    src, header, entries, _, _ = fixture(root)
+    out = root / "short.safetensors"
 
+    # O nucleo calcula `planned` a partir das proprias entradas, entao nao da para inflar o total
+    # por fora como a versao anterior fazia. A mesma falha se produz por dentro: uma entrada que
+    # DECLARA mais bytes do que o produtor entrega. `plan_lazy` aceita `nbytes` explicito, que e o
+    # que torna o plano calculavel sem GPU -- e tambem o que permite ele mentir.
+    mentirosa = C.plan_lazy("recovered.w", "F32", [5], 20 + 16,
+                            lambda: torch.arange(5, dtype=torch.float32) * 100)
+    entries = entries[:-1] + [mentirosa]
+
+    conv = C.Conversion(src, out)
+    partial = conv.partial
     raised = None
     try:
-        # planned is inflated, so the honest write comes up short against it
-        sv.write_checkpoint(src, data_start, out, partial, entries, blob, planned + 16)
+        conv.commit(entries)
     except RuntimeError as error:
         raised = error
 
     check("it raises RuntimeError", isinstance(raised, RuntimeError), repr(raised))
     check("and the message names both numbers",
-          raised is not None and "length mismatch" in str(raised) and "planned" in str(raised),
+          raised is not None and "planned" in str(raised) and "36" in str(raised),
           str(raised))
     check("no output file was left behind", not out.exists(),
           "" if not out.exists() else "A SHORT FILE WAS os.replace'd INTO POSITION")
@@ -170,23 +181,29 @@ def test_a_truncated_write_raises_and_leaves_nothing(root: Path) -> None:
 
 def test_a_stale_partial_is_refused_not_clobbered(root: Path) -> None:
     """`"xb"`, not `"wb"`. A crashed run's leftover is evidence, not scratch space."""
-    src, data_start, entries, blob, planned, _, _ = fixture(root)
-    out, partial = root / "stale.safetensors", root / "stale.safetensors.partial"
+    src, _, entries, _, _ = fixture(root)
+    out = root / "stale.safetensors"
+    conv = C.Conversion(src, out)
+    partial = conv.partial
     partial.write_bytes(b"leftover from a crashed run")
 
     raised = None
     try:
-        sv.write_checkpoint(src, data_start, out, partial, entries, blob, planned)
+        conv.commit(entries)
     except FileExistsError as error:
         raised = error
 
     check("it raises FileExistsError", isinstance(raised, FileExistsError), repr(raised))
     check("no output was produced", not out.exists())
-    # The `finally` removes the partial even though this run did not create it. That is the right
-    # trade only because `main()` refuses a stale partial BEFORE any work starts, so reaching here
-    # means somebody called the writer directly -- see the next test.
-    check("the writer's finally cleaned up", not partial.exists(),
-          "note: main() refuses earlier, so this path is direct-call only")
+    # ESTA ASSERCAO INVERTEU EM 2026-09-01, e a inversao e o ponto. A versao anterior afirmava que
+    # o `finally` do escritor apagava o `.partial` mesmo sem te-lo criado, e chamava isso de troca
+    # aceitavel porque `main()` recusava antes. Mas o `.partial` que existe pode ser de um processo
+    # ESCREVENDO AGORA, e apaga-lo e destruir trabalho alheio. O nucleo abre o `.partial` fora do
+    # `try` justamente para que o FileExistsError nao passe pelo `finally`.
+    check("the OTHER process's partial survives", partial.exists(),
+          "aberto fora do try: o FileExistsError nao alcanca o finally")
+    check("and it was not touched", partial.read_bytes() == b"leftover from a crashed run")
+    partial.unlink()
 
 
 def test_main_refuses_a_stale_partial_before_doing_any_work(root: Path) -> None:
@@ -208,13 +225,12 @@ def test_main_refuses_a_stale_partial_before_doing_any_work(root: Path) -> None:
     # was right -- which is the reason to make the needle unambiguous rather than to loosen the
     # assertion until it passes.
     #
-    # Updated 2026-09-01, when `svdq_to_bf16` adopted `_conversion`. `main()` no longer calls
-    # `write_checkpoint` at all: it builds core entries and calls `conv.commit()`, and the refusal
-    # is `conv.refuse_unsafe(allow_quantized_source=True)` rather than a hand-written line. So the
-    # ordering assertion now targets whichever writer main() actually uses, and the local
-    # `write_checkpoint` -- kept only so the three scenarios above still have something to drive --
-    # is no longer required to be called. Asserting the old shape would have meant asserting that
-    # the migration had not happened.
+    # Updated 2026-09-01, when `svdq_to_bf16` adopted `_conversion` e a copia local do contrato foi
+    # APAGADA. `main()` monta entradas do nucleo e chama `conv.commit()`; a recusa e
+    # `conv.refuse_unsafe(allow_quantized_source=True)` em vez de uma linha escrita a mao. Entao a
+    # assercao de ordem agora aponta para o escritor que `main()` de fato usa, e passou a exigir
+    # que NENHUM `write_checkpoint` sobreviva no arquivo -- a versao anterior desta linha aceitava
+    # a funcao definida-mas-nao-chamada, que era o estado intermediario de meio dia.
     commit = line_of(lambda l: "conv.commit(" in l)
     refuse = line_of(lambda l: "conv.refuse_unsafe(" in l)
     guard = line_of(lambda l: "conv.guard(" in l)
@@ -226,8 +242,8 @@ def test_main_refuses_a_stale_partial_before_doing_any_work(root: Path) -> None:
           f"refuse at {refuse}, commit at {commit}")
     check("and guards before writing", -1 < guard < commit,
           f"guard at {guard}, commit at {commit}")
-    check("the legacy writer is defined but no longer on the production path",
-          definition != -1 and legacy_call == -1,
+    check("the local copy of the write contract is gone entirely",
+          definition == -1 and legacy_call == -1,
           f"def at line {definition}, stray call at line {legacy_call}")
 
 
@@ -261,12 +277,15 @@ def test_the_contract_is_still_the_same_shape_as_its_six_siblings(root: Path) ->
     check("every writer opens its partial exclusively, itself or via the core",
           missing == [], f"missing in {missing}")
 
-    body = (HERE / "svdq_to_bf16.py").read_text(encoding="utf-8")
+    # As quatro metades restantes do contrato. Ate 2026-09-01 estas linhas procuravam os simbolos
+    # DENTRO de `svdq_to_bf16.py`, que carregava a sua propria copia; agora a copia foi apagada e o
+    # contrato vive no nucleo, entao e la que elas olham. A cobertura nao afrouxou -- ao contrario,
+    # deixou de valer para um arquivo so e passou a valer para os sete de uma vez.
     for needle, label in (("os.fsync", "fsync before replace"),
-                          ("os.replace(partial, out)", "atomic rename"),
+                          ("os.replace(partial, self.output)", "atomic rename"),
                           ("finally:", "cleanup on every path"),
                           ("length mismatch", "written == planned")):
-        check(f"  svdq_to_bf16 keeps: {label}", needle in body)
+        check(f"  o nucleo mantem: {label}", needle in core, needle)
 
 
 def main() -> int:

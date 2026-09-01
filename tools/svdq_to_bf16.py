@@ -90,7 +90,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import struct
 import sys
 import time
@@ -104,8 +103,8 @@ import torch  # noqa: E402
 
 import _conversion as C  # noqa: E402
 
-DTYPE_NAMES = {torch.bfloat16: "BF16", torch.float16: "F16", torch.float32: "F32"}
-COPY_CHUNK = 16 * 1024 * 1024
+# `DTYPE_NAMES` e `COPY_CHUNK` sairam com `write_checkpoint` em 2026-09-01: o nucleo
+# (`_conversion.header_dtype` e `copy_range`) e quem sabe essas duas coisas agora.
 
 
 def parse_args() -> argparse.Namespace:
@@ -481,88 +480,6 @@ def check_recovery(layer, weight: torch.Tensor, device: str, dtype: torch.dtype,
         return (f"two identical identity probes disagreed by {drift:.4g}; the kernel is not "
                 f"deterministic, so its output cannot be taken as the layer's weight")
     return None
-
-
-def write_checkpoint(src: Path, data_start: int, out: Path, partial: Path,
-                     entries: list, blob: bytes, planned: int) -> None:
-    """Stream the planned file out, and refuse to hand over anything that is not the plan.
-
-    FORA DO CAMINHO DE PRODUCAO DESDE 2026-09-01. `main()` nao chama mais esta funcao: o contrato
-    de escrita mudou-se para `_conversion.Conversion.commit`, e os sete escritores desta bancada
-    passam por la. Ela continua aqui por UM motivo, e nao por conservadorismo -- o
-    `test_svdq_write_contract.py` a exercita diretamente em tres cenarios (round-trip honesto,
-    escrita truncada, `.partial` pre-existente), e apagar a funcao apagaria o teste junto.
-
-    FOLLOW-UP nomeado, para nao virar codigo morto permanente: redirecionar aquele teste para
-    `_conversion.Conversion.commit` e entao remover esta funcao. Os tres cenarios ja tem cobertura
-    equivalente em `test_conversion_core.py` (partes 5, 6, 7 e a 3b do `.partial` exclusivo), entao
-    o redirecionamento e sobre preservar as anotacoes de proveniencia daquele arquivo, nao sobre
-    recuperar cobertura perdida.
-
-    O paragrafo abaixo descreve o estado ANTERIOR a migracao e fica como registro.
-
-    This was the only writer in `tools/` without the contract the other six share. Find them with
-
-        grep -n '"xb"' tools/*.py
-
-    -- exactly one hit in each of `quant_w4a4.py`, `quant_w4a8.py`, `quant_int8.py`,
-    `quant_w4a4_smooth.py`, `quant_mixed.py` and `to_native.py`, and several in this file, of
-    which only the `open(partial, "xb")` below is code. This paragraph
-    carried the six line ranges instead, and `quant_mixed.py:637-657` was ALREADY WRONG in the
-    commit that introduced it: the same commit added 213 lines to that file and moved its writer
-    to :798. Re-checked 2026-08-22, EXECUTED: four of the six had drifted again within one
-    session, three of them between two greps ten minutes apart, because sibling agents were
-    editing those files at the time. A line number in a comment is a claim with an expiry date
-    nobody can see; a symbol plus the grep that finds it does not rot.
-
-    What that contract is: the partial opened `"wb"` here (clobbering a crashed run's leftover),
-    bytes written were never compared against bytes planned, nothing was `fsync`ed, and there was
-    no `try/finally`, so a failure left the partial behind for the next run to overwrite.
-
-    That gap is worse here than in any of the six, for two reasons. A safetensors header is
-    self-describing, so a file short by one tensor still parses and still *loads* -- the tail
-    tensors come back as garbage and the model produces a wrong image instead of an exception.
-    And this is the one converter whose output has no BF16 original to fall back on; that is the
-    whole reason the tool exists (see the module docstring).
-
-    Hence: `"xb"`, so the partial must not already exist; `written == planned` checked before
-    the file is allowed to become `out`; `flush` + `fsync` before `os.replace`; and the partial
-    unlinked in `finally` on every exit path, success or not.
-
-    Provenance: EXECUTED, but not on a real checkpoint. On a hand-built temp-dir safetensors
-    (two copied tensors plus one written one, 44 planned bytes) an honest write round-trips
-    through `load_file`; a payload truncated after planning raises
-    `RuntimeError(length mismatch: wrote 28, planned 44)` and leaves neither `out` nor
-    `.partial`; a pre-existing `.partial` raises `FileExistsError`. Never run at full scale
-    since this change -- that needs CUDA and an 11 GiB source.
-    """
-    try:
-        with open(partial, "xb") as dst, open(src, "rb") as source:
-            dst.write(struct.pack("<Q", len(blob)))
-            dst.write(blob)
-            body_start = dst.tell()
-            for key, _, (kind, payload) in entries:
-                if kind == "copy":
-                    start, end = payload["data_offsets"]
-                    source.seek(data_start + start)
-                    remaining = end - start
-                    while remaining:
-                        chunk = source.read(min(COPY_CHUNK, remaining))
-                        if not chunk:
-                            raise RuntimeError(f"source ended early while copying {key}")
-                        dst.write(chunk)
-                        remaining -= len(chunk)
-                else:
-                    dst.write(payload.contiguous().view(torch.uint8).numpy().tobytes())
-            written = dst.tell() - body_start
-            if written != planned:
-                raise RuntimeError(f"length mismatch: wrote {written}, planned {planned}")
-            dst.flush()
-            os.fsync(dst.fileno())
-        os.replace(partial, out)
-    finally:
-        if partial.exists():
-            partial.unlink()
 
 
 def main() -> int:

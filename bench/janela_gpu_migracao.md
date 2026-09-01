@@ -89,13 +89,21 @@ contra o que comparar. Para esses a aceitacao e mais fraca e precisa ser dita co
 O `smooth` e o mais importante dos dois, porque foi o unico dos sete que nunca teve guarda de RAM
 nem de disco e ganhou as duas nesta migracao -- codigo novo num caminho que nunca rodou com ele.
 
-## Uma pendencia de codigo, nomeada
+## A pendencia de codigo: FECHADA no mesmo dia
 
-`svdq_to_bf16.write_checkpoint()` saiu do caminho de producao mas continua no arquivo, porque
-`test_svdq_write_contract.py` a exercita diretamente em tres cenarios. Redirecionar aquele teste
-para `_conversion.Conversion.commit` e entao apagar a funcao. Os tres cenarios ja tem cobertura
-equivalente em `test_conversion_core.py`; o redirecionamento e para preservar as anotacoes de
-proveniencia daquele arquivo, nao para recuperar cobertura.
+`svdq_to_bf16.write_checkpoint()` foi **apagada** -- 82 linhas, mais `COPY_CHUNK` e `DTYPE_NAMES`,
+que so ela usava. O `test_svdq_write_contract.py` foi redirecionado para
+`_conversion.Conversion.commit` antes da remocao, e passa 24/24.
+
+Um dos tres cenarios daquele teste **inverteu de proposito**, e vale saber por que: ele afirmava
+que o `finally` do escritor apagava um `.partial` pre-existente. O nucleo abre o `.partial` FORA
+do `try` justamente para que o `FileExistsError` nao alcance o `finally` -- o arquivo de um
+processo que esteja escrevendo AGORA sobrevive. O teste agora afirma a sobrevivencia.
+
+As quatro assercoes de "o contrato continua inteiro" (fsync antes do replace, rename atomico,
+limpeza em todo caminho, escrito == planejado) tambem mudaram de alvo: procuravam os simbolos
+dentro de `svdq_to_bf16.py` e agora procuram no nucleo. Deixaram de valer para um arquivo so e
+passaram a valer para os sete de uma vez.
 
 ## Nao coberto por este plano
 
