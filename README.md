@@ -35,6 +35,30 @@ not rescue it. The ConvRot paper reports 2.26x speedup on FLUX.1-dev; that did n
 The W4A4 converter is kept because the format is a useful fixture for kernel and loader work, and
 because a negative result with a reproduction is worth more than silence.
 
+## Published checkpoints
+
+*Added 2026-09-01.* The checkpoints these measurements were taken on are on the Hub. **The failed
+builds are published alongside the good ones, labelled**, because the entire finding of this repo is
+that the gap between them is invisible to every structural check and costs almost nothing on disk.
+
+| repository | contents | licence |
+| --- | --- | --- |
+| [Qwen3-4B-W4A4-ConvRot](https://huggingface.co/JoaoZaokk/Qwen3-4B-W4A4-ConvRot) | the ComfyUI text encoder, 7.49 → 2.42 GiB, conditioning cosine 0.9896–0.9900 against BF16 | Apache 2.0 |
+| [Wan2.1-VACE-1.3B-W4A4-ConvRot](https://huggingface.co/JoaoZaokk/Wan2.1-VACE-1.3B-W4A4-ConvRot) | three builds — 0.0546 usable, 0.0793 unusable, 0.1602 destroyed — and the `vace_strength` trap | Apache 2.0 |
+| [HunyuanVideo-1.5-720p-T2V-Quantized](https://huggingface.co/JoaoZaokk/HunyuanVideo-1.5-720p-T2V-Quantized) | W4A8 usable, 0.1837 grainy, 0.2147 destroyed | Tencent Hunyuan Community — **not permissive, excludes EU/UK/South Korea** |
+
+Read the Hunyuan repository's licence before downloading from it: it is redistributed under
+Tencent's own agreement, with the full text, the required notice, a statement of modifications and a
+non-affiliation statement included there.
+
+**Not published, and it is a licence question rather than a measurement one.** The
+`Beyond_Reality Z-Image v2` and `capybara_v0.1` checkpoints are community fine-tunes distributed on
+Civitai. Their base models are permissive — [Tongyi-MAI/Z-Image-Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo)
+is Apache 2.0 — but the fine-tuners set their own redistribution terms on their own pages, and
+nobody here has read them. Deriving a checkpoint does not erase the licence of whoever trained it.
+Z-Image is the model most of this repo's calibration work was done on, so its absence from that
+table is conspicuous and deliberate.
+
 ## When W4A4 works, and when it does not
 
 *Added 2026-08-31. Everything below this section was written on 2026-08-16 and is left intact,
