@@ -4196,31 +4196,45 @@ dois bracos:
 | `--promote-error 0,15` | 0,0793 | 134 / 166 | 2,11 | 0,3022 | estrutura volta, tudo borrado, inutilizavel |
 | W4A4 puro | 0,1602 | 300 / 0 | 2,07 | 0,3949 | destruida, sem sujeito |
 
-> ### CORRECAO 2026-09-01, apontada pelo dono: eu descrevi a referencia como nitida e ela nao e
+> ### CORRECAO 2026-09-01, em duas camadas, apontadas pelo dono nas duas vezes
 >
-> A celula acima dizia **"oficina nitida, pessoa na bancada"**. Olhando os PNGs publicados:
+> **Primeira:** a celula acima dizia *"oficina nitida, pessoa na bancada"* e as imagens publicadas
+> nao eram nitidas -- na `seed3` a cabeca estava derretida, e o build QUANTIZADO parecia melhor que
+> a referencia FP16 da mesma semente. Escrevi a descricao sem olhar as duas imagens.
 >
-> - `seed1_fp16_referencia.png` -- escura e turva, mas coerente: pessoa na bancada, janela, objetos.
->   Nao e nitida.
-> - `seed3_fp16_referencia.png` -- **quebrada**. Cabeca derretida e duplicada, braco em borrao, mesa
->   lavada.
+> **Segunda, e e a que importa:** eu entao concluí que a referencia FP16 deste modelo era ruim por
+> natureza. **Errado.** O dono perguntou por que eu nao rodava o FP16 de novo, e rodando com um
+> eixo variado o defeito apareceu inteiro:
 >
-> E o que fecha o caso: **`seed3_misto005_bom.png`, que e o build QUANTIZADO, parece melhor que a
-> referencia FP16 da mesma semente.** Quantizacao nao melhora modelo. Se o filho parece melhor que o
-> pai, o par nao esta pareado, e a linha da seed3 nao sustenta afirmacao nenhuma -- ela saiu do card.
+>     cfg 1.0, sem shift, sem negative   <- o que EU usei     rosto derretido, borrao
+>     cfg 6 + shift 8 + negative                              relojoeiro nitido
+>     + uni_pc                                                melhor ainda
 >
-> O que sobrevive: a escada da **seed1** foi reconferida imagem a imagem e e real e progressiva --
-> referencia coerente, `misto005` boa, `misto015` borrada, W4A4 puro marrom e sem sujeito. A tabela
-> abaixo vale para a seed1.
+> `cfg 1.0` e o ponto de operacao do **Z-Image Turbo**, que e destilado. O Wan 2.1 **nao e**. Rodei
+> um modelo no regime de outro, por seis sementes e tres checkpoints, e publiquei o resultado como
+> referencia de qualidade. **Todas as imagens do card sairam dai** -- nao foi uma semente azarada.
 >
-> O que fica sob suspeita: a banda 0,0546 / 0,0793 foi julgada **a olho contra essa referencia**.
-> Com uma das duas referencias quebrada, a banda continua sendo o melhor numero que existe para este
-> modelo e deixa de ser um numero em que eu confie sem re-renderizar.
+> **Re-rodado no regime certo** (`uni_pc`, shift 8, cfg 6, negative, 6 sementes,
+> `bench/ladder_wan21_regime_certo/`), e os tres vereditos SOBREVIVEM:
+>
+>     FP16                       nitido em 6/6
+>     misto005   0,0546          nitido em 6/6, no nivel do FP16
+>     misto015   0,0793          sujeito volta, tudo empastado -- exatamente o que a tabela dizia
+>     W4A4 puro  0,1602          destruido em 6/6, blocos e artefato colorido
+>
+> **A banda 0,0546 / 0,0793 fica CONFIRMADA**, agora contra imagens em que o braco nao quantizado
+> esta bom. A tabela abaixo vale.
+>
+> Um numero que se moveu e que vale guardar: a divergencia media do `misto005` contra a referencia
+> **SUBIU** de 0,2936 para **0,4750** ao consertar o regime -- enquanto a imagem ficou muito melhor.
+> Guidance mais alta separa trajetorias, entao aquela distancia mede trajetoria e nao fidelidade.
+> **Divergencia nao e comparavel entre configuracoes de sampler e nao acompanha a foto.** E o
+> terceiro instrumento numerico do dia a apontar para o lado errado, junto com o erro por camada.
 >
 > A licao ja estava escrita duas secoes abaixo -- *"quando o braco nao quantizado tambem quebra, o
-> numero nao e sobre quantizacao"* -- e eu a escrevi na mesma pagina em que publiquei a imagem que a
-> viola. Olhar a referencia custou uma imagem da primeira vez; nao olhar a SEGUNDA referencia custou
-> um card publico errado.
+> numero nao e sobre quantizacao"*. Eu a apliquei ao `vace_strength`, achei a causa, e parei. Havia
+> uma segunda causa no mesmo braco e eu nao voltei a olhar. **Nenhuma verificacao automatica desta
+> bancada pegaria isso; foi o dono olhando a foto e perguntando o que era a referencia.**
 
 **A linha do Wan fica entre 0,0546 e 0,0793.** O misto em 0,0793 ja e pior que o Z-Image em
 0,1241, que sai bom.

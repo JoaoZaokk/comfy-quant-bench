@@ -69,6 +69,32 @@ def q4(t, dim):
     s = t.abs().amax(dim=dim, keepdim=True).clamp_min(1e-8) / 7
     return (t / s).round().clamp(-8, 7) * s
 
+CG = 256   # convrot_groupsize; tem de ser potencia de 4, e 256 e o que esta bancada usa
+
+def rotacao(k, dev, dt):
+    """Hadamard regular normalizada, bloco de CG. Simetrica e ortogonal, entao H@H = I."""
+    from comfy_kitchen.tensor.int8_utils import _build_hadamard
+    return _build_hadamard(CG, dev, torch.float32).to(dt)
+
+def gira_peso(w, h):
+    """W_rot = W @ H^T, por grupo de CG colunas."""
+    o, i = w.shape
+    return torch.matmul(w.reshape(o, i // CG, CG), h.T.to(w.dtype)).reshape(o, i)
+
+def gira_ativacao(x, h):
+    """x_rot = x @ H, por grupo de CG. O par de `gira_peso`: x_rot @ W_rot^T == x @ W^T."""
+    f = x.shape[-1]
+    return torch.matmul(x.reshape(-1, f // CG, CG), h.to(x.dtype)).reshape(x.shape)
+
+def poda_elem(w, norma):
+    """2 dos 4 VALORES de cada 4 colunas. E o que o kernel INT8 esparso aceita; o INT4 nao."""
+    n, k = w.shape
+    p = w.abs() if norma is None else w.abs() * norma.to(w.device, w.dtype).unsqueeze(0)
+    esc = p.reshape(n, k // 4, 4)
+    idx = esc.argsort(dim=-1)[..., :2]
+    m = torch.ones_like(esc, dtype=torch.bool).scatter_(-1, idx, False)
+    return (w.reshape(n, k // 4, 4) * m).reshape(n, k)
+
 def poda_par(w, norma):
     """2 dos 4 PARES de cada 8 colunas. Criterio Wanda quando ha norma da ativacao real."""
     n, k = w.shape
@@ -105,20 +131,46 @@ if MODO != "nenhum":
             x = v["sample"] if isinstance(v, dict) else v
             if torch.is_tensor(x):
                 normas[k] = x.float().reshape(-1, x.shape[-1]).norm(dim=0)
+    GIRA = MODO.startswith("convrot")
+    QUANT_ATIV = MODO.endswith("_ativ")
+    puladas_por_cg = 0
     for nome, mod in model.model.diffusion_model.named_modules():
         if not isinstance(mod, nn.Linear) or mod.weight is None: continue
         w = mod.weight
         if w.dim() != 2 or w.shape[1] %% 8 or w.is_meta: continue
+        if GIRA and w.shape[1] %% CG:
+            # Sem rotacao possivel nesta camada. PULAR e mais honesto que rodar metade dela sem
+            # rotacao: misturaria dois formatos no mesmo braco e a folha nao diria qual.
+            puladas_por_cg += 1
+            continue
         nrm = normas.get(nome)
         com_wanda += nrm is not None
         with torch.no_grad():
-            novo = q4(poda_par(w.data.float(), nrm), 1).to(w.dtype)
+            wf = w.data.float()
+            if GIRA:
+                h = rotacao(w.shape[1], w.device, torch.float32)
+                wf = gira_peso(wf, h)
+                # O criterio Wanda tem de ver a norma da ativacao NO MESMO ESPACO em que o peso
+                # esta sendo podado. Usar a norma nao rotacionada pontuaria colunas que nao
+                # existem mais depois da rotacao.
+                if nrm is not None:
+                    nr = nrm.to(w.device, torch.float32)
+                    nrm = gira_ativacao(nr.reshape(1, -1), h).abs().reshape(-1)
+            podado = poda_elem(wf, nrm) if "elem" in MODO else poda_par(wf, nrm)
+            # `so_poda`: bf16 nos valores mantidos, 9,0 bits/peso. Isola a PODA do int4 --
+            # sem este braco, "destruido" nao distingue qual dos dois estragou.
+            novo = (podado if MODO.startswith("so_poda") else q4(podado, 1)).to(w.dtype)
             w.data.copy_(novo)
         tocadas.append(nome)
-    if MODO == "peso_ativ":
+
+    if GIRA or QUANT_ATIV:
         def gancho(m, args):
             x = args[0]
-            return (q4(x.float(), -1).to(x.dtype),) + tuple(args[1:])
+            if GIRA:
+                x = gira_ativacao(x.float(), rotacao(x.shape[-1], x.device, torch.float32))
+            if QUANT_ATIV:
+                x = q4(x.float(), -1)
+            return (x.to(args[0].dtype),) + tuple(args[1:])
         alvo = dict(model.model.diffusion_model.named_modules())
         for nome in tocadas:
             alvo[nome].register_forward_pre_hook(gancho)
@@ -148,9 +200,11 @@ torch.save(out, OUTPT)
 # O CONTROLE: reconferido DEPOIS de amostrar, porque o que interessa e se o peso continuava
 # alterado enquanto o modelo rodava -- nao se a copia funcionou um segundo antes.
 alvo = dict(model.model.diffusion_model.named_modules())
-fr = [fracao_par24(alvo[n].weight.data.float()) for n in tocadas[:16]] if tocadas else []
+fr = ([fracao_par24(alvo[n].weight.data.float()) for n in tocadas[:16]]
+      if tocadas and "elem" not in MODO else [])
 print("RESULT " + json.dumps({
     "modo": MODO, "camadas_tocadas": len(tocadas), "com_wanda": com_wanda,
+    "puladas_por_groupsize": puladas_por_cg if MODO != "nenhum" else 0,
     "controle_no_maximo_2": (sum(f["no_maximo_2"] for f in fr)/len(fr)) if fr else None,
     "exatamente_2": (sum(f["exatamente_2"] for f in fr)/len(fr)) if fr else None,
     "seconds": el, "mean": float(out.mean()), "std": float(out.std()),
@@ -188,6 +242,8 @@ def main() -> int:
     # Tres sementes e nao uma: uma imagem so nao distingue "o formato estraga" de "esta
     # semente saiu ruim", e esta bancada ja publicou um card cuja referencia FP16 estava quebrada
     # numa semente e boa na outra -- exatamente o que uma amostra unica esconde.
+    p.add_argument("--modos", nargs="+", default=None,
+                   help="roda so estes bracos pelo nome; sem isto roda todos")
     p.add_argument("--seeds", type=int, nargs="+", default=[1234, 7, 20260901])
     p.add_argument("--steps", type=int, default=8)
     p.add_argument("--cfg", type=float, default=1.0)
@@ -198,8 +254,19 @@ def main() -> int:
     bracos = [("bf16", a.unet_bf16, "nenhum", ""),
               ("w4a4", a.unet_w4a4, "nenhum", ""),
               ("esp_peso", a.unet_bf16, "peso", a.calib),
-              ("esp_peso_ativ", a.unet_bf16, "peso_ativ", a.calib)]
+              ("esp_peso_ativ", a.unet_bf16, "peso_ativ", a.calib),
+              # A UNICA diferenca destes dois para os dois de cima e a rotacao ConvRot antes da
+              # poda. Um eixo, e e o eixo que faz o W4A4 chegar a 0,0956.
+              ("convrot_peso", a.unet_bf16, "convrot_peso", a.calib),
+              ("convrot_peso_ativ", a.unet_bf16, "convrot_peso_ativ", a.calib),
+              # Poda pura, sem quantizacao nenhuma. Se estes sairem bem, o culpado e o int4;
+              # se sairem ruido, e a poda -- e nenhum kernel esparso salva este modelo.
+              ("so_poda_elem", a.unet_bf16, "so_poda_elem", a.calib),
+              ("so_poda_par", a.unet_bf16, "so_poda_par", a.calib)]
 
+    if a.modos:
+        bracos = [b for b in bracos if b[0] in set(a.modos)]
+        print(f"filtrado para {len(bracos)} braco(s): {[b[0] for b in bracos]}")
     res = {}
     for semente in a.seeds:
         print(f"\n######## semente {semente} ########", flush=True)

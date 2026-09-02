@@ -20,6 +20,11 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parent.parent
 SAIDA = RAIZ / "bench" / "esparso_visual"
 sys.path.insert(0, str(RAIZ / "ComfyUI"))
+# `comfy.options.enable_args_parsing()` le sys.argv, entao ele precisa ser trocado ANTES
+# do import. Mas isso apaga os argumentos DESTA ferramenta antes do argparse rodar --
+# foi assim que um `--dir` foi ignorado em silencio e tres regimes diferentes
+# decodificaram o mesmo diretorio. Guardar antes de trocar e o conserto.
+ARGV_REAL = sys.argv[1:]
 sys.argv = ["main.py"]
 
 import comfy.options
@@ -38,6 +43,10 @@ ROTULOS = {
     "w4a4": "W4A4 ConvRot (hoje)  4,0 bits/peso",
     "esp_peso": "2:4 par Wanda + int4, PESO  2,5 bits/peso",
     "esp_peso_ativ": "2:4 par Wanda + int4, PESO+ATIV  2,5 bits/peso",
+    "convrot_peso": "ConvRot + 2:4 par Wanda + int4, PESO  2,5 bits/peso",
+    "convrot_peso_ativ": "ConvRot + 2:4 par Wanda + int4, PESO+ATIV  2,5 bits/peso",
+    "so_poda_elem": "SO PODA 2:4 por ELEMENTO, Wanda, bf16  9,0 bits/peso",
+    "so_poda_par": "SO PODA 2:4 por PAR, Wanda, bf16  9,0 bits/peso",
 }
 
 
@@ -54,7 +63,7 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--vae", default="ae.safetensors")
-    a = p.parse_args()
+    a = p.parse_args(ARGV_REAL)
 
     latentes = sorted(SAIDA.glob("latent_*.pt"))
     if not latentes:
@@ -74,7 +83,8 @@ def main() -> int:
         por_semente.setdefault(semente, {})[braco] = arr
         print(f"{miolo}: {arr.shape} -> {miolo}.png")
 
-    ordem = ["bf16", "w4a4", "esp_peso", "esp_peso_ativ"]
+    ordem = ["bf16", "w4a4", "esp_peso", "esp_peso_ativ", "convrot_peso", "convrot_peso_ativ",
+             "so_poda_elem", "so_poda_par"]
     relatorio: dict[str, dict[str, float]] = {}
     folhas = []
     for semente in sorted(por_semente):

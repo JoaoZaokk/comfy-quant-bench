@@ -44,55 +44,59 @@ received*, on the real activations the layer saw during sampling.
 
 ### What they look like
 
-Same prompt, same seed, same sampler, `vace_strength 0`, 25 steps, 33 frames, 480x480:
+Six seeds, one prompt, `uni_pc` / `simple`, 25 steps, **cfg 6.0**, **`ModelSamplingSD3` shift 8**, a
+real negative prompt, `vace_strength 0`, 33 frames at 480x480. Middle frame of each clip.
 
-| | |
-|---|---|
-| FP16 reference | ![](images/seed1_fp16_referencia.png) |
-| `misto005` — good | ![](images/seed1_misto005_bom.png) |
-| `misto015` — unusable | ![](images/seed1_misto015_borrado.png) |
-| pure W4A4 — destroyed | ![](images/seed1_w4a4_puro_DESTRUIDO.png) |
+Rows top to bottom: **FP16 reference · `misto005` · `misto015` · pure W4A4**.
 
-### Read this before you read the pictures: the FP16 reference is not a good image
+![](images/ladder_6_sementes_regime_certo.png)
 
-The reference above is dark and muddy. It holds together — a person at a bench, a window, objects —
-but nobody would call it sharp. **The whole ladder on this page is relative to that**, not to a
-pretty picture, and the "good" build is good *compared to a mediocre reference*.
+Two seeds at full size, so the degradation is visible without squinting:
 
-### The second seed, kept on the page because deleting it would be cherry-picking
+| | seed 4 | seed 5 |
+|---|---|---|
+| FP16 reference | ![](images/s4_fp16_referencia.png) | ![](images/s5_fp16_referencia.png) |
+| `misto005` — **use this one** | ![](images/s4_misto005_bom.png) | ![](images/s5_misto005_bom.png) |
+| `misto015` — smeared | ![](images/s4_misto015_borrado.png) | ![](images/s5_misto015_borrado.png) |
+| pure W4A4 — destroyed | ![](images/s4_w4a4_puro_DESTRUIDO.png) | ![](images/s5_w4a4_puro_DESTRUIDO.png) |
 
-| | |
-|---|---|
-| FP16 reference, seed 3 | ![](images/seed3_fp16_referencia.png) |
-| `misto005`, seed 3 | ![](images/seed3_misto005_bom.png) |
+`misto005` is not "close enough". Across all six seeds it is a sharp watchmaker at a bench, at the
+same level as the unquantized reference, from a file **1.87x smaller**. `misto015` keeps the subject
+and loses everything else to a painterly smear. Pure W4A4 is blocky coloured wreckage in all six.
 
-**The reference there is broken**: melted, duplicated head, smeared arm, washed-out table. And the
-*quantized* `misto005` at that same seed looks **better** than it. Quantization does not improve a
-model, so that pair is not measuring quantization — it is measuring a bad draw in the unquantized
-arm.
+---
 
-It stays on the page anyway, because seed 3 is also the **hardest seed for every build** by the
-ladder's own divergence numbers — `misto005` scores 0.3299 there against 0.1925 on seed 1, and pure
-W4A4 scores 0.4653 against 0.3112. Pulling the one seed where the quantized files did worst, on the
-grounds that its reference was bad, is exactly the move that turns an honest page into a sales page.
-So it is here, labelled for what it is.
+## The images on this page were wrong until 2026-09-01, and here is what was wrong with them
 
-What this costs the page, stated plainly: **the tolerated / not-tolerated band below (0.0546 vs
-0.0793) was judged by eye against these references.** The seed-1 ladder was re-checked image by
-image and is real and progressive — coherent reference, good `misto005`, smeared `misto015`, brown
-and subjectless pure W4A4, and every one of those four images was verified by hash to come from
-runs sharing 25 steps, 480px and the same seed. The band is still the best number that exists for
-this model. It is no longer a number to quote without re-rendering the reference first.
+Every image previously published here was rendered at **cfg 1.0, no shift, no negative prompt**.
+That is the operating point of a *distilled* model — it is what this bench uses for Z-Image Turbo.
+**Wan 2.1 is not distilled.** Without guidance it drifts, and the reference drifted along with
+everything else: melted faces, smeared arms, washed-out tables, in the FP16 arm that is supposed to
+be the standard.
 
-One more thing a reader deserves: `images/seed1_fp16_referencia.png` and
-`images/armadilha_vace_strength_0.0.png` are the **same file**. The `vace_strength` demonstration
-reuses the ladder's own FP16 render rather than a separate one. Nothing is wrong with the pixels;
-it is stated so nobody mistakes one image in two roles for two independent pieces of evidence.
+Same file, same seeds, **only the regime changed**:
 
-The bench that produced this file has a rule for exactly this — *when the unquantized arm breaks
-too, the number is not about quantization* — written on the same page as the image that violates it.
-Checking the first reference cost one render. Not checking the **second** one cost a wrong public
-page, and it was the owner who caught it, not the bench.
+![](images/o_regime_errado.png)
+
+Top row is what was published. The two rows below are the same unquantized FP16 weights at
+`cfg 6 + shift 8 + negative`, and with `uni_pc` on top of that.
+
+This matters to you as a downloader more than it matters as an apology: **if you run these files at
+cfg 1 with no shift, you will get the top row and blame the quantization.** The settings in the
+section above are not decoration, they are the operating point.
+
+What the correction did *not* change: the three verdicts. `misto005` good, `misto015` smeared, pure
+W4A4 destroyed — all three survived re-rendering in the correct regime across six seeds, and the
+tolerated / not-tolerated band below was re-judged against the new images rather than the old ones.
+
+One number that did move, and that is worth knowing: `misto005`'s mean divergence from the reference
+**rose** from 0.2936 to 0.4750 when the regime was fixed — while the picture got dramatically
+better. Higher guidance separates trajectories, so that distance measures trajectory, not fidelity.
+**Do not compare divergence numbers across sampler settings, and do not read them as quality.**
+
+The owner of this bench caught this by looking at the pictures and asking what the reference was.
+No automated check on this bench would have. That is worth stating plainly on a page that otherwise
+argues for measurement.
 
 ---
 
@@ -132,9 +136,15 @@ the last.
 ## The trap that cost four renders, and will cost you the same
 
 **A Wan VACE checkpoint sampled without a VACE control node is destroyed by ComfyUI's own defaults
-— with no error and no warning.** The FP16 reference, unquantized, came out as woven fabric in
-every configuration tried (6 steps/1 frame, 25/33, cfg 6 and cfg 1, with and without
-`ModelSamplingSD3 shift 8`).
+— with no error and no warning.** At `vace_strength 1.0` the unquantized FP16 reference comes out as
+woven fabric.
+
+> **Corrected 2026-09-01.** This paragraph used to add *"in every configuration tried (6 steps/1
+> frame, 25/33, cfg 6 and cfg 1, with and without `ModelSamplingSD3 shift 8`)"*, which read as *no
+> setting saves it*. That is false and the images above refute it: at `vace_strength 0` **with**
+> cfg 6, shift 8 and a negative prompt, the FP16 reference is excellent. `vace_strength 0` is
+> **necessary and not sufficient** — the sampler settings are the other half, and conflating the two
+> axes is what made this page publish broken references for two weeks.
 
 | `vace_strength` | latent norm | result |
 |---|---|---|
