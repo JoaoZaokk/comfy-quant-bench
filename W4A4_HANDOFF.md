@@ -12,8 +12,10 @@ This is the live ComfyUI Portable installation at `F:\COMFY_PORTABLE`. Always us
 - Torch 2.13.0+cu130, torchvision 0.28.0+cu130, torchaudio 2.11.0+cu130
 - CUDA reported by Torch: 13.0
 - nunchaku 1.2.1 (built for torch 2.11, running under 2.13), spas_sage_attn 0.1.0 (SpargeAttn)
-- No `pytest` in the embedded interpreter. The pytest commands in CLAUDE.md do not run as
-  written; test files under `tools/` and in the WaveSpeed fork carry their own runner.
+- `pytest` 9.1.1 e `ruff` 0.16.5 **ESTAO instalados desde 2026-09-01** (esta linha dizia que
+  nenhum dos dois existia, o que foi verdade de 2026-08-18 ate la). Instalados com
+  `-c constraints.txt` feito do `pip freeze`: exatamente quatro adicoes, nada movido. Os testes sob
+  `tools/` ainda carregam o proprio runner porque sao anteriores a instalacao.
 - comfy-kitchen **0.2.31**, read from `python_embeded/Lib/site-packages/comfy_kitchen-*.dist-info/METADATA`
   on 2026-08-22. This line said `0.2.23` for eight releases; it is the registry that decides whether
   `convrot_w4a4_linear` resolves to a CUDA backend, so recheck it rather than quoting this line.
@@ -387,3 +389,123 @@ derrubar o servidor). Registrado como MCP em escopo user, com `DO_NOT_TRACK` e
 **Encerrado, nao reabrir:** o `WARNING: unet unexpected: [... .comfy_quant]` **nao** indica perda
 de despacho. Medido duas vezes por caminhos independentes — contagem de modulos na parte 27, e
 auditoria do header na parte 28.
+
+
+---
+
+## Estado em 2026-09-01, fim do dia: esparsidade medida e a foto que derrubou a conclusao
+
+Sessao longa. Duas frentes, e as duas terminaram com a imagem contradizendo o numero.
+
+### 1. Esparsidade 2:4 -- o caminho executa, e nao serve para o Z-Image
+
+**O que estava bloqueado e nao esta mais.** O kernel 2:4 do xformers recusava esta placa com
+`Got CUTLASS error: Error Internal`. Nao era o cuSPARSELt (o CUTLASS nao o usa) nem a placa: o tile
+que eles compilam pede **139.264 bytes** de shared e a 3090 aceita **101.376** -- dimensionado para
+a A100. `tools/sparse24_sm86/` compila o SparseGemm com um tile que cabe.
+
+**MEDIDO**, contra `torch.mm` denso bf16, nos shapes reais do Z-Image, controle bit-exato:
+
+    2:4 bf16    9,0 bits/peso    1,7x - 1,95x
+    2:4 int8    5,0 bits/peso    3,2x - 4,1x
+    2:4 int4    2,5 bits/peso    5,0x - 7,6x
+
+A escada e consistente: cada metade de largura vale ~2x, que e o que o tensor core faz. E
+`torch._int_mm` **denso** da 1,0x -- o ganho e do tensor core esparso, nao de ser inteiro.
+
+**Descoberto por experimento, nao lido:** o tensor core INT4 mascara em **PARES**, nao em valores.
+`kElementsPerElementE` e 32 no int4 contra 16 no int8, o que forca 4 bits de metadata por 8 valores.
+Testadas as duas granularidades contra referencia inteira exata: por elemento falha 6/6, por par
+bate 6/6, codificacao `nibble = idx0 | (idx1 << 2)`. Da **2,5 bits/peso**, nao 3,0.
+
+**E a foto diz nao.** Render real do Z-Image, 3 sementes:
+
+    BF16                                        maca
+    W4A4 ConvRot (4,0 bits, erro 0,0956)        maca
+    2:4 par Wanda + int4 (2,5 bits, 0,1391)     RUIDO
+    + ConvRot antes da poda                     RUIDO
+
+**Isolado, um eixo por vez, e o culpado e a granularidade:**
+
+    so poda 2:4 por ELEMENTO, bf16, sem quantizar   maca arruinada, mas EXISTE
+    so poda 2:4 por PAR,      bf16, sem quantizar   RUIDO
+
+Nao e o int4 (a escala por linha que usei da 0,0685, **melhor** que os 0,0923 do W4A4 que funciona).
+Nao e a rotacao. **E o par** -- a restricao que o hardware INT4 impoe. Logo:
+
+- **INT4 esparso esta morto para o Z-Image**, por restricao de hardware e nao por bits.
+- **INT8 esparso sobrevive** (aceita por elemento): 4,0x, 5,0 bits/peso, sujeito preservado.
+- Mesmo por elemento esta ruim demais para enviar sem **treino de recuperacao** -- a proposta
+  original do dono, ainda **nao testada**, e agora o unico caminho aberto nesta frente.
+
+### 2. O card do Wan estava com todas as imagens fora do ponto de operacao
+
+Republicado. As imagens antigas foram feitas a `cfg 1.0, sem shift, sem negative` -- o regime do
+Z-Image **Turbo**, que e destilado. O Wan 2.1 nao e. Re-renderizado com
+`uni_pc + shift 8 + cfg 6 + negative`, 6 sementes, os tres vereditos **sobrevivem** e agora tem
+imagem que mostra:
+
+    FP16                     nitido 6/6
+    misto005  0,0546         nitido 6/6, no nivel do FP16
+    misto015  0,0793         sujeito volta, tudo empastado
+    W4A4 puro 0,1602         destruido 6/6
+
+**A banda 0,0546 / 0,0793 fica confirmada.** Validado mecanicamente: README publicado
+byte-identico, 12/12 imagens referenciadas existem, sha256 confere.
+
+### 3. Tres instrumentos numericos apontaram para o lado errado no mesmo dia
+
+Vale mais que qualquer numero acima:
+
+    erro por camada    0,1391 (1,46x o W4A4)  ->  imagem DESTRUIDA
+    divergencia        SUBIU 0,2936 -> 0,4750 ->  imagem MUITO MELHOR
+    RMSE no pixel      ordena ruido contra ruido, nao diz nada
+
+Nenhum corte nesses eixos separa usavel de inutilizavel. **So o render decide**, e nenhuma
+verificacao automatica desta bancada pegou nenhum dos dois defeitos -- foi o dono olhando a foto.
+
+### 4. Ferramentas novas
+
+    tools/sparse24_sm86/{sp24_gemm.cu,sp24_int.cu,roda.py,roda_int.py}  GEMM 2:4, bf16/int8/int4
+    tools/probe_esparso_granularidade.py     custo do par vs elemento, um eixo por vez
+    tools/probe_esparso_visual.py            8 bracos de render do Z-Image
+    tools/decode_esparso_visual.py           decode + folha rotulada
+    tools/decode_wan_ladder.py               decode avulso do ladder (o do ladder morre no aimdo)
+    tools/probe_encoder_visual.py            a foto que falta no card do Qwen -- ESCRITA, NAO RODADA
+
+As de CUDA precisam do CUTLASS (~43 MB, nao fica no repo) e do `vcvars64`; ver o docstring de
+`tools/sparse24_sm86/roda.py`.
+
+### 5. Armadilhas que custaram tempo hoje
+
+- **`sys.argv = ["main.py"]` no topo do modulo apaga os argumentos da propria ferramenta** antes do
+  argparse. Um `--dir` foi ignorado em silencio e tres regimes decodificaram o mesmo diretorio.
+  Corrigido nos dois decodificadores; **procure esse padrao antes de escrever o proximo**.
+- **`TaskStop` mata o wrapper, nao o `bash` filho.** Um script encadeado sobreviveu, disparou no
+  horario e brigou por VRAM -- deixando um lock apontando para pid morto.
+- **O `BenchGuard` mede residencia da placa para detectar OUTRO inquilino.** Entrar nele DEPOIS de
+  alocar os pesos faz a ferramenta recusar a si mesma. Um guard por run, entrado antes de alocar.
+- **O contador de controle do 2:4 estava mal especificado**: `== 2 pares vivos` conta como falha um
+  par que a quantizacao zerou. O invariante e `<= 2`.
+- **A sonda que descobriu a codificacao do INT4 usou padrao uniforme**, que e invariante a
+  reordenamento -- ela nao podia detectar o layout `ColumnMajorInterleaved<2>`, e sem o scatter o
+  kernel roda e erra 65407 de 65536 sem avisar.
+- **`ls | head -10` cortou a lista antes do `w`** e eu declarei que o VAE do Wan nao existia. Ele
+  existe. Terceira vez no dia lendo saida de instrumento cego como ausencia.
+- **Heredoc do bash com apostrofo na mensagem de commit** mata o comando inteiro no parser, sem
+  executar nem a parte de cima. Escrever arquivo por Python quando o conteudo tem aspas.
+
+### 6. Proximos passos, em ordem
+
+1. **Rodar `tools/probe_encoder_visual.py`.** O card do Qwen3-4B faz alegacao de fidelidade
+   (cosseno 0,98957) e **nao tem uma unica imagem**. A ferramenta esta escrita e tem controle;
+   falta a placa. Depois republicar aquele card.
+2. **Treino de recuperacao sobre 2:4 por elemento.** Unico caminho aberto na frente de esparsidade;
+   sem ele, INT8 esparso da 4x e uma imagem que ninguem envia.
+3. **Cachear o conditioning em `probe_esparso_visual.py`.** Cada braco recarrega 15,5 GB para
+   amostrar 15 s porque o encoder e refeito toda vez, sendo identico entre bracos.
+4. **Decidir sobre as 6 imagens orfas** do regime errado que continuam no repo do Wan. Apagar
+   arquivo publicado e destrutivo e e decisao do dono.
+5. **Rever a parte 43 do PROGRESS** -- a conclusao "nao existe limiar do formato, existe um por
+   modelo" usou o Wan como o ponto que quebrou a regra, e o numero do Wan veio do regime errado. A
+   banda foi reconfirmada, entao a conclusao provavelmente sobrevive, mas nao foi reverificada.
