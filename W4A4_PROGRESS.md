@@ -4967,3 +4967,133 @@ ConvRot**. A rotacao e justamente o que leva o W4A4 a 0,0956, entao a coluna de 
 por uma razao que nao e a esparsidade. **ConvRot + poda por par + int4 nao foi medido, nao tem
 obstaculo conhecido, e e o proximo passo.** Alem disso: GEMM isolado e nao render, uma placa, sem
 varredura de tuning, sem treino de recuperacao, sem SparseGPT, nenhuma imagem.
+
+
+---
+
+## Parte 44 -- 2026-09-03: a receita de destrava do proprio card nao funciona, e a foto que faltava
+
+Janela de GPU aberta pelo dono para trabalho autonomo. O card publicado do `Qwen3-4B-W4A4-ConvRot`
+alegava fidelidade (cosseno 0,98957) e **nao tinha uma unica imagem**.
+
+### O terceiro braco, que mudou o desenho
+
+A versao anterior do probe tinha dois bracos, `bf16` e `w4a4`, e o segundo estava mal rotulado: um
+text encoder quantizado carregado pelo caminho normal do ComfyUI roda **dequantizado**, entao aquele
+braco media peso de 4 bits com matematica de 16. Tres bracos, contados durante os proprios encodes:
+
+    bf16     convrot_w4a4 = 0     dequantize = 0
+    travado  convrot_w4a4 = 0     dequantize = 504     <- o que o usuario recebe hoje
+    solto    convrot_w4a4 = 504   dequantize = 0       <- o que o card sugere
+
+### A receita publicada nao funciona, e o defeito e simetrico ao documentado
+
+O `CLAUDE.md` e o card mandavam soltar **na fonte** (`patcher.force_cast_weights = False`) e
+avisavam que escrever no modulo "sobrevive so se o modelo ja estiver residente". Medido, um eixo por
+vez, contando chamadas de kernel:
+
+    o que se escreve              convrot_w4a4   dequantize   force_cast
+    nada                                     0          504   True
+    so a fonte (a receita antiga)            0          504   True
+    so os modulos                          252            0   False
+    fonte + unload_all_models() forcado    252            0   False
+    os dois                                252            0   False
+
+`ModelPatcher.load` foi instrumentado e **nao e chamado durante o encode**: este arquivo de 2,4 GiB
+sobe inteiro dentro do `load_clip`, entao a linha 1016 rodou uma vez, antes da escrita, com True.
+A linha do `unload` forcado e o controle que nomeia o mecanismo. A regra real nao e "fonte" nem
+"modulo": e **se `load` roda entre a escrita e o forward**, o que depende do estado da VRAM. Escrever
+nos dois lugares e imune a ordem, e e o que as duas ferramentas fazem agora.
+
+O que pegou isso foi o proprio aviso do `probe_te_lock_cost.py` ("o braco DESTRAVADO nao chamou o
+caminho de 4 bits"). Um probe que so comparasse saidas teria dito "soltar nao muda nada".
+
+### A foto
+
+Mesmo modelo de difusao, mesma semente, so o encoder muda. Prompt longo pedindo um pescador
+**remendando uma rede**, seis sementes. As 18 imagens sao boas fotos e ha uma pessoa em todas. O
+que muda e se a rede -- o objeto da frase -- aparece:
+
+    BF16              6/6
+    W4A4 travado      5/6
+    W4A4 solto        0/6      vira corda enrolada, sempre
+
+Falha de **aderencia ao prompt**, nao de qualidade, e nenhum cosseno mostraria: o braco solto fica
+em 0,877-0,949 contra o BF16. Contagem a olho, um observador, 18 imagens.
+
+### Defeitos das proprias ferramentas, pegos pelos proprios controles
+
+- `probe_encoder_visual.py` imprimiu **"controle geral: PASSOU"** numa execucao em que os tres
+  bracos morreram no import. O controle so caia por uma comparacao que o contradissesse, e zero
+  comparacoes nao contradizem nada -- um controle so-de-recusa passa inteiro para uma ferramenta que
+  morre sempre. Agora checa PRESENCA primeiro.
+- O decodificador imprimiu tabela de pixel **vazia** porque procurava a referencia pelo nome literal
+  `bf16` e os bracos se chamam `curto_bf16`/`longo_bf16`. Cabecalho sem linhas le-se como "nada a
+  reportar", nao como "nao achei a referencia".
+
+Nao coberto: dois prompts, seis sementes, um modelo de difusao, 8 passos a cfg 1,0. A contagem da
+rede e de um observador. O card foi reescrito e **nao publicado**: o token do HuggingFace ativo e
+somente-leitura.
+
+---
+
+## Parte 45 -- 2026-09-03: a celula vazia do Z-Image, e o mecanismo que ia preenche-la estava invertido
+
+### O bloqueio era o W4A8, nao o ConvRot
+
+`quant_mixed` mede os dois formatos por camada para escolher entre eles, e o caminho W4A8 so aceita
+`convrot_groupsize` 256 -- entao o unico conversor com perfil `zimage` estava pinado ali.
+`--somente-w4a4` nao mede nem escreve W4A8, e por isso nao preflighta aqueles dois ops. Ele **recusa**
+`--keep-bf16-error` e `--uncalibrated w4a8` em vez de escrever em silencio um formato cujo criterio de
+selecao nao existiu. Em cg 256 produz arquivo **byte a byte identico** ao `zimage-v2-w4a4` publicado,
+que e a checagem de que a flag nao mexeu no que nao devia.
+
+Nao foi escrito perfil `zimage` no `quant_w4a4`: as duas tabelas `PROFILE_PATTERNS` da arvore tem
+significados incompativeis e copiar uma para a outra e a armadilha ja catalogada.
+
+### A alavanca anda para o outro lado
+
+O criterio previa: grupo maior = rotacao mais grossa = mais erro. Medido sobre a **intersecao** de
+camadas que todos os valores aceitam (uma camada so entra se `shape[1] %% cg == 0`, e o conversor
+seleciona 170 em cg 64, 170 em cg 256 e **34** em cg 1024 -- comparar populacoes diferentes nao
+mediria granularidade):
+
+    cg   16     0,1926
+    cg   64     0,1516
+    cg  256     0,1312
+    cg 1024     menor ainda
+
+Monotonico na direcao **oposta**. Uma rotacao de Hadamard de tamanho N espalha cada outlier por N
+canais, entao N maior mistura MAIS. "Mais grosso" era a intuicao de um quantizador por grupo, onde
+grupo maior significa uma escala para mais valores; a rotacao nao e isso. O controle escrito antes
+(`grupo menor tem de reduzir o erro`) disparou e impediu a leitura errada -- e inverteu qual braco
+era o candidato a quebrar.
+
+### A celula
+
+Render de quatro bracos, tres sementes, previsoes escritas antes:
+
+    braco    mediana   divergencia   imagem
+    BF16           -             -   boa        <- o controle de referencia
+    cg 256    0,1216        0,5557   boa
+    cg  64    0,1421        0,6095   boa
+    cg  16    0,1848        0,7280   DESTRUIDA 3/3
+
+    modelo               parametros   tolerado   NAO tolerado
+    Wan 2.1 VACE             1,3 B     0,0546        0,0793
+    Z-Image v2                ~6 B     0,1421        0,1848
+    HunyuanVideo 1.5         ~13 B     0,1837        0,2147
+
+Monotonica nas **duas** colunas, e as faixas nao se sobrepoem: 0,1848 destroi um modelo de ~6 B
+enquanto 0,1837 e tolerado num de ~13 B, 0,6% de distancia.
+
+### O achado que vale mais que a celula
+
+`tools/avaliar.py` casava o `.analysis.json` pelo **sha da fonte** e lia `err_w4a4` sem nunca olhar o
+`convrot_groupsize`. Os tres builds tem a mesma fonte, entao os tres recebiam a **mesma mediana
+0,1216** e o mesmo veredito -- o que desenha bem e o que desenha lixo. O erro por camada foi medido
+*em* um groupsize e nao transfere. Corrigido: camadas com groupsize diferente do da analise sao
+descartadas, e um arquivo sem analise no proprio groupsize ganha `analise_de_outro_groupsize` em vez
+de sair calado.
+
+Nao coberto: um prompt, tres sementes, um tamanho, uma placa. Nada foi medido entre 0,1421 e 0,1848.
