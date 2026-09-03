@@ -133,17 +133,25 @@ def mixed_probe_ops(args: argparse.Namespace) -> dict:
     ops = {
         "quantize_convrot_w4a4_weight": {"convrot_groupsize": args.convrot_groupsize},
         "convrot_w4a4_linear": {"convrot_groupsize": args.convrot_groupsize},
-        "quantize_w4a8_int8_weight": {"convrot_groupsize": args.convrot_groupsize,
-                                      "group_size": args.group_size,
-                                      # measure_layer() always passes codebook=True
-                                      "codebook": True},
-        "w4a8_int8_linear": {"convrot_groupsize": args.convrot_groupsize,
-                             "group_size": args.group_size, "codebook": True},
     }
+    # Com `--somente-w4a4` os dois ops de W4A8 nao sao chamados, entao exigi-los no preflight
+    # recusaria conversoes validas em cg != 256 -- que e exatamente o que a flag existe para
+    # permitir. O par continua obrigatorio no caminho normal.
+    somente = getattr(args, "somente_w4a4", False)
+    if not somente:
+        ops.update({
+            "quantize_w4a8_int8_weight": {"convrot_groupsize": args.convrot_groupsize,
+                                          "group_size": args.group_size,
+                                          # measure_layer() always passes codebook=True
+                                          "codebook": True},
+            "w4a8_int8_linear": {"convrot_groupsize": args.convrot_groupsize,
+                                 "group_size": args.group_size, "codebook": True},
+        })
     # REQUIRED_OPS is the list this file's own docstring promises to check. Keeping the two in
     # one place would be tidier; keeping them in two with this check is what stops a future op
     # being added to the promise and silently not probed.
-    missing = [name for name in REQUIRED_OPS if name not in ops]
+    exigidos = REQUIRED_OPS[:2] if somente else REQUIRED_OPS
+    missing = [name for name in exigidos if name not in ops]
     if missing:
         raise SystemExit(f"mixed_probe_ops has no configuration for {missing}, which "
                          "REQUIRED_OPS says must resolve to CUDA before any number here means "
@@ -292,7 +300,16 @@ def finite(layer: str, metric: str, value) -> float:
     return float(value)
 
 
-def validate_analysis_rows(rows, origin: str) -> None:
+def metricas_exigidas(args) -> tuple:
+    """Quais colunas de erro uma linha calibrada precisa ter, neste modo.
+
+    Sem isto, reusar um `--analysis` gravado em `--somente-w4a4` no caminho normal passaria pela
+    validacao com `err_w4a8` ausente e so quebraria la na frente, na decisao -- longe da causa.
+    """
+    return ERROR_METRICS[:2] if getattr(args, "somente_w4a4", False) else ERROR_METRICS
+
+
+def validate_analysis_rows(rows, origin: str, metricas=ERROR_METRICS) -> None:
     """Every calibrated row must carry a shape and three finite errors, whoever produced it.
 
     The measurement branch already cannot emit a non-finite metric (`measure_layer` refuses), but
@@ -314,7 +331,7 @@ def validate_analysis_rows(rows, origin: str) -> None:
                 "the input hold the same weights; a row without one cannot be checked.")
         if not row.get("calibrated"):
             continue
-        for metric in ERROR_METRICS:
+        for metric in metricas:
             if metric not in row:
                 raise SystemExit(
                     f"{origin}: {layer} is marked calibrated but has no {metric!r}.")
@@ -323,7 +340,8 @@ def validate_analysis_rows(rows, origin: str) -> None:
 
 def measure_layer(layer: str, weight: torch.Tensor, x: torch.Tensor, ck,
                   group_size: int, convrot_groupsize: int,
-                  weights: torch.Tensor | None = None) -> dict:
+                  weights: torch.Tensor | None = None,
+                  somente_w4a4: bool = False) -> dict:
     """Relative L2 of each format against a float32 reference, on this layer's real input.
 
     Both operands must already be MEASURE_DTYPE; this function casts neither, because the cast it
@@ -343,6 +361,16 @@ def measure_layer(layer: str, weight: torch.Tensor, x: torch.Tensor, ck,
     got4 = ck.convrot_w4a4_linear(x, qdata4, wscales4, None, convrot_groupsize, 64)
     result["err_w4a4"] = finite(layer, "err_w4a4", relative(reference, got4, weights))
     del qdata4, wscales4, got4
+
+    # `--somente-w4a4` existe por causa de um limite do caminho W4A8, nao do ConvRot. Medido em
+    # 2026-09-01 com K=2048: o W4A4 quantiza E executa em convrot_groupsize 16, 64, 256 e 1024,
+    # enquanto o W4A8 levanta `convrot rotate kernel only supports group_size 256` em tudo que
+    # nao for 256. Como este arquivo mede os DOIS formatos por camada para escolher entre eles,
+    # ele tocava o caminho W4A8 mesmo quando o resultado ia ser 170/170 em W4A4 -- e ficava
+    # pinado em 256. Com a flag ele nao mede o que nao vai usar, e a alavanca do groupsize abre.
+    if somente_w4a4:
+        del reference
+        return result
 
     qdata8, s_rel, s_channel, correction, codebook = ck.quantize_w4a8_int8_weight(
         weight, group_size=group_size, convrot_groupsize=convrot_groupsize,
@@ -413,6 +441,12 @@ def parse_args() -> argparse.Namespace:
                              "calibracao com 'sample_sigma'.")
     parser.add_argument("--group-size", type=int, default=16)
     parser.add_argument("--convrot-groupsize", type=int, default=256)
+    parser.add_argument("--somente-w4a4", action="store_true",
+                        help="nao mede nem escreve W4A8: toda camada selecionada vai a "
+                             "convrot_w4a4. Existe para destravar --convrot-groupsize != 256, "
+                             "que so o caminho W4A8 recusa. RECUSA --keep-bf16-error e "
+                             "--uncalibrated w4a8; IGNORA --promote-error e --budget, que so "
+                             "decidem promocoes e aqui nao ha para onde promover.")
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
 
@@ -424,6 +458,17 @@ def main() -> int:
         raise SystemExit("Input must be an existing .safetensors file")
     if not 0.0 <= args.budget <= 1.0:
         raise SystemExit("--budget must be between 0.0 and 1.0")
+    # Recusas do modo novo. Uma flag definida em cima de um erro W4A8 nao pode ser aceita em
+    # silencio num modo que nao mede erro W4A8: recusar custa um segundo, e produzir um arquivo
+    # cujo criterio de selecao nunca existiu custa a confianca no arquivo.
+    if args.somente_w4a4:
+        if args.keep_bf16_error is not None:
+            raise SystemExit("--keep-bf16-error compara contra err_w4a8, que --somente-w4a4 nao "
+                             "mede. Tire uma das duas flags.")
+        if args.uncalibrated == "w4a8":
+            raise SystemExit("--somente-w4a4 nao preflighta o caminho W4A8, entao nao pode "
+                             "escrever camada asym_w4a8_int8 para as nao calibradas. Escolha "
+                             "--uncalibrated bf16 (deixa em alta precisao) ou fail (recusa).")
     if not args.calibration and not args.analysis:
         raise SystemExit("Give --calibration to measure, or --analysis to reuse a measurement")
 
@@ -524,7 +569,7 @@ def main() -> int:
                 f"A analise foi medida com --sigma-weight {recorded_sw!r} e esta execucao pede "
                 f"{args.sigma_weight!r}. Os campos err_* tem o mesmo nome nos dois casos e "
                 "significam coisas diferentes. Re-meca com --calibration.")
-        validate_analysis_rows(analysis.get("layers"), origin)
+        validate_analysis_rows(analysis.get("layers"), origin, metricas_exigidas(args))
         shapes = {row["layer"]: tuple(row["shape"]) for row in analysis["layers"]}
         for name, info in header.items():
             stem = name.removesuffix(".weight")
@@ -639,7 +684,8 @@ def main() -> int:
                         f"property of the layer. Recapture with tools/calibrate_activations.py.")
                 w = sigma_weights(args.sigma_weight, entry.get("sample_sigma"), stem)
                 measured = measure_layer(stem, weight, x, ck,
-                                         args.group_size, args.convrot_groupsize, w)
+                                         args.group_size, args.convrot_groupsize, w,
+                                         somente_w4a4=args.somente_w4a4)
                 measured.update({"layer": stem, "shape": info["shape"], "calibrated": True,
                                  "rows": int(entry["rows"]),
                                  "sigma_weight": args.sigma_weight,
@@ -675,7 +721,7 @@ def main() -> int:
     # Both branches land here, and nothing downstream reads an error metric before this line.
     # The measurement branch cannot produce a non-finite one (`measure_layer` refuses), but a
     # reused --analysis file is not necessarily one this tool wrote.
-    validate_analysis_rows(analysis["layers"], "analysis")
+    validate_analysis_rows(analysis["layers"], "analysis", metricas_exigidas(args))
 
     by_layer = {row["layer"]: row for row in analysis["layers"]}
 
@@ -877,6 +923,7 @@ def main() -> int:
             "keep_bf16_error": args.keep_bf16_error,
             "budget": args.budget,
             "uncalibrated": args.uncalibrated,
+            "somente_w4a4": bool(args.somente_w4a4),
             "sigma_weight": args.sigma_weight,
         },
         "layer_counts": counts,

@@ -67,6 +67,76 @@ Cosine **0.9896–0.9900** against BF16. The absolute maximum barely moves (1375
 standard deviation is nearly untouched (63.57 → 63.24), so this is not a scale distortion — it is
 distributed noise.
 
+**Read the next section before you trust that cosine.** It describes the *locked* path — 4-bit
+weights with BF16 math, which is what stock ComfyUI runs. The 4-bit *kernel* costs 4.23x more, and
+until 2026-09-03 this card had no image to show what that looks like.
+
+---
+
+## What it actually looks like
+
+Same diffusion model (Z-Image v2 BF16, **not quantized**), same seed, same sampler, same steps.
+**Only the encoder file changes.** Any difference below comes from the encoder, because there is
+nowhere else it can come from.
+
+| arm | file | what actually runs |
+|---|---|---|
+| BF16 | 7.49 GiB | full precision |
+| W4A4 **locked** | 2.42 GiB | 4-bit weights, BF16 math — **what stock ComfyUI gives you** |
+| W4A4 **released** | 2.42 GiB | the real 4-bit kernel — what this format implies |
+
+Counted during the encodes that produced these images, so the arm labels are measured, not assumed:
+
+```
+BF16              convrot_w4a4 kernel calls    0    dequantize    0
+W4A4 locked       convrot_w4a4 kernel calls    0    dequantize  504
+W4A4 released     convrot_w4a4 kernel calls  504    dequantize    0
+```
+
+### Short prompt — 22 tokens
+
+`a red apple on a weathered wooden table, soft window light`
+
+![short prompt, three arms, three seeds](images/prompt_curto.png)
+
+An apple on a table in 9 of 9. The three arms are interchangeable here. One seed of the released arm
+hallucinated a block of garbled text along the bottom edge; neither other arm did.
+
+### Long prompt — about 130 tokens
+
+`a weathered fisherman mending a net on a stone quay at dawn, thick wool sweater stiff with salt,
+hands cracked from cold water, coiled rope and a rusted iron cleat beside him, low mist over the
+harbour, ...`
+
+![long prompt, three arms, six seeds](images/prompt_longo.png)
+
+Every one of these 18 images is a good photograph, and a person is present in all 18. What changes is
+whether the model renders **the thing the prompt is about**. Counting the net, by eye, one observer,
+six seeds:
+
+| arm | net present |
+|---|---|
+| BF16 | **6 / 6** |
+| W4A4 locked | **5 / 6** |
+| W4A4 released | **0 / 6** |
+
+The released arm turns "mending a net" into a man handling coiled rope, every single time. It keeps
+the quay, the boat, the mist, the sweater and the light, and drops the object of the sentence.
+
+This is a **prompt-adherence** failure, not an image-quality failure, and no cosine would have shown
+it: the released arm's conditioning sits at cosine 0.877–0.949 against BF16, which reads like a high
+number right up until you look at what it draws.
+
+Pixel distance to the same-seed BF16 render, as an ordering only — a free-running sampler measures
+chaos as much as fidelity, so this ranks arms and does not grade them: on the long prompt the
+released arm is farther than the locked arm in **6 of 6** seeds; on the short prompt the two swap
+places seed to seed, 4–2.
+
+**What this means in practice.** Releasing the locks is what makes the 4-bit kernel run, and the
+kernel is what makes this file faster than BF16 on long prompts. On this model that speed costs
+prompt adherence on exactly the long prompts that make it worth having. If you release the locks,
+check your outputs against the BF16 encoder on your own prompts before shipping.
+
 ---
 
 ## What it costs in speed, and why the sign depends on your prompt
@@ -93,12 +163,44 @@ An earlier version of this table claimed the cost scaled with weight size. That 
 argued rather than measured, and varying one axis refused it. The sequence length is what sets the
 sign.
 
-Releasing the locks is not something any ComfyUI node exposes today. It needs
-`clip.patcher.force_cast_weights = False` (on the patcher, **not** on the modules — `model_patcher.py`
-rewrites the module attribute on every load to GPU, so a module-level patch survives only by
-accident of VRAM state) plus popping `manual_cast_dtype`. **Accuracy costs more when you do:** on
-this file the 4-bit weight alone costs 1.44e-1 against its BF16 twin, and releasing takes it to
-6.09e-1 — 4.23x.
+### How to release the locks — corrected 2026-09-03
+
+An earlier version of this card said to set `clip.patcher.force_cast_weights = False` on the patcher,
+**not** on the modules, because `model_patcher.py:1016` rewrites the module attribute on every load to
+GPU. **Measured on this file, that recipe does nothing.** One axis varied, counting kernel calls
+during a real encode:
+
+| what you patch | 4-bit kernel calls | dequantize calls | `comfy_force_cast_weights` |
+|---|---|---|---|
+| nothing | 0 | 504 | True |
+| the patcher only *(the old advice)* | **0** | 504 | **True** |
+| the modules only | 504 | 0 | False |
+| patcher + a forced `unload_all_models()` | 504 | 0 | False |
+| **both** | **504** | **0** | **False** |
+
+`ModelPatcher.load` was instrumented and is **not called during the encode**: this file is small
+enough that ComfyUI loads it fully inside `load_clip`, so line 1016 ran once, before the patch, with
+`True`. Patching the source afterwards reaches no module at all. The forced-unload row proves the
+mechanism — make `load` run again and the source patch does propagate.
+
+So the rule is neither "patch the source" nor "patch the modules". It is **whether `load` runs
+between your patch and your forward**, which depends on VRAM state at that instant — the same
+instability the old advice was written to fix, pointed the other way. Patch **both** and it stops
+mattering:
+
+```python
+clip.patcher.force_cast_weights = False
+clip.patcher.object_patches.pop("manual_cast_dtype", None)
+clip.encode_from_tokens_scheduled(clip.tokenize("warmup"))   # let it load
+for m in clip.cond_stage_model.modules():
+    if getattr(m, "layout_type", None) is not None:
+        m.comfy_force_cast_weights = False
+        m._full_precision_mm = False
+```
+
+**Accuracy costs more when you do:** on this file the 4-bit weight alone costs 1.44e-1 against its
+BF16 twin, and releasing takes it to 6.09e-1 — 4.23x. The images above are what that buys and what
+it costs.
 
 ---
 
@@ -156,10 +258,16 @@ encoder wrapper carries no generation head.
 ## Not covered
 
 One card for the fidelity numbers (3090) and one for the timing table (3080 Ti). Three prompts for
-the conditioning comparison, all short. No SASS inspection. No perceptual evaluation of images
-generated through this encoder — the conditioning distance is measured, the *visual* consequence is
-not. The lock-release timings come from a post-load monkeypatch, not from anything ComfyUI offers a
-user today. Only `convrot_groupsize` 256 was built. And the fidelity cost of releasing the locks is
+the conditioning comparison, all short. No SASS inspection. The lock-release timings come from a
+post-load monkeypatch, not from anything ComfyUI offers a user today.
+
+The image section covers **two prompts, six seeds, one diffusion model, 8 steps at cfg 1.0** — a
+sample, not an evaluation. The net count is **one observer reading 18 images**, not an automated
+metric, and nobody has checked whether the same thing happens on another diffusion model or on a
+long prompt about a different object. The comparison is also free-running: three encoders send the
+sampler down three trajectories, so the *composition* differences carry much less signal than the
+missing-object count does. What would change the conclusion: the net surviving on other long
+prompts, or a second observer counting differently. Only `convrot_groupsize` 256 was built. And the fidelity cost of releasing the locks is
 **not** a property of the W4A4 format: two different public W4A4 encoders differ by 6x in that
 number, so it cannot be quoted without naming the file.
 

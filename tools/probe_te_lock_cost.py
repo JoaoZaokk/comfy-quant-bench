@@ -11,7 +11,12 @@ COMO SE DESTRAVA, e a armadilha. `comfy_force_cast_weights` nao pode ser escrito
 GPU. Escrever nele funciona so se o modelo ja estava residente, o que depende do estado da
 VRAM -- a mesma linha de comando deu 350 chamadas ao kernel numa execucao e 0 na seguinte.
 Aqui se desliga na FONTE, `clip.patcher.force_cast_weights = False`, e o proprio `patch_model`
-propaga. `_full_precision_mm` continua sendo escrito no modulo, mas DEPOIS do primeiro load,
+propaga -- SO QUE ISSO SO VALE SE `load` RODAR DE NOVO DEPOIS DA ESCRITA. Medido em 2026-09-03:
+num arquivo pequeno (qwen_3_4b, 2,4 GiB) o modelo sobe inteiro ja dentro do `load_clip`,
+`ModelPatcher.load` nao e chamado outra vez, e soltar na fonte nao chega a modulo nenhum -- 0
+chamadas de kernel, e este probe disparou o proprio aviso. Escrever no modulo funciona nesse caso;
+forcar `unload_all_models()` tambem. Por isso agora se escreve nos DOIS lugares.
+`_full_precision_mm` continua sendo escrito no modulo, mas DEPOIS do primeiro load,
 para ficar do mesmo lado da barreira -- e o estado reportado tambem e lido depois, senao o
 relatorio descreve uma execucao diferente da que foi medida.
 
@@ -135,6 +140,10 @@ try:
     if DESTRAVA:
         for m in quant:
             m._full_precision_mm = False
+            # Ver o bloco "A DESTRAVA E POR DOIS LADOS" no cabecalho: soltar so na fonte deixou
+            # este proprio probe com 0 chamadas de kernel no qwen_3_4b, e ele disparou o proprio
+            # aviso "o braco DESTRAVADO nao chamou o caminho de 4 bits".
+            m.comfy_force_cast_weights = False
     # Lido AGORA, depois do primeiro carregamento na GPU. A versao anterior lia antes e
     # reportava um estado que `patch_model` ainda ia sobrescrever -- um relatorio que descrevia
     # uma execucao diferente da que foi medida.

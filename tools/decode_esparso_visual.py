@@ -40,6 +40,14 @@ from PIL import Image, ImageDraw
 
 ROTULOS = {
     "bf16": "BF16 (referencia)  16 bits/peso",
+    # bracos do probe de encoder: <prompt>-<braco>. O rotulo diz qual dos TRES caminhos rodou,
+    # porque "w4a4" sozinho era ambiguo entre peso-de-4-bits-com-matematica-de-16 e kernel real.
+    "curto_bf16": "prompt CURTO  TE BF16 7,49 GiB (referencia)",
+    "curto_w4a4t": "prompt CURTO  TE W4A4 2,42 GiB TRAVADO (peso 4b, math BF16)",
+    "curto_w4a4s": "prompt CURTO  TE W4A4 2,42 GiB SOLTO (kernel 4 bits real)",
+    "longo_bf16": "prompt LONGO  TE BF16 7,49 GiB (referencia)",
+    "longo_w4a4t": "prompt LONGO  TE W4A4 2,42 GiB TRAVADO (peso 4b, math BF16)",
+    "longo_w4a4s": "prompt LONGO  TE W4A4 2,42 GiB SOLTO (kernel 4 bits real)",
     "w4a4": "W4A4 ConvRot (hoje)  4,0 bits/peso",
     "esp_peso": "2:4 par Wanda + int4, PESO  2,5 bits/peso",
     "esp_peso_ativ": "2:4 par Wanda + int4, PESO+ATIV  2,5 bits/peso",
@@ -63,11 +71,15 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--vae", default="ae.safetensors")
+    # `--dir` existe porque a versao anterior tinha o diretorio fixo no modulo e tres regimes
+    # diferentes foram decodificados para a mesma pasta sem ninguem perceber.
+    p.add_argument("--dir", type=Path, default=SAIDA)
     a = p.parse_args(ARGV_REAL)
+    saida = a.dir
 
-    latentes = sorted(SAIDA.glob("latent_*.pt"))
+    latentes = sorted(saida.glob("latent_*.pt"))
     if not latentes:
-        print(f"nenhum latente em {SAIDA}", file=sys.stderr)
+        print(f"nenhum latente em {saida}", file=sys.stderr)
         return 2
     vae = comfy.sd.VAE(sd=comfy.utils.load_torch_file(
         folder_paths.get_full_path_or_raise("vae", a.vae)))
@@ -79,12 +91,16 @@ def main() -> int:
         with torch.no_grad():
             img = vae.decode(torch.load(lat, map_location="cpu"))
         arr = (img[0].detach().cpu().numpy() * 255.0).clip(0, 255).astype("uint8")
-        Image.fromarray(arr).save(SAIDA / f"{miolo}.png")
+        Image.fromarray(arr).save(saida / f"{miolo}.png")
         por_semente.setdefault(semente, {})[braco] = arr
         print(f"{miolo}: {arr.shape} -> {miolo}.png")
 
-    ordem = ["bf16", "w4a4", "esp_peso", "esp_peso_ativ", "convrot_peso", "convrot_peso_ativ",
-             "so_poda_elem", "so_poda_par"]
+    conhecidos = ["bf16", "w4a4", "esp_peso", "esp_peso_ativ", "convrot_peso",
+                  "convrot_peso_ativ", "so_poda_elem", "so_poda_par",
+                  "curto_bf16", "curto_w4a4t", "curto_w4a4s",
+                  "longo_bf16", "longo_w4a4t", "longo_w4a4s"]
+    vistos = {b for d in por_semente.values() for b in d}
+    ordem = [b for b in conhecidos if b in vistos] + sorted(vistos - set(conhecidos))
     relatorio: dict[str, dict[str, float]] = {}
     folhas = []
     for semente in sorted(por_semente):
@@ -93,13 +109,27 @@ def main() -> int:
             continue
         # Distancia no pixel contra o BF16 da MESMA semente. Contra outra semente nao mediria nada:
         # a trajetoria do amostrador muda inteira e a distancia vira ruido de caos.
-        base = por_semente[semente].get("bf16")
-        if base is not None:
-            for b in tem:
+        # A tabela de pixel saiu VAZIA na primeira execucao com estes bracos porque a referencia
+        # era procurada pelo nome literal "bf16" e aqui eles se chamam "curto_bf16"/"longo_bf16".
+        # Um cabecalho sem linhas le-se como "nada a reportar" em vez de "nao achei a referencia".
+        # A referencia certa e sempre a do MESMO prefixo, nunca uma global.
+        def referencia_de(braco):
+            prefixo = braco.rsplit("_", 1)[0] if "_" in braco else ""
+            for cand in (f"{prefixo}_bf16", "bf16"):
+                if cand in por_semente[semente]:
+                    return cand
+            return None
+        sem_ref = [b for b in tem if referencia_de(b) is None]
+        if sem_ref:
+            print(f"  s{semente}: sem referencia bf16 para {sem_ref} -- sem distancia de pixel")
+        for b in tem:
+            base = por_semente[semente].get(referencia_de(b) or "")
+            if base is not None:
                 d = por_semente[semente][b].astype("float32") - base.astype("float32")
                 mse = float((d ** 2).mean())
                 relatorio.setdefault(semente, {})[b] = {
                     "rmse_pixel": mse ** 0.5,
+                    "referencia": referencia_de(b),
                     "psnr_db": (10 * np.log10(255.0 ** 2 / mse)) if mse > 0 else float("inf"),
                 }
         tiras = [escreve(Image.fromarray(por_semente[semente][b]),
@@ -110,7 +140,7 @@ def main() -> int:
         for t in tiras:
             folha.paste(t, (x, 0))
             x += t.width
-        cam = SAIDA / f"folha_s{semente}.png"
+        cam = saida / f"folha_s{semente}.png"
         folha.save(cam)
         folhas.append(cam)
         print(f"folha da semente {semente} -> {cam.name}")
@@ -124,10 +154,10 @@ def main() -> int:
             im = Image.open(f)
             tudo.paste(im, (0, y))
             y += im.height
-        tudo.save(SAIDA / "folha_completa.png")
+        tudo.save(saida / "folha_completa.png")
         print(f"folha completa -> folha_completa.png  ({larg}x{alt})")
 
-    (SAIDA / "pixel.json").write_text(json.dumps(relatorio, indent=2), encoding="utf-8")
+    (saida / "pixel.json").write_text(json.dumps(relatorio, indent=2), encoding="utf-8")
     print()
     print(f"{'semente':>10s} {'braco':>16s} {'RMSE pixel':>11s} {'PSNR dB':>9s}")
     print("-" * 52)
