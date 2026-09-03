@@ -82,15 +82,32 @@ breaks is **not a property of the format**:
 | model | parameters | tolerated | not tolerated |
 |---|---|---|---|
 | Wan 2.1 VACE | 1.3 B | 0.0546 | 0.0793 |
-| **Z-Image v2** | **~6 B** | **0.1241** | ***not measured*** |
+| **Z-Image v2** | **~6 B** | **0.1421** | **0.1848** |
 | HunyuanVideo 1.5 family | ~13 B | 0.1837 | 0.2147, and 0.2163 on `capybara_v0.1` |
 
 Monotone in the tolerated column. Three families make that a hypothesis, not a law.
 
-**Z-Image's upper bound is honestly empty**, and that gap is worth stating rather than papering
-over: what is known is that 0.1241 works, and that value is the *most aggressive* build measured
-here — pure W4A4, every one of its 170 layers at 4 bits. Nothing above it was ever tried, so where
-this model stops working has not been measured. An earlier version of this table filled that cell with 0.2163, credited
+**The Z-Image cell was filled on 2026-09-03, and the mechanism that was going to fill it was
+backwards.** The only axis left was `convrot_groupsize` — the model was already 170/170 layers at
+4 bits, so there was nothing left to promote. The written prediction was that a *larger* rotation
+group would give more error ("coarser rotation, less able to spread outliers"). Measured over the
+intersection of layers every value accepts, four points, monotone in the opposite direction: cg 16
+0.1926, cg 64 0.1516, cg 256 0.1312, cg 1024 lower still. A Hadamard rotation of size N spreads each
+outlier across N channels, so a larger N mixes *more*. The pre-written control — a smaller group must
+reduce the error — is what caught it.
+
+Rendered four arms, three seeds: BF16 good (the reference control), cg 256 (0.1216) good, cg 64
+(0.1421) good, **cg 16 (0.1848) destroyed in 3 of 3**.
+
+Note where that lands: **0.1848 destroys a ~6 B model while 0.1837 is tolerated on a ~13 B one.** The
+bands do not overlap and they sit 0.6% apart, which is what you would expect if model size sets the
+line. Three families are still three families. Nothing was measured between 0.1421 and 0.1848, so the
+exact turning point is not a fact — the two ends are.
+
+
+**Z-Image's upper bound was empty until 2026-09-03**, and 0.1241 remains the most conservative
+value known to work — pure W4A4, every one of its 170 layers at 4 bits. The break is now measured
+too; see the note below. An earlier version of this table filled that cell with 0.2163, credited
 to `capybara_v0.1` as a Z-Image checkpoint. Read from the file, `capybara_v0.1` carries 1364 tensors
 and 54 `double_blocks` — HunyuanVideo 1.5's architecture — against Z-Image's 453 tensors and zero.
 The evidence was real; it was in the wrong row.

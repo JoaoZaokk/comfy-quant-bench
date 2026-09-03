@@ -112,11 +112,23 @@ Bracketing with mixed builds puts this model's line **between 0.0546 and 0.0793*
 | model | parameters | tolerated | not tolerated |
 |---|---|---|---|
 | **Wan 2.1 VACE** | **1.3 B** | **0.0546** | **0.0793** |
-| Z-Image v2 | ~6 B | 0.1241 | *not measured* |
+| Z-Image v2 | ~6 B | 0.1421 | 0.1848 |
 | HunyuanVideo 1.5 family | ~13 B | 0.1837 | 0.2147, and 0.2163 on `capybara_v0.1` |
 
+**The Z-Image row stopped saying *not measured* on 2026-09-03.** Its break was found by moving
+`convrot_groupsize`, the only axis left once the model was already 170/170 layers at 4 bits: cg 64
+(0.1421) renders fine in 3 of 3 seeds and cg 16 (0.1848) is destroyed in 3 of 3. The prediction
+written beforehand had the mechanism backwards — it expected a *larger* rotation group to be worse,
+and a larger Hadamard rotation actually spreads each outlier across more channels, so it is better.
+The pre-written control (a smaller group must reduce the error) is what caught that.
+
+That fills the table's last gap, and where it lands is the interesting part: **0.1848 destroys a ~6 B
+model while 0.1837 is tolerated on a ~13 B one.** The bands do not overlap and sit 0.6% apart. Nothing
+was measured between 0.1421 and 0.1848, so the exact turning point is not a fact; the two ends are.
+
 **There is no threshold of the format. There is one per model**, and across these three families the
-tolerated error grows monotonically with model size. The practical consequence is blunt:
+tolerated error grows monotonically with model size — now in **both** columns, not just the tolerated
+one. The practical consequence is blunt:
 `--promote-error 0.15`, a default chosen on a 6B model and carried everywhere since, writes a file
 here that loads cleanly, dispatches natively, passes every structural check, and renders a smear.
 
