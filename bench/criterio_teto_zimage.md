@@ -132,3 +132,137 @@ Uma versao de comfy-kitchen (0.2.31), uma placa, uma forma de peso por chamada n
 medido o que acontece com um checkpoint JA escrito em cg 1024 -- se carrega e quebra no forward, ou
 se nem carrega. E nada aqui mede QUALIDADE: 1024 aceitar nao diz que a imagem presta, que era a
 pergunta original.
+
+
+---
+
+## 2026-09-03: o bloqueio caiu, e a hipotese mecanica estava INVERTIDA
+
+### O bloqueio
+
+Era o caminho W4A8, nao o ConvRot. `quant_mixed` mede os DOIS formatos por camada para escolher
+entre eles, e o W4A8 so aceita `convrot_groupsize` 256, entao o conversor inteiro ficava pinado.
+Resolvido com `--somente-w4a4`, que nao mede nem escreve W4A8 e por isso nao preflighta aqueles
+dois ops. Ele **recusa** `--keep-bf16-error` e `--uncalibrated w4a8` em vez de escrever em silencio
+um formato cujo criterio de selecao nao existiu.
+
+Nao foi escrito perfil `zimage` no `quant_w4a4`: as duas tabelas `PROFILE_PATTERNS` da arvore tem
+significados incompativeis (nome de tensor contra caminho de modulo) e copiar uma para a outra e a
+armadilha que o `CLAUDE.md` ja cataloga. Reusar a selecao de camada que ja esta provada nesta
+arquitetura custa menos codigo e nenhum perfil novo.
+
+### A armadilha do conjunto de camadas, que quase produziu um numero sem sentido
+
+Uma camada so entra se `shape[1] % convrot_groupsize == 0`. Rodando o conversor nos tres valores:
+**170** camadas em cg 64, **170** em cg 256, **34** em cg 1024. Comparar a mediana de 170 com a
+mediana de 34 OUTRAS nao mede granularidade -- mede qual subconjunto calhou de ser divisivel.
+`tools/probe_teto_groupsize.py` mede sobre a **intersecao**, mesmas ativacoes, mesma referencia.
+
+### O resultado: a alavanca existe, e anda para o outro lado
+
+Sobre as 34 camadas que os tres valores aceitam:
+
+    cg 64      0,1682     MAIS erro
+    cg 256     0,1400
+    cg 1024    0,1327     MENOS erro
+
+Sobre as 150 camadas calibradas que 16, 64 e 256 aceitam:
+
+    cg 16      0,1926     1,467x o cg256
+    cg 64      0,1516     1,155x o cg256
+    cg 256     0,1312
+
+Quatro pontos, monotonicos, na direcao **oposta** a previsao 1 deste documento. O
+`CONTROLE FALHOU` disparou exatamente como escrito: *"grupo menor NAO reduz o erro"*.
+
+**O mecanismo que este documento afirmava esta invertido.** Ele dizia: grupo maior = rotacao mais
+grossa = menos capacidade de espalhar outlier = mais erro. Uma rotacao de Hadamard de tamanho N
+espalha cada outlier por N canais, entao N **maior** mistura MAIS, nao menos -- a incoerencia
+melhora com o tamanho do grupo e o pico por grupo cai. "Mais grosso" descrevia a intuicao de um
+quantizador por grupo, onde grupo maior significa uma escala para mais valores; a rotacao nao e
+isso. O erro foi tratar duas coisas diferentes com a mesma palavra.
+
+Isso nao invalida o experimento: **inverte qual braco e o candidato a quebrar.** Nao e o 1024, que
+alem de melhor so alcanca 34 camadas. E o **cg 16**, que alcanca todas e mede 1,467x.
+
+### Previsoes novas, escritas ANTES do render
+
+1. `cg 16` (mediana 0,1926 na intersecao) **quebra a imagem**. E o unico braco que passa do topo do
+   Hunyuan tolerado (0,1837) e chega perto do quebrado dele (0,2147).
+2. `cg 64` (0,1516) **nao quebra**, no maximo degrada. Este e o controle intermediario: se ele
+   quebrar junto com o 16, o corte fica entre 0,1312 e 0,1516 e a celula ganha um valor bem mais
+   apertado -- ainda e resposta, so que outra.
+3. O braco **BF16 tem de sair bom**. Se sair ruim, o problema esta no VAE, no encoder ou nos
+   parametros, e nenhuma outra linha vale. E a licao que o Wan custou quatro renders.
+4. Nao sei se a mediana por camada prediz a imagem. Esta bancada ja mediu que nao prediz: 0,1837
+   correto contra 0,2147 destruido, e 0,1391 destruido contra 0,0956 bom. **Se os tres bracos
+   sairem bons**, a resposta e que o eixo do groupsize nao alcanca o teto do Z-Image, e a celula
+   continua vazia -- com um segundo obstaculo nomeado em vez de nenhum.
+
+### Condicoes de refutacao, ainda validas
+
+1. BF16 sai ruim -> nao publicar nenhuma linha.
+2. cg 16 nao quebra -> o eixo nao alcanca o teto; a celula continua vazia, e isso vai escrito.
+
+### Nao coberto, atualizado
+
+A mediana medida sobre a intersecao **nao e comparavel** com o 0,1241 publicado sobre as 170 -- ela
+sai sobre 150 ou 34 camadas conforme o conjunto. As comparacoes entre grupos sao validas porque
+compartilham o conjunto; a comparacao com a tabela publicada nao e. `cg 1024` nao foi construido
+como checkpoint: com 34 de 170 camadas quantizadas ele nao e o mesmo tipo de arquivo que os outros.
+
+
+---
+
+## RESULTADO, 2026-09-03: a celula esta preenchida, e as tres previsoes bateram
+
+Render de quatro bracos, tres sementes, 8 passos a 1024px, mesmo prompt, mesmo VAE
+(`bench/teto_zimage/imagens/folha_wan.png`):
+
+    braco     mediana (170 camadas)   divergencia   imagem
+    BF16                          -             -   boa            <- o controle, passou
+    cg 256                   0,1216        0,5557   boa
+    cg  64                   0,1421        0,6095   boa
+    cg  16                   0,1848        0,7280   DESTRUIDA 3/3
+
+As tres previsoes escritas antes bateram: `cg 16` quebra, `cg 64` nao quebra, BF16 sai bom. A
+divergencia acompanhou a ordem, o que nem sempre acontece nesta bancada -- na esparsidade ela subiu
+enquanto a imagem melhorava.
+
+**A tabela de tolerancia agora tem tres linhas cheias e e monotonica nas DUAS colunas:**
+
+    modelo               parametros   tolerado   NAO tolerado
+    Wan 2.1 VACE             1,3 B     0,0546        0,0793
+    Z-Image v2                ~6 B     0,1421        0,1848
+    HunyuanVideo 1.5         ~13 B     0,1837        0,2147
+
+E o detalhe que aperta a leitura: **0,1848 destroi o Z-Image de ~6 B e 0,1837 e tolerado no
+HunyuanVideo de ~13 B.** As duas faixas nao se sobrepoem, e a distancia entre elas e 0,6% -- que e
+exatamente o que se esperaria se o tamanho do modelo fosse o eixo. Tres pontos ainda sao tres
+pontos; isso e hipotese com mais apoio, nao lei.
+
+## O achado que vale mais que a celula: o avaliador era cego a este eixo
+
+`tools/avaliar.py` casava o `.analysis.json` pelo **sha da fonte** e lia `err_w4a4` de la, sem
+nunca olhar o `convrot_groupsize`. Como os tres builds tem a mesma fonte, os tres recebiam a
+**mesma mediana 0,1216** -- o que produz uma imagem linda e o que produz lixo, com o mesmo numero e
+o mesmo veredito. O erro por camada foi medido *em* um groupsize e nao vale nos outros.
+
+Corrigido na ferramenta: `mediana_efetiva` descarta camadas cujo groupsize nao case com o da
+analise, e quando nenhuma analise casa o arquivo ganha o achado `analise_de_outro_groupsize`
+dizendo em que valores existem analises e em qual ele esta -- em vez de sair sem veredito como se
+ninguem tivesse calibrado a fonte. Com as analises certas em disco, `cg 16` agora sai **REPROVADO**
+por `erro_acima_da_quebra` e `cg 64` sai limpo.
+
+## Uma validacao que veio de graca
+
+`--somente-w4a4` em `convrot_groupsize` 256 produziu um arquivo **byte a byte identico** ao
+`zimage-v2-w4a4` publicado -- mesmo tamanho, mesmo sha256. A flag nova nao mexeu no caminho em que
+nao devia mexer.
+
+## Nao coberto
+
+Um prompt, tres sementes, um tamanho, uma placa, um modelo. O `cg 1024` nao entrou no render: com
+34 de 170 camadas quantizadas ele nao e o mesmo tipo de arquivo. E o corte fica entre 0,1421 e
+0,1848 -- um intervalo largo; nada foi medido no meio, entao "0,1848 quebra" e "0,1421 nao quebra"
+sao os dois fatos, e o ponto exato da virada nao e um deles.

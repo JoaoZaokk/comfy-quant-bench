@@ -738,9 +738,16 @@ def main() -> int:
                 raise SystemExit(
                     f"{stem} has no usable measurement and --uncalibrated=fail was given. "
                     "Recalibrate, or choose --uncalibrated w4a8 (safe) or bf16 (unquantized).")
-            decision[stem] = "asym_w4a8_int8" if args.uncalibrated == "w4a8" else "bf16"
+            decision[stem] = ("asym_w4a8_int8"
+                              if args.uncalibrated == "w4a8" and not args.somente_w4a4
+                              else "bf16")
             continue
-        if args.keep_bf16_error is not None and row["err_w4a8"] > args.keep_bf16_error:
+        if args.somente_w4a4:
+            # Sem `err_w4a8` nao ha o que promover nem contra o que comparar: toda camada
+            # calibrada vai a W4A4. Os dois ramos abaixo LEEM `row["err_w4a8"]`, entao sem este
+            # desvio o modo novo decidia promocoes a partir de uma chave inexistente.
+            decision[stem] = "convrot_w4a4"
+        elif args.keep_bf16_error is not None and row["err_w4a8"] > args.keep_bf16_error:
             decision[stem] = "bf16"
         elif row["err_w4a4"] > args.promote_error:
             decision[stem] = "asym_w4a8_int8"
@@ -795,10 +802,15 @@ def main() -> int:
     measured_rows = [r for r in analysis["layers"] if r.get("calibrated")]
     if measured_rows:
         worst = sorted(measured_rows, key=lambda r: -r["err_w4a4"])[:12]
-        print(f"\n{'layer':<40}{'bf16':>9}{'w4a4':>9}{'w4a8':>9}{'crest p99':>11}  format")
+        # `w4a8` so entra no cabecalho quando foi medido: uma coluna de tracos passa por
+        # "zero" numa leitura rapida, e uma coluna ausente nao passa por nada.
+        tem8 = all("err_w4a8" in r for r in worst)
+        c8 = f"{'w4a8':>9}" if tem8 else ""
+        print(f"\n{'layer':<40}{'bf16':>9}{'w4a4':>9}{c8}{'crest p99':>11}  format")
         for row in worst:
+            v8 = f"{row['err_w4a8']:>9.4f}" if tem8 else ""
             print(f"{row['layer']:<40}{row['err_bf16']:>9.4f}{row['err_w4a4']:>9.4f}"
-                  f"{row['err_w4a8']:>9.4f}{row['crest_p99']:>11.2f}  {decision[row['layer']]}")
+                  f"{v8}{row['crest_p99']:>11.2f}  {decision[row['layer']]}")
         w4a4_rows = [r for r in measured_rows if decision[r["layer"]] == "convrot_w4a4"]
         if w4a4_rows:
             print(f"\nworst W4A4 error left in the model: "

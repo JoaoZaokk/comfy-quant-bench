@@ -202,9 +202,37 @@ Also read [AGENTS.md](AGENTS.md) (root policy) and [ComfyUI/AGENTS.md](ComfyUI/A
   ```
   modelo               parametros   tolerado   NAO tolerado
   Wan 2.1 VACE             1,3 B     0,0546        0,0793
-  Z-Image v2                ~6 B     0,1241        NAO MEDIDO
+  Z-Image v2                ~6 B     0,1421        0,1848
   HunyuanVideo 1.5         ~13 B     0,1837        0,2147  (e 0,2163 no capybara)
   ```
+
+  **A celula do Z-Image foi preenchida em 2026-09-03, e a hipotese mecanica que ia preenche-la
+  estava invertida.** O eixo e o `convrot_groupsize`: `bench/criterio_teto_zimage.md` previa que
+  grupo MAIOR daria mais erro ("rotacao mais grossa"). Medido sobre a intersecao de camadas que
+  todos os valores aceitam, quatro pontos monotonicos na direcao **oposta** -- cg 16 `0,1926`,
+  cg 64 `0,1516`, cg 256 `0,1312`, cg 1024 menor ainda. Uma rotacao de Hadamard de tamanho N
+  espalha cada outlier por N canais, entao N maior mistura MAIS. "Mais grosso" era a intuicao de um
+  quantizador por grupo, onde grupo maior significa uma escala para mais valores; a rotacao nao e
+  isso. O controle escrito antes (`grupo menor tem de reduzir o erro`) disparou e impediu a leitura
+  errada.
+
+  Renderizado com quatro bracos e tres sementes: BF16 bom (controle), cg 256 (0,1216) bom, cg 64
+  (0,1421) bom, **cg 16 (0,1848) destruido 3/3**. As tres previsoes escritas antes bateram. Repare
+  que a tabela agora e monotonica nas duas colunas e que **0,1848 destroi um modelo de ~6 B
+  enquanto 0,1837 e tolerado num de ~13 B** -- 0,6% separando as duas faixas, que e o que se
+  esperaria se o tamanho fosse o eixo. Tres pontos continuam sendo tres pontos.
+
+  **E o avaliador offline era cego a este eixo inteiro.** `tools/avaliar.py` casava o
+  `.analysis.json` pelo sha da FONTE e lia `err_w4a4` sem olhar o `convrot_groupsize`, entao os
+  tres builds -- mesma fonte -- recebiam a **mesma mediana 0,1216** e o mesmo veredito: o que
+  desenha bem e o que desenha lixo. Corrigido: camadas com groupsize diferente do da analise sao
+  descartadas, e um arquivo sem analise no proprio groupsize ganha o achado
+  `analise_de_outro_groupsize` em vez de sair calado. O bloqueio que impedia tudo isso era o
+  caminho **W4A8** (so aceita cg 256), nao o ConvRot; `quant_mixed --somente-w4a4` nao mede nem
+  escreve W4A8, e em cg 256 produz arquivo **byte a byte identico** ao `zimage-v2-w4a4` publicado.
+
+  Nao coberto: um prompt, tres sementes, um tamanho, uma placa. Nada foi medido entre 0,1421 e
+  0,1848, entao o ponto exato da virada nao e um fato -- os fatos sao as duas pontas.
 
   **A linha do capybara estava na fila errada, e este arquivo a publicou assim.** `capybara_v0.1` foi tratado como checkpoint da familia Z-Image e seu 0,2163 virou o teto do Z-Image. Lido do arquivo em 2026-09-01: **1364 tensores e 54 `double_blocks`** — arquitetura do HunyuanVideo 1.5 — contra os **453 tensores e zero** do Z-Image. Confere tambem por tamanho: 16 653 435 264 bytes contra os 16 653 368 128 do `hunyuanvideo1.5_720p_t2v_fp16`, 67 KiB de diferenca. A quebra e real e passa para a linha de ~13 B, onde concorda com o 0,2147 medido no proprio Hunyuan — e **o teto do Z-Image nunca foi medido**: sabe-se que 0,1241 funciona, e nada alem disso foi tentado. A monotonia na coluna do tolerado sobrevive; uma celula mudou de linha e outra ficou honestamente vazia. Corrigido nos tres cards do HuggingFace e no README publico no mesmo dia.
 

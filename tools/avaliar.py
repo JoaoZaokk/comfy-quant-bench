@@ -88,8 +88,10 @@ class Banda:
 BANDAS: dict[str, Banda] = {
     "wan_2_1": Banda("Wan 2.1 VACE", "1,3 B", 0.0546, 0.0793,
                      "o 0,1602 do W4A4 puro saiu destruido em tres sementes"),
-    "zimage": Banda("Z-Image v2", "~6 B", 0.1241, None,
-                    "ninguem tentou acima de 0,1241; o teto nunca foi medido"),
+    "zimage": Banda("Z-Image v2", "~6 B", 0.1421, 0.1848,
+                    "medido em 2026-09-03 movendo o convrot_groupsize, unico eixo que ainda "
+                    "andava: cg 64 (0,1421) rende imagem boa em 3 sementes e cg 16 (0,1848) "
+                    "destroi. O 0,1241 do cg 256 continua o mais conservador que se sabe bom"),
     "hunyuan_video_15": Banda("HunyuanVideo 1.5", "~13 B", 0.1837, 0.2147,
                               "duas quebras independentes: 0,2147 e 0,2163 no capybara_v0.1"),
 }
@@ -565,17 +567,39 @@ def classificar(mediana: float, banda: Banda) -> str:
 
 
 def mediana_efetiva(ck: Checkpoint, analise: dict) -> tuple[float, int] | None:
-    """Por camada, o erro do formato que aquela camada de fato recebeu. Mediana disso."""
+    """Por camada, o erro do formato que aquela camada de fato recebeu. Mediana disso.
+
+    O `convrot_groupsize` da analise tem de bater com o da camada, e esse foi um ponto cego real.
+    Ate 2026-09-03 esta funcao casava a analise so pelo sha da FONTE, e o erro por camada foi
+    medido *em* um groupsize -- entao tres builds do mesmo Z-Image diferindo so nesse valor
+    recebiam a mesma mediana 0,1216, com o render mostrando o cg 16 DESTRUIDO e os outros dois
+    bons. Uma analise de cg 256 nao descreve um arquivo cg 16, e devolver o numero dela como se
+    descrevesse e pior que nao devolver nada: passa por medicao.
+    """
     camadas_analise = {c["layer"]: c for c in analise.get("layers", [])
                        if isinstance(c, dict) and "layer" in c}
     chave = {"convrot_w4a4": "err_w4a4", "asym_w4a8_int8": "err_w4a8", "bf16": "err_bf16"}
+    cg_analise = analise.get("convrot_groupsize")
     erros: list[float] = []
     for camada, cfg in ck.camadas.items():
         formato = str(cfg.get("format", "")) if isinstance(cfg, dict) else str(cfg)
+        if cg_analise is not None and isinstance(cfg, dict):
+            cg_camada = cfg.get("convrot_groupsize")
+            if cg_camada is not None and cg_camada != cg_analise:
+                continue
         medida = camadas_analise.get(camada)
         if medida and chave.get(formato) in medida:
             erros.append(float(medida[chave[formato]]))
     return (statistics.median(erros), len(erros)) if erros else None
+
+
+def groupsizes_do_checkpoint(ck: Checkpoint) -> set:
+    """Os `convrot_groupsize` que as camadas deste arquivo declaram."""
+    saida = set()
+    for cfg in ck.camadas.values():
+        if isinstance(cfg, dict) and cfg.get("convrot_groupsize") is not None:
+            saida.add(cfg["convrot_groupsize"])
+    return saida
 
 
 @checagem(
@@ -597,6 +621,23 @@ def checar_erro(ck: Checkpoint) -> Iterator[Achado]:
     medidas = [(mediana_efetiva(ck, analise), arquivo) for analise, arquivo in ck.candidatas]
     medidas = [(m, arquivo) for m, arquivo in medidas if m]
     if not medidas:
+        # Silencio aqui era a forma do ponto cego. Se ha analise da mesma fonte mas nenhuma no
+        # groupsize deste arquivo, o motivo tem de aparecer -- senao o arquivo sai SEM VEREDITO
+        # como se ninguem nunca tivesse calibrado a fonte dele.
+        cgs_ck = groupsizes_do_checkpoint(ck)
+        cgs_an = {a.get("convrot_groupsize") for a, _ in ck.candidatas
+                  if a.get("convrot_groupsize") is not None}
+        if ck.candidatas and cgs_ck and cgs_an and not (cgs_ck & cgs_an):
+            yield Achado(OLHAR, "analise_de_outro_groupsize",
+                         f"ha {len(ck.candidatas)} analise(s) da mesma fonte, mas medidas em "
+                         f"convrot_groupsize {sorted(cgs_an)} e este arquivo usa "
+                         f"{sorted(cgs_ck)}. O erro por camada foi medido NUM groupsize e nao "
+                         f"vale nos outros: medido nesta bancada, cg 16 / 64 / 256 do mesmo "
+                         f"Z-Image dao 0,1926 / 0,1516 / 0,1312 na mesma populacao de camadas, e "
+                         f"so o cg 16 destroi a imagem. Recalibre em "
+                         f"{sorted(cgs_ck)} para ter veredito neste eixo",
+                         {"groupsize_do_arquivo": sorted(cgs_ck),
+                          "groupsize_das_analises": sorted(cgs_an)})
         return
 
     (mediana, casadas), origem = medidas[0]
