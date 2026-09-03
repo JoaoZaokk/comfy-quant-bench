@@ -60,7 +60,7 @@ import torch, torch.nn as nn, folder_paths, comfy.sd, comfy.sample
 
 UNET=%(UNET)r; CLIP=%(CLIP)r; PROMPT=%(PROMPT)r; NEG=%(NEG)r
 SEED=%(SEED)d; STEPS=%(STEPS)d; CFG=%(CFG)s; SIDE=%(SIDE)d
-OUTPT=%(OUTPT)r; MODO=%(MODO)r; CALIB=%(CALIB)r
+OUTPT=%(OUTPT)r; MODO=%(MODO)r; CALIB=%(CALIB)r; PESOS=%(PESOS)r
 
 model = comfy.sd.load_diffusion_model(folder_paths.get_full_path_or_raise("diffusion_models", UNET))
 
@@ -170,7 +170,26 @@ def q8(t):
     return (t / e).round().clamp(-127, 127) * e
 
 tocadas, com_wanda = [], 0
-if MODO != "nenhum":
+if MODO == "arquivo":
+    # Caminho curto: pesos ja calculados por tools/grava_pesos_recuperados.py. Nenhuma
+    # calibragem entra neste processo, entao `--disable-dynamic-vram` cabe na RAM.
+    from safetensors import safe_open
+    alvo_mods = dict(model.model.diffusion_model.named_modules())
+    faltando = 0
+    with safe_open(PESOS, framework="pt", device="cpu") as f:
+        meta_pesos = f.metadata() or {}
+        for chave in f.keys():
+            nome = chave[:-len(".weight")] if chave.endswith(".weight") else chave
+            mod = alvo_mods.get(nome)
+            if mod is None or getattr(mod, "weight", None) is None:
+                faltando += 1
+                continue
+            with torch.no_grad():
+                mod.weight.data.copy_(f.get_tensor(chave).to(mod.weight.device, mod.weight.dtype))
+            tocadas.append(nome)
+    print("  arquivo de pesos: " + str(len(tocadas)) + " camadas aplicadas, "
+          + str(faltando) + " sem modulo correspondente; metadata=" + repr(meta_pesos), flush=True)
+elif MODO != "nenhum":
     normas, amostras = {}, {}
     RECUPERA = MODO.startswith("recup")
     calib_bruta = None
@@ -310,7 +329,7 @@ def roda(a, nome, unet, modo, calib, semente) -> dict | None:
     saida = SAIDA / f"latent_{nome}_s{semente}.pt"
     src = BRACO % {"UNET": unet, "CLIP": a.clip, "PROMPT": a.prompt, "NEG": a.negative,
                    "SEED": semente, "STEPS": a.steps, "CFG": repr(a.cfg), "SIDE": a.size,
-                   "OUTPT": str(saida), "MODO": modo, "CALIB": calib}
+                   "OUTPT": str(saida), "MODO": modo, "CALIB": calib, "PESOS": (str(a.pesos) if a.pesos else "")}
     env = dict(os.environ, CUDA_VISIBLE_DEVICES="0")
     r = subprocess.run([str(RAIZ / "python_embeded" / "python.exe"), "-s", "-c", src],
                        capture_output=True, text=True, env=env, cwd=str(RAIZ), timeout=5400)
@@ -328,6 +347,9 @@ def main() -> int:
     p.add_argument("--unet-bf16", default="beyond-reality-zimage-v2_native.safetensors")
     p.add_argument("--unet-w4a4", default="zimage-v2-w4a4.safetensors")
     p.add_argument("--clip", default="qwen_3_4b.safetensors")
+    p.add_argument("--pesos", type=Path, default=None,
+                   help="safetensors de pesos ja recuperados (tools/grava_pesos_recuperados.py). "
+                        "Usado pelo modo `arquivo`, que nao carrega calibragem nenhuma")
     p.add_argument("--calib", default=str(RAIZ / "calib" / "zimage_v2_sigma.calib.pt"))
     p.add_argument("--prompt", default="a red apple on a weathered wooden table, soft window "
                                        "light, shallow depth of field, photographic")
@@ -357,6 +379,7 @@ def main() -> int:
               ("so_poda_elem", a.unet_bf16, "so_poda_elem", a.calib),
               ("recup_elem", a.unet_bf16, "recup_elem", a.calib),
               ("recup_elem_int8", a.unet_bf16, "recup_elem_int8", a.calib),
+              ("arquivo", a.unet_bf16, "arquivo", ""),
               ("so_poda_par", a.unet_bf16, "so_poda_par", a.calib)]
 
     if a.modos:

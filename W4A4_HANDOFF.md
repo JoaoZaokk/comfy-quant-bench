@@ -623,6 +623,26 @@ conjugado mascarado sobre `H = X^T X`), nao fine-tuning. Sobre as MESMAS linhas 
 - **Heredoc de bash morre com aspas/apostrofos no conteudo.** Duas vezes hoje. Escrever o script em
   arquivo pelo Write e executar.
 - **`\n` dentro de heredoc vira quebra de linha literal** no arquivo gerado, quebrando a f-string.
+- **Matar o wrapper NAO mata o filho, e isso custou 6,1 GiB de RAM do dono.** Esta armadilha ja
+  estava escrita no handoff de ontem e eu a repeti **quatro vezes hoje**: `taskkill` filtrado por
+  `MEMUSAGE` mata o `probe_*.py`, o filho `python -c "..."` que segura o modelo continua vivo, e
+  nada na saida diz isso. As 19h o dono perguntou quem estava com 99% da RAM -- eram quatro orfaos
+  meus somando 6,1 GiB, mais o meu proprio trabalho legitimo. Livre foi de 1,9 GiB para 44,3 GiB
+  depois da limpeza.
+
+  Escrever a armadilha nao impediu de repetir. O que impede e o procedimento:
+
+  ```powershell
+  # ANTES de dar por encerrado qualquer run: listar por linha de comando, nao por nome.
+  Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
+    Select ProcessId, @{N='GB';E={[math]::Round($_.WorkingSetSize/1GB,2)}},
+           @{N='Pai';E={$_.ParentProcessId}}, CommandLine | Sort GB -Desc | Format-List
+  # e matar a ARVORE, pai e filho, nunca so o que aparece no filtro
+  ```
+
+  O filtro por memoria e o pior criterio possivel: o filho recem-nascido ainda nao alocou nada e
+  escapa; minutos depois ele esta com 2 GiB e sem pai.
+
 - **Tomar `Assert-GpuLock` a mao numa chamada PowerShell deixa lock com heartbeat morto** quando a
   chamada acaba, e as ferramentas que tomam o proprio lock recusam a si mesmas. Deixe as ferramentas
   tomarem.
