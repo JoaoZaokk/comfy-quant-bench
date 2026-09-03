@@ -605,7 +605,23 @@ conjugado mascarado sobre `H = X^T X`), nao fine-tuning. Sobre as MESMAS linhas 
 1. **Subir os cards** assim que houver token de escrita: Qwen3-4B (imagens novas + a correcao da
    receita de destrava), e Wan/Z-Image/Hunyuan (a linha do Z-Image na tabela de tolerancia). Depois
    apagar as 6 orfas.
-2. **Fechar o render da recuperacao** se ele nao fechou, e com mais sementes. O numero por camada e
+2. **Fechar o render da recuperacao.** A ferramenta que faltava JA EXISTE e nao precisa ser
+   reescrita -- `tools/grava_pesos_recuperados.py` calcula os pesos recuperados num processo
+   proprio e grava um safetensors, e `probe_esparso_visual.py --modos arquivo --pesos <arq>` os
+   aplica sem carregar calibragem nenhuma. E isso que separa os 12,9 GiB de ativacoes dos 11,5 GiB
+   de modelo que `--disable-dynamic-vram` carrega de uma vez; juntos mataram o processo sem saida.
+   Comandos:
+
+   ```
+   python_embeded\python.exe -u -s tools/grava_pesos_recuperados.py --int8 \
+       --saida bench/pesos_recup_elem_int8.safetensors
+   python_embeded\python.exe -u -s tools/probe_esparso_visual.py --modos bf16 w4a4 arquivo \
+       --pesos bench/pesos_recup_elem_int8.safetensors --seeds 1234 7 42
+   ```
+
+   O `bake` foi interrompido a pedido do dono por pressao de RAM e nunca terminou, entao a
+   ferramenta esta ESCRITA e NAO EXERCITADA ate o fim -- trate a primeira execucao como estreia,
+   nao como repeticao. Depois, mais sementes. O numero por camada e
    espetacular e esta bancada ja mediu tres instrumentos numericos apontando para o lado errado no
    mesmo dia -- so a foto decide.
 3. **Rodar o bloco 4** (`probe_te_lock_cost.py` duas vezes, uma por arquivo do Gemma, com `--bf16`
