@@ -54,7 +54,7 @@ SAIDA = RAIZ / "bench" / "esparso_visual"
 BRACO = r'''
 import json, sys, time
 sys.path.insert(0, "ComfyUI")
-sys.argv = ["main.py"]
+sys.argv = ["main.py", "--disable-dynamic-vram"]
 import comfy.options; comfy.options.enable_args_parsing()
 import torch, torch.nn as nn, folder_paths, comfy.sd, comfy.sample
 
@@ -122,18 +122,78 @@ def fracao_par24(w):
     return {"no_maximo_2": (vivo <= 2).float().mean().item(),
             "exatamente_2": (vivo == 2).float().mean().item()}
 
+
+def fracao_elem24(w):
+    """O invariante do braco por ELEMENTO: no maximo 2 valores vivos em cada grupo de 4.
+
+    Cobrar aqui o invariante de PAR (`fracao_par24`) reprova a cirurgia CORRETA: podar 2 de cada 4
+    valores pode deixar os dois sobreviventes em pares diferentes, e ai os 4 pares do grupo de 8
+    estao vivos, legitimamente. Foi assim que `so_poda_elem` saiu com "a cirurgia nao sobreviveu"
+    em duas execucoes seguidas de um patch que estava correto o tempo todo.
+    """
+    n, k = w.shape
+    vivo = (w.reshape(n, k // 4, 4) != 0).sum(-1)
+    return {"no_maximo_2": (vivo <= 2).float().mean().item(),
+            "exatamente_2": (vivo == 2).float().mean().item()}
+
+def recupera_cg(w, m, h, iteracoes=256, tol=1e-6):
+    """Gradiente conjugado mascarado -- o mesmo de tools/recupera_esparso.py.
+
+    Acha os pesos sobreviventes que minimizam ||X Ws^T - X W^T|| com Ws = M (*) Ws. O operador
+    `V -> M (*) (V H)` e simetrico definido positivo dentro do suporte, entao CG vale e trata
+    todas as linhas de saida em paralelo: cada iteracao e UM matmul [N x K] @ [K x K].
+    """
+    w, h, m = w.float(), h.float(), m.float()
+    ws = w * m
+    r = m * ((w - ws) @ h)
+    pd = r.clone()
+    rr = (r * r).sum()
+    rr0 = rr.clone()
+    for _ in range(iteracoes):
+        ap = m * (pd @ h)
+        pap = (pd * ap).sum()
+        if pap <= 0:
+            break
+        al = rr / pap
+        ws = ws + al * pd
+        r = r - al * ap
+        rn = (r * r).sum()
+        if rn <= tol * tol * rr0:
+            break
+        pd = r + (rn / rr) * pd
+        rr = rn
+    return ws * m
+
+def q8(t):
+    """int8 simetrico por linha, RECONSTRUIDO. E o que o kernel 2:4 int8 de fato consome."""
+    e = t.abs().amax(dim=1, keepdim=True).clamp_min(1e-8) / 127
+    return (t / e).round().clamp(-127, 127) * e
+
 tocadas, com_wanda = [], 0
 if MODO != "nenhum":
-    normas = {}
+    normas, amostras = {}, {}
+    RECUPERA = MODO.startswith("recup")
+    calib_bruta = None
     if CALIB:
-        d = torch.load(CALIB, map_location="cpu", weights_only=False)
-        for k, v in d["layers"].items():
+        calib_bruta = torch.load(CALIB, map_location="cpu", weights_only=False)
+        for k, v in calib_bruta["layers"].items():
             x = v["sample"] if isinstance(v, dict) else v
             if torch.is_tensor(x):
+                # A norma e pequena e fica; a AMOSTRA e enorme e so e guardada quando este braco
+                # vai reconstruir. Com a calibragem de 8192 linhas sao 12,9 GiB, e guardar tudo
+                # fez o ComfyUI despejar o modelo por pressao de memoria no meio da amostragem.
                 normas[k] = x.float().reshape(-1, x.shape[-1]).norm(dim=0)
+                if RECUPERA:
+                    amostras[k] = x
+        if not RECUPERA:
+            del calib_bruta
+            calib_bruta = None
+            import gc; gc.collect()
     GIRA = MODO.startswith("convrot")
     QUANT_ATIV = MODO.endswith("_ativ")
     puladas_por_cg = 0
+    puladas_sem_amostra = 0
+    recuperadas = 0
     for nome, mod in model.model.diffusion_model.named_modules():
         if not isinstance(mod, nn.Linear) or mod.weight is None: continue
         w = mod.weight
@@ -157,11 +217,40 @@ if MODO != "nenhum":
                     nr = nrm.to(w.device, torch.float32)
                     nrm = gira_ativacao(nr.reshape(1, -1), h).abs().reshape(-1)
             podado = poda_elem(wf, nrm) if "elem" in MODO else poda_par(wf, nrm)
-            # `so_poda`: bf16 nos valores mantidos, 9,0 bits/peso. Isola a PODA do int4 --
-            # sem este braco, "destruido" nao distingue qual dos dois estragou.
-            novo = (podado if MODO.startswith("so_poda") else q4(podado, 1)).to(w.dtype)
+            if MODO.startswith("recup"):
+                # Reconstrucao por camada. Sem amostra nao ha Hessiana, e ai a camada fica
+                # PODADA E NAO RECUPERADA -- que e um formato diferente do que o braco diz medir.
+                # Pular e mais honesto: a contagem de recuperadas viaja no relatorio.
+                xs = amostras.pop(nome, None)
+                if xs is None:
+                    puladas_sem_amostra += 1
+                    continue
+                xf_ = xs.to(w.device).float().reshape(-1, xs.shape[-1])
+                if GIRA:
+                    xf_ = gira_ativacao(xf_, h)
+                hh = xf_.double().T @ xf_.double()
+                hh += torch.eye(hh.shape[0], device=hh.device, dtype=hh.dtype) * (
+                    0.01 * hh.diag().mean())
+                mask = (podado != 0).float()
+                rec = recupera_cg(wf, mask, hh.float())
+                novo = (q8(rec) if MODO.endswith("_int8") else rec).to(w.dtype)
+                del xf_, hh, mask, rec
+                recuperadas += 1
+            else:
+                # `so_poda`: bf16 nos valores mantidos, 9,0 bits/peso. Isola a PODA do int4 --
+                # sem este braco, "destruido" nao distingue qual dos dois estragou.
+                novo = (podado if MODO.startswith("so_poda") else q4(podado, 1)).to(w.dtype)
             w.data.copy_(novo)
         tocadas.append(nome)
+
+    # Tudo da calibragem morre ANTES de amostrar. O que restou em `amostras` sao camadas que o
+    # loop nao tocou (largura incompativel, por exemplo) e elas nao servem para mais nada aqui.
+    amostras.clear()
+    if calib_bruta is not None:
+        del calib_bruta
+    normas.clear()
+    import gc; gc.collect()
+    torch.cuda.empty_cache()
 
     if GIRA or QUANT_ATIV:
         def gancho(m, args):
@@ -200,12 +289,16 @@ torch.save(out, OUTPT)
 # O CONTROLE: reconferido DEPOIS de amostrar, porque o que interessa e se o peso continuava
 # alterado enquanto o modelo rodava -- nao se a copia funcionou um segundo antes.
 alvo = dict(model.model.diffusion_model.named_modules())
-fr = ([fracao_par24(alvo[n].weight.data.float()) for n in tocadas[:16]]
+# O invariante segue a granularidade do braco, nao o nome do arquivo.
+conta24 = fracao_elem24 if ("elem" in MODO) else fracao_par24
+fr = ([conta24(alvo[n].weight.data.float()) for n in tocadas[:16]]
       if tocadas and "elem" not in MODO else [])
 print("RESULT " + json.dumps({
     "modo": MODO, "camadas_tocadas": len(tocadas), "com_wanda": com_wanda,
     "puladas_por_groupsize": puladas_por_cg if MODO != "nenhum" else 0,
     "controle_no_maximo_2": (sum(f["no_maximo_2"] for f in fr)/len(fr)) if fr else None,
+    "controle_granularidade": ("elemento: <=2 vivos por grupo de 4" if "elem" in MODO
+                               else "par: <=2 pares vivos por grupo de 8"),
     "exatamente_2": (sum(f["exatamente_2"] for f in fr)/len(fr)) if fr else None,
     "seconds": el, "mean": float(out.mean()), "std": float(out.std()),
     "absmax": float(out.abs().max()),
@@ -262,6 +355,8 @@ def main() -> int:
               # Poda pura, sem quantizacao nenhuma. Se estes sairem bem, o culpado e o int4;
               # se sairem ruido, e a poda -- e nenhum kernel esparso salva este modelo.
               ("so_poda_elem", a.unet_bf16, "so_poda_elem", a.calib),
+              ("recup_elem", a.unet_bf16, "recup_elem", a.calib),
+              ("recup_elem_int8", a.unet_bf16, "recup_elem_int8", a.calib),
               ("so_poda_par", a.unet_bf16, "so_poda_par", a.calib)]
 
     if a.modos:
@@ -282,6 +377,7 @@ def main() -> int:
                   + (f"   controle <=2 pares: {fr:.4f}  (exatamente 2: {r['exatamente_2']:.4f}, "
                      f"a diferenca e o int4 zerando por conta propria)" if fr is not None else ""))
             if r["camadas_tocadas"] and (fr is None or fr < 0.999):
+                print(f"  invariante cobrado: {r.get('controle_granularidade', '?')}")
                 print("  CONTROLE FALHOU: a cirurgia nao sobreviveu ate o fim da amostragem. "
                       "Qualquer imagem deste braco descreve outro modelo.", file=sys.stderr)
 

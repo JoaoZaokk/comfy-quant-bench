@@ -55,6 +55,8 @@ ROTULOS = {
     "convrot_peso_ativ": "ConvRot + 2:4 par Wanda + int4, PESO+ATIV  2,5 bits/peso",
     "so_poda_elem": "SO PODA 2:4 por ELEMENTO, Wanda, bf16  9,0 bits/peso",
     "so_poda_par": "SO PODA 2:4 por PAR, Wanda, bf16  9,0 bits/peso",
+    "recup_elem": "2:4 elem RECUPERADO, bf16  9,0 bits/peso",
+    "recup_elem_int8": "2:4 elem RECUPERADO + int8  5,0 bits/peso",
 }
 
 
@@ -97,6 +99,7 @@ def main() -> int:
 
     conhecidos = ["bf16", "w4a4", "esp_peso", "esp_peso_ativ", "convrot_peso",
                   "convrot_peso_ativ", "so_poda_elem", "so_poda_par",
+                  "recup_elem", "recup_elem_int8",
                   "curto_bf16", "curto_w4a4t", "curto_w4a4s",
                   "longo_bf16", "longo_w4a4t", "longo_w4a4s"]
     vistos = {b for d in por_semente.values() for b in d}

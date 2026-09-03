@@ -71,3 +71,72 @@ Erro de saida por camada nas ativacoes calibradas, **nao imagem**. Um modelo, um
 placa. Reconstrucao por camada **independente**, que e estritamente mais fraca que a sequencial.
 Sem treino de verdade em nenhum braco. E o `int8` do braco `--quantiza` e simetrico por linha, nao
 e ConvRot -- entao aquela coluna soma dois efeitos e nao isola nenhum.
+
+
+---
+
+## RESULTADO parcial, 2026-09-03: a medicao fechou, o render NAO
+
+### O que as previsoes fizeram
+
+1. **Controle denso passa.** Bateu, mas so depois de dois consertos (abaixo).
+2. **`elem_rec` melhora pelo menos 1,5x.** Bateu com folga: **14,2x**.
+3. **`elem_rec` nao chega ao W4A4.** **ERRADA, e por uma margem enorme.** Medidos nas MESMAS
+   linhas de teste: W4A4 `0,0907`, 2:4 elemento recuperado `0,0052`. **17,4x mais fiel**, a 5,0
+   bits/peso contra 4,0. Eu previ que poda joga capacidade fora e recuperar dentro do suporte nao
+   a inventa de volta. O que a medicao diz e que a capacidade jogada fora nao estava sendo usada
+   pelas 8192 direcoes de ativacao que o modelo de fato visita.
+4. **O criterio importa.** Bateu: `alea_rec 0,0288` contra `elem_rec 0,0052`, 5,5x.
+5. **Erro por camada nao decide nada.** Continua valendo, e e por isso que a linha abaixo importa
+   mais que todas as de cima.
+
+    formato                          bits/peso     erro
+    W4A4 ConvRot (o de hoje)               4,0   0,0907
+    2:4 elemento, so podado                9,0   0,0736
+    2:4 elemento RECUPERADO                9,0   0,0052
+    2:4 elemento RECUPERADO + int8         5,0   0,0052
+    2:4 par RECUPERADO + int8              5,0   0,0062
+    denso recuperado (controle)              -   piso do int8, exato
+
+### Os dois erros de desenho, ambos pegos por controle
+
+**Media residuo de TREINO.** A primeira versao ajustava e avaliava na mesma matriz X. Com
+`X = [128, 3840]` sao 128 equacoes para 1920 incognitas por linha de saida: o CG zera o residuo por
+construcao e a tabela dizia `0,0790 -> 0,0007`, um ganho de **110x** que significaria que poda 2:4
+sai de graca. Nao sai. Com separacao treino/teste o MESMO run mostrou **32,1x** de distancia entre
+os dois numeros. O conserto nao e mais iteracao, e **mais linha de ativacao**: uma calibragem de
+8192 linhas leva teste/treino a **1,1x**, e so entao os numeros acima significam alguma coisa.
+
+**O controle denso reprovava o caso correto.** Sob `--quantiza` o braco denso tambem leva int8,
+entao ele mede o piso do int8 (3,71e-3) e nao erro de solver -- e o limiar fixo de 1e-3 o
+reprovava. O piso agora e MEDIDO (int8 do peso sem poda) e o controle compara contra ele. Um
+controle que reprova o caso correto ensina a desligar controles, que e o argumento que este repo ja
+faz sobre WARN apoiado em hipotese.
+
+### O render nao fechou, e as tres hipoteses erradas ficam escritas
+
+O probe reportou `CONTROLE FALHOU: a cirurgia nao sobreviveu ate o fim da amostragem` no braco
+`so_poda_elem`, e eu errei a causa tres vezes:
+
+1. **"E a pressao de memoria."** A calibragem de 12,9 GiB ficava residente durante a amostragem, e
+   a hipotese era que o ComfyUI despejava o modelo e recarregava do disco. Liberei a calibragem
+   antes de amostrar. **O controle continuou falhando.**
+2. **"E o invariante errado."** `fracao_par24` cobra <=2 PARES vivos por grupo de 8, que e o
+   invariante do INT4; um braco podado por ELEMENTO mantem 2 de cada 4 valores e esses dois podem
+   cair em pares diferentes, deixando os 4 pares vivos legitimamente. Escrevi `fracao_elem24` e fiz
+   o invariante seguir a granularidade do braco. **O controle continuou falhando** -- entao esse
+   conserto e correto e nao era a causa.
+3. **"E o carregamento preguicoso."** Sem `--disable-dynamic-vram` o ComfyUI 0.33 carrega peso do
+   arquivo durante a amostragem e sobrescreve o patch em memoria. Passei a flag. **O processo
+   morreu sem stdout nem stderr** -- provavelmente RAM, porque a flag carrega os 11,5 GiB de uma vez
+   ao lado dos 12,9 GiB de amostras.
+
+O caminho que sobra, e que a proxima sessao deve tomar: **calcular os pesos recuperados num
+processo separado e grava-los**, depois carregar so eles no processo do render. Separa a memoria da
+reconstrucao da memoria da amostragem, e de quebra torna o braco reproduzivel sem recalcular.
+
+### Nao coberto
+
+Tudo que esta secao afirma e **erro de saida por camada nas ativacoes calibradas**, em 24 camadas,
+com 25% das linhas separadas para avaliar. Nao ha imagem, e esta bancada mediu no mesmo dia tres
+instrumentos numericos apontando para o lado errado. **17,4x nao e um resultado ate a foto existir.**

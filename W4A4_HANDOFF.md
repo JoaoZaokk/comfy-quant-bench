@@ -509,3 +509,125 @@ As de CUDA precisam do CUTLASS (~43 MB, nao fica no repo) e do `vcvars64`; ver o
 5. **Rever a parte 43 do PROGRESS** -- a conclusao "nao existe limiar do formato, existe um por
    modelo" usou o Wan como o ponto que quebrou a regra, e o numero do Wan veio do regime errado. A
    banda foi reconfirmada, entao a conclusao provavelmente sobrevive, mas nao foi reverificada.
+
+
+---
+
+## Estado em 2026-09-03: janela de GPU do dono, das 13h30 as 20h (com ~2h45 perdidas num apagao)
+
+Tres frentes planejadas com os ramos escritos ANTES de rodar. Duas fecharam, a terceira mediu e
+estava renderizando quando a janela acabou. O plano combinado tinha uma quarta (smooth x convrot)
+que nao chegou a rodar; o criterio dela ja esta escrito.
+
+### 1. FECHADO -- a receita de destrava do text encoder que este repo publica NAO funciona
+
+O `CLAUDE.md` e o card do Qwen mandavam soltar as travas **na fonte**
+(`clip.patcher.force_cast_weights = False`) e avisavam que escrever nos modulos "sobrevive so por
+acidente do estado da VRAM". Medido no proprio arquivo, um eixo por vez, contando chamadas de kernel:
+
+    o que se escreve                     4 bits   dequantize   force_cast
+    nada                                      0          504   True
+    so a fonte (a receita publicada)          0          504   True
+    so os modulos                           252            0   False
+    fonte + unload_all_models() forcado     252            0   False
+    os dois                                 252            0   False
+
+`ModelPatcher.load` foi instrumentado e **nao roda durante o encode**: o arquivo de 2,4 GiB sobe
+inteiro dentro do `load_clip`, entao a linha 1016 rodou uma vez, antes da escrita, com True. A linha
+do unload forcado e o controle que nomeia o mecanismo. A regra real e **se `load` roda entre a
+escrita e o forward**. As duas ferramentas agora escrevem nos dois lugares.
+
+**A foto que o card nao tinha:** seis sementes, prompt longo pedindo um pescador remendando uma
+rede. As 18 imagens sao boas e ha pessoa em todas; o que muda e a rede -- BF16 6/6, travado 5/6,
+solto **0/6**. Falha de aderencia ao prompt, nao de qualidade, e nenhum cosseno mostraria.
+
+### 2. FECHADO -- a celula vazia do Z-Image, com o mecanismo invertido no caminho
+
+O bloqueio era o caminho **W4A8** (so aceita `convrot_groupsize` 256), nao o ConvRot.
+`quant_mixed --somente-w4a4` destrava, e em cg 256 produz arquivo byte a byte identico ao
+`zimage-v2-w4a4` publicado.
+
+O criterio previa que grupo MAIOR daria mais erro. Quatro pontos monotonicos na direcao oposta
+(cg 16 `0,1926`, cg 64 `0,1516`, cg 256 `0,1312`, cg 1024 menor): uma rotacao de Hadamard de tamanho
+N espalha cada outlier por N canais, entao N maior mistura MAIS. O controle escrito antes disparou.
+
+    modelo               parametros   tolerado   NAO tolerado
+    Wan 2.1 VACE             1,3 B     0,0546        0,0793
+    Z-Image v2                ~6 B     0,1421        0,1848
+    HunyuanVideo 1.5         ~13 B     0,1837        0,2147
+
+Monotonica nas duas colunas, faixas sem sobreposicao, e 0,1848 destroi um ~6 B enquanto 0,1837 e
+tolerado num ~13 B -- 0,6% de distancia.
+
+**E o `avaliar.py` era cego a esse eixo inteiro:** casava a analise pelo sha da FONTE e lia
+`err_w4a4` sem olhar o groupsize, entao os tres builds recebiam a mesma mediana 0,1216 -- o que
+desenha bem e o que desenha lixo, mesmo numero e mesmo veredito. Corrigido.
+
+### 3. MEDIDO, RENDER NAO FECHOU -- recuperacao por camada sobre poda 2:4
+
+A proposta do dono, e a unica frente aberta na esparsidade. Reconstrucao por camada (gradiente
+conjugado mascarado sobre `H = X^T X`), nao fine-tuning. Sobre as MESMAS linhas de teste:
+
+    W4A4 ConvRot (o de hoje)      4,0 bits/peso    0,0907
+    2:4 elemento, so podado       9,0              0,0736
+    2:4 elemento RECUPERADO       9,0              0,0052     17,4x mais fiel que o W4A4
+    2:4 elem RECUPERADO + int8    5,0              0,0052
+    2:4 par RECUPERADO            5,0              0,0062
+    denso recuperado (controle)                    piso do int8, exato
+
+**Dois erros meus de desenho, os dois pegos por controle:**
+
+- A primeira versao media o residuo de TREINO. Com X de `[128, 3840]` -- 128 equacoes para 1920
+  incognitas por linha -- o CG zera o residuo por construcao e "poda 2:4 sai de graca, 110x".
+  Nao sai. Com separacao treino/teste o mesmo run mostrou **32,1x de distancia** entre os dois.
+  O conserto foi **mais linhas de ativacao**, nunca mais iteracoes: uma calibragem de 8192 linhas
+  (`calib/zimage_v2_rows8192.calib.pt`, 12,9 GiB) leva teste/treino a **1,1x**.
+- O controle denso reprovava o caso CORRETO sob `--quantiza`: com int8 ligado o braco denso tambem
+  e quantizado, entao ele mede o piso do int8 e o limiar fixo de 1e-3 o reprovava. O piso agora e
+  medido, nao suposto.
+
+**NAO FECHOU: tres tentativas, tres hipoteses erradas sobre por que o patch de peso nao sobrevive a amostragem. O caminho que sobra e gravar os pesos recuperados de um processo separado e carregar so eles no render. 17,4x nao e resultado ate a foto existir.**
+
+### O que ficou de fora, e por que
+
+- **Bloco 4, smooth x convrot no Gemma**, nao rodou. O criterio esta escrito em
+  `bench/criterio_smooth_vs_convrot.md`, com um desenho que tem controle embutido: SmoothQuant move
+  outlier da ATIVACAO para o peso, e no caminho travado do text encoder a ativacao nunca e
+  quantizada -- entao ele tem de ser inutil travado e util solto. Se ganhasse nos dois por igual, o
+  ganho nao seria de SmoothQuant. Os dois arquivos estao em disco desde 2026-09-01.
+- **Publicar.** O token do HuggingFace ativo e `Tesla P4_VM`, role **read**. Os quatro cards estao
+  reescritos e validados em disco e nenhum subiu. Nao dá para eu criar token.
+- **As 6 imagens orfas** do regime errado no repo do Wan continuam la (o dono autorizou apagar; a
+  autorizacao vale, faltou o token de escrita).
+
+### Fila para a proxima sessao, em ordem
+
+1. **Subir os cards** assim que houver token de escrita: Qwen3-4B (imagens novas + a correcao da
+   receita de destrava), e Wan/Z-Image/Hunyuan (a linha do Z-Image na tabela de tolerancia). Depois
+   apagar as 6 orfas.
+2. **Fechar o render da recuperacao** se ele nao fechou, e com mais sementes. O numero por camada e
+   espetacular e esta bancada ja mediu tres instrumentos numericos apontando para o lado errado no
+   mesmo dia -- so a foto decide.
+3. **Rodar o bloco 4** (`probe_te_lock_cost.py` duas vezes, uma por arquivo do Gemma, com `--bf16`
+   apontando para o original de 23,5 GiB). Criterio e previsoes ja escritos.
+4. **Apagar `calib/zimage_v2_rows8192.calib.pt`** (12,9 GiB) quando a frente da esparsidade fechar.
+   O disco F: esta com 51 GiB livres.
+5. **Reconstrucao SEQUENCIAL** (cada camada ve a entrada ja degradada pelas anteriores, que e o que
+   o SparseGPT faz) se a independente nao bastar na foto.
+
+### Armadilhas do dia, para nao repetir
+
+- **`sys.argv = ["main.py"]` no topo do modulo apaga os argumentos da propria ferramenta.** Ja estava
+  no handoff de ontem e eu reproduzi num arquivo novo: quatro modos rodaram como se fossem um so.
+  Guardar `ARGV = sys.argv[1:]` ANTES.
+- **Heredoc de bash morre com aspas/apostrofos no conteudo.** Duas vezes hoje. Escrever o script em
+  arquivo pelo Write e executar.
+- **`\n` dentro de heredoc vira quebra de linha literal** no arquivo gerado, quebrando a f-string.
+- **Tomar `Assert-GpuLock` a mao numa chamada PowerShell deixa lock com heartbeat morto** quando a
+  chamada acaba, e as ferramentas que tomam o proprio lock recusam a si mesmas. Deixe as ferramentas
+  tomarem.
+- **`quality_ladder.py` recusa quando QUALQUER placa visivel esta ocupada.** Com o vizinho na
+  cuda:1, rode com `CUDA_VISIBLE_DEVICES=0`.
+- **Calibragem grande residente faz o ComfyUI despejar o modelo no meio da amostragem** e apagar
+  patches de peso em silencio. O controle do probe pegou; a calibragem agora e liberada antes de
+  amostrar.

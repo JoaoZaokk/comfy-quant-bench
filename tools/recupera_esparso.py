@@ -63,6 +63,7 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ / "ComfyUI"))
 
+import comfy_kitchen as ck
 import torch
 
 
@@ -110,9 +111,10 @@ def recupera(w: torch.Tensor, m: torch.Tensor, h: torch.Tensor,
     [N x K] @ [K x K], compartilhado por todas as linhas -- e por isso que isto roda em segundos
     onde um solve por linha levaria minutos.
     """
-    w = w.double()
-    h = h.double()
-    m = m.double()
+    # float32, nao float64: ver o cabecalho de `main`. O TF32 fica desligado no processo inteiro.
+    w = w.float()
+    h = h.float()
+    m = m.float()
     # Ponto de partida: o proprio peso podado. O residuo mede quanto do erro ja foi removido.
     ws = w * m
     def A(v):
@@ -164,17 +166,28 @@ def main() -> int:
                    help="amortecimento da Hessiana, fracao da media da diagonal")
     p.add_argument("--iteracoes", type=int, default=256)
     p.add_argument("--tol", type=float, default=1e-6)
+    p.add_argument("--fracao-teste", type=float, default=0.25,
+                   help="fracao das linhas de ativacao reservada para AVALIAR, nunca vista pelo "
+                        "solver. Sem isto o relatorio mede residuo de treino, que num sistema "
+                        "com menos linhas que colunas vai a zero por construcao")
     p.add_argument("--quantiza", action="store_true",
                    help="aplica int8 simetrico por linha DEPOIS da recuperacao, para medir os "
                         "dois efeitos somados em vez de so a esparsidade")
     p.add_argument("--saida", type=Path, default=RAIZ / "bench" / "recuperacao_esparsa.json")
     a = p.parse_args()
 
+    # TF32 tem 10 bits de mantissa. Num solver iterativo isso nao e uma perda de precisao, e um
+    # gerador de ruido: o residuo pararia de cair e o CG estagnaria num ponto que nao e a solucao.
+    torch.backends.cuda.matmul.allow_tf32 = False
+    torch.backends.cudnn.allow_tf32 = False
+
     d = torch.load(a.calib, map_location="cpu", weights_only=False)
     chaves = [k for k in d["layers"] if k.startswith("layers.")][: a.camadas]
 
-    colunas = ["denso_rec", "elem", "elem_rec", "alea", "alea_rec", "par", "par_rec"]
+    colunas = ["w4a4", "denso_rec", "elem", "elem_rec", "alea", "alea_rec", "par", "par_rec"]
     acc = {c: [] for c in colunas}
+    acc_treino: list[float] = []
+    acc_piso: list[float] = []
     linhas_json = []
     cab = f"{'camada':28s} " + " ".join(f"{c:>10s}" for c in colunas)
     print(cab)
@@ -185,17 +198,34 @@ def main() -> int:
         w = ler_peso(a.modelo, k)
         if x.shape[-1] != w.shape[1] or w.shape[1] % 8:
             continue
-        xf = x.float().reshape(-1, x.shape[-1])
+        xf_todo = x.float().reshape(-1, x.shape[-1])
+        # SEPARACAO TREINO/TESTE. Sem ela esta ferramenta media o residuo de treino, e num sistema
+        # com menos linhas que colunas isso vai a zero por construcao -- ver o cabecalho do patch
+        # e a linha `fracao_teste` do relatorio.
+        n_total = xf_todo.shape[0]
+        n_teste = max(1, int(n_total * a.fracao_teste))
+        g = torch.Generator(device=xf_todo.device).manual_seed(1234)
+        perm = torch.randperm(n_total, device=xf_todo.device, generator=g)
+        xf = xf_todo[perm[n_teste:]]          # ajuste
+        xt = xf_todo[perm[:n_teste]]          # avaliacao, nunca vista pelo solver
         ref = xf @ w.float().T
+        ref_t = xt @ w.float().T
         nrm = ref.norm()
+        nrm_t = ref_t.norm()
 
         def rel(wx):
             return ((xf @ wx.float().T - ref).norm() / nrm).item()
 
-        # A Hessiana em float64: `X^T X` acumula rapido e em float32 a diagonal de camadas com
-        # ativacao grande (o Z-Image chega a 344064) perde digitos suficientes para o CG divergir.
+        def rel_teste(wx):
+            return ((xt @ wx.float().T - ref_t).norm() / nrm_t).item()
+
+        # A Hessiana ACUMULA em float64 -- `X^T X` soma milhares de linhas e as ativacoes do
+        # Z-Image chegam a 344064, entao e aqui que os digitos se perdem. O CG que a consome roda
+        # em float32 por velocidade (FP64 anda a 1/32 nesta placa) e tolera, porque recalcula o
+        # residuo a cada passo. O controle denso e quem verifica que essa troca foi legitima.
         h = (xf.double().T @ xf.double())
         h += torch.eye(h.shape[0], device=h.device, dtype=h.dtype) * (a.damp * h.diag().mean())
+        h = h.float()
 
         wanda = w.abs().float() * xf.norm(dim=0).unsqueeze(0)
         gerador = torch.Generator(device=w.device).manual_seed(0)
@@ -210,15 +240,39 @@ def main() -> int:
             wr, _ = recupera(w, mask, h, a.iteracoes, a.tol)
             if a.quantiza:
                 wr = int8_por_linha(wr.float()).to(torch.bfloat16)
-            return rel(wr)
+            return rel_teste(wr), rel(wr)
 
-        r = {"denso_rec": arma(m_denso),
-             "elem": rel(w * m_elem), "elem_rec": arma(m_elem),
-             "alea": rel(w * m_alea), "alea_rec": arma(m_alea),
-             "par": rel(w * m_par), "par_rec": arma(m_par)}
+        dr_t, dr_tr = arma(m_denso)
+        er_t, er_tr = arma(m_elem)
+        ar_t, _ = arma(m_alea)
+        pr_t, _ = arma(m_par)
+        # O braco W4A4 ConvRot, medido AQUI: mesmas linhas de teste, mesma referencia float32.
+        # E o unico jeito de a comparacao com o formato que a bancada entrega hoje significar algo.
+        qw, qs = ck.quantize_convrot_w4a4_weight(w.contiguous(), 256, 64)
+        got4 = ck.convrot_w4a4_linear(xt.to(torch.bfloat16), qw, qs, None, 256, 64)
+        w4a4_t = ((got4.float() - ref_t).norm() / nrm_t).item()
+        del qw, qs, got4
+
+        # O PISO: int8 por linha sobre o peso denso, sem poda. Sob `--quantiza` e contra ele que
+        # o controle denso tem de ser lido -- o braco denso-recuperado nao pode ficar abaixo do
+        # que a propria quantizacao custa, e cobrar dele < 1e-3 reprovava o caso correto.
+        piso_t = rel_teste(int8_por_linha(w.float()).to(torch.bfloat16)) if a.quantiza else 0.0
+
+        r = {"w4a4": w4a4_t,
+             "denso_rec": dr_t,
+             "elem": rel_teste(w * m_elem), "elem_rec": er_t,
+             "alea": rel_teste(w * m_alea), "alea_rec": ar_t,
+             "par": rel_teste(w * m_par), "par_rec": pr_t}
+        # O par treino/teste do braco principal viaja junto: e ele que diz se a reconstrucao
+        # aprendeu ou decorou, e um numero de teste sozinho nao conta essa parte.
+        r_extra = {"piso_int8": piso_t, "elem_rec_treino": er_tr, "denso_rec_treino": dr_tr,
+                   "linhas_ajuste": int(xf.shape[0]), "linhas_teste": int(xt.shape[0]),
+                   "colunas": int(w.shape[1])}
         for c in colunas:
             acc[c].append(r[c])
-        linhas_json.append({"layer": k, **r})
+        linhas_json.append({"layer": k, **r, **r_extra})
+        acc_treino.append(er_tr)
+        acc_piso.append(piso_t)
         print(f"{k:28s} " + " ".join(f"{r[c]:10.4f}" for c in colunas))
         del h, xf, ref
         torch.cuda.empty_cache()
@@ -230,11 +284,30 @@ def main() -> int:
     print()
     print(f"{'MEDIANA':28s} " + " ".join(f"{med[c]:10.4f}" for c in colunas))
 
+    # O CONTROLE DE GENERALIZACAO, e ele vem primeiro porque pode invalidar tudo abaixo.
+    print()
+    med_treino = st.median(acc_treino) if acc_treino else float("nan")
+    razao = med["elem_rec"] / med_treino if med_treino else float("inf")
+    n0 = linhas_json[0]
+    print(f"CONTROLE generalizacao: {n0['linhas_ajuste']} linhas de ajuste para "
+          f"{n0['colunas']} colunas ({n0['colunas'] // 2} incognitas livres por linha de saida)")
+    print(f"  erro de TREINO {med_treino:.4f}   erro de TESTE {med['elem_rec']:.4f}   "
+          f"teste/treino {razao:.1f}x")
+    if razao > 5:
+        print("  DECOROU: o solver ajusta as linhas que viu e nao generaliza. O conserto e MAIS")
+        print("  LINHAS DE ATIVACAO, nunca mais iteracoes. Nao leia os ganhos abaixo como reais.")
+
     # O CONTROLE QUE TEM DE PASSAR, e ele decide se o resto pode ser lido.
     print()
-    ok = med["denso_rec"] < 1e-3
+    # O limiar depende do que mais esta ligado. Sem `--quantiza` o denso-recuperado tem de ser
+    # exatamente o peso denso, logo ~0. COM `--quantiza` ele tambem leva int8, entao o melhor que
+    # pode fazer e o piso do proprio int8 -- medido aqui, nao suposto.
+    piso = st.median(acc_piso) if acc_piso else 0.0
+    limite = 1e-3 if not a.quantiza else piso * 1.5
+    ok = med["denso_rec"] <= limite
+    alvo = "< 1e-3" if not a.quantiza else f"<= 1,5x o piso do int8 ({piso:.2e})"
     print(f"CONTROLE denso: recuperacao com mascara de uns mede {med['denso_rec']:.2e}   "
-          f"{'PASSOU (< 1e-3)' if ok else 'FALHOU -- o solver esta errado, NAO leia a tabela'}")
+          f"{'PASSOU (' + alvo + ')' if ok else 'FALHOU (' + alvo + ') -- NAO leia a tabela'}")
 
     # O segundo controle: se a recuperacao salvar Wanda e aleatorio na mesma medida, o criterio
     # nao esta fazendo nada e o 2,20x de 2026-09-01 nao sobrevive.
@@ -246,7 +319,10 @@ def main() -> int:
     print()
     print(f"{'formato':34s} {'bits/peso':>9s} {'erro':>9s} {'ganho da recuperacao':>22s}")
     print("-" * 78)
-    largura = 8.0 if not a.quantiza else 4.5
+    # bits/peso = valores mantidos + METADATA da mascara. `kElementsPerElementE` e 16 no int8
+    # (1,0 bit por peso logico) e 32 no int4 (0,5). Sem a metadata a coluna dizia 8,0 e 4,5,
+    # contradizendo por esquecimento os 9,0 e 5,0 que bench/sparse24_na_sm86_2026-09-01.md publica.
+    largura = 9.0 if not a.quantiza else 5.0
     for nome, bruto, rec, bits in (
             ("2:4 por ELEMENTO (kernel int8)", "elem", "elem_rec", largura),
             ("2:4 por PAR (kernel int4)", "par", "par_rec", largura),
@@ -254,10 +330,20 @@ def main() -> int:
         razao = med[bruto] / med[rec] if med[rec] else float("inf")
         print(f"{nome:34s} {bits:9.1f} {med[rec]:9.4f} "
               f"{f'{razao:.2f}x mais fiel':>22s}")
+    print(f"{'W4A4 ConvRot (o de hoje)':34s} {4.0:9.1f} {med['w4a4']:9.4f} "
+          f"{'-- a referencia':>22s}")
+    print()
+    # A comparacao so vale porque as duas linhas sairam das MESMAS linhas de teste, na mesma
+    # execucao, contra a mesma referencia float32.
+    if med["elem_rec"]:
+        rz = med["w4a4"] / med["elem_rec"]
+        lado = "mais fiel que o W4A4" if rz > 1 else "MENOS fiel que o W4A4"
+        print(f"2:4 elemento recuperado contra W4A4, medidos juntos: {max(rz, 1/rz):.2f}x {lado}")
 
     a.saida.parent.mkdir(parents=True, exist_ok=True)
     a.saida.write_text(json.dumps(
         {"camadas": linhas_json, "mediana": med, "controle_denso_ok": ok,
+         "mediana_elem_rec_treino": med_treino, "fracao_teste": a.fracao_teste,
          "quantiza": bool(a.quantiza), "damp": a.damp, "iteracoes": a.iteracoes},
         indent=2), encoding="utf-8")
     print()

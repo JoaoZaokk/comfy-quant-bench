@@ -5097,3 +5097,57 @@ descartadas, e um arquivo sem analise no proprio groupsize ganha `analise_de_out
 de sair calado.
 
 Nao coberto: um prompt, tres sementes, um tamanho, uma placa. Nada foi medido entre 0,1421 e 0,1848.
+
+
+---
+
+## Parte 46 -- 2026-09-03: recuperacao por camada sobre 2:4, medida e ainda sem foto
+
+A proposta do dono de 2026-09-01, e a unica frente aberta na esparsidade depois que a foto matou o
+INT4 por par. Reconstrucao **por camada**, nao fine-tuning: com a mascara ja escolhida, achar os
+pesos sobreviventes que minimizam `||X Ws^T - X W^T||` por gradiente conjugado mascarado sobre
+`H = X^T X`. Cada iteracao e um unico `[N x K] @ [K x K]`, entao todas as linhas de saida sao
+resolvidas em paralelo.
+
+    formato                          bits/peso     erro
+    W4A4 ConvRot (o de hoje)               4,0   0,0907
+    2:4 elemento, so podado                9,0   0,0736
+    2:4 elemento RECUPERADO                9,0   0,0052    17,4x mais fiel que o W4A4
+    2:4 elemento RECUPERADO + int8         5,0   0,0052
+    2:4 par RECUPERADO + int8              5,0   0,0062
+    2:4 elemento ALEATORIO recuperado      5,0   0,0288    (o controle de criterio)
+    denso recuperado                         -   piso do int8, exato (o controle de solver)
+
+Todas as linhas saem da MESMA execucao, nas MESMAS linhas de teste, contra a mesma referencia
+float32 -- inclusive a do W4A4, medida ali junto justamente para a comparacao nao ser entre o meu
+erro de teste e o erro de treino de outra sonda.
+
+### O numero so existe porque um controle derrubou o anterior
+
+A primeira versao ajustava e avaliava na mesma matriz X. Com `X = [128, 3840]` sao 128 equacoes
+para 1920 incognitas por linha: o CG zera o residuo por construcao, e a tabela dizia **110x** --
+poda 2:4 de graca. Com separacao treino/teste o mesmo run deu **32,1x de distancia** entre treino e
+teste. O conserto foi mais LINHA DE ATIVACAO, nunca mais iteracao: uma calibragem de 8192 linhas
+(12,9 GiB) leva teste/treino a 1,1x.
+
+E o controle denso reprovava o caso correto sob `--quantiza`, porque nesse modo o braco denso
+tambem leva int8 e mede o piso do int8, nao erro de solver. O piso agora e medido.
+
+Corrigido de passagem: a coluna bits/peso esquecia a **metadata da mascara**.
+`kElementsPerElementE` e 16 no int8 e 32 no int4, logo 1,0 e 0,5 bits por peso logico -- 2:4 int8 e
+**5,0** bits/peso e nao 4,5, e 2:4 bf16 e **9,0** e nao 8,0. A tabela nova contradizia
+`bench/sparse24_na_sm86_2026-09-01.md` por esquecimento, nao por medicao.
+
+### O render nao fechou, e as tres hipoteses erradas ficam registradas
+
+`CONTROLE FALHOU: a cirurgia nao sobreviveu ate o fim da amostragem`, e errei a causa tres vezes:
+pressao de memoria (liberei a calibragem, continuou falhando), invariante errado no contador
+(escrevi `fracao_elem24` para a granularidade de elemento, continuou falhando), carregamento
+preguicoso (passei `--disable-dynamic-vram`, o processo morreu sem saida, provavelmente RAM). Os
+dois primeiros consertos sao corretos e nao eram a causa.
+
+O caminho que sobra: **gravar os pesos recuperados de um processo separado** e carregar so eles no
+render, separando a memoria da reconstrucao da memoria da amostragem.
+
+**17,4x nao e um resultado ate a foto existir.** Esta bancada mediu no mesmo dia tres instrumentos
+numericos apontando para o lado errado, e o erro por camada e um deles.
