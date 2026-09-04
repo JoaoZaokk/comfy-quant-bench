@@ -89,6 +89,20 @@ def int8_por_linha(w: torch.Tensor) -> torch.Tensor:
     return (w / e).round().clamp(-127, 127) * e
 
 
+def int4_por_linha(w: torch.Tensor) -> torch.Tensor:
+    """Simetrico por linha, mesma forma do int8 e a mesma de `q4` no probe visual.
+
+    NAO e ConvRot: nao ha rotacao aqui, entao o outlier de ativacao nao e espalhado antes de
+    quantizar. E a mesma desvantagem que os outros bracos esparsos ja carregam."""
+    e = w.abs().amax(dim=1, keepdim=True).clamp_min(1e-8) / 7
+    return (w / e).round().clamp(-8, 7) * e
+
+
+# 2:4 guarda metade dos valores; o metadado da mascara custa 1,0 bit por peso logico no
+# container de 8/16 bits e 0,5 no de 4 (kElementsPerElementE 16 e 32).
+BITS_POR_PESO = {"recup_elem": 9.0, "recup_elem_int8": 5.0, "recup_elem_int4": 2.5}
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -97,7 +111,9 @@ def main() -> int:
                                   "beyond-reality-zimage-v2_native.safetensors")
     p.add_argument("--calib", type=Path,
                    default=RAIZ / "calib/zimage_v2_rows8192.calib.pt")
-    p.add_argument("--int8", action="store_true", help="aplica int8 por linha depois de recuperar")
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("--int8", action="store_true", help="int8 por linha depois de recuperar (5,0 bits/peso)")
+    g.add_argument("--int4", action="store_true", help="int4 por linha depois de recuperar (2,5 bits/peso)")
     p.add_argument("--damp", type=float, default=0.01)
     p.add_argument("--saida", type=Path, required=True)
     a = p.parse_args()
@@ -131,6 +147,8 @@ def main() -> int:
         rec = recupera_cg(w.float(), m.float(), h.float())
         if a.int8:
             rec = int8_por_linha(rec)
+        elif a.int4:
+            rec = int4_por_linha(rec)
         saida[chave] = rec.to(w.dtype).cpu()
         # A amostra sai da RAM assim que e consumida: com 8192 linhas o dicionario inteiro passa
         # de 12 GiB e nao ha razao para segurar o que ja foi usado.
@@ -145,7 +163,8 @@ def main() -> int:
         print("nenhuma camada recuperada", file=sys.stderr)
         return 2
 
-    meta = {"modo": "recup_elem_int8" if a.int8 else "recup_elem",
+    modo = "recup_elem_int8" if a.int8 else ("recup_elem_int4" if a.int4 else "recup_elem")
+    meta = {"modo": modo, "bits_por_peso": str(BITS_POR_PESO[modo]),
             "criterio": "wanda", "granularidade": "elemento 2:4",
             "camadas": str(len(saida)), "puladas_sem_amostra": str(puladas),
             "calib": str(a.calib.name), "modelo": str(a.modelo.name),

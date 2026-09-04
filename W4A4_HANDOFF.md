@@ -602,32 +602,66 @@ conjugado mascarado sobre `H = X^T X`), nao fine-tuning. Sobre as MESMAS linhas 
 
 ### Fila para a proxima sessao, em ordem
 
-1. **Subir os cards** assim que houver token de escrita: Qwen3-4B (imagens novas + a correcao da
-   receita de destrava), e Wan/Z-Image/Hunyuan (a linha do Z-Image na tabela de tolerancia). Depois
-   apagar as 6 orfas.
-2. **Fechar o render da recuperacao.** A ferramenta que faltava JA EXISTE e nao precisa ser
-   reescrita -- `tools/grava_pesos_recuperados.py` calcula os pesos recuperados num processo
-   proprio e grava um safetensors, e `probe_esparso_visual.py --modos arquivo --pesos <arq>` os
-   aplica sem carregar calibragem nenhuma. E isso que separa os 12,9 GiB de ativacoes dos 11,5 GiB
-   de modelo que `--disable-dynamic-vram` carrega de uma vez; juntos mataram o processo sem saida.
-   Comandos:
+1. **FEITO em 2026-09-03.** Os quatro cards estao no ar e conferidos por sha256 contra o local
+   (Qwen3-4B com as duas imagens novas, e Wan/Z-Image/Hunyuan com a linha do Z-Image). As 6 orfas
+   do regime errado foram apagadas do repo do Wan (18 -> 12 imagens). As copias locais estao em
+   `bench/hf/wan21-vace-w4a4/images_regime_errado/`, FORA de `images/`, porque de dentro de
+   `images/` o proximo `--imagens` as subiria de volta calado.
+
+   O token de escrita vive em `F:\COMFY_PORTABLE\.hf\token`, com escopo de DIRETORIO: exporte
+   `HF_TOKEN_PATH` apontando para ele antes de publicar. Sem a variavel o processo le o token de
+   leitura global e a publicacao falha. **Cuidado:** a variavel de ambiente `HF_TOKEN` vence o
+   arquivo (`huggingface_hub/utils/_auth.py:49`), entao um `setx HF_TOKEN` global mataria o escopo
+   de diretorio em silencio -- escolha um mecanismo, nao os dois.
+
+   Armadilha encontrada ao apagar, e ela quase custou evidencia: **detector de orfa por substring
+   do NOME DO ARQUIVO da falso positivo.** O card do Hunyuan cita as imagens como `t015`, nao como
+   `misto_t015.png`, e a linha 75 dele diz que `images/` carrega a escada INTEIRA de proposito.
+   Tres imagens foram classificadas como orfas e nao eram. Confira as mencoes em PROSA, nao so os
+   links markdown.
+
+2. **FECHADO em 2026-09-03: a frente 2:4 nao paga, e a foto existe.** Ver `W4A4_PROGRESS.md`
+   parte 47. Nao reabrir sem ler; o resumo e:
 
    ```
-   python_embeded\python.exe -u -s tools/grava_pesos_recuperados.py --int8 \
-       --saida bench/pesos_recup_elem_int8.safetensors
-   python_embeded\python.exe -u -s tools/probe_esparso_visual.py --modos bf16 w4a4 arquivo \
-       --pesos bench/pesos_recup_elem_int8.safetensors --seeds 1234 7 42
+   so poda (sem quantizar nada)      destroi o modelo. 3 prompts, 2-3 sementes cada
+   recuperado + int8      5,0 bits   funciona -- e custa MAIS que os 4,0 do W4A4
+   recuperado + int4      2,5 bits   destruido
+   W4A4 ConvRot           4,0 bits   funciona, e e o mais barato que funciona
    ```
 
-   O `bake` foi interrompido a pedido do dono por pressao de RAM e nunca terminou, entao a
-   ferramenta esta ESCRITA e NAO EXERCITADA ate o fim -- trate a primeira execucao como estreia,
-   nao como repeticao. Depois, mais sementes. O numero por camada e
-   espetacular e esta bancada ja mediu tres instrumentos numericos apontando para o lado errado no
-   mesmo dia -- so a foto decide.
+   A recuperacao **funciona de verdade**: `so poda ELEM` e `recuperado` usam a MESMA mascara e a
+   diferenca e so o gradiente conjugado nos sobreviventes -- fantasma vira imagem. O que mata a
+   frente nao e ela falhar, e o unico braco que funciona custar 25% mais bits que o W4A4 pronto.
+
+   Artefatos em `bench/esparso_visual` (maca), `bench/esparso_rosto`, `bench/esparso_tijolo` e
+   `bench/esparso_tijolo_int4`, cada um com sua grade rotulada. Os pesos assados
+   (`bench/pesos_recup_elem_int{4,8}.safetensors`, 11,2 GiB cada) e o calib de 8192 linhas foram
+   MANTIDOS por decisao do dono -- ha um teste que ainda os usaria, no item 5.
+
+   **Refutado no mesmo dia, com o eixo isolado:** a hipotese de que faltava a rotacao ao braco
+   esparso. `esp_peso` contra `convrot_peso`, 6 de 6 medicoes, a rotacao PIORA.
+
+3. **Rodar o bloco 4** (`probe_te_lock_cost.py` duas vezes, uma por arquivo do Gemma, com `--bf16`
+   apontando para o original de 23,5 GiB). Criterio e previsoes ja escritos. **E o proximo item
+   sem bloqueio nenhum.**
+
+4. **Recuperado + ConvRot, a 2,5 bits -- a unica combinacao que sobrou e a unica que poderia ganhar
+   do W4A4 em bits.** Nunca construida. Cuidado ao estimar: a medicao de que a rotacao piora foi
+   feita em pesos PODADOS SEM recuperacao, e aplicar rotacao antes de recuperar muda a base em que
+   o CG resolve -- e outro problema, nao o mesmo com um filtro a mais. Extrapolar de um para o
+   outro seria a mesma deducao que a parte 47 registra como refutada. Custa um bake (~18 min) mais
+   um render, com o calib que foi mantido para isso.
 3. **Rodar o bloco 4** (`probe_te_lock_cost.py` duas vezes, uma por arquivo do Gemma, com `--bf16`
    apontando para o original de 23,5 GiB). Criterio e previsoes ja escritos.
-4. **Apagar `calib/zimage_v2_rows8192.calib.pt`** (12,9 GiB) quando a frente da esparsidade fechar.
-   O disco F: esta com 51 GiB livres.
+5. **Limpeza de disco, autorizada pelo dono e NAO executada.** Em 2026-09-03 ele autorizou apagar
+   e depois mandou SEGURAR, entao nada foi apagado. F: com 29 GiB livres. Quando liberar:
+   `calib/zimage_v2_rows8192.calib.pt` (12,6 GiB, so vai depois do item 4 -- e o insumo dele),
+   `bench/pesos_recup_elem_int{4,8}.safetensors` (11,2 GiB cada, reproduziveis em 18 min), e
+   **8 calibracoes que ninguem cita** (2,0 GiB somados, medido casando nome de arquivo contra
+   sidecars, analises, `tools/*.py` e os tres markdowns). Ressalva do proprio metodo: "ninguem
+   cita" e ausencia num grep. `xfer_recovered` e `zimage_v2_native` tem cara de caminho montado por
+   convencao -- conferir o gerador antes desses dois.
 5. **Reconstrucao SEQUENCIAL** (cada camada ve a entrada ja degradada pelas anteriores, que e o que
    o SparseGPT faz) se a independente nao bastar na foto.
 

@@ -170,6 +170,12 @@ def q8(t):
     return (t / e).round().clamp(-127, 127) * e
 
 tocadas, com_wanda = [], 0
+# Inicializado ANTES do ramo, nao dentro dele: o dicionario RESULT le
+# `puladas_por_cg` sob a guarda `MODO != "nenhum"`, que o modo `arquivo`
+# satisfaz sem passar pelo ramo que o definia. Estreia do modo custou uma
+# amostragem inteira por causa disso.
+puladas_por_cg = 0
+GRAN = "elemento" if "elem" in MODO else "par"
 if MODO == "arquivo":
     # Caminho curto: pesos ja calculados por tools/grava_pesos_recuperados.py. Nenhuma
     # calibragem entra neste processo, entao `--disable-dynamic-vram` cabe na RAM.
@@ -187,8 +193,23 @@ if MODO == "arquivo":
             with torch.no_grad():
                 mod.weight.data.copy_(f.get_tensor(chave).to(mod.weight.device, mod.weight.dtype))
             tocadas.append(nome)
+    # A granularidade sai do ARQUIVO, nao do nome do modo. Um arquivo de pesos ja
+    # recuperados nao carrega "elem" no nome do braco, e cobrar o invariante de PAR numa
+    # cirurgia por ELEMENTO reprova a cirurgia CORRETA -- ver a docstring de fracao_elem24,
+    # que descreve essa armadilha e foi escrita antes de eu cair nela.
+    _g = str(meta_pesos.get("granularidade", ""))
+    if "element" in _g:
+        GRAN = "elemento"
+    elif "par" in _g:
+        GRAN = "par"
+    else:
+        raise SystemExit(
+            "o arquivo de pesos nao declara `granularidade` no metadata, e sem isso nao da "
+            "para saber qual invariante o controle deve cobrar. Chutar produz um controle que "
+            "mente numa das duas direcoes. Regrave com tools/grava_pesos_recuperados.py.")
     print("  arquivo de pesos: " + str(len(tocadas)) + " camadas aplicadas, "
-          + str(faltando) + " sem modulo correspondente; metadata=" + repr(meta_pesos), flush=True)
+          + str(faltando) + " sem modulo correspondente; granularidade=" + GRAN
+          + "; metadata=" + repr(meta_pesos), flush=True)
 elif MODO != "nenhum":
     normas, amostras = {}, {}
     RECUPERA = MODO.startswith("recup")
@@ -210,7 +231,6 @@ elif MODO != "nenhum":
             import gc; gc.collect()
     GIRA = MODO.startswith("convrot")
     QUANT_ATIV = MODO.endswith("_ativ")
-    puladas_por_cg = 0
     puladas_sem_amostra = 0
     recuperadas = 0
     for nome, mod in model.model.diffusion_model.named_modules():
@@ -308,15 +328,19 @@ torch.save(out, OUTPT)
 # O CONTROLE: reconferido DEPOIS de amostrar, porque o que interessa e se o peso continuava
 # alterado enquanto o modelo rodava -- nao se a copia funcionou um segundo antes.
 alvo = dict(model.model.diffusion_model.named_modules())
-# O invariante segue a granularidade do braco, nao o nome do arquivo.
-conta24 = fracao_elem24 if ("elem" in MODO) else fracao_par24
-fr = ([conta24(alvo[n].weight.data.float()) for n in tocadas[:16]]
-      if tocadas and "elem" not in MODO else [])
+# O invariante segue a granularidade do braco, nao o nome do modo -- e para o modo
+# `arquivo` quem a declara e o metadata do proprio arquivo de pesos.
+conta24 = fracao_elem24 if GRAN == "elemento" else fracao_par24
+# Ate 2026-09-03 havia aqui um `and "elem" not in MODO` que desligava o controle
+# inteiro justamente nos bracos por elemento, que entao reprovavam SEMPRE via
+# `fr is None`. Era resto: o guarda entrou quando ainda nao existia contador por
+# elemento e nao saiu quando ele chegou, no commit seguinte.
+fr = [conta24(alvo[n].weight.data.float()) for n in tocadas[:16]] if tocadas else []
 print("RESULT " + json.dumps({
     "modo": MODO, "camadas_tocadas": len(tocadas), "com_wanda": com_wanda,
     "puladas_por_groupsize": puladas_por_cg if MODO != "nenhum" else 0,
     "controle_no_maximo_2": (sum(f["no_maximo_2"] for f in fr)/len(fr)) if fr else None,
-    "controle_granularidade": ("elemento: <=2 vivos por grupo de 4" if "elem" in MODO
+    "controle_granularidade": ("elemento: <=2 vivos por grupo de 4" if GRAN == "elemento"
                                else "par: <=2 pares vivos por grupo de 8"),
     "exatamente_2": (sum(f["exatamente_2"] for f in fr)/len(fr)) if fr else None,
     "seconds": el, "mean": float(out.mean()), "std": float(out.std()),
@@ -354,6 +378,10 @@ def main() -> int:
     p.add_argument("--prompt", default="a red apple on a weathered wooden table, soft window "
                                        "light, shallow depth of field, photographic")
     p.add_argument("--negative", default="")
+    p.add_argument("--saida", type=Path, default=None,
+                   help="diretorio dos latentes. Default bench/esparso_visual. Um prompt novo "
+                        "no diretorio antigo SOBRESCREVE os latentes do anterior, porque o nome "
+                        "do arquivo so carrega braco e semente -- nao o prompt.")
     # Tres sementes e nao uma: uma imagem so nao distingue "o formato estraga" de "esta
     # semente saiu ruim", e esta bancada ja publicou um card cuja referencia FP16 estava quebrada
     # numa semente e boa na outra -- exatamente o que uma amostra unica esconde.
@@ -365,6 +393,9 @@ def main() -> int:
     p.add_argument("--size", type=int, default=1024)
     a = p.parse_args()
 
+    global SAIDA
+    if a.saida is not None:
+        SAIDA = a.saida
     SAIDA.mkdir(parents=True, exist_ok=True)
     bracos = [("bf16", a.unet_bf16, "nenhum", ""),
               ("w4a4", a.unet_w4a4, "nenhum", ""),
@@ -386,12 +417,14 @@ def main() -> int:
         bracos = [b for b in bracos if b[0] in set(a.modos)]
         print(f"filtrado para {len(bracos)} braco(s): {[b[0] for b in bracos]}")
     res = {}
+    falhas: list[str] = []
     for semente in a.seeds:
         print(f"\n######## semente {semente} ########", flush=True)
         for nome, unet, modo, calib in bracos:
             print(f"--- {nome} ({unet}, modo={modo}) ---", flush=True)
             r = roda(a, nome, unet, modo, calib, semente)
             if r is None:
+                falhas.append(f"{nome}_s{semente}")
                 continue
             res[f"{nome}_s{semente}"] = r
             fr = r["controle_no_maximo_2"]
@@ -403,6 +436,10 @@ def main() -> int:
                 print(f"  invariante cobrado: {r.get('controle_granularidade', '?')}")
                 print("  CONTROLE FALHOU: a cirurgia nao sobreviveu ate o fim da amostragem. "
                       "Qualquer imagem deste braco descreve outro modelo.", file=sys.stderr)
+                # E se a imagem descreve outro modelo, o processo nao teve sucesso. Ate
+                # 2026-09-03 este caminho imprimia o aviso e devolvia 0, entao a unica coisa
+                # separando a foto boa da foto sem sentido era alguem ler o stdout inteiro.
+                falhas.append(f"controle:{nome}_s{semente}")
 
     (SAIDA / "resumo.json").write_text(json.dumps(res, indent=2), encoding="utf-8")
     print(f"\nlatentes em {SAIDA}. Decodifique com tools/decode_esparso_visual.py")
@@ -410,6 +447,14 @@ def main() -> int:
     print("  linha e NAO e ConvRot, entao o braco esparso corre sem a defesa que o W4A4 tem. Os")
     print("  bracos esparsos sao SIMULACAO dos numeros do formato, nao o kernel -- o kernel foi")
     print("  verificado a parte, com controle bit-exato, em tools/sparse24_sm86/.")
+    if falhas:
+        print(f"\n{len(falhas)} braco(s) FALHARAM e nao estao no resumo: {falhas}",
+              file=sys.stderr)
+        print("  Saida nao-zero de proposito. Ate 2026-09-03 este script imprimia "
+              "'BRACO ... FALHOU' e devolvia 0, entao um resumo.json com dois bracos de "
+              "tres passava por completo para quem confia no codigo de saida.",
+              file=sys.stderr)
+        return 1
     return 0
 
 

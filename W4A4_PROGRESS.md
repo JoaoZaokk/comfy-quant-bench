@@ -5151,3 +5151,122 @@ render, separando a memoria da reconstrucao da memoria da amostragem.
 
 **17,4x nao e um resultado ate a foto existir.** Esta bancada mediu no mesmo dia tres instrumentos
 numericos apontando para o lado errado, e o erro por camada e um deles.
+
+## Parte 47 -- 2026-09-03: 2:4 fecha com negativa medida, e tres defeitos no proprio controle
+
+A parte 46 terminou com "17,4x e nao e resultado ate existir foto". A foto existe agora, em tres
+prompts, e a frente fecha. **Nao ha configuracao de 2:4 que pague nesta bancada.**
+
+### O que a foto diz
+
+Tres prompts escolhidos por quanto perdoam ruido: maca sobre madeira (a original), retrato de
+pescador idoso, e parede de tijolo com esquadria e bicicleta. Madeira e o pior juiz possivel --
+grao quebrado parece detalhe -- e por isso o dono pediu outro prompt. Tijolo e o melhor: linha
+reta e unidade repetida nao se disfarcam de textura.
+
+Nove bracos, 2-3 sementes cada. O veredito e identico nos tres prompts:
+
+    braco                          bits/peso   imagem
+    BF16                                  16   referencia
+    so poda ELEM (sem quantizar)           -   fantasma: cor e posicao certas, zero estrutura
+    so poda PAR  (sem quantizar)           -   chuvisco
+    poda + int4 peso                     2,5   chuvisco
+    o mesmo + ROTACAO                    2,5   chuvisco
+    + int4 ativacao                      2,5   chuvisco
+    o mesmo + ROTACAO                    2,5   chuvisco
+    2:4 recuperado + int8                5,0   funciona, castigado
+    2:4 recuperado + INT4                2,5   destruido
+    W4A4 ConvRot                         4,0   funciona
+
+**A poda sozinha ja destroi o modelo, sem quantizar nada.** O int4 nao e o assassino nas colunas
+do meio: ele chega num modelo que a poda matou antes. Isso reordena a culpa inteira.
+
+**A recuperacao e o que resgata, e a prova e um par.** `so poda ELEM` e `recuperado` usam a
+**mesma mascara** -- os mesmos pesos zerados. A unica diferenca e que no segundo os sobreviventes
+foram reescritos pelo gradiente conjugado. Fantasma vira imagem. Foi a primeira vez que o 17,4x
+por camada teve uma foto que concordasse com ele.
+
+**E fecha assim mesmo**, porque o unico braco que funciona custa **5,0 bits/peso** contra os
+**4,0** do W4A4 que esta bancada ja entrega. Mais caro e nao melhor. O unico degrau que poderia
+ganhar em bits -- recuperado + int4, 2,5 -- foi construido no mesmo dia e sai destruido. Nao
+sobrou angulo.
+
+Detalhe que vale guardar: o int4 recuperado **nao** e chuvisco puro. E uma parede -- cor certa,
+rugosidade de tijolo, classe de textura preservada -- sem uma janela, sem a bicicleta. Mesmo
+comportamento do fantasma, um degrau adiante. A estrutura morre antes da textura.
+
+### A hipotese da rotacao, refutada com o eixo isolado
+
+Eu afirmei em conversa que o braco esparso erra porque roda **sem ConvRot**, e que a rotacao era a
+defesa que faltava. `esp_peso` e `convrot_peso` diferem em exatamente um eixo. Medido:
+
+    prompt/semente   esp_peso   convrot_peso
+    maca 1234           77,51          84,54
+    rosto 1234          70,97          77,45
+    rosto 7             73,83          82,95
+    tijolo 1234         74,51          83,26
+    tijolo 7            73,18          82,16
+
+Seis de seis, a rotacao **piora**. Nao salva modelo que a poda ja matou. A afirmacao era mecanismo,
+nao medicao, e a medicao a derrubou.
+
+**Nao testado, e e o que resta:** rotacao sobre pesos JA RECUPERADOS. E outro problema -- o CG
+resolveria na base rotacionada -- e estender o resultado acima para ele seria a mesma deducao que
+acabou de ser refutada. Nao construido. O calib de 8192 linhas foi mantido justamente para isso.
+
+### Tres defeitos, e o terceiro escondia os outros dois
+
+O render nao fechou de primeira, e o que impediu foi ferramenta, nao formato.
+
+1. **`NameError` no modo `arquivo`.** `puladas_por_cg` so era inicializado no ramo que o modo novo
+   pula, e o dicionario RESULT le sob uma guarda que ele satisfaz. Os pesos aplicaram (170/170), a
+   amostragem rodou, e o braco morreu escrevendo o resumo.
+
+2. **O invariante do controle era escolhido por substring do NOME do modo.** `arquivo` nao contem
+   "elem", entao uma cirurgia por ELEMENTO era cobrada com o invariante de PAR: `0,1133`, lido como
+   "a cirurgia nao sobreviveu". **A docstring de `fracao_elem24` descreve exatamente essa armadilha,
+   por escrito, e eu cai nela tres commits depois de escreve-la.** Corrigido: a granularidade sai do
+   metadata do proprio arquivo de pesos, e sem ela o modo RECUSA em vez de escolher.
+
+   Com o invariante certo: **1,0000**. Controle negativo no mesmo contador: peso original nao
+   podado da **0,0000**. A cirurgia sempre esteve correta.
+
+3. **O controle estava DESLIGADO para os bracos por elemento, e reprovava sempre.**
+   `fr = [...] if tocadas and "elem" not in MODO else []` -- resto de codigo: o guarda entrou em
+   9e94ddb, quando ainda nao existia contador por elemento, e `fracao_elem24` chegou no commit
+   SEGUINTE sem que ele saisse. Efeito: `recup_elem` e `recup_elem_int8` caiam em `fr is None` e
+   reprovavam o controle **fizesse a cirurgia o que fizesse**.
+
+   Consequencia para o registro: o 17,4x da parte 46 tinha controle no GEMM e **nao tinha no
+   render**. Os "CONTROLE FALHOU" daquelas tentativas nao eram evidencia de nada.
+
+4. **Braco morto e controle reprovado devolviam CODIGO 0.** O aviso dizia "qualquer imagem deste
+   braco descreve outro modelo" e o processo declarava sucesso. A unica coisa separando a foto boa
+   da foto sem sentido era alguem ler o stdout inteiro. Agora e exit 1 nos dois casos.
+
+O modo `arquivo` tambem ganhou `--saida`: rodar um prompt novo no diretorio antigo SOBRESCREVIA os
+latentes do anterior, porque o nome do arquivo carrega braco e semente e nao o prompt.
+
+### O que o pixel provou, e nao foi o que ele mede
+
+Semente 1234 do rosto: `arquivo` **77,30**, `so_poda_elem` **71,92**. Pela metrica o fantasma
+ganha do rosto. A ferramenta ja avisava isso no proprio NAO COBERTO; agora ha um caso concreto no
+registro em vez de uma advertencia.
+
+### Hipotese aberta, com o teste que a decide
+
+O braco recuperado puxa consistentemente para superficie **castigada** -- maca fosca e sem gota,
+tijolo mais descascado que o BF16, rosto mais marcado. Sete amostras, tres prompts, sempre na
+mesma direcao. Caos de trajetoria randomiza qualidade; isto e enviesado, o que e outra coisa.
+
+Nao e conclusao porque a cena tambem muda. So `probe_epsilon_per_step` decide -- trajetoria
+imposta, divergencia impossivel por construcao. Obstaculo real: aquele instrumento espera
+CHECKPOINTS e o que existe e um arquivo de 170 pesos soltos.
+
+### Nao coberto
+
+Dois a tres sementes por prompt, tres prompts, um modelo, uma placa, 8 passos. Sem metrica
+perceptual. Os bracos esparsos sao SIMULACAO dos numeros do formato -- GEMM em bf16 sobre valores
+reconstruidos -- nao o kernel; o kernel foi verificado a parte em `tools/sparse24_sm86/`. A
+reconstrucao e por camada INDEPENDENTE: cada camada ve a entrada limpa, nao a ja degradada pelas
+anteriores. Reconstrucao sequencial (estilo SparseGPT) continua nao feita.
