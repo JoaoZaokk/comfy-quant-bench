@@ -5270,3 +5270,40 @@ perceptual. Os bracos esparsos sao SIMULACAO dos numeros do formato -- GEMM em b
 reconstruidos -- nao o kernel; o kernel foi verificado a parte em `tools/sparse24_sm86/`. A
 reconstrucao e por camada INDEPENDENTE: cada camada ve a entrada limpa, nao a ja degradada pelas
 anteriores. Reconstrucao sequencial (estilo SparseGPT) continua nao feita.
+
+## Parte 48 -- 2026-09-03: suavizar canal paga, e paga onde a previsao dizia que nao podia pagar
+
+Bloco 4 do plano, fechado. `_w4a4_smooth` contra `_w4a4_convrot` no Gemma 12B, com o criterio e as
+previsoes escritos antes em `bench/criterio_smooth_vs_convrot.md`, que agora carrega o resultado
+completo. Resumo:
+
+    arquivo     travado      solto     smooth vence
+    convrot   2,1225e-1  4,1167e-1
+    smooth    1,7695e-1  3,1123e-1     3/3 e 3/3 prompts, pareado
+
+**A previsao falhou.** O criterio dizia `smooth >= convrot` no braco TRAVADO, porque ali a ativacao
+nunca e quantizada e suavizar so poderia distorcer o peso. Smooth e 1,20x MELHOR ali. SmoothQuant
+neste modelo tambem reduz o erro do PESO, o que o mecanismo assumido nao previa.
+
+O controle embutido salvou a leitura em vez de calar: como smooth NAO vence por igual (1,20x
+travado contra 1,34x solto), existe um componente do lado da ativacao na direcao prevista, em cima
+de um ganho no peso que ninguem previu. Se vencesse por igual, o ganho seria de qualquer
+perturbacao.
+
+**E a referencia BF16 do Gemma existe** -- este arquivo dizia que nao. Voltou ao disco em
+2026-09-01 com 23545681250 bytes, byte a byte com o tamanho que os sidecars ja registravam, e o
+`--help` de `probe_te_lock_cost.py` ainda dizia "apagado", o que teria levado a proxima pessoa a
+passar `--sem-bf16` e medir so o que destravar ADICIONA. Corrigido. Terceira doc podre do dia, na
+mesma forma: o codigo andou, a frase ficou.
+
+Primeiro numero de fidelidade real do Gemma nesta bancada, no prompt de 1024 tokens:
+
+    peso em 4 bits, math em BF16 (travado)   2,1225e-1   1620 ms
+    peso em 4 bits, math em 4 bits (solto)   4,1167e-1    381 ms
+    BF16                                             0   1981 ms
+
+Destravar dobra o erro e corta 5,19x o tempo contra o BF16, com os dois lados contra a mesma
+referencia -- o que nao era possivel afirmar ontem.
+
+Nao coberto: tres prompts, um modelo, uma placa, `alpha 0.5` unico, sem varredura de alpha. Mede
+condicionamento, nao imagem.

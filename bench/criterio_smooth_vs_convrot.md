@@ -79,3 +79,73 @@ usado como encoder do LTX e nenhum render entra aqui, entao isto mede condiciona
 e esta bancada ja mediu que a distancia no condicionamento pode ser alta com a imagem boa e vice
 versa. Nao mede tempo. E o `alpha` nao foi varrido, entao um resultado negativo e sobre 0,5, nao
 sobre SmoothQuant.
+
+---
+
+# RESULTADO -- medido 2026-09-03, depois do criterio acima
+
+## Os controles, primeiro
+
+    braco            dispatch apos aquecimento
+    A  bf16          {}                         nenhuma Linear quantizada
+    B/D  travado     {'dequantize': 6048}       zero chamadas do kernel de 4 bits
+    C/E  solto       {'convrot': 6048}          zero dequantize
+
+Identico nos dois arquivos. **"Solto" e um estado medido, nao um rotulo** -- que era o controle 1.
+Controle 2 (B != D) passa: 2,1225e-1 contra 1,7695e-1. Controle 3: A sai de um unico carregamento.
+
+E **a referencia BF16 existe**, o que ate hoje nao era verdade nesta bancada. O `CLAUDE.md` dizia
+que o Gemma nao tinha BF16 em disco e que por isso sua coluna de erro nao era alegacao de
+fidelidade. O arquivo voltou em 2026-09-01 (23545681250 bytes, casando byte a byte com o tamanho
+que os sidecars ja registravam) e o `--help` da propria ferramenta ainda dizia que ele fora
+apagado -- corrigido junto com esta medicao.
+
+## Os numeros
+
+Media dos tres prompts, rel-RMSE do condicionamento contra o braco A:
+
+    arquivo     travado      solto     destravar multiplica
+    convrot   2,1225e-1  4,1167e-1            1,94x
+    smooth    1,7695e-1  3,1123e-1            1,76x
+
+Pareado, prompt a prompt -- e o desenho pareado e o que faz isso valer, porque o espalhamento
+ENTRE prompts no braco travado do convrot e 1,31x, da mesma ordem do efeito:
+
+    prompt              conv TRAV   smth TRAV          conv SOLT   smth SOLT
+    maca               2,4822e-1   1,7896e-1  1,39x    3,7693e-1   3,0043e-1  1,25x
+    relojoeiro         1,9015e-1   1,7522e-1  1,09x    3,9206e-1   2,5561e-1  1,53x
+    beco neon          1,9839e-1   1,7667e-1  1,12x    4,6602e-1   3,7766e-1  1,23x
+
+    smooth vence 3/3 no travado e 3/3 no solto
+
+Tempo identico entre os dois arquivos (381 ms no solto, 1,6 s no travado, 2,0 s no bf16) e tamanho
+identico. **Suavizar nao custa nada em runtime.**
+
+## A previsao falhou, e e esse o achado
+
+O criterio previa `D >= B`: sem ativacao quantizada, suavizar nao teria o que ajudar e o peso
+distorcido so poderia atrapalhar. Medido: **smooth e 1,20x melhor no travado, 3/3 prompts.**
+
+Entao SmoothQuant aqui **nao e so um truque de ativacao**: ele tambem reduz o erro de quantizacao
+do PESO, num caminho onde a ativacao nunca e quantizada. O mecanismo que o criterio assumiu estava
+incompleto, e nenhuma leitura do codigo teria mostrado isso -- so a medicao.
+
+**O controle embutido nao ficou mudo, ficou parcial**, e e por isso que ele valeu a pena. O
+criterio dizia: se `smooth` ganhasse **por igual** nos dois caminhos, o ganho seria de qualquer
+perturbacao e nada teria sido distinguido. Nao ganha por igual -- **1,20x travado contra 1,34x
+solto** -- entao existe SIM um componente do lado da ativacao, na direcao prevista, EM CIMA de um
+ganho no peso que ninguem previu. Dois efeitos reais; o criterio antecipou um.
+
+## A resposta pratica
+
+A pergunta que o conversor `smooth` existe para responder era "suavizar canal paga?". **Paga**:
+melhor nos dois regimes, mesma velocidade, mesmo tamanho de arquivo. Para este encoder, `smooth`
+domina `convrot` sem contrapartida medida.
+
+## Nao coberto
+
+Tres prompts, um modelo, uma placa sm86, `alpha 0.5` unico. Mede CONDICIONAMENTO, nao imagem --
+nenhum render foi feito, e esta bancada ja mediu que erro por camada nao prevê a imagem livre.
+Tres prompts sao tres amostras: o desenho pareado sustenta a direcao, nao a segunda casa decimal.
+As travas sao soltas por monkeypatch pos-load, que nao e caminho que o ComfyUI ofereca. E `alpha`
+nao foi varrido, entao "paga" e sobre este ponto, nao sobre a curva.

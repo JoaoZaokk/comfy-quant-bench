@@ -229,9 +229,7 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--bf16", default="qwen_3_4b.safetensors",
-                   help="referencia sem quantizacao. Passe --sem-bf16 quando ela nao existir "
-                        "mais no disco -- e o caso do Gemma deste projeto, cujo fonte de "
-                        "23,5 GiB foi apagado.")
+                   help="referencia sem quantizacao. Passe --sem-bf16 apenas quando ela realmente nao existir. ATENCAO: este help dizia ate 2026-09-03 que o fonte do Gemma tinha sido apagado, e isso deixou de ser verdade em 2026-09-01, quando ele foi rebaixado de novo -- `gemma_3_12B_it_heretic.safetensors`, 23545681250 bytes, casando byte a byte com o tamanho que os sidecars ja registravam.")
     p.add_argument("--sem-bf16", action="store_true", dest="sem_bf16",
                    help="so mede C contra B: o que soltar as travas ADICIONA, e o tempo. Nao "
                         "diz o custo total contra o modelo original, porque sem referencia "

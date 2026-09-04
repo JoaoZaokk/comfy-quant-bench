@@ -642,9 +642,29 @@ conjugado mascarado sobre `H = X^T X`), nao fine-tuning. Sobre as MESMAS linhas 
    **Refutado no mesmo dia, com o eixo isolado:** a hipotese de que faltava a rotacao ao braco
    esparso. `esp_peso` contra `convrot_peso`, 6 de 6 medicoes, a rotacao PIORA.
 
-3. **Rodar o bloco 4** (`probe_te_lock_cost.py` duas vezes, uma por arquivo do Gemma, com `--bf16`
-   apontando para o original de 23,5 GiB). Criterio e previsoes ja escritos. **E o proximo item
-   sem bloqueio nenhum.**
+3. **FECHADO em 2026-09-03: suavizar canal PAGA.** Resultado completo em
+   `bench/criterio_smooth_vs_convrot.md` e em `W4A4_PROGRESS.md` parte 48.
+
+   ```
+   arquivo     travado      solto     pareado
+   convrot   2,1225e-1  4,1167e-1
+   smooth    1,7695e-1  3,1123e-1     smooth vence 3/3 e 3/3 prompts
+   ```
+
+   Mesmo tempo (381 ms solto), mesmo tamanho. Para este encoder `smooth` domina `convrot` sem
+   contrapartida medida. **A previsao falhou**: o criterio dizia que smooth teria de ser pior ou
+   igual no braco TRAVADO, onde a ativacao nunca e quantizada -- e ele e 1,20x melhor. SmoothQuant
+   aqui tambem reduz o erro do PESO, o que o mecanismo assumido nao previa. O controle embutido
+   ficou parcial em vez de mudo, e por isso valeu: como o ganho NAO e igual nos dois caminhos
+   (1,20x travado, 1,34x solto), ha um componente de ativacao na direcao prevista em cima de um
+   ganho de peso que ninguem previu.
+
+   Subproduto que fecha uma ressalva antiga: **a referencia BF16 do Gemma existe** e o `CLAUDE.md`
+   dizia que nao. Primeiro numero de fidelidade real dele nesta bancada -- travado 2,1225e-1 a
+   1620 ms, solto 4,1167e-1 a 381 ms, BF16 a 1981 ms. Destravar dobra o erro e corta 5,19x o tempo.
+
+   Aberto e barato daqui: **`alpha` nunca foi varrido** (so 0,5), e nada foi RENDERIZADO -- isto
+   mede condicionamento, e esta bancada ja mediu que erro nao prevê a imagem livre.
 
 4. **Recuperado + ConvRot, a 2,5 bits -- a unica combinacao que sobrou e a unica que poderia ganhar
    do W4A4 em bits.** Nunca construida. Cuidado ao estimar: a medicao de que a rotacao piora foi
