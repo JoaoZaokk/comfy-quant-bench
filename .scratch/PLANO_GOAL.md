@@ -115,3 +115,34 @@ Pede `--disable-dynamic-vram` (medido: 35 GB staged num cartao de 24).
   e 2,00 GiB.
 - Matar ComfyUI pela ARVORE (`.scratch/derruba_comfy.ps1`), nunca pelo pid.
 - Cards e README em ingles.
+
+## Etapa 5 -- LTX 2.5: inventario conferido no disco 2026-09-12
+
+Nada precisa ser baixado. Tudo em `D:` (rede) menos os nossos, que estao em `F:`.
+
+    ltx-2.5-22b-distilled-transformer-bf16        42.018.190.584 B   FONTE destilada
+    ltx-2.5-22b-dev-transformer-bf16              42.018.190.584 B   FONTE dev (nao destilada)
+    ...-distilled-...-comfy-int8-convrot          21.504.034.224 B   int8 do Comfy-Org
+    ...-distilled-...bf16_w4a8                    12.520.267.816 B   NOSSO
+    ...-distilled-...nvfp4                        18.721.548.408 B   terceiros
+    LTX25-distilled-DiT-comfy-w4a4                11.236.345.048 B   riftcast, 1440 camadas, 4 bits reais
+    LTX25-distilled-DiT-comfy-mix4x8              13.810.250.240 B   terceiros
+
+    encoder gemma4-12b-with-proj-ltx-2.5-bf16     26.263.860.594 B   FONTE
+    encoder ...-comfy-int8-convrot                15.372.971.786 B   Comfy-Org
+    encoder gemma4-12b-ltx25-comfy-w4a8           10.604.342.914 B   (em F:)
+
+    vae ltx-2.5-video-vae-bf16                     1.472.223.346 B
+    vae ltx-2.5-audio-vae-bf16                       364.866.540 B
+
+Workflow de referencia pronto: `LTX25-int8-acceptance-v2.json` -- cadeia A/V completa
+(`EmptyLTXVLatentVideo` + `LTXVEmptyLatentAudio` + `LTXVConcatAVLatent` + `SamplerCustomAdvanced`
++ `LTXVSeparateAVLatent`). Hoje em 512x512 x 49 quadros.
+
+**O video de 10 s pedido:** LTX quer contagem de quadros 8n+1. A 25 fps, 10 s = 249 quadros
+(8x31+1). Isso e 5,08x o latente do workflow atual -- e o ponto de risco da etapa, nao a
+conversao.
+
+**ARMADILHA JA REGISTRADA:** LTX 2.5 exige `--disable-dynamic-vram`. Sem a flag, morre com
+`aimdo: hostbuf_read_file_slice: device copy failed` depois de tentar montar 35 GB num cartao
+de 24, e a mensagem NAO nomeia o subsistema culpado.
