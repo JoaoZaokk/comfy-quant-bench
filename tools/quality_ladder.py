@@ -270,9 +270,22 @@ def main() -> int:
     args = parse_args()
     prompts = list(args.prompt)
     if args.prompt_file:
-        prompts.append(args.prompt_file.read_text(encoding="utf-8").strip())
+        # UMA LINHA = UM PROMPT. Ate 2026-09-12 esta linha fazia `.append(read_text())`,
+        # colando o arquivo INTEIRO num unico prompt -- um arquivo de seis prompts virava
+        # um prompt de seis linhas e o cabecalho anunciava "1 prompt(s) x N seed(s)".
+        # Nao falhava: rodava, e rodava errado, o que e pior. Encontrado ao pedir
+        # explicitamente seis prompts para nao repetir o vies de medir so a maca.
+        # Linha vazia e linha comecando com '#' sao ignoradas, para o arquivo poder
+        # carregar comentario dizendo o que cada prompt testa.
+        linhas = [ln.strip() for ln in
+                  args.prompt_file.read_text(encoding="utf-8").splitlines()]
+        prompts.extend(ln for ln in linhas if ln and not ln.startswith("#"))
     if not prompts:
         prompts = ["a still life with brass instruments on a wooden table, morning light"]
+    # a contagem sozinha ja teria denunciado o bug acima; o texto de cada prompt denuncia
+    # tambem um arquivo lido pela metade ou com encoding trocado.
+    for i, p in enumerate(prompts):
+        print(f"  prompt {i}: {p[:96]}", flush=True)
 
     import comfy.model_management as comfy_mm
     import comfy.sample as comfy_sample

@@ -296,6 +296,43 @@ def widget_names(defn: dict) -> list[str]:
     return out
 
 
+def widgets_com_companheiro(defn: dict) -> set[str]:
+    """Widgets que ocupam DUAS posicoes em `widgets_values`, nao uma.
+
+    Um input INT marcado `control_after_generate` e desenhado pelo frontend como dois
+    controles -- o valor e o 'fixed/increment/randomize' ao lado -- e o arquivo salvo
+    guarda os dois, em sequencia. O servidor so conhece o primeiro.
+
+    Ate 2026-09-12 este arquivo sabia disso em PROSA (o comentario dizia "extras sao
+    normais: nodes de seed carregam um control_after_generate") e mesmo assim fazia
+    `zip(names, vals)`, que pareia desde o inicio -- entao o extra na posicao 1 deslocava
+    TODO o resto. Num KSampler comum isso produzia `steps='randomize'`, `cfg=10`,
+    `sampler_name=1.0`, `denoise='simple'`. Aqui deu 400 na validacao e apareceu; com tipos
+    compativeis teria RODADO com os valores trocados, que e precisamente a falha silenciosa
+    contra a qual o resto deste arquivo foi escrito.
+    """
+    inp = defn.get("input", {}) or {}
+    achados = set()
+    for section in ("required", "optional"):
+        for nome, spec in (inp.get(section) or {}).items():
+            if not isinstance(spec, (list, tuple)) or len(spec) < 2:
+                continue
+            opts = spec[1] if isinstance(spec[1], dict) else {}
+            # `control_after_generate` (seed) e `image_upload` (LoadImage) sao os dois
+            # marcadores que o servidor publica para "este widget e desenhado como DOIS
+            # controles". Ambos gastam uma posicao extra em `widgets_values`.
+            if opts.get("control_after_generate") or opts.get("image_upload"):
+                achados.add(nome)
+    return achados
+
+
+# Nodes que existem SO no frontend: nao aparecem em /object_info e nunca deveriam. Sao
+# decoracao de canvas, sem entrada, sem saida e sem efeito na execucao. A lista e curta de
+# proposito -- ela EXIME de ser fatal, entao um nome a mais aqui esconde um node que sumiu
+# de verdade. Qualquer coisa que tenha saida ligada NAO entra nesta lista.
+SOMENTE_UI = frozenset({"Note", "MarkdownNote"})
+
+
 def ui_to_api(wf: dict, object_info: dict) -> tuple[dict[str, Node], list[Note]]:
     """UI-format graph -> {node_id: Node}. Returns (prompt, notes)."""
     notes: list[Note] = []
@@ -314,6 +351,18 @@ def ui_to_api(wf: dict, object_info: dict) -> tuple[dict[str, Node], list[Note]]
             notes.append(Note(
                 level="info", node=nid,
                 text=f"node {nid} ({ctype}) is muted/bypassed in the UI -- skipped",
+            ))
+            continue
+        if ctype in SOMENTE_UI:
+            # Frontend-only decoration: it has no server class BY DESIGN, carries no input
+            # and no output, and its absence from `prompt` changes nothing that executes.
+            # Treating it as fatal (the behaviour until 2026-09-12) refused every workflow
+            # with a sticky note on the canvas -- including the official Krea2 Edit one,
+            # which ships eight of them. That is a fatal that cannot be acted on: there is
+            # nothing to fix in the graph.
+            notes.append(Note(
+                level="info", node=nid,
+                text=f"node {nid} ({ctype}) is a UI-only node -- not submitted, by design",
             ))
             continue
         defn = object_info.get(ctype)
@@ -339,9 +388,19 @@ def ui_to_api(wf: dict, object_info: dict) -> tuple[dict[str, Node], list[Note]]
 
         # Widgets fill, in order, the widget-able inputs that are NOT wired.
         vals = list(node.get("widgets_values") or [])
-        names = [n for n in widget_names(defn) if n not in wired]
-        if len(vals) < len(names):
-            missing = len(names) - len(vals)
+        # `widgets_values` e indexado pela lista COMPLETA de widgets do node, incluindo os
+        # que viraram entrada ligada por fio -- o frontend guarda o valor velho na posicao.
+        # Ler so os nao-ligados desalinha: num EmptySD3LatentImage com width/height ligados,
+        # vals=[1024,1024,1] e names=['batch_size'] dava batch_size=1024.
+        todos = widget_names(defn)
+        names = [n for n in todos if n not in wired]
+        # Cada widget com companheiro de UI come uma posicao a mais em `vals`. Contar isso
+        # ANTES das comparacoes abaixo, senao um KSampler correto (7 valores, 6 inputs) e
+        # lido como "1 extra" e um KSampler de verdade desalinhado passa pelo mesmo buraco.
+        companheiros = widgets_com_companheiro(defn)
+        esperado = len(todos) + sum(1 for n in todos if n in companheiros)
+        if len(vals) < esperado:
+            missing = esperado - len(vals)
             # Off by exactly one is the ordinary shape of "a node gained one optional widget
             # since this file was saved" -- the CLIPLoader `device` case this file's own history
             # hit. Off by MORE than one is the failure this ticket is about: more than one input
@@ -360,18 +419,27 @@ def ui_to_api(wf: dict, object_info: dict) -> tuple[dict[str, Node], list[Note]]
                     text=f"node {nid} ({ctype}): {len(vals)} widget values for {len(names)} "
                          f"widget inputs {names} -- {missing} widgets missing, check alignment",
                 ))
-        elif len(vals) > len(names):
-            # Extra values are normal: seed nodes carry a UI-only
-            # 'control_after_generate' that is not an input. Extras beyond one
-            # are worth saying out loud, because a MIS-ALIGNMENT looks the same.
-            if len(vals) - len(names) > 1:
-                notes.append(Note(
-                    level="fatal", node=nid,
-                    text=f"node {nid} ({ctype}): {len(vals)} widget values for {len(names)} "
-                         f"inputs {names} -- {len(vals) - len(names)} extra, check alignment",
-                ))
-        for name, val in zip(names, vals):
-            inputs[name] = val
+        elif len(vals) > esperado:
+            # `esperado` ja contabiliza os companheiros de UI, entao daqui para cima
+            # sobra e desalinhamento, nao formato normal.
+            notes.append(Note(
+                level="fatal", node=nid,
+                text=f"node {nid} ({ctype}): {len(vals)} widget values for {esperado} "
+                     f"esperados (inputs {names}, companheiros de UI "
+                     f"{sorted(companheiros & set(names))}) -- "
+                     f"{len(vals) - esperado} sobrando, confira o alinhamento",
+            ))
+        # Consumir na ordem, pulando a posicao do companheiro LOGO DEPOIS do seu widget --
+        # e ali que o frontend a grava, nao no fim da lista.
+        i = 0
+        for name in todos:
+            if i >= len(vals):
+                break
+            if name not in wired:          # ligado por fio: o valor salvo e lixo, so avanca
+                inputs[name] = vals[i]
+            i += 1
+            if name in companheiros:
+                i += 1
 
         # Fill required widget inputs the saved file does not carry.
         #
@@ -401,6 +469,37 @@ def ui_to_api(wf: dict, object_info: dict) -> tuple[dict[str, Node], list[Note]]
             ))
 
         prompt[nid] = Node(class_type=ctype, inputs=inputs, wired=wired)
+    # Um node pulado (mutado/bypassado, ou so de UI) sai do `prompt`, mas quem apontava para
+    # ele continua com a referencia. O servidor rejeita com 400 e uma mensagem que so diz o
+    # ID que falta -- foi assim que o workflow oficial do Krea2 Edit, que traz a SEGUNDA
+    # referencia mutada de proposito, dava `exception_during_inner_validation: '90'` em tres
+    # nodes ao mesmo tempo, nenhum deles o node 90.
+    #
+    # Referencia orfa em entrada OPCIONAL simplesmente cai: era exatamente isso que o mute
+    # queria dizer. Em entrada OBRIGATORIA nao se pode inventar nada, entao vira `fatal`.
+    for nid, node in prompt.items():
+        defn = object_info.get(node.class_type, {})
+        req = set(((defn.get("input") or {}).get("required") or {}).keys())
+        for nome, val in list(node.inputs.items()):
+            # `Wire` e tupla, nao lista: um `isinstance(val, list)` aqui nunca casa e a
+            # poda vira no-op silenciosa. O node ja sabe quais entradas sao fio.
+            if not (node.is_wire(nome) and str(val[0]) not in prompt):
+                continue
+            if nome in req:
+                notes.append(Note(
+                    level="fatal", node=nid,
+                    text=f"node {nid} ({node.class_type}): entrada OBRIGATORIA '{nome}' "
+                         f"aponta para o node {val[0]}, que nao entrou no prompt "
+                         f"(mutado, bypassado ou so de UI). O grafo esta incompleto.",
+                ))
+            else:
+                node.inputs.pop(nome)
+                notes.append(Note(
+                    level="info", node=nid,
+                    text=f"node {nid} ({node.class_type}): entrada opcional '{nome}' "
+                         f"apontava para o node {val[0]}, que foi pulado -- removida",
+                ))
+
     return prompt, notes
 
 
