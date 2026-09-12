@@ -439,6 +439,31 @@ torch.AcceleratorError: CUDA error: out of memory
 
 14612 + 20484 = 35 GB staged on a 24 GB card. PyTorch's own summary, printed alongside, says `Allocated memory 141211 KiB` and `CUDA OOMs: 0` — the allocator that overflowed was dynamic-vram's, not torch's. **The message never names the subsystem at fault** and points the reader straight at "the model is too large", on a card that had 18 GB free at the moment of failure.
 
+**And dynamic VRAM has a second failure mode that has nothing to do with memory: its lazy load
+does not convert dtype.** Measured 2026-09-12. With aimdo on, `comfy/ops.py:552` assigns a
+Linear's weight **straight from the file** and never casts it to the module's dtype. That is
+invisible while a checkpoint carries one floating dtype, and every checkpoint this bench had run
+until then did. `krea2_turbo_bf16` does not: its 256 `blocks` and `txtfusion` weights are BF16
+and its **ends** -- `first`, `last.linear`, `tmlp`, `tproj`, `txtmlp` -- are **F32**, which is
+the model's own precision policy. The result, after reading all 24.5 GiB:
+
+```
+RuntimeError: mat1 and mat2 must have the same dtype, but got BFloat16 and Float
+  comfy/ldm/krea2/model.py:331, img = self.first(img)
+```
+
+The message names the first layer of the model and says nothing about the mechanism. Without
+dynamic VRAM the same file loads with `first.weight` in bfloat16 and samples normally -- verified
+by varying that one axis, after three probes that held it fixed and reproduced nothing. Note the
+trap inside the trap: `load_clip(..., disable_dynamic=True)` and
+`load_diffusion_model(..., disable_dynamic=True)` do **not** protect you, because
+`tools/_dynamic_vram.enable()` turns aimdo on globally before either call.
+
+`tools/_dynamic_vram.perigoso_para_lazy()` answers it from the header alone: the conflicting
+floating dtypes among **2-D** tensors, or `None`. 2-D because that is what becomes an `F.linear`
+weight -- a 1-D F32 scale beside BF16 weights is normal. `beyond-reality-zimage-v2_native`
+returns `None`; all four Krea2 arms return `{BF16, F32}`.
+
 ```bash
 .\python_embeded\python.exe -s .\ComfyUI\main.py --windows-standalone-build --use-sage-attention --disable-dynamic-vram --listen 127.0.0.1 --port 8190
 ```
