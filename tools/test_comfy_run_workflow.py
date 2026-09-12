@@ -565,6 +565,93 @@ NOT_COVERED = (
 )
 
 
+# ---------------------------------------------------------------------------------------------
+# bases_irmas: o /history do resultado nao e necessariamente o do servidor a quem se submeteu.
+#
+# Este eixo nao existia no arquivo ate 2026-09-12 porque o cliente so falava com UM servidor, e
+# o modo de falha e silencioso na direcao errada: o cliente reporta TIMEOUT enquanto a imagem
+# esta em disco, o que le como "o modelo nao gerou".
+#
+# O eixo que estes testes SEGURAM (e portanto nao provam): nenhum deles sobe processo nem abre
+# socket. Provam a leitura da linha de comando e a ordem da lista, nao que o /history do worker
+# responda -- isso so um servidor vivo diz.
+# ---------------------------------------------------------------------------------------------
+
+class _FakeProc:
+    def __init__(self, argv):
+        self.info = {"cmdline": argv}
+
+
+def _com_psutil_falso(procs, fn):
+    import psutil
+    original = psutil.process_iter
+    psutil.process_iter = lambda attrs=None: iter(procs)
+    try:
+        return fn()
+    finally:
+        psutil.process_iter = original
+
+
+def test_bases_irmas_encontra_o_worker_multigpu():
+    procs = [
+        _FakeProc([r"F:\python_embeded\python.exe", "-s", r"F:\ComfyUI\main.py",
+                   "--listen", "127.0.0.1", "--port", "8190"]),
+        _FakeProc([r"F:\python_embeded\python.exe", r"F:\ComfyUI\main.py",
+                   "--listen", "127.0.0.1", "--port", "27716", "--cuda-device", "1"]),
+    ]
+    got = _com_psutil_falso(procs, lambda: crw.bases_irmas("http://127.0.0.1:8190"))
+    assert "http://127.0.0.1:27716" in got, got
+
+
+def test_bases_irmas_poe_a_base_submetida_primeiro():
+    """Quem recebeu o prompt e o palpite mais provavel e nao pode perder a vez para um worker."""
+    procs = [_FakeProc([r"F:\ComfyUI\main.py", "--port", "27716"]),
+             _FakeProc([r"F:\ComfyUI\main.py", "--port", "8190"])]
+    got = _com_psutil_falso(procs, lambda: crw.bases_irmas("http://127.0.0.1:8190"))
+    assert got[0] == "http://127.0.0.1:8190", got
+    assert got.count("http://127.0.0.1:8190") == 1, f"base duplicada: {got}"
+
+
+def test_bases_irmas_ignora_processo_que_nao_e_comfyui():
+    procs = [_FakeProc(["python.exe", "-m", "http.server", "--port", "9999"]),
+             _FakeProc(["node", "servidor.js", "--port", "3000"])]
+    got = _com_psutil_falso(procs, lambda: crw.bases_irmas("http://127.0.0.1:8190"))
+    assert got == ["http://127.0.0.1:8190"], got
+
+
+def test_bases_irmas_ignora_main_py_sem_port():
+    """Um ComfyUI na porta default nao escreve `--port`; inventar 8188 seria adivinhar."""
+    procs = [_FakeProc([r"F:\ComfyUI\main.py", "--windows-standalone-build"])]
+    got = _com_psutil_falso(procs, lambda: crw.bases_irmas("http://127.0.0.1:8190"))
+    assert got == ["http://127.0.0.1:8190"], got
+
+
+def test_bases_irmas_sem_psutil_degrada_em_vez_de_morrer():
+    """psutil nao e dependencia deste arquivo em nenhum outro ponto; faltar nao pode ser fatal."""
+    import sys as _sys
+    salvo = _sys.modules.get("psutil")
+    _sys.modules["psutil"] = None          # `import psutil` levanta ImportError com isto
+    try:
+        got = crw.bases_irmas("http://127.0.0.1:8190")
+    finally:
+        if salvo is None:
+            _sys.modules.pop("psutil", None)
+        else:
+            _sys.modules["psutil"] = salvo
+    assert got == ["http://127.0.0.1:8190"], got
+
+
+def test_bases_irmas_sobrevive_a_processo_que_morre_no_meio():
+    """`process_iter` entrega processos que podem sumir entre listar e ler o cmdline."""
+    class _Morto:
+        @property
+        def info(self):
+            raise RuntimeError("NoSuchProcess")
+    procs = [_Morto(), _FakeProc([r"F:\ComfyUI\main.py", "--port", "27715"])]
+    got = _com_psutil_falso(procs, lambda: crw.bases_irmas("http://127.0.0.1:8190"))
+    assert "http://127.0.0.1:27715" in got, got
+
+
 if __name__ == "__main__":
     failures = 0
     for name, fn in sorted(globals().items()):

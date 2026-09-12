@@ -226,6 +226,66 @@ class Comfy:
         return len(q.get("queue_running", [])), len(q.get("queue_pending", []))
 
 
+def bases_irmas(base: str) -> list[str]:
+    """Todo servidor ComfyUI deste host, com `base` -- a quem se submeteu -- sempre na frente.
+
+    MEDIDO 2026-09-12, nao deduzido. `ComfyUI-MultiGPU` sobe UM PROCESSO POR DEVICE
+    (`main.py --port N --cuda-device K`, porta alta) e o resultado de um prompt aparece no
+    `/history` DO WORKER QUE O EXECUTOU, nunca no do pai a quem se submeteu. Quatro edicoes
+    identicas menos a semente: a primeira caiu em 27715 e a segunda em 27716. Um cliente que
+    so consulta o pai fica pendurado ate o timeout enquanto a imagem ja esta gravada em disco
+    -- e reporta TIMEOUT, que le como "o modelo nao gerou".
+
+    A descoberta LE A LINHA DE COMANDO dos processos em vez de assumir portas, porque a porta
+    do worker e escolhida pela extensao em tempo de execucao e nao esta escrita em lugar nenhum
+    que o cliente conheca. E e chamada DENTRO do laco de poll, nao uma vez no inicio: o worker
+    e criado sob demanda pelo primeiro prompt que precisa daquele device, entao no instante da
+    submissao ele pode ainda nao existir.
+
+    Sem `psutil` (nao e dependencia deste arquivo em nenhum outro ponto) devolve so `[base]` --
+    degrada para o comportamento antigo em vez de morrer.
+    """
+    achadas: list[str] = [base]
+    try:
+        import psutil
+    except ImportError:
+        return achadas
+    try:
+        procs = list(psutil.process_iter(["cmdline"]))
+    except Exception:  # noqa: BLE001 -- varredura de processos e best-effort, nunca fatal
+        return achadas
+    lidos = ilegiveis = 0
+    for proc in procs:
+        try:
+            argv = proc.info.get("cmdline") or []
+        # Logar cada excecao aqui imprimiria uma linha por processo a cada 10 s dentro do laco
+        # de poll. A falha individual e normal -- o processo morre entre listar e ler. O que
+        # importa e a CEGUEIRA TOTAL: se NENHUMA linha de comando foi lida, a lista saiu vazia
+        # por nao enxergar, nao por nao haver worker, e essas duas situacoes sao indistinguiveis
+        # na saida. Essa, sim, e reportada, uma vez, depois do laco.
+        except Exception:  # noqa: BLE001
+            ilegiveis += 1
+            continue
+        lidos += 1
+        if not any(a.endswith("main.py") for a in argv):
+            continue
+        if "--port" not in argv:
+            continue
+        porta = argv[argv.index("--port") + 1]
+        if not porta.isdigit():
+            continue
+        # `--listen` do worker e sempre 127.0.0.1 nesta bancada; um worker remoto nao seria
+        # alcancavel por este cliente de qualquer forma, entao nao se inventa host aqui.
+        alvo = f"http://127.0.0.1:{porta}"
+        if alvo not in achadas:
+            achadas.append(alvo)
+    if lidos == 0 and ilegiveis:
+        print(f"  aviso: nenhum dos {ilegiveis} processos teve a linha de comando lida -- a "
+              "descoberta de workers esta CEGA, nao vazia; so o servidor submetido sera "
+              "consultado, e um resultado que caia num worker vai parecer TIMEOUT")
+    return achadas
+
+
 SCALAR_TYPES = {"INT", "FLOAT", "STRING", "BOOLEAN", "COMBO"}
 
 # Ticket 04. The server's own execution_start -> execution_success span, in
@@ -584,10 +644,25 @@ def run_and_wait(comfy: Comfy, api_prompt: dict, timeout: float) -> Entry:
     print(f"queued prompt_id={pid}")
 
     last_note = 0.0
+    ultima_varredura = 0.0
+    # O servidor a quem se submeteu vem sempre primeiro; os irmaos entram na varredura.
+    clientes: dict[str, Comfy] = {comfy.base: comfy}
     while True:
         if time.time() - t0 > timeout:
             raise PollTimeout(pid, timeout)
-        hist_entry = comfy.history(pid)
+        agora = time.time()
+        if agora - ultima_varredura >= 10.0:
+            ultima_varredura = agora
+            for b in bases_irmas(comfy.base):
+                clientes.setdefault(b, Comfy(b))
+        hist_entry = None
+        for cliente in list(clientes.values()):
+            hist_entry = cliente.history(pid)
+            if hist_entry is not None:
+                if cliente.base != comfy.base:
+                    print(f"  resultado veio de {cliente.base}, nao de {comfy.base} "
+                          f"(worker do ComfyUI-MultiGPU)")
+                break
         if hist_entry is not None:
             return Entry(pid=pid, hist=hist_entry, wall=time.time() - t0)
         now = time.time()

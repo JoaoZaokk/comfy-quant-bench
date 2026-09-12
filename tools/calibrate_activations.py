@@ -200,6 +200,25 @@ PROFILE_PATTERNS = {
     "wan_2_1": re.compile(
         r"^blocks\.\d+\.(?:(?:self|cross)_attn\.[qkvo]|ffn\.[02])$"
     ),
+    # Krea2 / SingleStreamDiT (`comfy/ldm/krea2/model.py`), 28 `blocks` x 8 Linears = 224.
+    # O nome no MODULO e o nome no ARQUIVO sao a mesma string aqui -- o checkpoint ja vem com
+    # `blocks.N.attn.wq.weight`, sem prefixo e sem fusao de qkv -- entao nao ha entrada em
+    # MODULE_TO_FILE. Conferido pelos dois lados antes de rodar: o regex casa 224 pesos no
+    # header do BF16 e o `krea2_turbo_int8_convrot` publico carrega 224 tensores `comfy_quant`.
+    #
+    # `attn.gate` e uma QUINTA Linear da atencao (`model.py:72`), aplicada como
+    # `wo(out * sigmoid(gate))` -- nao e modulacao e nao e norma, e sozinha ela e 8,7% dos
+    # parametros do modelo. Deixar de fora por parecer "portao" custaria mais do que quantizar
+    # qualquer bloco inteiro.
+    #
+    # FORA, pela regra "as pontas ficam mais altas": `txtfusion.*` (4 blocos, 32 Linears, 2,7%
+    # dos parametros) e a ENTRADA do condicionamento de texto; `first` / `last.linear` sao o
+    # patchify/unpatchify; `tmlp` / `tproj` / `txtmlp` sao embeddings. E `blocks.N.mod.lin` nao
+    # aparece aqui porque NAO E Linear: e `nn.Parameter` (`model.py:110`, `:121`), entao o
+    # caminho de modulacao esta fora por construcao, nao por escolha.
+    "krea2": re.compile(
+        r"^blocks\.\d+\.(?:attn\.(?:w[qkvo]|gate)|mlp\.(?:gate|up|down))$"
+    ),
 }
 
 # The patterns above match **module** names, because that is what this file hooks. Downstream,
