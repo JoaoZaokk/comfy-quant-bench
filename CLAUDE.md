@@ -203,7 +203,7 @@ Also read [AGENTS.md](AGENTS.md) (root policy) and [ComfyUI/AGENTS.md](ComfyUI/A
   modelo               parametros   tolerado   NAO tolerado
   Wan 2.1 VACE             1,3 B     0,0546        0,0793
   Z-Image v2                ~6 B     0,1421        0,1848
-  Krea2 Turbo             12,82 B    0,1199      NAO MEDIDO
+  Krea2 Turbo             12,82 B    0,1377      NAO ALCANCADO (ver abaixo)
   HunyuanVideo 1.5         ~13 B     0,1837        0,2147  (e 0,2163 no capybara)
   ```
 
@@ -215,6 +215,40 @@ Also read [AGENTS.md](AGENTS.md) (root policy) and [ComfyUI/AGENTS.md](ComfyUI/A
   camada que o Z-Image de ~6 B. A linha entra com a coluna `NAO tolerado` vazia de proposito: nada
   foi medido acima de 0,1199 neste modelo, e `tolerado` registra o maior erro que ja se viu
   funcionar, nunca um teto.
+
+  **O teto foi PROCURADO no mesmo dia e o unico eixo suportado nao alcanca.** `bench/criterio_teto_krea2.md`,
+  criterio com seis previsoes escrito antes de converter: 4 confirmadas, 2 refutadas. Reconvertendo
+  `--somente-w4a4 --uncalibrated fail` nos dois groupsizes menores, medido na **intersecao das
+  mesmas 224 camadas** (P4 confirmada, nenhuma populacao diferente comparada):
+
+  ```
+  cg     mediana      p25      p75      max   razao vs 256   render (5 prompts x 2 sementes)
+  256     0,1199   0,0822   0,1475   0,2942        1,000x     10/10 boas
+   64     0,1238   0,0886   0,1553   0,3397        1,033x     10/10 boas
+   16     0,1377   0,1079   0,1961   0,4331        1,149x     10/10 boas
+  ```
+
+  Monotonico na mediana e em **215 das 224** camadas. **No menor groupsize legal o modelo nao
+  quebra**, entao `tolerado` sobe para 0,1377 e a coluna do teto fica `NAO ALCANCADO` -- com motivo,
+  nao por falta de tentativa. Descartada a leitura facil e errada de que a imagem sobreviveu porque
+  o kernel nao rodou: `probe_quant_dispatch --forward-only` nos dois builds novos da 224 modulos,
+  **8/8 forwards quantizados, 0 dequantize**, `convrot_linear_dtype=int4`, `backends.cuda`.
+
+  **A segunda hipotese de transferencia morreu aqui, no mesmo checkpoint e no mesmo dia.** As
+  razoes entre groupsizes medidas no Z-Image (1,155x e 1,468x) foram aplicadas ao Krea2 como
+  previsao P2; ele mede **1,033x e 1,149x**, tres vezes menos sensivel, e erra para o mesmo lado nas
+  duas pontas. A razao entre groupsizes e do MODELO, como ja era a tolerancia -- nao do formato.
+
+  **E `quant_group_size` NAO e um eixo utilizavel, apesar de o parametro existir e o sidecar
+  carregar a chave.** `comfy/ops.py:1201` escreve `"quant_group_size": 64` como constante literal,
+  enquanto as duas linhas ao redor leem `convrot_groupsize` (`:1197`) e `linear_dtype` (`:1202`) do
+  JSON da camada. Quantizar com outro valor produz arquivo que o loader le como 64: qualquer quebra
+  seria desacordo loader-vs-arquivo, nao tolerancia do formato. Lido no codigo, nao executado.
+
+  Sobra um eixo nao tentado, a **cobertura**: o perfil `krea2` seleciona 224 Linears e exclui 41
+  tensores 2-D -- as 32 do `txtfusion`, `tproj [36864, 6144]`, `tmlp`, `txtmlp`, `last.linear`,
+  `last.modulation.lin` -- dos quais 39 passariam o filtro de divisibilidade. Isso nao move a
+  mediana (muda QUAIS camadas degradam), entao responde outra pergunta, e exige recalibrar.
 
   E funciona bem: 5 prompts x 2 sementes x 4 bracos, **40 renderizacoes, nenhuma quebrada** --
   maca (controle), rosto com pele e ruga, placa "OPEN" legivel em 8 de 8 celulas, mercado noturno
