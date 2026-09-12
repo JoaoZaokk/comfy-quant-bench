@@ -205,7 +205,42 @@ Also read [AGENTS.md](AGENTS.md) (root policy) and [ComfyUI/AGENTS.md](ComfyUI/A
   Z-Image v2                ~6 B     0,1421        0,1848
   Krea2 Turbo             12,82 B    0,1377      NAO ALCANCADO (ver abaixo)
   HunyuanVideo 1.5         ~13 B     0,1837        0,2147  (e 0,2163 no capybara)
+  Qwen-Image-Edit 2511    20,43 B    0,0358*       0,1080   (*outro FORMATO, ver abaixo)
   ```
+
+  **A linha do Qwen tem um asterisco porque as duas colunas dela nao sao o mesmo experimento, e
+  isso e o achado.** Em toda linha acima, as duas colunas sao W4A4 com groupsize ou limiar de
+  promocao diferentes. Na do Qwen, `0,1080` e o W4A4 e `0,0358` e um build **todo em
+  `asym_w4a8_int8`** -- mesmos pesos de 4 bits, ativacao de 8 em vez de 4. Medido 2026-09-12, 12
+  renderizacoes por braco, 6 prompts x 2 sementes:
+
+  ```
+  build                      peso    ativacao   GiB   divergencia  s/passo  imagem
+  int8_convrot (Comfy-Org)   8 bits   8 bits   19,09      0,1942    1,410   boa
+  w4a8 (nosso)               4 bits   8 bits   10,79      0,4997    1,575   boa
+  w4a4 (nosso)               4 bits   4 bits    9,60      1,7440    1,053   ESTATICA
+  misto, 607/840 em A4       4 bits   4 bits    9,88      1,8846    1,236   ESTATICA
+  ```
+
+  **Nao e o peso, e a ativacao.** E o build misto fecha o mecanismo: 233 camadas ja promovidas a
+  ativacao de 8 bits, erro efetivo **0,0744** -- metade do erro de um Z-Image que presta -- e
+  ainda assim estatica. **Basta sobrar camada no caminho A4.** E penhasco, nao ladeira.
+
+  **Consequencia para esta tabela inteira: `0,1080` e o MENOR erro por camada que ja produziu
+  lixo nesta bancada**, abaixo do Krea2 (0,1199) e do Z-Image (0,1254), ambos funcionando em
+  W4A4. O criterio por camada **ordena formatos corretamente** (ele disse que W4A8 era 3,02x
+  melhor, e era) e **nao localiza penhascos**. Isso deixou de ser suspeita e virou demonstracao.
+
+  Descartada por medicao a leitura facil de que o arquivo estava quebrado: `probe_quant_dispatch
+  --forward-only` da 840 modulos `convrot_w4a4`, **8/8 forwards quantizados, 0 dequantize**,
+  `convrot_linear_dtype=int4`, `backends.cuda`, 840 pesos em `cuda:0`; `verify_w4a4` passa em
+  estrutura, na comparacao byte a byte com a fonte, e da `relative_rmse` 0,2265 no kernel real.
+
+  **E uma hipotese nova morreu aqui no mesmo dia: erro mediano x numero de camadas.** Ela separa
+  NOVE builds perfeitamente (funciona ate 30,9; destruido a partir de 31,4) e morre no decimo,
+  que ja estava no disco: `hunyuan15-misto-t025` marca **79,0 e renderiza correto**, contra
+  `zimage-v2-teto-cg16` que marca **31,4 e renderiza lixo**. Terceira hipotese de transferencia
+  a morrer nesta bancada, depois da monotonia por tamanho e da razao entre groupsizes.
 
   **A monotonia por tamanho MORREU em 2026-09-12, e ela era o unico argumento para extrapolar
   desta tabela.** O Krea2 Turbo tem **12.820.073.036 parametros** (somados do header, nao
