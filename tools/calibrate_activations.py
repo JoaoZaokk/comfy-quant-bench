@@ -432,8 +432,16 @@ def main() -> int:
     args = parse_args()
     if args.out.exists():
         raise SystemExit(f"Refusing to overwrite existing calibration: {args.out}")
-    prompts = list(args.prompt) + [p.read_text(encoding="utf-8").strip()
-                                   for p in args.prompt_file]
+    # UMA LINHA = UM PROMPT. Ate 2026-09-12 esta funcao fazia `p.read_text().strip()`, colando o
+    # arquivo INTEIRO num unico prompt: `bench/prompts_zimage_runtime.txt`, com seis prompts,
+    # virava um prompt de seis linhas e o cabecalho anunciava "encoding 1 prompt(s)". Nao falhava
+    # -- calibrava, e calibrava sobre ativacoes de UM condicionamento em vez de seis, que e pior
+    # que falhar porque o numero sai e parece bom. O mesmo defeito estava em quality_ladder.py e
+    # foi corrigido la no mesmo dia; este arquivo era o irmao que ficou para tras.
+    prompts = list(args.prompt)
+    for caminho in args.prompt_file:
+        linhas = [ln.strip() for ln in caminho.read_text(encoding="utf-8").splitlines()]
+        prompts.extend(ln for ln in linhas if ln and not ln.startswith("#"))
     if not prompts:
         raise SystemExit("Give at least one --prompt or --prompt-file")
 

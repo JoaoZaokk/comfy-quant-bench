@@ -30,6 +30,14 @@ PROFILE_PATTERNS = {
     "qwen": re.compile(
         r"^model\.layers\.\d+\.(?:self_attn\.(?:q_proj|k_proj|v_proj|o_proj)|mlp\.(?:gate_proj|up_proj|down_proj))\.weight$"
     ),
+    # Qwen3-VL as a text encoder -- Krea 2's conditioner. Same decoder as `qwen`, one segment
+    # deeper: `model.language_model.layers.N` because the checkpoint carries a vision tower beside
+    # the language model. That extra segment is exactly why the `qwen` profile matches ZERO layers
+    # here; checked against the header of qwen3vl_4b_bf16 before this entry was written, not
+    # assumed from the family name.
+    "qwen3vl": re.compile(
+        r"^model\.language_model\.layers\.\d+\.(?:self_attn\.(?:q_proj|k_proj|v_proj|o_proj)|mlp\.(?:gate_proj|up_proj|down_proj))\.weight$"
+    ),
     # HunyuanVideo 1.5 double-stream blocks. Names follow the checkpoint's own convention;
     # HunyuanVideo.process_unet_state_dict rewrites them to the ComfyUI module names after
     # convert_old_quants has injected the .comfy_quant keys, and its substring replacements
@@ -42,6 +50,7 @@ PROFILE_PATTERNS = {
 EXCLUSIONS = {
     "gemma": ["embed_tokens", "norm", "lm_head", "vision"],
     "qwen": ["embed_tokens", "norm", "lm_head", "visual", "vision"],
+    "qwen3vl": ["embed_tokens", "norm", "lm_head", "visual", "vision"],
     # adaLN modulation drives every block's conditioning, so *_mod.linear stays high precision
     # along with the norms, the embedders, the token refiner, and the byt5/vision/time adapters.
     "hunyuan_video_15": [
@@ -138,6 +147,10 @@ def detect_profile(path: Path, names: list[str]) -> str:
     lowered = path.name.lower()
     if "gemma" in lowered and any(name.startswith("model.layers.") for name in names):
         return "gemma"
+    # `qwen3vl` before `qwen`: the VL checkpoint has no `model.layers.` at all, so the order only
+    # matters if a future file carries both, and then the deeper name is the right answer.
+    if "qwen" in lowered and any(name.startswith("model.language_model.layers.") for name in names):
+        return "qwen3vl"
     if "qwen" in lowered and any(name.startswith("model.layers.") for name in names):
         return "qwen"
     raise ValueError("auto-detection found no supported profile; pass a supported --profile after verifying the architecture")

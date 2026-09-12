@@ -73,6 +73,12 @@ PROFILE_PATTERNS = {
     "qwen": re.compile(
         r"^model\.layers\.\d+\.(?:self_attn\.(?:q_proj|k_proj|v_proj|o_proj)|mlp\.(?:gate_proj|up_proj|down_proj))\.weight$"
     ),
+    # Qwen3-VL as a text encoder. Same decoder one segment deeper -- `model.language_model.layers.N`
+    # -- because a vision tower sits beside it, which is why the `qwen` pattern matches ZERO layers
+    # on this file.
+    "qwen3vl": re.compile(
+        r"^model\.language_model\.layers\.\d+\.(?:self_attn\.(?:q_proj|k_proj|v_proj|o_proj)|mlp\.(?:gate_proj|up_proj|down_proj))\.weight$"
+    ),
 }
 HIGH_PRECISION_DTYPES = {"BF16", "F16", "F32"}
 TORCH_DTYPES = {"BF16": torch.bfloat16, "F16": torch.float16, "F32": torch.float32}
@@ -145,6 +151,8 @@ def detect_profile(path: Path, names: list[str]) -> str:
             "double_blocks.0.img_attn_qkv.weight"} <= name_set:
         return "hunyuan_video_15"
     lowered = path.name.lower()
+    if "qwen" in lowered and any(n.startswith("model.language_model.layers.") for n in names):
+        return "qwen3vl"
     for profile in ("gemma", "qwen"):
         if profile in lowered and any(n.startswith("model.layers.") for n in names):
             return profile
