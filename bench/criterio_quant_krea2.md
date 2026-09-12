@@ -121,3 +121,80 @@ por braco.
   diferente do turbo (medido: 64 de 64 amostras de 1 MiB diferem), e nao foi medido.
 - O **encoder de texto continua BF16** e travado pelos dois cadeados do ComfyUI. Nada aqui mede
   o que quantizar o Qwen3-VL-4B faria.
+
+---
+
+# RESULTADO (anexado 2026-09-12, depois de medir)
+
+## Previsao 1: CONFIRMADA
+
+    hooking 224 Linear layers matching profile 'krea2'
+
+224, contra o modelo **carregado**, nao contra o header. Zero camadas em `never_ran`. A
+calibracao levou 83,2 s -- tres prompts, uma semente, 10 passos -- e escreveu 412,7 MiB.
+
+## Previsao 2: REFUTADA
+
+Eu previ que a mediana de `err_w4a4` cairia **entre 0,15 e 0,22**, porque e ai que o
+HunyuanVideo 1.5 (~13 B) esta e o Krea2 tem 12,82 B. Medido sobre as 224 camadas, todas
+calibradas, `convrot_groupsize` 256, amostras em bfloat16:
+
+    err_bf16   mediana 0,0019   min 0,0016   p25 0,0017   p75 0,0021   max 0,0025
+    err_w4a4   mediana 0,1199   min 0,0113   p25 0,0822   p75 0,1481   max 0,2942
+    err_w4a8   mediana 0,0373   min 0,0063   p25 0,0264   p75 0,0467   max 0,0634
+
+**0,1199.** Fora da faixa que escrevi, por baixo. Um modelo de 12,82 B mede **menos** erro por
+camada que o Z-Image de ~6 B (0,1421 tolerado) e bem menos que o Hunyuan de ~13 B (0,1837
+tolerado). Nao chegou a cruzar o 0,10 que eu tinha marcado como "a hipotese do tamanho fica em
+serio apuro", entao o que morre aqui e **a previsao**, nao a tabela -- mas a tabela perde o
+unico argumento que eu tinha para extrapolar dela.
+
+Cuidado com o que isto NAO diz: a coluna `tolerado` registra o **maior erro que ja se viu
+funcionar**, e 0,1199 funcionar nao impede o Krea2 de tolerar 0,18. O teto do Krea2 continua
+tao nao-medido quanto o do Z-Image.
+
+## Previsao 3: CONFIRMADA, e com folga
+
+`err_w4a8 < err_w4a4` em **224 de 224** camadas. Mediana da razao por camada: **3,12x**, faixa
+1,57x a 4,91x. Nenhuma inversao, entao nao ha sinal de bug na medicao por esse lado.
+
+## O que a distribuicao por familia mostra, e nao estava previsto
+
+    familia          n    mediana    min      max
+    attn.wo         28    0,2181   0,0934   0,2942
+    mlp.down        28    0,2029   0,0222   0,2354
+    mlp.up          28    0,1370   0,0423   0,1488
+    attn.wv         28    0,1283   0,0320   0,1570
+    mlp.gate        28    0,1181   0,0342   0,1443
+    attn.gate       28    0,0979   0,0255   0,1271
+    attn.wq         28    0,0813   0,0128   0,0985
+    attn.wk         28    0,0749   0,0113   0,0902
+
+As duas piores familias sao **exatamente as duas projecoes de saida** -- `attn.wo`, que le a
+saida da atencao, e `mlp.down`, que le a saida do SwiGLU. As duas mais baratas sao `wq` e `wk`,
+que leem o residual normalizado. **2,9x separa a pior familia da melhor**, e a ordem e a mesma
+em todos os 28 blocos.
+
+Isso e uma observacao, nao um mecanismo demonstrado: a leitura obvia e que entrada
+pos-ativacao carrega os outliers que a rotacao existe para suprimir, mas nada aqui isolou esse
+eixo -- `crest_p99` na mesma tabela vai de 18 a 99 dentro da mesma familia, entao crest
+tambem nao explica sozinho (e esta bancada ja mediu Spearman +0,10 entre crest e `err_w4a4`
+em 170 camadas do Z-Image).
+
+## Os dois bracos construidos, e por que estes dois
+
+Com a distribuicao na mao -- que era a condicao que o criterio impos antes de deixar
+`--promote-error` entrar:
+
+    acima de 0,10:  132 de 224   promover custaria 59% do modelo em 8 bits
+    acima de 0,15:   51 de 224   promover custaria 23%
+    acima de 0,18:   46 de 224   promover custaria 21%
+    acima de 0,2147: 24 de 224   promover custaria 11%
+
+    C  krea2_turbo_w4a4    --promote-error 10.0   224/224 em W4A4, mediana 0,1199
+    D  krea2_turbo_mixed   --promote-error 0.15   173 W4A4 + 51 W4A8
+
+O 0,15 nao foi importado do Z-Image: ele foi escolhido **depois** de ver que naquele ponto a
+curva promove 23% dos parametros, um orcamento parecido com o do par ja publicado do Z-Image
+(w4a4 0,1241 contra misto 0,0774). Ter os dois bracos com o mesmo par de valores torna os dois
+modelos comparaveis; ter so um nao tornaria.
