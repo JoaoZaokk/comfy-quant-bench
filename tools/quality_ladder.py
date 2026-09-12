@@ -221,6 +221,15 @@ def sample_all(args, name, conditioning, comfy_sample, comfy_sd, comfy_mm, folde
 
     if model is None:
         model = comfy_sd.load_diffusion_model(path, disable_dynamic=True)
+    # Ver `_dynamic_vram.casta_pesos_divergentes`: sob DynamicVRAM o peso vem do arquivo sem
+    # conversao, e um checkpoint com F32 no meio de BF16 morre em `F.linear`. Isto alcanca o
+    # mesmo estado que o caminho nao-preguicoso produz sozinho -- medido: zero parametros em
+    # float32 apos a carga normal.
+    if name in getattr(args, "_castar", ()):
+        from _dynamic_vram import casta_pesos_divergentes
+        r = casta_pesos_divergentes(model.get_model_object("diffusion_model"))
+        print(f"  castados {r['castados']} tensores para {r['alvo']}"
+              + (f" (ex: {r['nomes'][:3]})" if r["nomes"] else ""), flush=True)
     # O `ModelSamplingSD3` e o no que os workflows de fabrica de modelo de flow inserem, e existe
     # aqui para que este ladder possa reproduzir um workflow real.
     #
@@ -320,13 +329,15 @@ def main() -> int:
         conflito = perigoso_para_lazy(caminho)
         if conflito:
             mistos[nome] = conflito
-    if mistos:
-        for nome, conflito in mistos.items():
-            print(f"DynamicVRAM NAO ligado: {nome} mistura {sorted(conflito)} entre seus "
-                  f"tensores 2-D, e a carga preguicosa nao converte dtype.", flush=True)
-        print("  Consequencia: cada peso e materializado em RAM do host na carga. Num "
-              "checkpoint grande isso e o modelo inteiro de uma vez.", flush=True)
-    elif enable_dynamic_vram():
+    for nome, conflito in mistos.items():
+        print(f"{nome} mistura {sorted(conflito)} entre seus tensores 2-D; a carga preguicosa "
+              f"nao converte dtype, entao este braco sera castado depois de carregar.", flush=True)
+    # DESLIGAR o DynamicVRAM aqui foi tentado primeiro e e PIOR: medido 2026-09-12, o
+    # `krea2_turbo_bf16` (24,5 GiB) sem carga preguicosa comprometeu 19,7 GiB de pagefile com
+    # 8,5 GiB residentes e 0,03 s de CPU por 6 s de relogio -- paginando, nao lento. Trocar um
+    # bug de dtype por um de memoria nao e consertar.
+    args._castar = set(mistos)
+    if enable_dynamic_vram():
         print("DynamicVRAM enabled: weights load lazily rather than all at once", flush=True)
     else:
         print("DynamicVRAM NOT available. Every weight will be materialised in host RAM at load; "

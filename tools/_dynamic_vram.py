@@ -113,3 +113,43 @@ def perigoso_para_lazy(caminho) -> set[str] | None:
     """
     d = dtypes_float_2d(caminho)
     return d if len(d) > 1 else None
+
+
+def casta_pesos_divergentes(model_object, alvo=None) -> dict:
+    """Poe todo parametro/buffer de ponto flutuante no dtype majoritario do modelo.
+
+    Existe porque `perigoso_para_lazy` diagnostica e nao resolve, e a alternativa -- desligar o
+    DynamicVRAM -- troca um bug de dtype por um de memoria: MEDIDO 2026-09-12, o `krea2_turbo_bf16`
+    sem carga preguicosa comprometeu **19,7 GiB de pagefile com 8,5 GiB residentes**, 7521 falhas
+    de pagina em 6 s e 0,03 s de CPU no mesmo intervalo. O processo nao estava lento, estava
+    paginando, e nao terminaria.
+
+    Esta funcao reproduz exatamente o que o caminho NAO-preguicoso ja faz: medido com
+    `load_diffusion_model` sem aimdo, o `krea2_turbo_bf16` carrega com **zero** parametros em
+    float32 -- as pontas F32 do arquivo chegam em bfloat16. Entao castar depois nao inventa uma
+    politica nova, so alcanca a mesma.
+
+    O alvo, quando nao dado, e o dtype de ponto flutuante mais comum entre os pesos 2-D. Nao e o
+    dtype "declarado" de lugar nenhum: e o que a maioria das camadas de fato tem, que e o unico
+    que nao depende de qual campo do ComfyUI ainda existe nesta versao.
+    """
+    import torch
+    if alvo is None:
+        contagem: dict = {}
+        for _, p in model_object.named_parameters():
+            if p.is_floating_point() and p.ndim == 2:
+                contagem[p.dtype] = contagem.get(p.dtype, 0) + 1
+        if not contagem:
+            return {"alvo": None, "castados": 0, "nomes": []}
+        alvo = max(contagem, key=contagem.get)
+    nomes = []
+    with torch.no_grad():
+        for nome, p in model_object.named_parameters():
+            if p.is_floating_point() and p.dtype != alvo:
+                p.data = p.data.to(alvo)
+                nomes.append(nome)
+        for nome, b in model_object.named_buffers():
+            if b is not None and b.is_floating_point() and b.dtype != alvo:
+                b.data = b.data.to(alvo)
+                nomes.append(nome)
+    return {"alvo": alvo, "castados": len(nomes), "nomes": nomes}
