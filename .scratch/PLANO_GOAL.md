@@ -15,11 +15,13 @@ Cada linha diz o que FOI MEDIDO, nao o que se espera medir.
       **P2 refutada**: previ 1,155x/1,468x (razoes do Z-Image); medi 1,033x/1,149x.
       **P5 refutada na letra, confirmada no mecanismo**: payload identico (8.057.415.984 B nos
       dois), delta de 224 B inteiro no JSON -- um caractere por camada.
-- [ ] Ladder de 4 bracos rodando -> testa P3 e P6
-- [ ] Edicao: 8 sementes x 3 bracos (`.scratch/edit_8sementes.py`), fecha o desvio do cachorro
-      E traz o braco `misto` para a edicao pela primeira vez
-- [ ] `avaliar_despacho` nos dois builds novos
-- [ ] `bench/krea2_suite.md` (ingles) + cards em ingles + upload
+- [x] Ladder: P3 e P6 confirmadas, 40/40 boas, teto NAO alcancado (0,1377 tolerado)
+- [x] Edicao: 9 sementes x 3 bracos x 2 instrucoes. Desvio do cachorro FECHADO -- reproduz na
+      semente 1002 SO no W4A4 (1 de 9 contra 0 de 9 nos outros dois) e some com numeral explicito
+- [x] Despacho nos dois builds do teto: 224 modulos, 8/8, 0 dequantize, int4
+- [x] `bench/krea2_suite.md` + `bench/hf/krea2-turbo-quant/README.md`, ambos em ingles
+- [x] Encoder do Krea2 quantizado nos dois formatos e medido: W4A8 e a escolha
+- [ ] Upload do Krea2 NAO feito: modelo gated com licenca propria, e o pedido dele era card
 
 ## Etapa 2 -- pipeline COMPLETO, nao um modelo solto
 
@@ -44,9 +46,13 @@ resposta direta a pergunta do "ponto perfeito": depois de 3,26x no DiT, o proxim
 esta no encoder, nao em apertar mais o DiT -- que, medido, nem quebra no menor groupsize legal.
 
 
-## Etapa 3 -- Z-Image: esta tudo convertido?
+## Etapa 3 -- Z-Image: FECHADA em 2026-09-12
 
-**Resposta ja medida: NAO.**
+Os dois oficiais convertidos, medidos (72 renderizacoes, nenhuma quebrada) e PUBLICADOS, com os
+8 arquivos conferidos byte a byte contra o Hub. Achado: a receita mista vence 11/12 no Turbo
+oficial e 7/12 no De-Turbo -- nao transfere entre um modelo e o fine-tune dele.
+
+**Estado anterior, que motivou tudo:**
 
     checkpoint                        BF16 no disco  analise  w4a4  misto  publicado
     beyond-reality-zimage-v2          sim            0,1241   sim   sim    sim
@@ -60,7 +66,18 @@ precisam de recalibragem. 4 conversoes de ~90 s.
 Tambem sem arquivo, so sidecar: `zimage-v2-teto-cg16/64/256`, `zimage-v2-mixed-t0.05/0.10/0.20`,
 `zimage-v2-sigma-*`. Esses foram experimentos, nao entregaveis.
 
-## Etapa 4 -- Qwen Image / Qwen Image Edit
+## Etapa 4 -- Qwen Image Edit 2511  [EM ANDAMENTO]
+
+- [x] BF16 (40.861.031.560 B) e int8_convrot (20.499.083.824 B) baixados e conferidos contra o Hub
+- [x] Perfil `qwen_image` derivado do checkpoint do Comfy-Org: 840/840, zero falso positivo,
+      zero falso negativo, conferido tambem contra `named_modules()` do modelo carregado
+- [ ] Guarda de referencia no BF16 RODANDO -- risco real: modelo de EDICAO sem imagem de entrada
+      pode gerar lixo, como o Wan VACE fez. Sem esse controle a calibragem seria sobre ativacoes
+      nao representativas.
+- [ ] Calibrar, converter w4a4 + misto, ladder, comparar com int8 publico e com os SVDQuant
+- [ ] Encoder `qwen_2.5_vl_7b` ja publicado, mas ANTES do cadeado sair -- remedir
+
+### Referencia
 
 **Versao mais atual confirmada pela API do HF (fonte primaria, nao blog):**
 
