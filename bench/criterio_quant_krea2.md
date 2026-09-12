@@ -198,3 +198,98 @@ O 0,15 nao foi importado do Z-Image: ele foi escolhido **depois** de ver que naq
 curva promove 23% dos parametros, um orcamento parecido com o do par ja publicado do Z-Image
 (w4a4 0,1241 contra misto 0,0774). Ter os dois bracos com o mesmo par de valores torna os dois
 modelos comparaveis; ter so um nao tornaria.
+
+## Previsao 4: CONFIRMADA, e essa e a quarta medicao independente na mesma direcao
+
+O ladder rodou **5 prompts x 2 sementes x 4 bracos = 40 renderizacoes**, 10 passos, 1024^2,
+euler/simple, cfg 1,0, tudo na 3090 com `CUDA_VISIBLE_DEVICES=0`:
+
+    checkpoint                   divergencia  espalhamento  s/passo    GiB  runs
+    krea2_turbo_bf16                    -           -        2,239   24,48   10
+    krea2_turbo_int8_convrot         0,2435      0,6512      1,233   12,57   10
+    krea2_turbo_w4a4                 0,5843      0,7005      0,839    7,50   10
+    krea2_turbo_mixed                0,4972      0,7257      1,000    7,70   10
+
+    pareado contra o int8, corrida por corrida:
+      krea2_turbo_w4a4    +0,3408 de media   pior +0,6593   melhor +0,1429   vence  0/10
+      krea2_turbo_mixed   +0,2537 de media   pior +0,6020   melhor +0,0461   vence  0/10
+
+**O int8 publico e 2,40x mais fiel ao BF16 que o nosso W4A4** (0,2435 contra 0,5843), e o
+pareamento nao deixa duvida: **0 de 10** corridas em que qualquer dos nossos dois chega mais
+perto. Isso e a quarta medicao independente na mesma direcao nesta bancada -- 1,49x no Z-Image
+com ativacao real, 1,33x no epsilon por passo, 1,40x no Winnougan, 2,40x aqui -- agora numa
+quarta familia de modelo.
+
+Repare no **espalhamento**: 0,65 a 0,73 contra medias de 0,24 a 0,58. A divergencia de imagem
+livre e ruidosa por construcao, e por isso a linha que carrega o resultado e a **pareada**, onde
+os bracos compartilham prompt e semente.
+
+## Previsao 5: CONFIRMADA
+
+    W4A4  0,839 s/passo   contra int8  1,233   ->  1,47x mais rapido
+    misto 1,000 s/passo   contra int8  1,233   ->  1,23x mais rapido
+
+O `s/passo` do BF16 (2,239) **nao entra nessa comparacao**: ele nao cabe na placa e roda
+descarregando, entao mede a politica de memoria, nao o kernel.
+
+O braco misto e a troca explicita: promover 51 de 224 camadas comprou **15% menos divergencia**
+(0,4972 contra 0,5843) por **19% mais tempo** (1,000 contra 0,839) e 0,20 GiB de arquivo.
+
+## E as imagens? As 40 prestam. Nenhuma quebrou.
+
+`bench/krea2_qualidade_s1.png` e `_s2.png`, 4 bracos x 5 prompts por semente. Julgamento de quem
+olha, nao de metrica:
+
+- **maca** (controle positivo): as quatro boas nas duas sementes.
+- **rosto do pescador**: as quatro sao rostos coerentes, com ruga, poro e barba por fazer. O W4A4
+  muda a expressao e o enquadramento; nao degrada a pele.
+- **placa "OPEN"**: **legivel e bem formada em 8 de 8 celulas**. A cor da placa muda -- branca
+  aqui, vermelha ali -- mas **muda com a semente tambem**: na semente 1 o BF16 fez branca e na 2
+  fez vermelha. Se a cor acompanhasse a quantizacao seria dano; acompanhando a semente, e o
+  sampler.
+- **mercado noturno**: as quatro sao cenas densas e coerentes, com lanterna, banca, gente e
+  reflexo no chao molhado. Os ideogramas sao plausiveis-e-falsos **inclusive no BF16**.
+- **cristais de gelo**: as quatro tem estrutura cristalina fina.
+
+Entao **0,5843 de divergencia nao e uma imagem destruida** -- e a mesma leitura que o Z-Image ja
+tinha dado, agora numa arquitetura diferente. O que 0,58 mede e que o sampler foi para outro
+lugar, e o outro lugar tambem e bom.
+
+**Consequencia para a tabela de tolerancia:** o Krea2 entra com **tolerado 0,1199** (mediana de
+`err_w4a4` do build que renderiza bem), e a coluna `NAO tolerado` fica **vazia** -- nada foi
+medido acima disso. A monotonia por tamanho **nao sobrevive**: 12,82 B tolerando 0,1199 senta
+abaixo do Z-Image de ~6 B, que tolera 0,1421. Tres pontos ja eram poucos; agora sao quatro e a
+ordem quebrou.
+
+## Camada 2: a conta quantizada roda MESMO, hoje
+
+`tools/probe_quant_dispatch.py --mode diffusion --forward-only`, com os pesos na placa e a
+contagem instrumentada **depois** da carga:
+
+    checkpoint                  modulos  quant_format                      forwards  dequantize
+    krea2_turbo_int8_convrot        224  {int8_tensorwise: 224}               8 / 8           0
+    krea2_turbo_w4a4                224  {convrot_w4a4: 224}                  8 / 8           0
+    krea2_turbo_mixed               224  {convrot_w4a4: 173, w4a8: 51}        8 / 8           0
+
+    impl resolvido:  int8_linear / convrot_w4a4_linear / w4a8_int8_linear
+                     -> comfy_kitchen.backends.cuda  em todos
+    `convrot_linear_dtype=int4` nos nossos dois -- e o MMA int4 nativo, nao o ramo INT8
+    224 pesos quantizados em cuda:0, `comfy_force_cast_weights=False`, `full_precision_mm=False`
+
+Zero `dequantize` nos tres. O `int8_tensorwise` do build publico confirma o que a nota do
+workflow ja dizia: **o nome do arquivo diz "convrot" e o formato por camada e int8**.
+
+**`DESPACHA` nao e aprovacao** e nunca foi: responde se o kernel foi chamado, mais nada.
+
+## Armadilha em que EU cai, de novo, e ela ja estava escrita
+
+A primeira tentativa desta medicao levou `Assert-GpuLock -Owner 'bench:krea2_despacho_e_guarda'`
+por fora e depois chamou `avaliar_referencia.py`, que entra no `BenchGuard` sozinho:
+
+    F:\GPU_BENCH.lock is held: owner=bench:krea2_despacho_e_guarda pid=71944 alive=False
+    Not reclaiming it.
+
+A ferramenta recusou a propria corrida. O `CLAUDE.md` documenta exatamente isto -- *"do NOT take
+the lock before a benchmark"* -- e a memoria `lock-gpu-compartilhado` tambem. Tomar o lock por
+fora vale para conversor e sonda ad-hoc; **nao vale para nada que passe por `_timing.compare()`
+ou `BenchGuard`**.
