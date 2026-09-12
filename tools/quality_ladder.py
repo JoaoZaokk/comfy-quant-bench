@@ -453,19 +453,41 @@ def _write_images(args, all_latents, folder_paths, comfy_sd):
     # ser adotada no meio do caminho. O bootstrap correto e o do topo deste arquivo.
     vae = comfy_sd.VAE(sd=comfy.utils.load_torch_file(vae_path))
     written = 0
+    aviso = [False]
     for name, latents in all_latents.items():
         for (prompt_index, seed), samples in latents.items():
             with torch.no_grad():
                 image = vae.decode(samples.cuda())
-            if image.ndim == 4:
-                # .detach() is not decoration: comfy's VAE.decode returns a tensor that still
-                # carries grad, and .numpy() on it raises. The whole ladder had already run when
-                # this fired, which is the argument for writing images before, not after.
-                array = (image[0].detach().clamp(0, 1).cpu().numpy() * 255).astype(np.uint8)
-                out = args.out / f"{Path(name).stem}__p{prompt_index}_s{seed}.png"
-                Image.fromarray(array).save(out)
-                written += 1
+            # `VAE.decode` termina em `movedim(1, -1)`, entao um latente 2-D sai [B, H, W, C]
+            # (ndim 4) e um 3-D sai [B, T, H, W, C] (ndim 5). Ate 2026-09-12 este bloco era
+            # `if image.ndim == 4:` sem `else`, e um modelo de formato 3-D -- que e o caso do
+            # Krea2, cujo `latent_format` e `Wan21` -- gravava ZERO IMAGENS EM SILENCIO,
+            # imprimindo "wrote 0 image(s)" no fim de uma corrida de dezenas de minutos. O
+            # veredito "a qualidade nao separou" sairia de um diretorio vazio.
+            if image.ndim == 5:
+                quadros = image.shape[1]
+                if quadros != 1 and not aviso[0]:
+                    print(f"  latente 3-D com {quadros} quadros: gravando o QUADRO 0 de cada. "
+                          f"Esta ferramenta compara imagem, nao video.")
+                    aviso[0] = True
+                image = image[:, 0]
+            if image.ndim != 4:
+                raise SystemExit(f"decode devolveu ndim {image.ndim}, que esta ferramenta nao "
+                                 f"sabe gravar -- shape {tuple(image.shape)}")
+            # .detach() is not decoration: comfy's VAE.decode returns a tensor that still
+            # carries grad, and .numpy() on it raises. The whole ladder had already run when
+            # this fired, which is the argument for writing images before, not after.
+            array = (image[0].detach().clamp(0, 1).cpu().numpy() * 255).astype(np.uint8)
+            out = args.out / f"{Path(name).stem}__p{prompt_index}_s{seed}.png"
+            Image.fromarray(array).save(out)
+            written += 1
     print(f"\nwrote {written} image(s) to {args.out}")
+    esperadas = sum(len(v) for v in all_latents.values())
+    if written != esperadas:
+        # Uma folha de contato vazia nao se distingue de "os bracos nao separaram".
+        raise SystemExit(f"ESPERAVA {esperadas} imagens e gravou {written}. A amostragem "
+                         f"terminou e os latentes estao em disco; o que falhou foi o decode. "
+                         f"Nao leia a ausencia de imagem como resultado.")
     print("Look at them. Divergence orders the checkpoints by distance from BF16; it does not "
           "order them by how the picture reads, and those are not the same question.")
 
