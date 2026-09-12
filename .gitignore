@@ -77,6 +77,13 @@ tools/*/build*/
 # O criterio de o que entra: markdown (criterios, cards do HuggingFace, licencas) entra;
 # imagem, latente e log ficam de fora. Um `.json` de resultado que alguem queira rastrear
 # continua sendo `git add -f` deliberado, como o `bench/guarda_referencia.json`.
+# Mudancas nossas dentro do checkout do ComfyUI, que o repo raiz NAO rastreia. Sem isto elas
+# existem so como diff sujo la dentro, e update/update_comfyui.bat as apaga sem avisar. O patch
+# fica aqui versionado; o arquivo vivo continua sendo o de ComfyUI/.
+!/patches/
+/patches/*
+!/patches/*.patch
+
 !/bench/
 /bench/*
 !/bench/*.md

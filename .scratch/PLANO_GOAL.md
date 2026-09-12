@@ -21,11 +21,28 @@ Cada linha diz o que FOI MEDIDO, nao o que se espera medir.
 - [ ] `avaliar_despacho` nos dois builds novos
 - [ ] `bench/krea2_suite.md` (ingles) + cards em ingles + upload
 
-## Etapa 2 -- "o switch"
+## Etapa 2 -- pipeline COMPLETO, nao um modelo solto
 
-**NAO IDENTIFICADO.** Nao existe nada com esse nome no disco (`find` em `ComfyUI/models` e
-`D:/ComfyUI-Models`), nao aparece em nenhuma conversa do usuario (cortex, camada `user`), e nao
-existe modelo de imagem com esse nome no HF (busca por trending e por nome). Precisa do dono.
+**Esclarecido pelo dono em 2026-09-12:** "switch" era exemplo. O alvo e o **no completo** -- para
+cada projeto, tudo que a cadeia usa (difusao, checkpoint, text encoder, VAE, o que houver),
+quantizar tudo e achar o ponto onde o custo de qualidade ainda paga o ganho de tamanho e
+velocidade.
+
+Isso muda o eixo do trabalho: deixa de ser "converter o modelo X" e passa a ser "fechar a cadeia
+do projeto X". O elo que a bancada nunca tocou e o **VAE** (nenhum dos 11 no disco esta
+quantizado), e o elo que virou o MAIOR arquivo depois da quantizacao e o **text encoder**.
+
+    projeto          difusao (nosso)              text encoder            VAE
+    Krea 2 Turbo     7,50 GiB w4a4 / 7,70 misto   8,27 GiB BF16 CRU       242 MiB cru
+    Z-Image v2       3,06 GiB w4a4 / 3,18 misto   7,49 GiB BF16 cru       242 MiB cru
+                                                  (w4a4 publicado, apagado do disco)
+    LTX 2.5          11,66 GiB w4a8 (em D:)       9,88 GiB w4a8 (Comfy)   1,35 GiB cru
+    Qwen Image Edit  NADA AINDA                   6,33 GiB w4a4 (nosso)   242 MiB cru
+
+**No Krea2 e no Z-Image o encoder ja e maior que o modelo de difusao quantizado.** Essa e a
+resposta direta a pergunta do "ponto perfeito": depois de 3,26x no DiT, o proximo ganho de tamanho
+esta no encoder, nao em apertar mais o DiT -- que, medido, nem quebra no menor groupsize legal.
+
 
 ## Etapa 3 -- Z-Image: esta tudo convertido?
 

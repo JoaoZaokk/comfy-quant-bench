@@ -121,3 +121,61 @@ mesma direcao, com n pequeno demais e dito assim.**
 Uma imagem de origem, e ela e um desenho chapado -- nada aqui diz o que o W4A4 faz com rosto
 real numa edicao. Tres sementes so na instrucao do cachorro; as outras tres instrucoes tem uma.
 Contagem de cachorro e olho humano, nao metrica. O braco `misto` nao foi testado na edicao.
+
+---
+
+# FECHAMENTO do desvio do cachorro -- 2026-09-12, 51 renderizações
+
+O desvio ficou aberto em **1 de 3 contra 0 de 3**, que nomeia e não fecha. Fechado agora, e o
+resultado é o contrário do que a primeira leitura sugeria: **não era sorte do sampler.**
+
+## O que eu quase concluí errado, e por quê
+
+A primeira varredura foram 8 sementes (2002..9002) x 3 braços x 2 instruções = 48 renderizações,
+**todas com exatamente um cachorro**. Isso lê como "o desvio não reproduz" -- e estaria errado,
+porque **nenhuma das 48 incluía a semente 1002**, que é justamente onde ele tinha acontecido.
+Varrer ao redor do ponto não é medir o ponto.
+
+E havia um segundo defeito no meu desenho: nas primeiras 24 eu variei **dois eixos de uma vez**,
+o número de sementes E a instrução (pus "exactly one"). Com os dois andando juntos, nada
+distinguiria "sumiu por causa das sementes" de "sumiu por causa do numeral". É
+`teste-varia-o-eixo-errado`, cometido por mim no teste escrito para fechar outro erro meu.
+
+## O 2×2 na semente que importa
+
+Três renderizações por célula não: uma por célula, porque a edição é determinística na semente.
+
+    semente 1002              int8 publico   nosso W4A4   nosso misto
+    instrucao ORIGINAL          1 cachorro    2 CACHORROS   1 cachorro
+    com "exactly one"           1 cachorro    1 cachorro    1 cachorro
+
+`bench/krea2_edit_cao_semente1002.png`. Duas leituras saem daí, e as duas importam:
+
+1. **O desvio é do W4A4, e reproduz.** Não é ruído: na mesma semente, mesma instrução, mesmo
+   LoRA, mesma origem, o int8 e o misto põem um cachorro e o W4A4 põe dois.
+2. **Nomear a contagem na instrução corrige.** A mesma semente, mesmo braço, com "exactly one"
+   volta para um cachorro.
+
+## A contagem completa
+
+    braco          instrucao original    com "exactly one"
+    int8 publico    0 de 9 duplicaram     0 de 8
+    nosso W4A4      1 de 9 duplicaram     0 de 8
+    nosso misto     0 de 9 duplicaram     0 de 8
+
+Nove sementes: 1002 e 2002..9002. Folhas: `krea2_edit_cao_8sementes.png` (as oito, três braços) e
+`krea2_edit_cao_semente1002.png` (o 2x2).
+
+**O braço `misto` entra na edição aqui pela primeira vez** e não duplica em nenhuma das nove. Ele
+promove a 8 bits as 51 camadas de maior erro -- `attn.wo` e `mlp.down`, as duas projeções de
+saída -- e custa 0,20 GiB a mais que o W4A4 puro. Isso é consistente com o desvio acompanhar o
+erro por camada, mas **é uma coincidência de duas medições, não uma causa demonstrada**: ninguém
+variou a promoção camada a camada para ver o desvio aparecer e sumir.
+
+## O que continua NÃO coberto
+
+Uma imagem de origem, e ela é um desenho infantil chapado. Uma instrução de inserção, um objeto,
+um LoRA de identidade. Nove sementes: **1 em 9 não se distingue de 0 em 9 com confiança**, o que
+esta linha afirma é que o evento existe e reproduz naquela semente, não a sua frequência. Contar
+cachorro é olho humano, não métrica. E nada aqui testa se o mesmo acontece com outra contagem
+("dois cachorros") ou com outro objeto.

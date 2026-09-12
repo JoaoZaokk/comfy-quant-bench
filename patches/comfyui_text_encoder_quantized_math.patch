@@ -1,0 +1,79 @@
+diff --git a/comfy/cli_args.py b/comfy/cli_args.py
+index c6660846..39df48ab 100644
+--- a/comfy/cli_args.py
++++ b/comfy/cli_args.py
+@@ -108,6 +108,8 @@ fpte_group.add_argument("--fp16-text-enc", action="store_true", help="Store text
+ fpte_group.add_argument("--fp32-text-enc", action="store_true", help="Store text encoder weights in fp32.")
+ fpte_group.add_argument("--bf16-text-enc", action="store_true", help="Store text encoder weights in bf16.")
+ 
++parser.add_argument("--disable-quantized-text-encoder", action="store_true", help="Load a quantized text encoder for its smaller weights but run it dequantized, as builds before this flag did.")
++
+ parser.add_argument("--fp16-intermediates", action="store_true", help="Experimental: Use fp16 for intermediate tensors between nodes instead of fp32.")
+ 
+ parser.add_argument("--force-channels-last", action="store_true", help="Force channels last format when inferencing the models.")
+diff --git a/comfy/ops.py b/comfy/ops.py
+index ff64aad5..6e8f024c 100644
+--- a/comfy/ops.py
++++ b/comfy/ops.py
+@@ -1287,6 +1287,28 @@ def _quantized_weight_state_dict(module, sd, prefix, extra_quant_conf=None, extr
+     return sd
+ 
+ 
++def quantized_text_encoder_math(quant_config):
++    #Two independent things send a text encoder down the dequantized path: sd1_clip asks for
++    #full precision matmul, and sd.py upcasts every CLIP to float32, which sets
++    #comfy_force_cast_weights on every module. Either one alone is enough to keep the quantized
++    #kernel from ever running, so a quantized text encoder used to save VRAM and no time. Both
++    #are released together, and only for a checkpoint that actually carries quantized layers.
++    return quant_config is not None and not args.disable_quantized_text_encoder
++
++
++def text_encoder_has_quantized_math(model):
++    #The other half of the release, asked from the built module tree rather than from
++    #model_options: every text encoder family copies model_options before writing
++    #quantization_metadata into it, so the key never reaches the CLIP that owns the patcher. The
++    #tree also answers correctly for the composite encoders that wrap more than one model.
++    #_full_precision_mm is the marker the layer itself carries: only a MixedPrecisionOps layer has
++    #it, and it is False only when quantized_text_encoder_math said so.
++    for module in model.modules():
++        if getattr(module, "_full_precision_mm", True) is False:
++            return True
++    return False
++
++
+ def mixed_precision_ops(quant_config={}, compute_dtype=torch.bfloat16, full_precision_mm=False, disabled=[]):
+     class MixedPrecisionOps(manual_cast):
+         _quant_config = quant_config
+diff --git a/comfy/sd.py b/comfy/sd.py
+index 4bdaa978..25f41fa2 100644
+--- a/comfy/sd.py
++++ b/comfy/sd.py
+@@ -265,8 +265,10 @@ class CLIP:
+         te_disable_dynamic = disable_dynamic or getattr(self.cond_stage_model, "disable_offload", False)
+         ModelPatcher = comfy.model_patcher.ModelPatcher if te_disable_dynamic else comfy.model_patcher.CoreModelPatcher
+         self.patcher = ModelPatcher(self.cond_stage_model, load_device=load_device, offload_device=offload_device)
+-        #Match torch.float32 hardcode upcast in TE implemention
+-        self.patcher.set_model_compute_dtype(torch.float32)
++        #Match torch.float32 hardcode upcast in TE implemention. A quantized text encoder is the
++        #exception: the upcast sets force_cast_weights, and that alone keeps its kernel unreachable.
++        if not comfy.ops.text_encoder_has_quantized_math(self.cond_stage_model):
++            self.patcher.set_model_compute_dtype(torch.float32)
+         self.patcher.hook_mode = comfy.hooks.EnumHookMode.MinVram
+         self.patcher.is_clip = True
+         self.apply_hooks_to_conds = None
+diff --git a/comfy/sd1_clip.py b/comfy/sd1_clip.py
+index f0fdf1aa..a9bce433 100644
+--- a/comfy/sd1_clip.py
++++ b/comfy/sd1_clip.py
+@@ -111,8 +111,9 @@ class SDClipModel(torch.nn.Module, ClipTokenWeightEncoder):
+ 
+         if operations is None:
+             if quant_config is not None:
+-                operations = comfy.ops.mixed_precision_ops(quant_config, dtype, full_precision_mm=True)
+-                logging.info("Using MixedPrecisionOps for text encoder")
++                quantized_math = comfy.ops.quantized_text_encoder_math(quant_config)
++                operations = comfy.ops.mixed_precision_ops(quant_config, dtype, full_precision_mm=not quantized_math)
++                logging.info("Using MixedPrecisionOps for text encoder, quantized math {}".format("on" if quantized_math else "off"))
+             else:
+                 operations = comfy.ops.manual_cast
+ 

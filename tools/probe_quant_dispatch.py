@@ -43,6 +43,15 @@ import comfy.options; comfy.options.enable_args_parsing()
 import torch, folder_paths, comfy.sd, comfy.sample
 from comfy_kitchen.tensor.base import QuantizedTensor
 
+TE_TRAVADO = %(TE_TRAVADO)s
+if TE_TRAVADO:
+    # Braco de controle do cadeado do text encoder. Repoe o comportamento anterior a flag
+    # `--disable-quantized-text-encoder`: peso de 4 ou 8 bits na VRAM, conta dequantizada.
+    # Escrito no objeto `args` e nao passado por linha de comando porque
+    # `comfy.options.enable_args_parsing()` acima ja rodou o parser sobre um argv vazio.
+    import comfy.cli_args
+    comfy.cli_args.args.disable_quantized_text_encoder = True
+
 DYNVRAM = %(DYNVRAM)s
 if DYNVRAM:
     # Sem isto, `load_torch_file` usa `safetensors.safe_open`, que RECUSA um arquivo com
@@ -64,7 +73,8 @@ import os as _os
 from comfy_kitchen.backends import cuda as _ckc
 rep = {"mode": MODE, "ckpt": CKPT, "dynamic_vram": DYNVRAM,
        "force_int8_fallback_env": _os.environ.get("COMFY_KITCHEN_FORCE_INT4_INT8_FALLBACK", "0"),
-       "force_int8_fallback_visto": bool(_ckc._FORCE_INT4_INT8_FALLBACK)}
+       "force_int8_fallback_visto": bool(_ckc._FORCE_INT4_INT8_FALLBACK),
+       "te_travado": TE_TRAVADO}
 
 if MODE == "te":
     obj = comfy.sd.load_clip(
@@ -268,6 +278,11 @@ def main():
                         "entre arquiteturas.")
     p.add_argument("--forward-n", type=int, default=8, help="quantas Linear no --forward-only")
     p.add_argument("--forward-m", type=int, default=256, help="linhas da entrada sintetica")
+    p.add_argument("--te-travado", action="store_true",
+                   help="so em --mode te: repoe o cadeado, carregando o encoder quantizado mas "
+                        "rodando a matematica dequantizada. E o braco de controle da flag "
+                        "--disable-quantized-text-encoder do ComfyUI; sem ele nao ha A/B, porque "
+                        "os dois bracos tomariam o mesmo caminho.")
     p.add_argument("--dynamic-vram", action="store_true",
                    help="inicializa o comfy-aimdo antes de carregar. Necessario para os dois "
                         "checkpoints publicos da Abiray, que tem bytes depois do ultimo tensor "
@@ -289,6 +304,7 @@ def main():
                  "PROMPT": a.prompt, "STEPS": a.steps, "SIDE": a.size, "SEED": a.seed,
                  "FRAMES": a.frames,
                  "DYNVRAM": "True" if a.dynamic_vram else "False",
+                 "TE_TRAVADO": "True" if a.te_travado else "False",
                  "FORWARD_ONLY": "True" if a.forward_only else "False",
                  "FORWARD_N": a.forward_n, "FORWARD_M": a.forward_m}
     proc = subprocess.run([str(ROOT / "python_embeded/python.exe"), "-s", "-c", src],
