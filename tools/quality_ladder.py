@@ -166,6 +166,21 @@ def encode(args, folder_paths, comfy_sd, comfy_mm, prompts):
     return out
 
 
+def _salva_latente(args, name, prompt_index, seed, tensor):
+    """Um latente no disco, assim que ele existe.
+
+    Ate 2026-09-12 todos os latentes so eram gravados depois que o ULTIMO braco terminava. Uma
+    corrida de 48 renderizacoes morreu durante o primeiro braco -- o processo pai saiu e levou o
+    filho -- e o diretorio ficou VAZIO, com dezenas de minutos de GPU ja gastos e nada para
+    mostrar. A amostragem custa minutos por imagem e o `torch.save` custa milissegundos, entao a
+    perda maxima de uma queda passa a ser a renderizacao em voo. Vale para qualquer queda, nao so
+    para essa: OOM no braco seguinte, VAE que morre, alguem fechando o terminal.
+    """
+    latdir = args.out / "latents"
+    latdir.mkdir(parents=True, exist_ok=True)
+    torch.save(tensor, latdir / f"{Path(name).stem}__p{prompt_index}_s{seed}.pt")
+
+
 def sample_all(args, name, conditioning, comfy_sample, comfy_sd, comfy_mm, folder_paths):
     """Every (prompt, seed) for one checkpoint, returning latents and per-step wall time."""
     candidate = Path(name)
@@ -268,6 +283,7 @@ def sample_all(args, name, conditioning, comfy_sample, comfy_sd, comfy_mm, folde
             torch.cuda.synchronize()
             per_step.append((time.perf_counter() - started) / args.steps)
             results[(prompt_index, seed)] = samples.detach().float().cpu()
+            _salva_latente(args, name, prompt_index, seed, results[(prompt_index, seed)])
     size_gib = Path(path).stat().st_size / 2 ** 30
     del model
     comfy_mm.soft_empty_cache()
@@ -433,17 +449,18 @@ def main() -> int:
     (args.out / "ladder.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(f"\nwrote {args.out / 'ladder.json'}")
 
-    # Os latentes vao para o disco antes do decode, e nao so o relatorio. Uma amostragem custa
-    # dezenas de minutos de GPU e o decode ja morreu duas vezes por motivos que nao tem nada a ver
-    # com a medicao; com os latentes salvos, decodificar de novo custa segundos num processo a
-    # parte, em vez de repetir tudo.
+    # Os latentes JA estao no disco: cada um foi gravado por `_salva_latente` no instante em que
+    # saiu do sampler, e nao aqui no fim. O decode ja morreu duas vezes por motivos que nao tem
+    # nada a ver com a medicao, e o processo inteiro ja morreu uma vez levando 48 renderizacoes
+    # que nunca chegaram ao disco. Com eles salvos, decodificar de novo custa segundos num
+    # processo a parte, em vez de repetir tudo.
     latdir = args.out / "latents"
-    latdir.mkdir(exist_ok=True)
-    for name, latents in all_latents.items():
-        for (prompt_index, seed), samples in latents.items():
-            torch.save(samples.cpu(),
-                       latdir / f"{Path(name).stem}__p{prompt_index}_s{seed}.pt")
-    print(f"wrote {sum(len(v) for v in all_latents.values())} latentes em {latdir}")
+    latdir.mkdir(parents=True, exist_ok=True)
+    no_disco = len(list(latdir.glob("*.pt")))
+    desta_corrida = sum(len(v) for v in all_latents.values())
+    print(f"{desta_corrida} latentes desta corrida em {latdir}"
+          + (f" ({no_disco} arquivos .pt no diretorio, incluindo corridas anteriores)"
+             if no_disco != desta_corrida else ""))
 
     if args.vae:
         try:

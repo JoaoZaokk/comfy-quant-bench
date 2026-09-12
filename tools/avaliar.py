@@ -685,6 +685,40 @@ def checar_erro(ck: Checkpoint) -> Iterator[Achado]:
                      f"medido na propria faixa nao testada saiu destruido", evidencia)
 
 
+def _travas_do_encoder_soltas() -> tuple[bool, dict]:
+    """As duas travas do text encoder estao soltas NESTA arvore do ComfyUI?
+
+    LIDO NO FONTE, NAO EXECUTADO -- e o achado que usa isto diz isso na propria mensagem. A
+    ferramenta nao importa torch nem carrega modelo (176 checkpoints em menos de um segundo e o
+    motivo de ela existir), entao a unica pergunta barata que ela pode fazer e se o codigo que
+    prende o kernel ainda esta la.
+
+    Pergunta pelos TRES pontos, porque soltar so um nao adianta -- qualquer uma das travas sozinha
+    ja manda a matematica para o caminho dequantizado, e isso custou uma medicao aqui: a primeira
+    tentativa mexeu so em `sd1_clip.py` e a contagem de forwards continuou em zero.
+    """
+    raiz = Path(__file__).resolve().parent.parent / "ComfyUI" / "comfy"
+    marcas = {
+        "ops.py": "def quantized_text_encoder_math",
+        "sd1_clip.py": "quantized_text_encoder_math(",
+        "sd.py": "text_encoder_has_quantized_math(",
+    }
+    evidencia, todas = {}, True
+    for arquivo, marca in marcas.items():
+        caminho = raiz / arquivo
+        try:
+            tem = marca in caminho.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            # Sem a arvore do ComfyUI ao lado nao da para responder. Devolve o padrao de fabrica,
+            # que e o estado em que a esmagadora maioria das instalacoes esta, e registra que a
+            # resposta veio da ausencia do arquivo e nao de uma leitura.
+            return False, {"comfy_nao_encontrado": str(caminho)}
+        evidencia[arquivo] = tem
+        todas = todas and tem
+    evidencia["lido_no_fonte"] = True
+    return todas, evidencia
+
+
 @checagem(
     codigo="armadilha",
     olha="armadilhas de arquitetura visiveis nos nomes dos tensores",
@@ -698,10 +732,16 @@ def checar_armadilha(ck: Checkpoint) -> Iterator[Achado]:
     nulo -- concatena mascara de uns e aplica em forca total. O FP16 sem quantizacao nenhuma sai
     destruido igual. Custou quatro renderizacoes ate alguem olhar o braco de referencia.
 
-    Text encoder: `comfy/sd.py:269` chama `set_model_compute_dtype(torch.float32)` para todo CLIP,
-    o que liga `comfy_force_cast_weights`, e `comfy/sd1_clip.py:114` fixa `full_precision_mm=True`.
+    Text encoder: `comfy/sd.py` chama `set_model_compute_dtype(torch.float32)` para todo CLIP,
+    o que liga `comfy_force_cast_weights`, e `comfy/sd1_clip.py` fixa `full_precision_mm=True`.
     Duas travas independentes: o peso fica 4 bits na VRAM e a **matematica e dequantizada**.
     Memoria economizada, tempo nao, kernel nunca alcancado.
+
+    Isso descreve o ComfyUI DE FABRICA, e em 2026-09-12 esta instalacao deixou de ser de fabrica:
+    as duas travas foram soltas juntas (`patches/comfyui_text_encoder_quantized_math.patch`) e
+    medidas -- 3,77x mais rapido com 1,11x menos fidelidade num encoder real. Enquanto este
+    achado era incondicional, a ferramenta afirmava sobre ESTA maquina uma coisa que o patch ao
+    lado dela ja refutava. `_travas_do_encoder_soltas()` pergunta a arvore em vez de assumir.
     """
     nomes = ck.tensores.keys()
     if any(".vace_blocks." in n for n in nomes):
@@ -710,10 +750,20 @@ def checar_armadilha(ck: Checkpoint) -> Iterator[Achado]:
                      "em forca total e destroi a saida, sem erro. Confira o braco NAO quantizado "
                      "antes de acreditar em qualquer numero; use `--vace-strength 0`", {})
     if any(n.startswith("model.layers.") and ".self_attn." in n for n in nomes) and ck.formatos:
-        yield Achado(OLHAR, "encoder_dequantizado",
-                     "parece text encoder: fora da caixa o ComfyUI roda encoders com a matematica "
-                     "dequantizada (duas travas independentes). Economiza VRAM, nao economiza "
-                     "tempo, e o kernel nunca e alcancado", {})
+        soltas, evidencia = _travas_do_encoder_soltas()
+        if soltas:
+            yield Achado(OLHAR, "encoder_destravado_nao_medido",
+                         "parece text encoder, e as duas travas do ComfyUI estao SOLTAS nesta "
+                         "arvore, entao a matematica quantizada pode rodar -- o oposto do padrao "
+                         "de fabrica. LIDO no fonte, nao executado: confirme com "
+                         "`avaliar_despacho.py`, e note que soltar a trava TROCA fidelidade por "
+                         "velocidade, entao um numero medido com a trava presa nao vale mais",
+                         evidencia)
+        else:
+            yield Achado(OLHAR, "encoder_dequantizado",
+                         "parece text encoder: de fabrica o ComfyUI roda encoders com a matematica "
+                         "dequantizada (duas travas independentes). Economiza VRAM, nao economiza "
+                         "tempo, e o kernel nunca e alcancado", evidencia)
 
 
 @checagem(
