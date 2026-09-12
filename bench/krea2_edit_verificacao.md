@@ -65,3 +65,59 @@ dentro do laco de poll, porque o worker nasce sob demanda.
 - Tudo isto rodou sobre o `krea2_turbo_int8_convrot` (o build int8 publico) com o LoRA
   `krea2_identity_edit_v1_2`. **Nada aqui diz o que a nossa quantizacao faz com a edicao** -- o
   criterio `bench/criterio_quant_krea2.md` deixa isso explicitamente de fora.
+
+---
+
+# O Edit sobre o NOSSO W4A4 (2026-09-12, depois dos quants)
+
+Ate aqui a edicao so tinha sido verificada sobre o `krea2_turbo_int8_convrot` **publico** -- o
+arquivo que o dono vai rodar e o nosso. Um eixo variado: o checkpoint de difusao. Mesma imagem
+de origem, mesmas quatro instrucoes, **mesmas sementes** (1000-1003), mesmo LoRA de identidade.
+
+    braco      status    tempo    | int8 (medido antes)
+    roupa      success   161,5 s  | 181,3 s
+    noite      success   177,3 s  | ~180 s
+    insercao   success    88,3 s  | 124,9 s
+    fundo      success   ~180 s   | 182,9 s
+
+**4/4, e a identidade sobrevive**: rosto, formato do cabelo, pose, bracos e vestido intactos nas
+quatro, no mesmo estilo chapado da origem. `bench/krea2_edit_int8_vs_w4a4.png`.
+
+O **LoRA de identidade carrega e faz efeito sobre o W4A4 quantizado** -- nao houve erro nem
+recusa, e as edicoes respondem a instrucao, o que nao aconteceria com o LoRA inerte.
+
+## O desvio, e o controle que ele exigiu
+
+Na semente 1002 o int8 pos **um** cachorro e o nosso W4A4 pos **dois**, onde a instrucao diz
+*"a small brown dog"*, singular. Com uma celula so nao da para distinguir dano da quantizacao de
+sorte do sampler, entao rodei o controle: a mesma instrucao, nos dois checkpoints, em duas
+sementes novas (`bench/krea2_edit_controle_cachorro.png`).
+
+    braco   s1002        s2002        s3002       cachorros corretos
+    int8    1 cachorro   1 cachorro   1 cachorro        3 de 3
+    W4A4    2 cachorros  1 cachorro   1 cachorro        2 de 3
+
+**1 de 3 contra 0 de 3.** Isso nomeia o desvio sem fechar a questao: uma ocorrencia em tres nao
+separa "o W4A4 duplica as vezes" de "esta instrucao duplica as vezes e o int8 teve sorte tres
+vezes". Esta bancada ja registrou exatamente esse erro -- o criterio ponderado por sigma "venceu
+3/3" e a vitoria dissolveu em oito sementes. **O que fecharia:** oito sementes por braco, ou uma
+segunda instrucao com contagem explicita ("two dogs") para ver se o erro e de contagem ou de
+duplicacao.
+
+Um segundo desvio na mesma tabela, menor e nao controlado: na semente 2002 o fundo do W4A4 saiu
+bem mais escuro e esverdeado que a origem, enquanto as tres celulas do int8 mantiveram o ceu
+azul. Uma ocorrencia, sem replica.
+
+## Leitura
+
+A edicao **funciona** sobre o nosso W4A4 e e ~1,2x mais rapida que sobre o int8, com 1,68x menos
+disco. O que nao se pode dizer e que a fidelidade a instrucao e igual: em 6 celulas comparaveis o
+unico erro de contagem apareceu no W4A4, e a direcao concorda com o que o ladder ja tinha medido
+(int8 2,40x mais fiel ao BF16, vencendo 10 de 10 pareado). **Nao e prova; e um segundo sinal na
+mesma direcao, com n pequeno demais e dito assim.**
+
+## Nao coberto
+
+Uma imagem de origem, e ela e um desenho chapado -- nada aqui diz o que o W4A4 faz com rosto
+real numa edicao. Tres sementes so na instrucao do cachorro; as outras tres instrucoes tem uma.
+Contagem de cachorro e olho humano, nao metrica. O braco `misto` nao foi testado na edicao.
