@@ -339,3 +339,31 @@ unico argumento para extrapolar da tabela de tolerancia.
   nada aqui diz o que a quantizacao faz com preservacao de identidade.
 - **O encoder de texto continua BF16 e travado** pelos dois cadeados do ComfyUI.
 - O `s/passo` do BF16 mede descarregamento, nao kernel, e por isso nao entra em nenhuma razao.
+
+## O epsilon pareado NAO foi medido no Krea2, e a razao fica escrita
+
+`tools/probe_epsilon_ckpt_ab.py` impoe a trajetoria do BF16 a todos os bracos, entao cada passo e
+uma comparacao casada e divergencia de trajetoria nao existe por construcao. **E o instrumento
+certo para comparar duas quantizacoes do mesmo modelo** -- o `CLAUDE.md` diz isso com todas as
+letras, e o espalhamento de 0,65-0,73 do ladder acima e exatamente o motivo.
+
+Tentado em 2026-09-12 e **nao concluido**. Duas paredes, nesta ordem:
+
+1. **Sem DynamicVRAM, o braco BF16 pagina.** 49,4 GiB de pagefile para um modelo de 24,5 GiB --
+   o dobro-comprometimento que `_dynamic_vram` existe para evitar -- com 4 por cento de CPU.
+   Nao ia terminar.
+2. **Com DynamicVRAM, o subprocesso morre em `AttributeError: 'NoneType' object has no attribute
+   'hostbuf_allocate'`.** `comfy_aimdo/host_buffer.py:6` faz `lib = control.lib` no import, e
+   `comfy/memory_management.py:7` importa esse modulo quando o ComfyUI e importado; ligar o
+   aimdo depois disso nao desfaz a ligacao congelada. O `quality_ladder` escapa porque o
+   bootstrap dele acontece antes, no topo do arquivo.
+
+A edicao que eu tinha feito nos dois templates foi **revertida**: ela nao funcionou e mudaria o
+caminho de carga para todo modelo, incluindo o Z-Image, onde a sonda funciona hoje. O
+`--clip-type` fica (esse foi testado e e o que faltava para a sonda alcancar o Krea2).
+
+**Consequencia honesta:** a afirmacao "o int8 e mais fiel que o nosso W4A4 no Krea2" repousa
+sobre a comparacao de imagem livre, que e ruidosa -- mas na forma **pareada**, 10 de 10 corridas,
+onde os bracos compartilham prompt e semente. Nao repousa sobre a media de divergencia sozinha.
+As tres medicoes anteriores desta bancada, essas sim com entrada casada, apontam na mesma
+direcao em outros tres modelos.
