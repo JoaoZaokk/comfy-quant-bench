@@ -147,8 +147,13 @@ still is not a picture.
   preferred.
 - **One card (RTX 3090, sm86), one sampler, one scheduler, one resolution.** `convrot_groupsize` 256
   only; 16 / 64 / 1024 are legal for W4A4 and untested on this model.
-- **Nunchaku's SVDQuant INT4 build of the same model is on disk and is not compared here.** It is a
-  different format needing a different loader, so it cannot share this ladder.
+- **Two other 4-bit builds of this exact model sit on the same disk and are not compared here** —
+  Nunchaku's SVDQuant INT4 (13.19 GiB) and a GGUF `Q4_K_M` (12.33 GiB). Both loaders
+  (`ComfyUI-nunchaku`, `ComfyUI-GGUF`) are installed, so this is a **choice, not a limitation**:
+  neither format goes through `comfy.sd.load_diffusion_model`, so they cannot share this ladder and
+  would need matched separate runs compared offline through the saved latents. Until that is run,
+  the honest claim is only that these files are the **smallest** of the six builds of this model on
+  this machine — 9.60 GiB against 12.33 for the next smallest — not that they are the best per GiB.
 
 ## Credits
 
