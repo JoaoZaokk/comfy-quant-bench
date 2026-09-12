@@ -185,7 +185,11 @@ def main() -> int:
 
     if a.referencia:
         print(f"\n--- referencia BF16: {a.referencia} ---")
-        ref = roda(a.referencia, a.clip_type, a.prompt, 1, False, tmp / "te_ref.pt", a.device)
+        # `--repete` tambem aqui, e nao 1: com uma corrida so o mesmo BF16 mediu 282,2 ms num
+        # braco e 434,1 ms no outro -- 1,54x de diferenca no MESMO arquivo com o MESMO prompt,
+        # que e aquecimento, nao velocidade. Um numero de referencia que varia mais que o efeito
+        # medido nao e referencia.
+        ref = roda(a.referencia, a.clip_type, a.prompt, a.repete, False, tmp / "te_ref.pt", a.device)
         if not ref.get("ok"):
             print(ref.get("traceback", "sem traceback"))
             return 1

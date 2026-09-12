@@ -231,3 +231,80 @@ interval.
 The fix in `tools/quality_ladder.py` is to cast after loading — `casta_pesos_divergentes()`, 15
 tensors — which only reaches the state the non-lazy path already produced on its own.
 `tools/_dynamic_vram.perigoso_para_lazy()` answers it from the header alone, before any load.
+
+---
+
+## 8. The text encoder, which is where the next win actually is
+
+After the DiT drops to 7.50 GiB, **the text encoder is the largest file in the Krea 2 pipeline**:
+`qwen3vl_4b_bf16` is 8.27 GiB of raw BF16. Squeezing the DiT further is not the lever — it does not
+even break at the smallest legal groupsize (§4). The encoder is.
+
+Until 2026-09-12 quantizing it bought memory and nothing else: stock ComfyUI runs every text encoder
+with dequantized math behind two independent locks, so the 4-bit kernel was never reached. Both
+locks now come off for a checkpoint that really carries quantized layers, and
+`--disable-quantized-text-encoder` puts the old path back. See
+[`cadeado_text_encoder.md`](cadeado_text_encoder.md).
+
+The `krea2` encoder needed a new converter profile: `qwen3vl_4b` puts its decoder one segment
+deeper than plain Qwen — `model.language_model.layers.N`, because a vision tower shares the file —
+so the existing `qwen` profile matched **zero** layers. The `qwen3vl` profile matches 252, exactly
+36 layers × 7 Linears, with zero tensors from the vision tower.
+
+### Both formats, both prompt lengths, against the BF16 original
+
+Median of 5 encodes per cell, each arm in its own child process. The reference is the BF16 encoder,
+not the other arm — both quantized arms share the same weights, so "how much they differ from each
+other" is not the question that decides.
+
+| encoder | GiB | 76 tokens: rel-RMSE / ms | 1220 tokens: rel-RMSE / ms |
+|---|---|---|---|
+| `qwen3vl_4b_bf16` | 8.27 | — / 96.4 | — / ~702 |
+| `qwen3vl_4b_w4a8` **released** | **3.41** | **0.1438** / **87.2** | **0.5839** / **258.0** |
+| `qwen3vl_4b_w4a8` locked | 3.41 | 0.1438 / 182.3 | 0.5848 / 787.2 |
+| `qwen3vl_4b_w4a4_convrot` released | 3.19 | 0.5016 / 77.2 | 0.7393 / 215.5 |
+| `qwen3vl_4b_w4a4_convrot` locked | 3.19 | 0.3637 / 97.2 | 0.7017 / 712.2 |
+
+**Take W4A8.** It is **2.53x more faithful than W4A4** at the short prompt (0.1438 against 0.3637)
+for 0.22 GiB more, and releasing the lock costs it **nothing** measurable — 0.14381 against 0.14382
+— while making it 2.09x faster. W4A4's release is a real trade: 1.26x faster for 1.38x worse.
+
+**Two things here were measured wrong on the first pass and are corrected:**
+
+1. *"Releasing the lock makes W4A4 slower"* came from a single run per arm. At five repeats
+   releasing is 1.26x **faster**. The first encode of any arm is 2.8–3.5x the median (warm-up), and
+   with one measurement that noise is the result.
+2. The probe timed the BF16 reference **once** while timing the arms N times. The same file, same
+   prompt, measured 282.2 ms in one invocation and 434.1 ms in the next — 1.54x apart. A reference
+   that varies more than the effect is not a reference. Fixed: the reference now repeats like the
+   arms.
+
+### What this costs in fidelity grows with the prompt, and that is the awkward part
+
+W4A8's conditioning error goes **0.1438 at 76 tokens → 0.5839 at 1220**, cosine 0.9896 → 0.8456.
+The speed win goes the same way (2.09x → 3.05x against the locked path, and 2.71x against BF16),
+so the format is cheapest exactly where it is least accurate. There is no single number for "what
+a quantized encoder costs" — it depends on how much text you send it.
+
+**Caveat on that long-prompt column, stated because it weakens it:** the 1220-token prompt is
+**synthetic and repetitive** — nine descriptive clauses repeated six times. Degenerate input may
+stress a quantizer differently from natural long text, so the short-prompt column is the better
+founded of the two.
+
+### The control that had to pass
+
+A non-quantized encoder must be untouched by the flag. `qwen3vl_4b_bf16` loaded in both arms:
+**0 quantized layers, `force_cast_weights` True in both.** The float32 upcast stays exactly where
+it was.
+
+### The Krea 2 chain, end to end
+
+| link | original | shipped quantized | factor |
+|---|---|---|---|
+| diffusion | 24.48 GiB | **7.50** GiB W4A4 | 3.26x |
+| text encoder | 8.27 GiB | **3.41** GiB W4A8 | 2.43x |
+| VAE | 0.24 GiB | not quantized, by decision | — |
+| **total** | **33.0 GiB** | **11.2 GiB** | **2.95x** |
+
+The VAE is deliberately out of scope: at 242 MiB against 7.5 GiB of DiT it cannot move the number,
+and nothing on this bench has ever measured a quantized VAE.
