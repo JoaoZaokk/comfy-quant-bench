@@ -293,3 +293,49 @@ A ferramenta recusou a propria corrida. O `CLAUDE.md` documenta exatamente isto 
 the lock before a benchmark"* -- e a memoria `lock-gpu-compartilhado` tambem. Tomar o lock por
 fora vale para conversor e sonda ad-hoc; **nao vale para nada que passe por `_timing.compare()`
 ou `BenchGuard`**.
+
+## Previsao 6: CONFIRMADA
+
+`tools/avaliar_referencia.py` sobre o BF16, dois prompts nao relacionados x duas sementes:
+
+    resposta (d_prompt / d_semente)   1,7686   por semente [0,9441, 2,5932]   espalhamento 2,747x
+    |latente|  545,8 / 565,1 / 552,7 / 559,9
+    veredito   SEM VEREDITO -- o braco responde ao prompt
+
+Previsto > 0,8, medido 1,7686. O espalhamento entre sementes e grande (2,7x), como ja estava
+documentado para esta guarda, entao o que conta e a distancia do limiar, nao a segunda casa.
+
+## Balanco das seis previsoes
+
+    1  perfil casa 224 Linear                    CONFIRMADA
+    2  mediana err_w4a4 entre 0,15 e 0,22        REFUTADA -- 0,1199
+    3  err_w4a8 < err_w4a4 quase sempre          CONFIRMADA -- 224/224, 3,12x
+    4  int8 mais fiel que o nosso W4A4           CONFIRMADA -- 2,40x, 10/10 pareado
+    5  W4A4 mais rapido por passo                CONFIRMADA -- 1,47x sobre o int8
+    6  guarda de referencia > 0,8 no BF16        CONFIRMADA -- 1,7686
+
+Uma refutada de seis, e e a que importa: **a hipotese do tamanho nao previu o erro**, e ela era o
+unico argumento para extrapolar da tabela de tolerancia.
+
+## Como refazer
+
+    calibrar   tools/calibrate_activations.py --model krea2_turbo_bf16.safetensors --profile krea2
+               --clip qwen3vl_4b_bf16.safetensors --clip-type krea2 --steps 10 --size 1024
+    analisar   tools/quant_mixed.py --promote-error 10.0 --save-analysis ... --dry-run
+    converter  tools/quant_mixed.py --analysis calib/krea2_turbo.analysis.json --profile krea2
+    qualidade  tools/quality_ladder.py --clip-type krea2 --vae qwen_image_vae.safetensors
+               (CUDA_VISIBLE_DEVICES=0; o cortex segura 2,4 GiB na 3080 Ti e o BenchGuard recusa)
+    imagens    tools/decode_latents.py bench/quality_ladder_krea2/latents --vae qwen_image_vae.safetensors
+    despacho   tools/probe_quant_dispatch.py <arq> --mode diffusion --forward-only
+    guarda     tools/avaliar_referencia.py ...  **sem** Assert-GpuLock por fora
+
+## O que continua nao coberto, depois de tudo
+
+- **Uma placa (sm86), um tamanho (1024^2), um sampler, uma calibracao, duas sementes.**
+- **Nenhuma metrica perceptual.** Quem disse que as 40 imagens prestam fui eu, olhando.
+- **O teto do Krea2 nao foi medido.** 0,1199 funciona; nada acima disso foi tentado.
+- **O `krea2_raw`** (base, nao-turbo) ficou de fora inteiro.
+- **O Krea2 Edit nao foi testado com os nossos builds** -- a edicao usa condicionamento duplo e
+  nada aqui diz o que a quantizacao faz com preservacao de identidade.
+- **O encoder de texto continua BF16 e travado** pelos dois cadeados do ComfyUI.
+- O `s/passo` do BF16 mede descarregamento, nao kernel, e por isso nao entra em nenhuma razao.

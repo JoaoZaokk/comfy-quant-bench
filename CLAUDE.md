@@ -203,8 +203,30 @@ Also read [AGENTS.md](AGENTS.md) (root policy) and [ComfyUI/AGENTS.md](ComfyUI/A
   modelo               parametros   tolerado   NAO tolerado
   Wan 2.1 VACE             1,3 B     0,0546        0,0793
   Z-Image v2                ~6 B     0,1421        0,1848
+  Krea2 Turbo             12,82 B    0,1199      NAO MEDIDO
   HunyuanVideo 1.5         ~13 B     0,1837        0,2147  (e 0,2163 no capybara)
   ```
+
+  **A monotonia por tamanho MORREU em 2026-09-12, e ela era o unico argumento para extrapolar
+  desta tabela.** O Krea2 Turbo tem **12.820.073.036 parametros** (somados do header, nao
+  estimados do tamanho do arquivo) e a previsao escrita antes de medir -- `bench/criterio_quant_krea2.md`
+  -- era mediana de `err_w4a4` entre 0,15 e 0,22, porque e ai que o Hunyuan de ~13 B esta. Medido
+  sobre 224 camadas, todas calibradas, cg 256: **0,1199**. Um modelo de 12,8 B mede MENOS erro por
+  camada que o Z-Image de ~6 B. A linha entra com a coluna `NAO tolerado` vazia de proposito: nada
+  foi medido acima de 0,1199 neste modelo, e `tolerado` registra o maior erro que ja se viu
+  funcionar, nunca um teto.
+
+  E funciona bem: 5 prompts x 2 sementes x 4 bracos, **40 renderizacoes, nenhuma quebrada** --
+  maca (controle), rosto com pele e ruga, placa "OPEN" legivel em 8 de 8 celulas, mercado noturno
+  coerente, cristal de gelo com estrutura fina. A divergencia de latente do W4A4 contra o BF16 e
+  **0,5843** e a imagem presta: o que esse numero mede e o sampler indo para outro lugar que
+  tambem e bom.
+
+  **O int8 do proprio Comfy-Org ganha do nosso W4A4 em 10 de 10 corridas pareadas** (0,2435 contra
+  0,5843, 2,40x mais fiel), que e a quarta medicao independente nesta bancada na mesma direcao --
+  agora numa quarta familia. E o W4A4 e **1,47x mais rapido por passo** (0,839 contra 1,233) e
+  1,68x menor (7,50 contra 12,57 GiB). A escolha e uma troca, nao um erro; o que nao se pode e
+  chamar o W4A4 de mais fiel.
 
   **A celula do Z-Image foi preenchida em 2026-09-03, e a hipotese mecanica que ia preenche-la
   estava invertida.** O eixo e o `convrot_groupsize`: `bench/criterio_teto_zimage.md` previa que
