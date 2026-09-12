@@ -200,6 +200,27 @@ PROFILE_PATTERNS = {
     "wan_2_1": re.compile(
         r"^blocks\.\d+\.(?:(?:self|cross)_attn\.[qkvo]|ffn\.[02])$"
     ),
+    # Qwen-Image / Qwen-Image-Edit, MMDiT com duas correntes, 60 `transformer_blocks` x 14
+    # Linears = 840. NAO adivinhado: derivado do `qwen_image_edit_2511_int8_convrot` do
+    # proprio Comfy-Org, cujas 840 chaves `comfy_quant` sao exatamente estas -- sem falso
+    # positivo e sem falso negativo -- e conferido pelos DOIS lados, porque a licao do
+    # `hunyuan_video_15` acima foi um perfil escrito das chaves do arquivo que casou NADA no
+    # modelo carregado. Carregado de verdade na 3090: `named_modules()` devolve estes mesmos
+    # 840 nomes.
+    #
+    # `img_mod.1` e `txt_mod.1` sao MODULACAO e entram, ao contrario do `zimage` e do
+    # `hunyuan_video_15` aqui em cima. Nao e inconsistencia minha: o Comfy-Org os quantiza, e
+    # o folclore "modulacao nunca" ja foi medido e refutado nesta bancada -- em W4A4 o
+    # `adaLN_modulation` do Z-Image e a camada de MENOR erro do bloco inteiro.
+    #
+    # FORA, e sao exatamente as pontas, os 6 tensores 2-D que sobram do arquivo: `img_in`,
+    # `txt_in`, `proj_out`, `norm_out.linear` e o par `time_text_embed.timestep_embedder.*`.
+    "qwen_image": re.compile(
+        r"^transformer_blocks\.\d+\."
+        r"(?:attn\.(?:to_[qkv]|to_out\.0|add_[qkv]_proj|to_add_out)"
+        r"|(?:img|txt)_mlp\.net\.(?:0\.proj|2)"
+        r"|(?:img|txt)_mod\.1)$"
+    ),
     # Krea2 / SingleStreamDiT (`comfy/ldm/krea2/model.py`), 28 `blocks` x 8 Linears = 224.
     # O nome no MODULO e o nome no ARQUIVO sao a mesma string aqui -- o checkpoint ja vem com
     # `blocks.N.attn.wq.weight`, sem prefixo e sem fusao de qkv -- entao nao ha entrada em
