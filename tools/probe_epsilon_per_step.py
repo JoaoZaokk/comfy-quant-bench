@@ -49,14 +49,14 @@ sys.path.insert(0, "ComfyUI"); sys.argv = ["main.py"]
 import comfy.options; comfy.options.enable_args_parsing()
 import torch, folder_paths, comfy.sd, comfy.sample
 
-UNET=%(UNET)r; CLIP=%(CLIP)r; PROMPT=%(PROMPT)r; SEED=%(SEED)d
+UNET=%(UNET)r; CLIP=%(CLIP)r; CLIPTYPE=%(CLIPTYPE)r; PROMPT=%(PROMPT)r; SEED=%(SEED)d
 STEPS=%(STEPS)d; CFG=%(CFG)s; SIDE=%(SIDE)d; DEV=%(DEV)r; OUTP=%(OUTP)r
 
 model = comfy.sd.load_diffusion_model(folder_paths.get_full_path_or_raise("diffusion_models", UNET))
 clip = comfy.sd.load_clip(
     ckpt_paths=[folder_paths.get_full_path_or_raise("text_encoders", CLIP)],
     embedding_directory=folder_paths.get_folder_paths("embeddings"),
-    clip_type=comfy.sd.CLIPType.LUMINA2)
+    clip_type=getattr(comfy.sd.CLIPType, CLIPTYPE.upper()))
 positive=[list(clip.encode_from_tokens_scheduled(clip.tokenize(PROMPT))[0])]
 negative=[list(clip.encode_from_tokens_scheduled(clip.tokenize(""))[0])]
 del clip
@@ -97,7 +97,7 @@ import comfy.options; comfy.options.enable_args_parsing()
 import torch, folder_paths, comfy.sd
 from comfy_kitchen.backends import cuda as ckc
 
-UNET=%(UNET)r; CLIP=%(CLIP)r; PROMPT=%(PROMPT)r; DEV=%(DEV)r
+UNET=%(UNET)r; CLIP=%(CLIP)r; CLIPTYPE=%(CLIPTYPE)r; PROMPT=%(PROMPT)r; DEV=%(DEV)r
 REFP=%(REFP)r; OUTP=%(OUTP)r
 
 with open(REFP, "rb") as f:
@@ -107,7 +107,7 @@ model = comfy.sd.load_diffusion_model(folder_paths.get_full_path_or_raise("diffu
 clip = comfy.sd.load_clip(
     ckpt_paths=[folder_paths.get_full_path_or_raise("text_encoders", CLIP)],
     embedding_directory=folder_paths.get_folder_paths("embeddings"),
-    clip_type=comfy.sd.CLIPType.LUMINA2)
+    clip_type=getattr(comfy.sd.CLIPType, CLIPTYPE.upper()))
 positive=[list(clip.encode_from_tokens_scheduled(clip.tokenize(PROMPT))[0])]
 negative=[list(clip.encode_from_tokens_scheduled(clip.tokenize(""))[0])]
 del clip
@@ -184,6 +184,8 @@ def main() -> int:
     p.add_argument("--ref-unet", default="beyond-reality-zimage-v2_native.safetensors")
     p.add_argument("--quant-unet", default="zimage-v2-w4a4.safetensors")
     p.add_argument("--clip", default="qwen_3_4b.safetensors")
+    p.add_argument("--clip-type", default="lumina2",
+                   help="tipo de text encoder para `comfy.sd.CLIPType`, sem diferenciar caixa. O default lumina2 e o do Z-Image; krea2 e o do Krea2 (Qwen3-VL-4B com tap de 12 camadas). Errar aqui nao levanta excecao: carrega um encoder que produz condicionamento de outra forma e o resultado parece uma medida.")
     p.add_argument("--prompt", default="a red apple on a weathered wooden table, soft window light")
     p.add_argument("--seed", type=int, default=1234)
     p.add_argument("--steps", type=int, default=8)
@@ -199,7 +201,7 @@ def main() -> int:
     print(f"device cuda:{ARGS.device}  |  a trajetoria do BF16 e imposta aos dois bracos quantizados\n")
 
     print("--- referencia BF16 (grava a trajetoria) ---", flush=True)
-    common = {"UNET": ARGS.ref_unet, "CLIP": ARGS.clip, "PROMPT": ARGS.prompt, "SEED": ARGS.seed,
+    common = {"UNET": ARGS.ref_unet, "CLIP": ARGS.clip, "CLIPTYPE": ARGS.clip_type, "PROMPT": ARGS.prompt, "SEED": ARGS.seed,
               "STEPS": ARGS.steps, "CFG": repr(ARGS.cfg), "SIDE": ARGS.size,
               "DEV": ARGS.device, "OUTP": str(refp)}
     ref = rodar(REF_ARM % common)

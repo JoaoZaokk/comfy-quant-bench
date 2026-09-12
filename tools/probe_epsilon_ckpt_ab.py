@@ -58,6 +58,8 @@ def main() -> int:
                         "eixo que varia passa a ser o ENCODER, com o mesmo modelo de difusao "
                         "e a mesma trajetoria imposta.")
     p.add_argument("--clip", default="qwen_3_4b.safetensors")
+    p.add_argument("--clip-type", default="lumina2",
+                   help="tipo de text encoder para `comfy.sd.CLIPType`, sem diferenciar caixa. O default lumina2 e o do Z-Image; krea2 e o do Krea2 (Qwen3-VL-4B com tap de 12 camadas). Errar aqui nao levanta excecao: carrega um encoder que produz condicionamento de outra forma e o resultado parece uma medida.")
     p.add_argument("--prompt",
                    default="a red apple on a weathered wooden table, soft window light")
     p.add_argument("--seed", type=int, default=1234)
@@ -79,7 +81,7 @@ def main() -> int:
 
     OUT.mkdir(parents=True, exist_ok=True)
     refp = OUT / "trajetoria_bf16.pkl"
-    common = {"UNET": a.ref_unet, "CLIP": a.clip, "PROMPT": a.prompt, "SEED": a.seed,
+    common = {"UNET": a.ref_unet, "CLIP": a.clip, "CLIPTYPE": a.clip_type, "PROMPT": a.prompt, "SEED": a.seed,
               "STEPS": a.steps, "CFG": repr(a.cfg), "SIDE": a.size,
               "DEV": a.device, "OUTP": str(refp)}
 
