@@ -307,7 +307,26 @@ def main() -> int:
     # checkpoint is committed in host RAM -- 44.5 GiB working set for a 39 GiB model on this box,
     # measured, with 4 GiB of system memory left over. See tools/_dynamic_vram.py.
     from _dynamic_vram import enable as enable_dynamic_vram
-    if enable_dynamic_vram():
+    from _dynamic_vram import perigoso_para_lazy
+    # O caminho preguicoso carrega o peso direto do arquivo e NAO converte para o dtype do
+    # modulo, entao um checkpoint com dois dtypes de ponto flutuante entre os tensores 2-D morre
+    # com `mat1 and mat2 must have the same dtype` na primeira Linear que discordar -- depois de
+    # ler o arquivo inteiro, e apontando para a camada em vez de para o mecanismo. Conferido em
+    # TODOS os bracos, nao so na referencia: basta um para a corrida acabar no meio.
+    mistos = {}
+    for nome in [args.reference, *args.models]:
+        cand = Path(nome)
+        caminho = str(cand) if cand.is_file() else             folder_paths.get_full_path_or_raise("diffusion_models", nome)
+        conflito = perigoso_para_lazy(caminho)
+        if conflito:
+            mistos[nome] = conflito
+    if mistos:
+        for nome, conflito in mistos.items():
+            print(f"DynamicVRAM NAO ligado: {nome} mistura {sorted(conflito)} entre seus "
+                  f"tensores 2-D, e a carga preguicosa nao converte dtype.", flush=True)
+        print("  Consequencia: cada peso e materializado em RAM do host na carga. Num "
+              "checkpoint grande isso e o modelo inteiro de uma vez.", flush=True)
+    elif enable_dynamic_vram():
         print("DynamicVRAM enabled: weights load lazily rather than all at once", flush=True)
     else:
         print("DynamicVRAM NOT available. Every weight will be materialised in host RAM at load; "

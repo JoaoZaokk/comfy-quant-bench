@@ -33,6 +33,10 @@ swallowing: it changes the memory profile of everything that follows.
 
 from __future__ import annotations
 
+import json
+import pathlib
+import struct
+
 
 def enable(headroom_gib: float = 1.0) -> bool:
     """Enable DynamicVRAM. Returns whether it actually came up.
@@ -74,3 +78,38 @@ def enable(headroom_gib: float = 1.0) -> bool:
     comfy.model_patcher.CoreModelPatcher = comfy.model_patcher.ModelPatcherDynamic
     comfy.memory_management.aimdo_enabled = True
     return True
+
+
+def dtypes_float_2d(caminho) -> set[str]:
+    """Os dtypes de ponto flutuante dos tensores 2-D de um safetensors, so pelo header.
+
+    2-D porque e o que vira peso de `F.linear`. Escalas e normas sao 1-D e podem ser F32 sem
+    que ninguem se importe; um PESO em F32 no meio de um modelo BF16 e outra coisa.
+    """
+    FLUTUANTES = {"F64", "F32", "F16", "BF16"}
+    with pathlib.Path(caminho).open("rb") as f:
+        n = struct.unpack("<Q", f.read(8))[0]
+        hdr = json.loads(f.read(n))
+    hdr.pop("__metadata__", None)
+    return {v["dtype"] for v in hdr.values()
+            if v["dtype"] in FLUTUANTES and len(v.get("shape", ())) == 2}
+
+
+def perigoso_para_lazy(caminho) -> set[str] | None:
+    """Os dtypes em conflito, ou `None` se o arquivo pode passar pelo caminho preguicoso.
+
+    MEDIDO 2026-09-12, e custou uma corrida inteira do `quality_ladder`. Com DynamicVRAM ligado,
+    `comfy/ops.py:552` carrega o peso DIRETO DO ARQUIVO e **nao converte para o dtype do modulo**.
+    Isso e invisivel enquanto o checkpoint tem um dtype so. O `krea2_turbo_bf16` nao tem: os 256
+    pesos de `blocks` e `txtfusion` sao BF16 e as pontas -- `first`, `last.linear`, `tmlp`,
+    `tproj`, `txtmlp` -- sao **F32**, que e a politica de precisao do modelo, nao um defeito.
+    O resultado foi
+
+        RuntimeError: mat1 and mat2 must have the same dtype, but got BFloat16 and Float
+
+    em `self.first(img)`, depois de carregar 24,5 GiB, com a mensagem apontando para a primeira
+    camada do modelo e nao para o mecanismo que a quebrou. Sem DynamicVRAM o mesmo arquivo carrega
+    com `first.weight` em bfloat16 e amostra normalmente -- verificado variando um eixo so.
+    """
+    d = dtypes_float_2d(caminho)
+    return d if len(d) > 1 else None
