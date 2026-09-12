@@ -11,158 +11,166 @@ tags:
   - int4
   - int8
   - convrot
-  - w4a4
+  - w4a8
 language:
   - en
 ---
 
-# Qwen-Image-Edit 2511 — ConvRot quantized, and the lowest per-layer error on this bench
+# Qwen-Image-Edit 2511 — 4-bit weights that work, and 4-bit activations that do not
 
-Quantized builds of **Qwen-Image-Edit-2511** in ComfyUI's native `convrot_w4a4` and
-`asym_w4a8_int8` formats, converted from the BF16 weights Comfy-Org repackages.
+One usable build, two measured failures, and the single axis that separates them.
 
-**38.05 GiB → 9.60 GiB, 3.96x lighter.** At 20.4 billion parameters this is the largest model this
-bench has converted, and it measures the *lowest* median per-layer error of any checkpoint here.
+**38.05 GiB → 10.79 GiB, 3.53x lighter**, and **1.77x smaller than the official INT8** while still
+producing good images. The failures are published beside it because the axis they identify is worth
+more than the file that works.
 
 Method, tools and the full measurement log: **https://github.com/JoaoZaokk/comfy-quant-bench**
 
 ---
 
+## The result, in one table
+
+Every arm below is the same source, same converter, same calibration, same 12 renders (6 prompts ×
+2 seeds, 20 steps, 1024 px, cfg 2.5, euler/simple) on one RTX 3090. Divergence is the mean relative
+distance from the BF16 reference latent, paired run by run.
+
+| build | weights | activations | GiB | divergence | s/step | picture |
+|---|---|---|---|---|---|---|
+| BF16 source | 16-bit | 16-bit | 38.05 | — | 5.693 | good |
+| `int8_convrot` (Comfy-Org) | **8-bit** | 8-bit | 19.09 | **0.1942** | **1.410** | good |
+| **`qwen_image_edit_2511_w4a8`** (this repo) | **4-bit** | 8-bit | **10.79** | 0.4997 | 1.575 | **good** |
+| `qwen_image_edit_2511_w4a4` | 4-bit | **4-bit** | 9.60 | 1.7440 | 1.053 | **NOISE** |
+| `qwen_image_edit_2511_mixed` | 4-bit | **4-bit on 607/840** | 9.88 | 1.8846 | 1.236 | **NOISE** |
+
+**The weights are not the problem; the activations are.** W4A8 and W4A4 both carry 4-bit weights.
+The only difference between the build that works and the build that renders static is whether the
+activation path is 8-bit or 4-bit. And the mixed build settles it: with 233 of 840 layers already
+promoted to 8-bit activations — an effective per-layer error of **0.0744**, *half* the error of a
+Z-Image build that renders fine — it is still pure noise. **Leaving any layer on the 4-bit
+activation path destroys this model.**
+
+Against the official quantization the trade is explicit: **1.77x smaller, 1.12x slower per step,
+2.57x further from the reference latent.** Comfy-Org ships full 8-bit weights
+(`int8_tensorwise` + ConvRot rotation); this file ships 4-bit weights at the same activation
+precision. If VRAM is the binding constraint, that is 8.3 GiB back. If latency is, theirs wins.
+
 ## The files
 
-| file | bytes | GiB | layout | `convrot_groupsize` |
-|---|---|---|---|---|
-| `qwen_image_edit_2511_w4a4.safetensors` | 10,306,850,912 | **9.60** | 840 × `convrot_w4a4` | 256 |
-| `qwen_image_edit_2511_mixed.safetensors` | 10,603,610,352 | **9.88** | 607 × 4-bit / 233 × 8-bit | 256 |
+| file | bytes | GiB | layout |
+|---|---|---|---|
+| `qwen_image_edit_2511_w4a8.safetensors` | 11,581,151,872 | **10.79** | 840 × `asym_w4a8_int8`, `group_size` 16, `convrot_groupsize` 256 |
 
-Both carry the same `source_identity_sha256`
-(`0ae1768041ecad9c09ca8f989d2f9253148fe75baa3b923112181bc4949ef248`), so they are comparable to
-each other by construction — same source bytes, same converter, same calibration, one axis varied.
+Source: `qwen_image_edit_2511_bf16.safetensors`, 40,861,031,560 B,
+sha256 `0ae1768041ecad9c09ca8f989d2f9253148fe75baa3b923112181bc4949ef248`,
+**20,430,401,088 parameters** summed from the Safetensors header across 1934 tensors — not
+estimated from the file size. Every quantized layer resolves to `comfy_kitchen.backends.cuda`, on
+all four ops the converter touches.
 
-Sizes are `stat()` on the files, and the parameter counts below are summed from the Safetensors
-header, not estimated from the file size:
+### What it looks like
 
-| build | bytes | tensors | parameters | dtypes |
-|---|---|---|---|---|
-| BF16 source | 40,861,031,560 | 1934 | 20,430,401,088 | 1933 BF16 + 1 F32 |
-| `int8_convrot` (Comfy-Org) | 20,499,083,824 | 3614 | 20,435,991,168 | 840 I8 + 840 U8 + 1093 BF16 + 841 F32 |
-| `w4a4` (this repo) | 10,306,850,912 | 2774 | 10,243,771,968 | 840 I8 + 1093 BF16 + 841 F32 |
-| `mixed` (this repo) | 10,603,610,352 | 3240 | 10,540,457,168 | 840 I8 + 233 U8 + 1093 BF16 + 1074 F32 |
+| prompt | BF16 38.05 GiB | W4A8 10.79 GiB |
+|---|---|---|
+| six prompts × one seed | ![](images/grade_w4a8.png) | |
 
-The `U8` column is the asymmetric zero-point: Comfy-Org's int8 build carries one per quantized
-layer, our pure W4A4 carries none (it is symmetric), and our mixed build carries exactly **233** —
-the count of layers promoted to `asym_w4a8_int8`. The header agrees with the sidecar.
+The failing builds are shown too, because "it renders static" is a claim that should be checkable:
+
+![](images/grade_falhas.png)
 
 ## Per-layer error, measured on real activations
 
-840 Linear layers, **all 840 calibrated** — no layer took a format chosen without a measurement
-behind it. Each error is the relative error of that format against a float32 reference, on the
-activation rows the model actually produced during sampling (reservoir-sampled across steps, stored
-BF16):
+840 Linear layers, **all 840 calibrated**. Each error is the relative error of that format against
+a float32 reference, on the activation rows the model actually produced during sampling.
 
 | format | median | p25 | p75 | max |
 |---|---|---|---|---|
 | `err_bf16` (the floor) | 0.0020 | 0.0019 | 0.0022 | 0.0028 |
-| `err_w4a4` | **0.1080** | 0.0794 | 0.1571 | 0.2953 |
+| `err_w4a4` | 0.1080 | 0.0794 | 0.1571 | 0.2953 |
 | `err_w4a8` | **0.0358** | 0.0269 | 0.0493 | 0.0804 |
 
-Two things worth reading off that table.
+**0.1080 is the lowest per-layer error that has ever produced garbage on this bench** — lower than
+Krea 2 Turbo at 0.1199 and Z-Image v2 at 0.1254, both of which render fine in W4A4. The per-layer
+criterion did rank the formats correctly here (W4A8 3.02x better) but it gave no warning that 4-bit
+activations fall off a cliff on this model rather than degrading. Treat the criterion as a ranking,
+never as a threshold.
 
-**0.1080 is the lowest median `err_w4a4` on this bench**, across Z-Image (~6 B), Krea 2 Turbo
-(12.8 B), HunyuanVideo 1.5 (~13 B) and Wan 2.1 VACE (1.3 B). A 20.4 B model tolerating 4 bits
-*better* than a 1.3 B one is the second checkpoint in a row to refute size-monotonicity on this
-bench; the first was Krea 2. **Per-layer tolerance is a property of the model, not of the
-parameter count**, and nothing in this repo should be read as a rule that transfers.
+### Which layers are expensive
 
-**`err_bf16` is 0.0020, so the reference arm is not free either.** Every number above is a distance
-from float32, and BF16 itself sits 0.0020 away. W4A8 is 18x the BF16 floor; W4A4 is 54x.
+60 transformer blocks × 14 Linear families = 840 layers. Median per family:
 
-W4A8 is **3.02x more faithful per layer** than W4A4 here (0.1080 / 0.0358) for **0.28 GiB** more on
-disk in the mixed build. Whether that buys a better picture is a different question, answered below
-— and on this bench per-layer error has never predicted the free-running image.
-
-### Which layers are expensive, and where the mixed build spent its budget
-
-60 transformer blocks × 14 Linear families = the 840 layers. Median per family:
-
-| family | shape | `err_w4a4` | `err_w4a8` | ratio | promoted to 8-bit |
-|---|---|---|---|---|---|
-| `attn.to_out.0` | [3072, 3072] | **0.2101** | 0.0589 | 3.57x | 50/60 (83%) |
-| `txt_mlp.net.2` | [3072, 12288] | 0.1953 | 0.0583 | 3.35x | 44/60 (73%) |
-| `attn.to_add_out` | [3072, 3072] | 0.1924 | 0.0486 | 3.96x | 48/60 (80%) |
-| `img_mlp.net.2` | [3072, 12288] | 0.1689 | 0.0517 | 3.27x | 42/60 (70%) |
-| `attn.to_v` | [3072, 3072] | 0.1506 | 0.0501 | 3.01x | 30/60 (50%) |
-| `attn.add_v_proj` | [3072, 3072] | 0.1346 | 0.0454 | 2.96x | 11/60 (18%) |
-| `attn.add_q_proj` | [3072, 3072] | 0.1118 | 0.0379 | 2.95x | 4/60 (7%) |
-| `img_mlp.net.0.proj` | [12288, 3072] | 0.1078 | 0.0367 | 2.94x | — |
-| `attn.to_q` | [3072, 3072] | 0.0961 | 0.0326 | 2.95x | — |
-| `attn.to_k` | [3072, 3072] | 0.0926 | 0.0315 | 2.94x | — |
-| `txt_mlp.net.0.proj` | [12288, 3072] | 0.0918 | 0.0310 | 2.96x | 4/60 (7%) |
-| `attn.add_k_proj` | [3072, 3072] | 0.0841 | 0.0285 | 2.96x | — |
-| `img_mod.1` | [18432, 3072] | 0.0281 | 0.0068 | 4.11x | — |
-| `txt_mod.1` | [18432, 3072] | **0.0248** | 0.0060 | 4.14x | — |
-
-Two things in that table are worth more than the summary median.
+| family | shape | `err_w4a4` | `err_w4a8` | ratio |
+|---|---|---|---|---|
+| `attn.to_out.0` | [3072, 3072] | **0.2101** | 0.0589 | 3.57x |
+| `txt_mlp.net.2` | [3072, 12288] | 0.1953 | 0.0583 | 3.35x |
+| `attn.to_add_out` | [3072, 3072] | 0.1924 | 0.0486 | 3.96x |
+| `img_mlp.net.2` | [3072, 12288] | 0.1689 | 0.0517 | 3.27x |
+| `attn.to_v` | [3072, 3072] | 0.1506 | 0.0501 | 3.01x |
+| `attn.add_v_proj` | [3072, 3072] | 0.1346 | 0.0454 | 2.96x |
+| `attn.add_q_proj` | [3072, 3072] | 0.1118 | 0.0379 | 2.95x |
+| `img_mlp.net.0.proj` | [12288, 3072] | 0.1078 | 0.0367 | 2.94x |
+| `attn.to_q` | [3072, 3072] | 0.0961 | 0.0326 | 2.95x |
+| `attn.to_k` | [3072, 3072] | 0.0926 | 0.0315 | 2.94x |
+| `txt_mlp.net.0.proj` | [12288, 3072] | 0.0918 | 0.0310 | 2.96x |
+| `attn.add_k_proj` | [3072, 3072] | 0.0841 | 0.0285 | 2.96x |
+| `img_mod.1` | [18432, 3072] | 0.0281 | 0.0068 | 4.11x |
+| `txt_mod.1` | [18432, 3072] | **0.0248** | 0.0060 | 4.14x |
 
 **The modulation layers are the cheapest in the whole block** — `txt_mod.1` at 0.0248 against
-`attn.to_out.0` at 0.2101, a factor of **8.5**. That is the fourth architecture on this bench where
-modulation turns out to be the *safest* place to spend 4 bits, against a widely repeated instinct
-that modulation is too sensitive to quantize. The instinct has never been accompanied by a
-measurement here.
+`attn.to_out.0` at 0.2101, a factor of **8.5**. Fourth architecture on this bench where modulation
+is the *safest* place to spend 4 bits, against a widely repeated instinct that it is too sensitive
+to quantize. The instinct has never arrived here with a measurement attached.
 
-**Output projections are expensive and input projections are cheap**, and that ordering *transfers*:
-Krea 2 Turbo measured `attn.wo` worst (0.2181) and `attn.wk` cheapest (0.0749) — a different
-architecture, a different parameter count, the same shape of answer. Worth flagging because two
-other transfer hypotheses died on this bench (size-monotonicity, and the groupsize ratio), so a
-pattern that does carry across families is the exception, not the rule.
+**Output projections expensive, input projections cheap, and the ordering transfers**: Krea 2 Turbo
+measured `attn.wo` worst (0.2181) and `attn.wk` cheapest (0.0749) — different architecture,
+different parameter count, same shape of answer. Worth naming because two other transfer hypotheses
+died on this bench (size-monotonicity, and the groupsize ratio), so one that carries is the
+exception.
 
-The mixed build's promotion budget landed exactly on the expensive end — 83% / 80% / 73% / 70% of
-the four worst families, nothing at all on the two cheapest — which is the selection criterion
-doing what it is supposed to do, shown rather than asserted.
+## Things that were ruled out before blaming the model
 
-## Quality: MEASUREMENT IN PROGRESS, NOT YET PUBLISHED
+The W4A4 failure looked like a broken file, and it is not:
 
-**This section is deliberately empty and this repo is not published until it is filled.**
+- **Dispatch, counted on a real forward after load:** 840 modules with `quant_format
+  convrot_w4a4` and `TensorCoreConvRotW4A4Layout`, **8/8 quantized forwards, 0 dequantize**,
+  `convrot_linear_dtype=int4`, `impl=comfy_kitchen.backends.cuda`, 840 quantized weights on
+  `cuda:0`. The 4-bit kernel really runs.
+- **Structural verification:** PASS. **Byte-identical comparison of every preserved tensor against
+  the source:** PASS. **Real-kernel smoke against `F.linear` on the BF16 source:** `relative_rmse`
+  0.2265, an ordinary value.
+- **Metadata keys:** all 840 have a matching `.weight` in the file, in the same names the working
+  Comfy-Org build uses.
 
-A 48-render quality ladder — BF16 reference, our two builds, and Comfy-Org's `int8_convrot`, over 6
-prompts × 2 seeds at 20 steps, 1024 px, cfg 2.5, euler/simple — is running at the time of writing.
-Until it lands, this repo states no claim about the images, the latent divergence, or the speed.
-
-That restraint is not decoration. This bench has measured a checkpoint that converts cleanly,
-resolves the CUDA backend, dispatches genuinely 4-bit math, passes every structural check, and
-renders a smear (Wan 2.1 VACE, per-layer 0.1602). **Structure never proves quality; only a render
-does.** A per-layer median of 0.1080 is the most encouraging number this bench has produced and it
-still is not a picture.
+Two hypotheses were tested here and **refuted**, and both are recorded because a refuted hypothesis
+is cheaper to inherit than to rediscover. First, that our file's metadata dialect stops matching
+after ComfyUI renames modules at load — the dispatch count says the config reaches every module.
+Second, that median per-layer error × layer count predicts the break: it separates nine builds
+perfectly, and then dies on a tenth that was already on disk — `hunyuan15-misto-t025` scores 79.0
+and renders correctly while a Z-Image build scores 31.4 and renders garbage.
 
 ## What is NOT covered
 
-- **No image has been rendered from these files yet** at the time of writing. See above.
-- **The text encoder is not in this repo.** Qwen-Image-Edit runs on `qwen_2.5_vl_7b`; a
-  `convrot_w4a4` build of it exists on this bench but was measured *before* the ComfyUI text-encoder
-  lock was released, so its published numbers describe the dequantized path and are being redone.
-- **The VAE is not quantized and will not be.** It is ~254 MiB against a 38 GiB transformer: the
-  saving is noise and the risk is not.
-- **No perceptual metric.** Latent divergence measures where the sampler went, not whether the
-  picture is better — this bench has measured a 2.40x more faithful latent next to an image nobody
-  preferred.
-- **One card (RTX 3090, sm86), one sampler, one scheduler, one resolution.** `convrot_groupsize` 256
-  only; 16 / 64 / 1024 are legal for W4A4 and untested on this model.
-- **Two other 4-bit builds of this exact model sit on the same disk and are not compared here** —
-  Nunchaku's SVDQuant INT4 (13.19 GiB) and a GGUF `Q4_K_M` (12.33 GiB). Both loaders
-  (`ComfyUI-nunchaku`, `ComfyUI-GGUF`) are installed, so this is a **choice, not a limitation**:
-  neither format goes through `comfy.sd.load_diffusion_model`, so they cannot share this ladder and
-  would need matched separate runs compared offline through the saved latents. Until that is run,
-  the honest claim is only that these files are the **smallest** of the six builds of this model on
-  this machine — 9.60 GiB against 12.33 for the next smallest — not that they are the best per GiB.
+- **The W4A4 and mixed builds are not published as usable models.** They are a measured negative.
+- **One card (RTX 3090, sm86), one sampler, one scheduler, one resolution, 12 renders per arm.**
+- `convrot_groupsize` **256 only**. W4A4 also accepts 16 / 64 / 1024 and none was tried on this
+  model; W4A8 accepts only 256, so that axis cannot move for the build that works.
+- **No perceptual metric.** Latent divergence measures where the sampler went, not whether a human
+  prefers the picture. For calibration: a Z-Image W4A4 build that renders fine sits at 0.7854, so
+  this file's 0.4997 is inside the band that has always worked here, and 1.74 is outside anything
+  this bench has ever called usable.
+- **The text encoder is not in this repo** and the **VAE is not quantized and will not be** — 254
+  MiB against a 38 GiB transformer is noise for the risk.
+- **Three other builds of this same model sit on the same disk and are not compared**: Nunchaku
+  SVDQuant INT4 (13.19 GiB), a GGUF `Q4_K_M` (12.33 GiB), and the BF16 itself. Both loaders are
+  installed, so this is a **choice, not a limitation** — neither goes through
+  `comfy.sd.load_diffusion_model`, so they need matched separate runs compared through the saved
+  latents.
 
 ## Credits
 
-- **[Qwen](https://huggingface.co/Qwen) (Alibaba)** — the Qwen-Image-Edit-2511 model itself.
-  Everything here is a re-encoding of their weights; the model is theirs.
+- **[Qwen](https://huggingface.co/Qwen) (Alibaba)** — the Qwen-Image-Edit-2511 model. Everything
+  here is a re-encoding of their weights.
 - **[Comfy-Org](https://huggingface.co/Comfy-Org/Qwen-Image-Edit_ComfyUI)** — the repackaged BF16
   single-file weights these builds were converted from, and the `int8_convrot` build used as the
-  comparison arm. Their int8 has beaten this project's W4A4 on fidelity in four model families in a
-  row; it is downloaded and measured here precisely because it is the arm that can win.
+  comparison arm. It is the most faithful arm measured here and it is theirs.
 - **ComfyUI / comfy-kitchen** — the `convrot_w4a4` and `asym_w4a8_int8` formats, the
   `MixedPrecisionOps` dispatch, and the CUDA kernels that execute them.
 
@@ -170,12 +178,11 @@ still is not a picture.
 
 ```bash
 python tools/quant_mixed.py --input qwen_image_edit_2511_bf16.safetensors \
-  --profile qwen_image --analysis calib/qwen_image_edit_2511.analysis.json
-python tools/quality_ladder.py --reference <bf16> --models <w4a4> <mixed> <int8_convrot> \
+  --analysis calib/qwen_image_edit_2511.analysis.json \
+  --promote-error 0.0 --budget 1.0 --uncalibrated fail \
+  --output qwen_image_edit_2511_w4a8.safetensors
+python tools/quality_ladder.py --reference <bf16> --models <w4a8> <w4a4> <int8_convrot> \
   --clip qwen_2.5_vl_7b.safetensors --clip-type qwen_image --vae qwen_image_vae.safetensors \
   --seeds 1 2 --steps 20 --size 1024 --cfg 2.5
+python tools/probe_quant_dispatch.py qwen_image_edit_2511_w4a8.safetensors --mode diffusion --forward-only
 ```
-
-Backend recorded in both sidecars, on every op the converter resolved:
-`quantize_convrot_w4a4_weight`, `convrot_w4a4_linear`, `quantize_w4a8_int8_weight` and
-`w4a8_int8_linear` all resolve to `comfy_kitchen.backends.cuda`.
