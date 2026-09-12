@@ -262,13 +262,108 @@ def test_widget_extra_by_two_is_fatal():
     assert notes[0].level == "fatal"
 
 
-def test_widget_extra_by_one_produces_no_note():
-    """Extra-by-one is the normal seed-node control_after_generate shape -- silent, unchanged
-    from before this ticket."""
+def test_widget_extra_by_one_explained_by_a_companion_is_silent():
+    """A widget the SERVER marks as having a UI companion eats two slots in widgets_values.
+
+    `control_after_generate` (seed) and `image_upload` (LoadImage) are the two markers
+    /object_info publishes for "the frontend draws this as two controls". When the extra
+    value is accounted for by one of them, the count lines up exactly and nothing is said.
+    """
+    defn = _defn(["w1", "w2"])
+    defn["input"]["required"]["w1"] = ["INT", {"control_after_generate": True}]
+    wf = {"nodes": [{"id": 2, "type": "N", "mode": 0, "inputs": [],
+                      "widgets_values": [7, "randomize", "c"]}], "links": []}
+    prompt, notes = crw.ui_to_api(wf, object_info={"N": defn})
+    assert notes == []
+    # e o essencial: o companheiro foi consumido NA POSICAO dele, nao no fim da lista
+    assert prompt["2"].inputs == {"w1": 7, "w2": "c"}
+
+
+def test_widget_extra_by_one_NOT_explained_is_fatal():
+    """CONTRATO MUDADO EM 2026-09-12, de proposito.
+
+    Este teste dizia antes que extra-de-um e sempre mudo, "a forma normal do
+    control_after_generate de um node de seed" -- so que o fixture nao tem seed nenhum, e
+    era essa aproximacao que segurava o bug: `ui_to_api` aceitava o extra como normal e
+    depois fazia `zip(names, vals)`, pareando desde o indice 0, entao TUDO depois do extra
+    deslizava uma casa. Num KSampler de verdade isso dava steps='randomize', cfg=10,
+    sampler_name=1.0, denoise='simple' -- um grafo que pode executar e devolver resultado
+    plausivel e errado, que e a falha que este arquivo inteiro existe para impedir.
+
+    Agora o companheiro e contado pelo marcador do servidor (teste acima). Um extra que
+    NENHUM marcador explica nao tem hipotese benigna sobrando: e desalinhamento.
+    """
     wf = {"nodes": [{"id": 2, "type": "N", "mode": 0, "inputs": [],
                       "widgets_values": ["a", "b", "c"]}], "links": []}
     _prompt, notes = crw.ui_to_api(wf, object_info={"N": _defn(["w1", "w2"])})
-    assert notes == []
+    assert len(notes) == 1
+    assert notes[0].level == "fatal"
+
+
+def test_wired_widget_still_consumes_its_slot_in_widgets_values():
+    """`widgets_values` e indexado pela lista COMPLETA de widgets, inclusive os que viraram
+    entrada ligada por fio -- o frontend guarda o valor velho na posicao.
+
+    Regressao real: um EmptySD3LatentImage com width/height ligados a um ResolutionSelector
+    chega com vals [1024, 1024, 1] e names ['batch_size'], e a leitura so-dos-nao-ligados
+    atribuia batch_size=1024. Passava na validacao do servidor e gerava um lote de 1024.
+    """
+    wf = {"nodes": [
+        {"id": 1, "type": "SRC", "mode": 0, "inputs": [], "outputs": [{"links": [9]}]},
+        {"id": 2, "type": "N", "mode": 0, "widgets_values": [1024, 1024, 1],
+         "inputs": [{"name": "w1", "type": "INT", "link": 9}]},
+    ], "links": [[9, 1, 0, 2, 0, "INT"]]}
+    defn = {"input": {"required": {"w1": ["INT", {}], "w2": ["INT", {}], "w3": ["INT", {}]}},
+            "input_order": {"required": ["w1", "w2", "w3"]}}
+    prompt, _notes = crw.ui_to_api(wf, object_info={"N": defn, "SRC": _defn([])})
+    assert prompt["2"].inputs["w2"] == 1024
+    assert prompt["2"].inputs["w3"] == 1, "o valor do widget ligado nao pode escorregar"
+
+
+def test_orphan_wire_into_optional_input_is_dropped_and_named():
+    """Um node mutado sai do prompt; quem apontava para ele fica com a referencia pendurada.
+
+    O servidor responde 400 com uma mensagem que so cita o ID que falta, em TODOS os nodes
+    que o referenciavam menos o proprio. Foi assim que o workflow oficial do Krea2 Edit --
+    que muta a segunda referencia de proposito -- deu `'90'` em tres nodes, nenhum deles o 90.
+    """
+    wf = {"nodes": [
+        {"id": 1, "type": "SRC", "mode": 4, "inputs": [], "outputs": [{"links": [9]}]},
+        {"id": 2, "type": "N", "mode": 0, "widgets_values": [],
+         "inputs": [{"name": "opc", "type": "IMAGE", "link": 9}]},
+    ], "links": [[9, 1, 0, 2, 0, "IMAGE"]]}
+    defn = {"input": {"required": {}, "optional": {"opc": ["IMAGE", {}]}},
+            "input_order": {"required": [], "optional": ["opc"]}}
+    prompt, notes = crw.ui_to_api(wf, object_info={"N": defn, "SRC": _defn([])})
+    assert "opc" not in prompt["2"].inputs
+    assert any(n.level == "info" and "opc" in n.text and "1" in n.text for n in notes)
+    assert not any(n.level == "fatal" for n in notes)
+
+
+def test_orphan_wire_into_required_input_is_fatal():
+    """Mesma situacao numa entrada OBRIGATORIA: nao ha o que inventar, o grafo esta
+    incompleto, e deixar passar seria submeter um prompt mutilado."""
+    wf = {"nodes": [
+        {"id": 1, "type": "SRC", "mode": 4, "inputs": [], "outputs": [{"links": [9]}]},
+        {"id": 2, "type": "N", "mode": 0, "widgets_values": [],
+         "inputs": [{"name": "obg", "type": "IMAGE", "link": 9}]},
+    ], "links": [[9, 1, 0, 2, 0, "IMAGE"]]}
+    defn = {"input": {"required": {"obg": ["IMAGE", {}]}},
+            "input_order": {"required": ["obg"]}}
+    _prompt, notes = crw.ui_to_api(wf, object_info={"N": defn, "SRC": _defn([])})
+    assert any(n.level == "fatal" and "obg" in n.text for n in notes)
+
+
+def test_ui_only_node_is_info_not_fatal():
+    """`Note` e `MarkdownNote` nao tem classe no servidor POR DESENHO. Trata-las como classe
+    desconhecida recusava todo workflow com um post-it no canvas -- inclusive o oficial do
+    Krea2 Edit, que traz oito. E um fatal sobre o qual nao ha nada a fazer no grafo."""
+    wf = {"nodes": [{"id": 3, "type": "Note", "mode": 0, "inputs": [],
+                      "widgets_values": ["um lembrete"]}], "links": []}
+    prompt, notes = crw.ui_to_api(wf, object_info={})
+    assert prompt == {}
+    assert len(notes) == 1
+    assert notes[0].level == "info"
 
 
 def test_required_input_filled_from_default_is_warn():
