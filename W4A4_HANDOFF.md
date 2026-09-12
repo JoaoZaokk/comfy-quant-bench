@@ -674,8 +674,155 @@ conjugado mascarado sobre `H = X^T X`), nao fine-tuning. Sobre as MESMAS linhas 
    um render, com o calib que foi mantido para isso.
 3. **Rodar o bloco 4** (`probe_te_lock_cost.py` duas vezes, uma por arquivo do Gemma, com `--bf16`
    apontando para o original de 23,5 GiB). Criterio e previsoes ja escritos.
-5. **Limpeza de disco, autorizada pelo dono e NAO executada.** Em 2026-09-03 ele autorizou apagar
-   e depois mandou SEGURAR, entao nada foi apagado. F: com 29 GiB livres. Quando liberar:
+5. **Limpeza de disco -- EXECUTADA em 2026-09-12.** F: foi de 65,6 GiB para **189 GiB livres**,
+   122,3 GiB apagados em tres lotes, com o dono escolhendo lote a lote. Nenhum original foi
+   tocado: tudo que saiu era saida derivada desta bancada, e a fonte de cada arquivo foi
+   conferida no disco ANTES, lendo o campo `source` do proprio sidecar.
+
+   **Lote A, duplicata exata (6,13 GiB).** `zimage-v2-cg256` e `zimage-v2-teto-cg256` eram
+   byte a byte iguais a `zimage-v2-w4a4`: mesmo tamanho E mesmo sha256 b73978d2...c5ba556,
+   conferido nos tres antes de apagar e no sobrevivente depois. O `CLAUDE.md` ja previa isso
+   por escrito -- "em cg 256 produz arquivo byte a byte identico" -- e ninguem tinha conferido
+   em dez dias. Perda: nenhuma.
+
+   Uma varredura de duplicatas por tamanho em todo `ComfyUI/models` achou mais 11 pares de
+   mesmo tamanho e **todos os 11 DIFEREM**, por impressao digital (cabecalho + 3 fatias do
+   meio + rabo): void_pass1 contra void_pass2, os dois Z-Image-Turbo-Fun-Controlnet, seedvr2
+   fp16 contra sharp_fp16, wan2.2 high contra low noise, os LoRAs lightx2v, os dois LoRAs
+   gemma-3-12b-abliterated. **Tamanho igual quase nunca e duplicata.** E `teto-cg16` diferir
+   de `teto-cg64` foi o controle da varredura: groupsize diferente TEM de dar bytes diferentes.
+
+   **Lote B, publicado no HuggingFace (39,2 GiB, 9 arquivos).** Conferido contra o Hub pelo
+   `hf_fs` ANTES de apagar, com o tamanho batendo byte a byte nos nove: `zimage-v2-w4a4`,
+   `zimage-v2-mixed`, `hunyuan15-misto-t025`, `hunyuan15-misto-t040`, `hv15_w4a8`,
+   `qwen_3_4b_w4a4_convrot` e os tres `wan21-vace-13b-*`. Voltam por download, sem GPU.
+
+   **Por que so as pontas de cada escada subiram**, que foi a pergunta do dono: o card do
+   Hunyuan diz na linha 75 que `images/` carrega a escada INTEIRA de proposito, mas so `t025`
+   (0,1837, correta e granulada) e `t040` (0,2147, destruida) viraram peso -- sao os dois que
+   definem a faixa, e os degraus do meio so serviram para ACHAR onde ela estava. Mesma logica
+   no Z-Image: subiram os dois que funcionam, e a varredura de sigma deu indistinguivel em 8
+   sementes, que e negativo sem o que publicar.
+
+   **Lote C, experimento fechado (77,0 GiB, 15 arquivos).** Escada do Hunyuan
+   (`misto-t015/t021/t022` + `hunyuanvideo1.5_..._w4a4_convrot`), capybara (`capybara-w4a4`,
+   `capybara_v0.1_w4a8`), teto do Z-Image (`teto-cg16`, `teto-cg64`), varredura de sigma
+   (`sigma-none`, `sigma-none56`, `sigma-high`, `sigma-sigma2`) e varredura de threshold
+   (`mixed-t0.05/0.10/0.20`).
+
+   **Cuidado ao ler este lote: NAO e "o que nao funciona".** O dono entendeu assim, e a
+   correcao vale para quem vier depois -- `misto-t015`, `teto-cg64` e os `mixed-t0.05/0.10`
+   renderizam BEM. Sao degraus do meio de escadas cujo resultado ja esta publicado, nao builds
+   quebrados. O criterio que os tornou apagaveis foi "resultado registrado + fonte no disco",
+   nunca "da lixo".
+
+   **MANTIDOS por decisao do dono:** `calib/zimage_v2_rows8192.calib.pt` (12,6 GiB), insumo do
+   item 4, que custaria uma calibracao longa para refazer; e os dois Gemma (`w4a4_convrot` +
+   `w4a4_smooth`, 13,8 GiB), porque a varredura de `alpha` ainda nao rodou.
+
+   Sanidade depois de cada lote: `avaliar.py` roda limpo, sem crash por sidecar orfao. Os
+   `.quant.json` dos arquivos apagados ficaram de proposito -- sao KB e sao o unico registro
+   de que a conversao existiu.
+
+6. **Subir `gemma_3_12B_it_heretic_w4a8` e `qwen_2.5_vl_7b_w4a4_convrot` -- pedido pelo dono em
+   2026-09-12, NAO executado, e nao esta so esperando token.**
+
+   Os dois foram retirados do lote C e continuam no disco por isso. O bloqueio imediato e que o
+   token do HF atualmente configurado e **`role: read`** (`whoami` conferido), e eu nao crio nem
+   digito token -- e o dono quem loga.
+
+   **Mas o bloqueio real e que nao ha o que publicar ainda**, pelo padrao que os outros quatro
+   cards desta bancada seguem:
+
+   - `qwen_2.5_vl_7b_w4a4_convrot` (16 584 415 576 -> 6 802 084 504 bytes, 2,44x; 196 tensores
+     quantizados, 533 preservados; `TensorCoreConvRotW4A4Layout`, cg 256) foi **convertido em
+     2026-09-01 e nunca carregado**. Sem despacho contado, sem fidelidade medida. O
+     `encoder_dequantizado` que o `avaliar.py` carimba nele e heuristica de text encoder, nao
+     medicao deste arquivo. Publicar assim seria publicar um arquivo que ninguem abriu.
+   - `gemma_3_12B_it_heretic_w4a8` (23 545 681 250 -> 8 089 619 138 bytes, 2,91x; 336
+     quantizados, 293 preservados; `AsymW4A8Int8Layout`, group 16, cg 256) tem despacho medido
+     duas vezes (2026-08-31 e 2026-09-01, `TRAVADO_PELO_COMFY`, 0 quantizados contra 336
+     `dequantize`) e tem tempo medido (1772,3 ms travado, 478,9 ms solto, 3,70x). **Mas o
+     2,11e-1 que existe dele NAO e alegacao de fidelidade** -- foi medido com `--sem-bf16`,
+     contra o proprio braco dequantizado, porque na epoca o `CLAUDE.md` dizia que o BF16 nao
+     existia. Ele existe desde 2026-09-01 e isso foi confirmado no bloco 4.
+
+   **As duas referencias BF16 estao no disco agora**, entao a medicao que falta e barata e da
+   numero de verdade para os dois cards:
+
+       gemma_3_12B_it_heretic.safetensors   23 545 681 250 bytes
+       qwen_2.5_vl_7b.safetensors           16 584 415 576 bytes
+
+   Uma passada de `tools/probe_te_lock_cost.py --bf16 <original> --quant <quantizado>` por
+   arquivo entrega A/B/C (custo do peso, custo de destravar, custo total) e o contador de
+   despacho -- que para o Qwen 2.5-VL seria o primeiro dado de execucao que ele tem. A
+   ferramenta toma o lock sozinha; **nao tomar `Assert-GpuLock` antes dela**.
+
+   **TENTADO em 2026-09-12 e FALHOU, com a causa nao isolada.**
+
+       ./python_embeded/python.exe -s tools/probe_te_lock_cost.py \
+           --bf16 gemma_3_12B_it_heretic.safetensors \
+           --quant gemma_3_12B_it_heretic_w4a8.safetensors --clip-type LTXV
+
+   Morreu no PRIMEIRO braco, o bf16, antes de imprimir contagem de camada:
+   `nao devolveu JSON (rc=3221225477)`. 3221225477 e 0xC0000005, access violation.
+
+   **Duas causas candidatas, ambas ja registradas nesta bancada, e NAO foram separadas:**
+
+   1. O `CLAUDE.md` documenta `0xc0000005` em `torch_cpu.dll` ao mapear exatamente este
+      arquivo de 21,93 GiB neste host -- e a razao de o conversor usar escrita em streaming
+      em vez de mmap. Se for isso, a medicao nao passa enquanto o braco bf16 carregar assim.
+   2. Faltava VRAM: a 3090 tinha **16,8 GiB livres contra os 21,9 GiB** do bf16.
+
+   Separar e barato e vale a pena antes de mexer em codigo: libere a placa e rode de novo.
+   Se ainda morrer com a placa vazia, a causa e (1) e o conserto e no carregamento, nao na
+   agenda.
+
+   **Quem segurava a 3090, medido em vez de deduzido.** `nvidia-smi
+   --query-compute-apps` devolve `used_gpu_memory = [N/A]` para TODOS os processos --
+   limitacao do WDDM no driver consumer, **nao** falta de permissao, o que e facil ler
+   errado porque a coluna vizinha imprime `[Insufficient Permissions]`. O caminho que
+   funciona no Windows e o contador de performance:
+
+       (Get-Counter '\GPU Process Memory(*)\Local Usage').CounterSamples
+
+   Ele nomeia: **pid 11476, 7698 MiB, `C:\Program Files\Python313\python.exe`**, um filho
+   `multiprocessing.spawn`. Parecia o orfao classico deste handoff, e **nao era** -- o pai
+   estava VIVO: `unsloth.exe studio -p 8890`, iniciado as 05:05:41. Python **global**, fora
+   do `python_embeded`, e portanto fora de tudo que esta bancada controla.
+
+   **Hipotese minha que caiu, registrada porque custou uma acao:** eu deduzi que o inquilino
+   era a distro WSL `NVIDIA-Workbench`, que aparecia `Running`. O dono mandou termina-la.
+   `wsl --terminate NVIDIA-Workbench` (uma distro so, **nunca** `--shutdown`) retornou
+   sucesso, os tres containers sobreviveram -- e a distro continuou `Running` e a VRAM caiu
+   de 7750 para 7731 MiB. Ou seja: **a hipotese estava errada e o teste a refutou**. O
+   contador de performance e que deu o nome. Deduzir o dono de uma VRAM pela lista de
+   distros e o mesmo erro que a REGRA ZERO descreve.
+
+7. **O `.scratch/` foi apagado pelo dono entre 2026-09-01 e 2026-09-12, e restaurado em
+   2026-09-12.** Vale registrar porque a resposta "o que se perdeu" ja estava escrita e
+   ninguem tinha lido.
+
+   `git checkout -- .scratch` devolveu **142 arquivos, 3,7 MiB**, as oito pastas: os 29
+   tickets de `estado-entregavel`, os 37 relatorios de `despacho`, `void_audit`,
+   `varredura-2026-08-22`, `comfylite`, `workflow_pack_upstream`, `glm46v_quality`,
+   `obsolete_workflows_20260827`. **Nenhum conteudo de trabalho se perdeu.**
+
+   O que se perdeu foi so cache e copia, e o proprio `.gitignore:99-102` ja media o tamanho
+   em 2026-08-29, com a razao escrita ao lado:
+
+       /.scratch/glm46v_model/                             20 GiB   copia de modelo
+       /.scratch/hf_cache/                                 37 GiB   cache do HuggingFace
+       /.scratch/workflow_templates_upstream/             2,0 GiB   templates do upstream
+       /.scratch/workflow_templates_upstream_incomplete/  412 MiB   copia incompleta
+
+   Os quatro sao rebaixaveis. Foram excluidos de proposito: `!/.scratch/` reincluia a
+   subarvore INTEIRA e esses 59 GiB vazavam pela allowlist.
+
+   **E isso fecha um numero que nao fechava**: o item 5 registrava 29 GiB livres em F: em
+   2026-09-03 e a limpeza de 2026-09-12 comecou de 65,6 GiB, sem ninguem ter apagado nada
+   no intervalo. A diferenca e este `rm`. Um numero de disco neste handoff so vale com a
+   data colada.
    `calib/zimage_v2_rows8192.calib.pt` (12,6 GiB, so vai depois do item 4 -- e o insumo dele),
    `bench/pesos_recup_elem_int{4,8}.safetensors` (11,2 GiB cada, reproduziveis em 18 min), e
    **8 calibracoes que ninguem cita** (2,0 GiB somados, medido casando nome de arquivo contra
