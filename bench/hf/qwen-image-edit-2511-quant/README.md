@@ -81,6 +81,45 @@ W4A8 is **3.02x more faithful per layer** than W4A4 here (0.1080 / 0.0358) for *
 disk in the mixed build. Whether that buys a better picture is a different question, answered below
 — and on this bench per-layer error has never predicted the free-running image.
 
+### Which layers are expensive, and where the mixed build spent its budget
+
+60 transformer blocks × 14 Linear families = the 840 layers. Median per family:
+
+| family | shape | `err_w4a4` | `err_w4a8` | ratio | promoted to 8-bit |
+|---|---|---|---|---|---|
+| `attn.to_out.0` | [3072, 3072] | **0.2101** | 0.0589 | 3.57x | 50/60 (83%) |
+| `txt_mlp.net.2` | [3072, 12288] | 0.1953 | 0.0583 | 3.35x | 44/60 (73%) |
+| `attn.to_add_out` | [3072, 3072] | 0.1924 | 0.0486 | 3.96x | 48/60 (80%) |
+| `img_mlp.net.2` | [3072, 12288] | 0.1689 | 0.0517 | 3.27x | 42/60 (70%) |
+| `attn.to_v` | [3072, 3072] | 0.1506 | 0.0501 | 3.01x | 30/60 (50%) |
+| `attn.add_v_proj` | [3072, 3072] | 0.1346 | 0.0454 | 2.96x | 11/60 (18%) |
+| `attn.add_q_proj` | [3072, 3072] | 0.1118 | 0.0379 | 2.95x | 4/60 (7%) |
+| `img_mlp.net.0.proj` | [12288, 3072] | 0.1078 | 0.0367 | 2.94x | — |
+| `attn.to_q` | [3072, 3072] | 0.0961 | 0.0326 | 2.95x | — |
+| `attn.to_k` | [3072, 3072] | 0.0926 | 0.0315 | 2.94x | — |
+| `txt_mlp.net.0.proj` | [12288, 3072] | 0.0918 | 0.0310 | 2.96x | 4/60 (7%) |
+| `attn.add_k_proj` | [3072, 3072] | 0.0841 | 0.0285 | 2.96x | — |
+| `img_mod.1` | [18432, 3072] | 0.0281 | 0.0068 | 4.11x | — |
+| `txt_mod.1` | [18432, 3072] | **0.0248** | 0.0060 | 4.14x | — |
+
+Two things in that table are worth more than the summary median.
+
+**The modulation layers are the cheapest in the whole block** — `txt_mod.1` at 0.0248 against
+`attn.to_out.0` at 0.2101, a factor of **8.5**. That is the fourth architecture on this bench where
+modulation turns out to be the *safest* place to spend 4 bits, against a widely repeated instinct
+that modulation is too sensitive to quantize. The instinct has never been accompanied by a
+measurement here.
+
+**Output projections are expensive and input projections are cheap**, and that ordering *transfers*:
+Krea 2 Turbo measured `attn.wo` worst (0.2181) and `attn.wk` cheapest (0.0749) — a different
+architecture, a different parameter count, the same shape of answer. Worth flagging because two
+other transfer hypotheses died on this bench (size-monotonicity, and the groupsize ratio), so a
+pattern that does carry across families is the exception, not the rule.
+
+The mixed build's promotion budget landed exactly on the expensive end — 83% / 80% / 73% / 70% of
+the four worst families, nothing at all on the two cheapest — which is the selection criterion
+doing what it is supposed to do, shown rather than asserted.
+
 ## Quality: MEASUREMENT IN PROGRESS, NOT YET PUBLISHED
 
 **This section is deliberately empty and this repo is not published until it is filled.**
