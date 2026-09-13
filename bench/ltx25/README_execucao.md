@@ -99,3 +99,40 @@ Get-NetTCPConnection -LocalPort 8190 -State Listen | Select-Object OwningProcess
 
 Deu `17964` quando o esperado era `34100`. Confirmar isso antes de acreditar que o servidor foi
 reiniciado.
+
+## 2026-09-13 — os três braços de novo, com ÁUDIO, e o servidor que morreu no caminho
+
+O dono apontou que o LTX gera vídeo E áudio e que a comparação publicada media só o vídeo. Os três
+braços foram rerenderizados com `tools/ltx_video.py` (que substitui o `ltx25_video.py`): PNG por
+quadro, FLAC do áudio, MP4 com faixa. Mesma semente, mesmo encoder, mesmos sigmas.
+
+**Os quadros voltaram pixel a pixel iguais aos da primeira rodada**, nos três braços (MAE 0,0 nos
+quadros 1/63/125/187/249), atravessando um reinício de servidor e, no BF16, outro disco. O hash
+dos PNGs difere só pelo metadado (o grafo agora tem os nós de áudio). Logo os números de vídeo são
+os mesmos; os de áudio são novos (`bench/ltx25/av/comparacao_av.json`):
+
+```
+braço                 MAE   PSNR   SSIM   | log-mel L1   SNR      lag    conv   RMS
+int8 Lightricks      4,10  29,71  0,941  |   0,041     11,2 dB   0 ms  0,124  -38,8 dBFS
+W4A8 nosso           7,81  25,39  0,895  |   0,120      3,4 dB   0 ms  0,311  -38,3 dBFS
+controle: silêncio                       |   6,980      0,0 dB
+controle: ruído branco (mesmo RMS)       |   1,471     -3,0 dB          1,097
+```
+
+O áudio ordena igual ao vídeo e por margem maior: 1,9x mais longe no quadro, 2,9x no som. Nenhum
+braço mudou de nível nem deslocou no tempo.
+
+**O braço BF16 derrubou o servidor na primeira tentativa.** `Windows fatal exception: access
+violation` em `torch/storage.py __getitem__`, chamado de `comfy/utils.py:136 load_torch_file`
+dentro do `UNETLoaderDisTorch2MultiGPU` — o mmap do arquivo de 39 GiB, que o resolvedor de nomes
+lia de **D: (SMB)**, com ~24 GiB de RAM livre (uma conversão de 43 GiB e um download de 23 GiB
+corriam ao mesmo tempo). O mesmo arquivo existe em W: (disco local, byte a byte igual); um
+**hardlink com outro nome** (`ltx-2.5-22b-distilled-transformer-bf16_W.safetensors`, mesmo inode,
+nada copiado nem movido) faz o loader ler de W:. Com 40 GiB livres e sem conversão concorrente:
+769,6 s, `cpu,40gb`, sucesso, e pixel-idêntico. Lição registrada: o resolvedor do ComfyUI devolve o
+PRIMEIRO caminho do yaml que tem o nome, e a ordem do yaml decide de qual disco um mmap de 39 GiB
+sai — o que não aparece em log nenhum.
+
+Os tempos da tabela do card continuam sendo os da primeira rodada (rede ociosa). Nesta rodada o
+int8 levou 801,5 s e o W4A8 511,5 s porque a carga saiu do NAS durante o download e a conversão —
+tempo de carga, não de amostragem, e por isso não substitui os números publicados.

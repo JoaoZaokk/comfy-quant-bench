@@ -198,6 +198,10 @@ def folha(ref_nome: str, ref_fr: np.ndarray, ref_au: np.ndarray, sr: int,
     # escala por linha esconderia justamente a diferenca de nivel entre bracos.
     lm_ref = logmel(ref_au, sr)
     vmin, vmax = np.percentile(lm_ref, [2, 99.5])
+    # Mesma coisa para a forma de onda: o LTX produz ambiente a -38 dBFS, e em escala fixa +-1 o
+    # tracado vira uma linha -- a primeira folha real saiu assim. Escala compartilhada, do maior
+    # pico entre TODAS as linhas, para que um braco mais alto ou mais baixo apareca como tal.
+    pico = max(float(np.abs(au.mean(axis=0)).max()) for _, _, au, _ in linhas) or 1.0
     for li, (nome, fr, au, m) in enumerate(linhas):
         for ci, i in enumerate(idx):
             ax = axes[li, ci]
@@ -213,7 +217,8 @@ def folha(ref_nome: str, ref_fr: np.ndarray, ref_au: np.ndarray, sr: int,
         ax = axes[li, len(idx) + 1]
         mono = au.mean(axis=0)
         tt = np.arange(len(mono)) / sr
-        ax.plot(tt, mono, lw=0.3, color="k"); ax.set_ylim(-1, 1); ax.set_yticks([])
+        ax.plot(tt, mono, lw=0.3, color="k"); ax.set_ylim(-1.05 * pico, 1.05 * pico)
+        ax.set_yticks([-pico, 0, pico]); ax.set_yticklabels([f"-{pico:.2f}", "0", f"+{pico:.2f}"], fontsize=6)
         ax.set_xlim(0, tt[-1] if len(tt) else 1); ax.tick_params(labelsize=6)
         if li == 0:
             ax.set_title("forma de onda (mono)", fontsize=8)
