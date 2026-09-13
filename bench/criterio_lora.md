@@ -47,6 +47,8 @@ idempotente e parte do "custo do LoRA" é custo de *qualquer* patch — inclusiv
 | Z-Image v2, W4A4 cg256 | RealisticSnapshot Turbo v5 (r32) | 480 → 240 alvos, 180 pesos, 0 sem mapa | 0,095 | **1,000** | 0,51 | 1,7x | 0,157 → 0,163 → **0,238** | 1,45x |
 | Krea2 Turbo, W4A4 cg256 | krea2 turbo LoRA rank 64 | 535 → 271, 0 sem mapa | 0,0086 | **1,000** | 0,14 | 7,2x | 0,162 → 0,168 → **0,176** | 1,07x |
 | Wan 2.2 TI2V 5B, W4A8 | `stock_photography_wan22_LOW` (LoRA de **14B**) | 300 casam pelo NOME, 300 chaves sem mapa | **0** (todo `calculate_weight` falha) | — | — | — | 0,0731 → **0,0835** → 0,0835 | 1,14x sem LoRA nenhum |
+| LTX 2.5 22B, W4A8 | `ltx2-squish` (LoRA do LTX **2.0**, r32) | 2304 → 1152 alvos, 0 sem mapa | 0,013–0,086 onde há delta; **zero em 16 de 24** | 0,956 (n=8) | 0,39 | 3,1x | 0,0731 → 0,0837 → 0,0837 (zero) / até 0,114 | 1,15x |
+| LTX 2.5 22B, W4A8 | `LTX23_Product_Commercial` (LoRA do 2.3, r16) | 3264 → 1632, 0 sem mapa | 0,0021 | **0,909** (0,87–0,93) | 0,05 | **19x** | 0,0731 → 0,0836 → 0,0838 | 1,15x |
 
 Erro de peso = `‖W − W_bf16‖ / ‖W_bf16‖` por camada, mediana da amostra (12, 21 e 24 camadas).
 **É erro de peso, não o `err_w4a4` de ativação da tabela de bandas do CLAUDE.md** — as duas
@@ -61,6 +63,17 @@ colunas não se comparam.
 - **P3 confirmada nas duas.** O que a requantização acrescenta é sempre maior que o LoRA em si.
   O cosseno de 0,51 e 0,14 diz o mesmo: o que mudou no peso é o delta **mais** ruído de 2 a 7
   vezes o tamanho dele.
+- **As duas linhas do LTX (medidas depois das três primeiras, mesmo critério) acrescentam duas
+  coisas.** (a) O `ltx2-squish` traz **`lora_B` identicamente zero em 768 das 1152 matrizes** —
+  todas as famílias de áudio e cruzadas (`audio_attn1/2`, `audio_to_video`, `video_to_audio`) e
+  metade dos `to_out`; lido do arquivo, não deduzido. O ComfyUI casa a chave, aplica um delta
+  ZERO e **requantiza a camada assim mesmo**: 2/3 das camadas tocadas por esse LoRA pagam +14 %
+  de erro de peso por nada. É o mesmo mecanismo da armadilha do Wan abaixo, agora vindo de um LoRA
+  legítimo da própria família. (b) No layout `asym_w4a8_int8` (codebook) a sobrevivência **não é
+  1,000**: 0,956 e 0,909 — um delta pequeno perde 5–9 % ao ser requantizado, viés que o
+  `convrot_w4a4` (Z-Image, Krea2: 1,000) não mostrou. E com |δ|/|W| = 0,002 o ruído acrescentado
+  é **19x** o LoRA: no peso, o LoRA de produto está enterrado; se ele ainda faz efeito é a camada
+  2 quem diz.
 - **O controle de delta zero pegou uma armadilha própria de modelos quantizados.** Um LoRA de
   outra arquitetura (14B sobre 5B) casa pelo nome, falha na forma dentro de `calculate_weight`, o
   ComfyUI **loga `ERROR lora ... shape` e segue** — e o peso é requantizado assim mesmo.
