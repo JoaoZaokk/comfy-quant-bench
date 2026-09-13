@@ -76,6 +76,69 @@ The failing builds are shown too, because "it renders static" is a claim that sh
 
 ![](images/grade_falhas.png)
 
+## The edit path, which the table above does not measure
+
+**Correction, 2026-09-13.** Everything above was measured with a text-to-image ladder: six
+prompts, no input image, sampling from noise. **This is an image EDITOR, and that measurement
+never edited anything.** An editor is judged by a third image the generator does not have — the
+input — and specifically by what it *preserves*. The first version of this card shipped a verdict
+about a path the model is not named after. This section is the repair.
+
+12 real edits: 2 arms × 3 (image, instruction) pairs × 2 seeds, through the actual edit graph
+(`TextEncodeQwenImageEditPlus` carrying the VAE and the image, `VAEEncode` feeding the sampler,
+both conditionings through `FluxKontextMultiReferenceLatentMethod(index_timestep_zero)`,
+`ModelSamplingAuraFlow` + `CFGNorm`), 1 megapixel, 30 steps, cfg 2.5, shift 3.0.
+
+![edits](images/edicao_tres_colunas.png)
+
+Input, Comfy-Org's int8, ours. Seed 1.
+
+| pair | seed | moved from input, int8 | moved from input, ours | arms diverge in the untouched region |
+|---|---|---|---|---|
+| apple→pear | 1 | 29.53 | 39.89 | 4.87 |
+| apple→pear | 2 | 9.47 | 13.67 | 1.76 |
+| +red scarf | 1 | 7.18 | 11.13 | 3.04 |
+| +red scarf | 2 | 9.19 | 12.20 | 2.85 |
+| OPEN→CLOSED | 1 | 42.32 | 41.02 | 6.95 |
+| OPEN→CLOSED | 2 | 17.17 | 19.71 | 5.41 |
+
+**All 12 obeyed the instruction.** Green pear, red scarf, legible CLOSED.
+
+**Ours moves further from the input in 5 of 6 paired runs, median 1.34x — and that is a hint, not
+a result.** The mean paired difference is +3.79 with a standard deviation of **3.78**: the effect
+is the size of its own spread. The seed dominates everything else here — the *same* int8 arm
+measures 29.53 and 9.47 on the two seeds of the same pair, a 3.1x swing, larger than any
+difference between arms.
+
+### The finding that is not about quantization
+
+**Both arms destroy the wood grain and the brick, and both preserve a face.** Look at the first
+and third rows: the table becomes a speckled mosaic and the wall becomes a saturated cartoon, in
+Comfy-Org's build exactly as in ours. Only the middle row — the fisherman — comes through intact
+in both.
+
+This was nearly published here as a defect of *our* build, because it was first seen on ours. It
+is not: the arm that exists to catch that caught it. **Fine high-frequency texture drifts; a face
+does not**, and it is a property of the model or the regime, not of the format.
+
+> **[HYPOTHESIS, not measured]** The factory graph uses `denoise=1.0`, so the sampler regenerates
+> the whole image and preservation comes only from the conditioning, never from the input latent —
+> which is how this model family works. If that is the cause, lowering denoise should rescue the
+> texture. **What refutes it:** the texture staying destroyed at 0.6 and 0.4, which would point at
+> the VAE or the 30-step / cfg 2.5 regime instead. That test is running; this card will carry the
+> answer, not the guess.
+
+### What this section does NOT cover
+
+- **The reference is NOT the BF16 original.** It is Comfy-Org's int8, because the BF16 arm cannot
+  be run in this graph on this machine — four distinct failures, recorded in
+  `bench/qwen_edit_bf16_inalcancavel.md`. Every number above is distance to *that arm*, and both
+  arms could be equally far from BF16 without it showing.
+- **Damage both arms cause in the same place is invisible to the metric** — the "untouched region"
+  is inferred from the arms themselves. The texture finding above came from looking, not from the
+  number.
+- Six paired observations, three images, one resolution, one step count, one cfg.
+
 ## Per-layer error, measured on real activations
 
 840 Linear layers, **all 840 calibrated**. Each error is the relative error of that format against
