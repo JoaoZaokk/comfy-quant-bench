@@ -200,6 +200,32 @@ PROFILE_PATTERNS = {
     "wan_2_1": re.compile(
         r"^blocks\.\d+\.(?:(?:self|cross)_attn\.[qkvo]|ffn\.[02])$"
     ),
+    # FLUX.1 (`double_blocks` + `single_blocks`). 19 double x 10 Linears = 190, 38 single x 3 =
+    # 114, total **304** dos 314 modulos 2-D do arquivo. Os 10 de fora sao exatamente as pontas
+    # que todo perfil aqui exclui: `final_layer`, `guidance_in`, `img_in`, `time_in`, `txt_in`,
+    # `vector_in`. Todos os 304 tem a coluna divisivel por 256.
+    #
+    # DERIVADO, NAO CHUTADO, mas por um caminho diferente do `qwen_image` e do `wan_2_2`. Nao ha
+    # `int8_convrot` publico do FLUX.1 para conferir contra -- os `wraps/FLUX.2-klein-*` sao
+    # outra arquitetura (klein, sem `double_blocks`/`single_blocks`) e derivar dali seria
+    # invalido. O segundo lado veio do CODIGO do ComfyUI: `comfy/ldm/flux/layers.py` constroi
+    # `self.qkv`/`self.proj` dentro de `SelfAttention`, `self.linear1`/`linear2` no
+    # `SingleStreamBlock` e `self.modulation` com `self.lin` -- entao os nomes de MODULO batem
+    # com as chaves do ARQUIVO. Isso importa: o perfil `hunyuan_video_15` logo acima foi escrito
+    # das chaves do arquivo, os nomes de modulo eram outros, e ele casou NADA num modelo
+    # carregado.
+    #
+    # AINDA NAO CONFERIDO CONTRA UM MODELO CARREGADO. Escrito 2026-09-13 com a GPU ocupada; a
+    # checagem por `named_modules()` e o primeiro passo antes de qualquer conversao usar isto.
+    #
+    # `img_mod.lin`, `txt_mod.lin` e `single_blocks.N.modulation.lin` ENTRAM, ao contrario do
+    # `zimage` e do `hunyuan_video_15`. Nao e inconsistencia: esta bancada ja mediu em QUATRO
+    # arquiteturas que a modulacao e a camada MAIS BARATA do bloco em 4 bits -- no Qwen Edit,
+    # `txt_mod.1` da 0,0248 contra 0,2101 da saida da atencao, fator 8,5.
+    "flux_1": re.compile(
+        r"^(?:double_blocks\.\d+\.(?:(?:img|txt)_attn\.(?:qkv|proj)|(?:img|txt)_mlp\.[02]"
+        r"|(?:img|txt)_mod\.lin)|single_blocks\.\d+\.(?:linear[12]|modulation\.lin))$"
+    ),
     # WAN 2.2. O `ti2v_5B` e IDENTICO ao 2.1 em nomes -- 30 blocks x 10 = 300, e o perfil acima
     # ja serve. O `animate_14B` NAO: ele tem 40 blocks e mais duas familias por bloco,
     # `cross_attn.k_img` e `cross_attn.v_img`, as projecoes de cross-attention de IMAGEM, que nao
