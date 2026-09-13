@@ -939,6 +939,13 @@ output is intact. **Weight-space per-layer numbers rank and alarm; they do not d
 lesson this file already records for per-layer error across formats. Caveat: a 4-step LoRA changes
 the whole regime and is the most robust kind; a subtle style LoRA was not tested at the output.
 
+On LTX 2.5 W4A8 with `ltx2-squish` (49 frames, same seed, no trigger word in the prompt — a design
+hole, so this measures the cost of loading the LoRA, not its effect): merged and bypass land on the
+**same** composition and sit 6.3 MAE apart, against 15-18 from the no-LoRA reference and 28 from a
+seed change; neither moved the audio level or timing, while the other seed moved both (RMS -28 vs
+-20 dBFS, lag +78 ms). The requantization noise perturbs the output by a third of what the LoRA does
+and a quarter of what a seed does. `bench/ltx25/lora/`.
+
 The two LTX rows add two things. `ltx2-squish` ships **all-zero `lora_B` for 768 of its 1152
 matrices** (every audio and cross-modal attention family, read from the file); ComfyUI matches the
 key, applies a zero delta and requantizes the layer anyway, so two thirds of the layers that LoRA
