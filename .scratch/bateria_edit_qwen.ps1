@@ -3,7 +3,22 @@
 # Tres bracos x tres pares (imagem, instrucao) x duas sementes = 18 renderizacoes.
 # O eixo e o TRANSFORMER; encoder, VAE, escala, passos, cfg, shift e sampler ficam fixos.
 #
-# Os bracos sao os tres que EXISTEM e prestam: o BF16 (referencia), o int8 do Comfy-Org, e o
+# O braco BF16 FOI REMOVIDO em 2026-09-13, depois de quatro falhas registradas, nao por
+# escolha de escopo:
+#   UNETLoader, placa conferida limpa em 287 MiB  -> CUDA error: out of memory (de mem_get_info)
+#   DisTorch2 cpu,40gb                            -> Windows fatal exception: access violation
+#   depois dessa, a maquina paginou tanto que nvidia-smi levou >120s
+#   --lowvram                                     -> servidor travou no proprio arranque
+# No grafo de EDICAO o transformer de 38,05 GiB coexiste com o encoder de 15,45 GiB e ainda ha
+# um VAEEncode. O mesmo arquivo roda a 113,9 s/render no ladder de t2i porque LA a ferramenta
+# forca NORMAL_VRAM antes de carregar; o servidor nao faz isso. Um checkpoint que sabidamente
+# funciona pode ser inalcancavel por outra porta de entrada.
+#
+# Consequencia para a leitura dos resultados: a REFERENCIA desta bateria NAO e o original. E o
+# int8 do Comfy-Org, que e o braco que venceu em fidelidade em cinco familias seguidas -- teste
+# duro, mas outro teste.
+#
+# Os bracos sao os dois que EXISTEM e prestam: o BF16 (referencia), o int8 do Comfy-Org, e o
 # nosso W4A8 -- que e o unico que publiquei. O `w4a4` e o `misto` sairam ruido em t2i e foram
 # apagados do disco; nao ha o que medir neles aqui.
 #
@@ -13,7 +28,6 @@ $ErrorActionPreference = 'Continue'
 Set-Location F:\COMFY_PORTABLE
 
 $bracos = @(
-  @{ arq = 'qwen_image_edit_2511_bf16.safetensors';         rot = 'bf16'; dist = $true },
   @{ arq = 'qwen_image_edit_2511_int8_convrot.safetensors'; rot = 'int8'; dist = $false },
   @{ arq = 'qwen_image_edit_2511_w4a8.safetensors';         rot = 'w4a8'; dist = $false }
 )
