@@ -227,6 +227,40 @@ Also read [AGENTS.md](AGENTS.md) (root policy) and [ComfyUI/AGENTS.md](ComfyUI/A
   `misto` NAO subiram: negativo medido se publica como prova, nao como checkpoint que alguem
   baixa e usa.
 
+  **O Wan 2.2 confirmou o eixo numa SEGUNDA familia, com outro modo de falha.** Medido
+  2026-09-13, `wan2.2_ti2v_5B`, 6 corridas de 33 quadros a 480px, **os tres bracos RESIDENTES**
+  na 3090 -- nenhum descarregado, nenhum espalhado -- entao o s/passo abaixo e comparacao real:
+
+  ```
+  braco            GiB   s/passo   divergencia   min-max          imagem
+  FP16 original   9,31     1,579        --          --            nitida
+  W4A8            2,75     0,994      0,2115   0,1185-0,3275      indistinguivel a olho
+  W4A4            2,46     0,753      0,3847   0,2431-0,5748      BORRADA
+  ```
+
+  W4A4 e W4A8 tem os MESMOS pesos de 4 bits; so a ativacao difere. No Qwen Edit o W4A4 deu
+  estatica, aqui da borrao. **Modo de falha diferente, mesmo eixo, segunda familia.** Publicado:
+  **https://huggingface.co/JoaoZaokk/Wan2.2-TI2V-5B-W4A8-ConvRot**.
+
+  **E aqui esta o contraexemplo que muda como esta bancada le divergencia de latente.** `0,3847`
+  esta DENTRO da faixa que sempre funcionou -- abaixo do Z-Image v2 (0,7854) e do Krea2 (0,5843),
+  os dois bons -- e a imagem esta degradada. Ate agora so existia a falha oposta aqui:
+  divergencia ALTA com imagem boa, porque uma perturbacao minima manda o sampler para outro lugar
+  que tambem presta. Este e o espelho, e o mecanismo e obvio depois de visto: **borrao e uma
+  mudanca PEQUENA de latente.** Suavizar afasta menos da referencia do que ir para algo nitido e
+  diferente.
+
+  Entao a regra "divergencia de latente nao tem limiar", que este arquivo ja registrava, e fraca
+  demais. O certo e: **a divergencia e ENVIESADA para falha macia.** Um build que borra sempre se
+  elogia nessa metrica, e o tipo de dano que ela esconde e justamente o mais facil de nao notar
+  numa olhada rapida. Nao usar divergencia sozinha para aceitar um build -- nunca foi suficiente,
+  e agora se sabe para que lado ela erra.
+
+  Uma armadilha pega antes de custar, no mesmo dia: o latente do `ti2v_5B` tem **48 canais** e o
+  `wan_2.1_vae` que mora ao lado tem **16**. Decodificar com o VAE errado da imagem plausivel e
+  silenciosamente errada -- o aviso que `decode_latents.py` imprime em toda execucao. Contados os
+  canais ANTES, baixado o `wan2.2_vae` (1.409.400.960 B), e so entao decodificado.
+
   **Nao e o peso, e a ativacao.** E o build misto fecha o mecanismo: 233 camadas ja promovidas a
   ativacao de 8 bits, erro efetivo **0,0744** -- metade do erro de um Z-Image que presta -- e
   ainda assim estatica. **Basta sobrar camada no caminho A4.** E penhasco, nao ladeira.
