@@ -121,12 +121,34 @@ This was nearly published here as a defect of *our* build, because it was first 
 is not: the arm that exists to catch that caught it. **Fine high-frequency texture drifts; a face
 does not**, and it is a property of the model or the regime, not of the format.
 
-> **[HYPOTHESIS, not measured]** The factory graph uses `denoise=1.0`, so the sampler regenerates
-> the whole image and preservation comes only from the conditioning, never from the input latent —
-> which is how this model family works. If that is the cause, lowering denoise should rescue the
-> texture. **What refutes it:** the texture staying destroyed at 0.6 and 0.4, which would point at
-> the VAE or the 30-step / cfg 2.5 regime instead. That test is running; this card will carry the
-> answer, not the guess.
+**Two explanations were proposed and both were tested and REFUTED.** Texture is measured as mean
+absolute horizontal gradient over the table quadrant — higher means crunchier:
+
+```
+input photo                                   3.02
+denoise 1.0   pear, table damaged             5.14
+denoise 0.8   STILL AN APPLE, damaged         7.65   <- worst of all
+denoise 0.6   STILL AN APPLE, damaged         6.17
+denoise 0.4   STILL AN APPLE, damaged         5.05
+VAE encode+decode only, no sampling           2.67   MAE 0.88 against the input
+```
+
+**Hypothesis 1, `denoise=1.0` regenerates everything: refuted.** Lowering denoise does not rescue
+the texture — every level lands above the input, and 0.8 is the worst of the four. The refutation
+condition was written before the run and fired exactly. It also exposed something the card would
+otherwise have got wrong: **below 1.0 the edit stops working at all.** The apple stays an apple.
+This model family carries the edit in the conditioning, so anchoring to the input latent just
+re-asserts what was already there. `denoise=1.0` is *required*, and it is not the culprit.
+
+**Hypothesis 2, the VAE round-trip: refuted.** Encoding and decoding the input with no sampling at
+all costs **MAE 0.88** on the 0–255 scale and leaves the table slightly *smoother* (2.67), not
+rougher. The VAE is nearly lossless here — and it is not quantized on this bench, by rule.
+
+What the numbers point at instead: **the sampler adds high-frequency structure at every denoise
+level tested**, while the VAE alone removes a little. The model is redrawing the wood grain in its
+own hand, crunchier than the photograph. That is upstream of the format, which is why both
+quantizations do it identically. Naming it precisely would need the BF16 arm, which this machine
+cannot run in this graph.
 
 ### What this section does NOT cover
 
