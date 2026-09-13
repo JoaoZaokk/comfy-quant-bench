@@ -867,6 +867,55 @@ All three refutation conditions stayed silent: **3.19x** separates the broken ar
 
 Two things layer 1 established on its first pass. **The Z-Image card had 0.1241 on the wrong row** — it belongs to `zimage-v2-w4a4` (170 convrot), not to the mixed build, which is 0.0774; confirmed across nine independent calibrations, corrected the same day. The band's `tolerado` value is unchanged, it just gained an owner, and it is the *most aggressive* build measured. And **the calibration seed moves the median 2-6%**: the same Wan checkpoint measures 0.051807 or 0.054631 depending on which calibration you use. Smaller than the band's own 45% width, so the per-model line survives — but a four-decimal number from one calibration claims precision this bench does not have, so the spread now travels beside it.
 
+## LoRA over a quantized weight: it is a requantization, and that is measured
+
+The owner asked on 2026-09-13 whether LoRAs "work the way they should" on the quantized builds. The
+only prior measurement here (2026-08-19) answered a narrower question — the native kernel still
+fires with a LoRA applied, 680/680. **Whether the LoRA arrives intact in the weight had never been
+measured.** Traced first, then measured on the real path (`tools/probe_lora_requant.py`):
+
+`LoraLoaderModelOnly` over a `QuantizedTensor` does not keep the LoRA as a separate branch.
+`ModelPatcher.patch_weight_to_device` (`comfy/model_patcher.py:899`) runs `convert_weight` →
+`W.dequantize()` (`comfy/ops.py:1449`), adds the delta in `lora_compute_dtype` (fp16 on this
+card), then `set_weight` → `W.requantize_from_float(W', scale="recalculate",
+stochastic_rounding=seed)` (`comfy/ops.py:1455-1457`). **Dequantize, add, requantize to the same
+4 bits.** The kernel is unchanged because the weight comes back in the same layout; the delta, which
+is usually smaller than the 4-bit grid step, only survives in expectation.
+
+Measured per layer on the real path, `err` = `‖W − W_bf16‖/‖W_bf16‖` (weight-space, **not** the
+activation-space `err_w4a4` of the band table above — the two do not compare):
+
+```
+model, format              LoRA                       |δ|/|W|   survival  cosine  noise/LoRA   err: before -> no-op requant -> with LoRA
+Z-Image v2  W4A4 cg256     RealisticSnapshot r32       0.095     1.000     0.51     1.7x        0.157 -> 0.163 -> 0.238   (1.45x)
+Krea2 Turbo W4A4 cg256     krea2 turbo LoRA r64        0.0086    1.000     0.14     7.2x        0.162 -> 0.168 -> 0.176   (1.07x)
+Wan 2.2 5B  W4A8           a 14B LoRA (wrong model)    0 (shape fails)  -   -       -           0.0731 -> 0.0835          (1.14x, NO LoRA applied)
+```
+
+Three things that hold across the rows. **The LoRA is there, in expectation** — survival 1.000 to
+three decimals, stochastic rounding has no bias. **What lands in the weight is the delta plus noise
+larger than the delta** — cosine 0.51 and 0.14; the noise grows with the LoRA's own magnitude
+(each entry moves with probability ∝ |δ|/step), which is why the √2 "independent noise" prediction
+written before the run held on Z-Image (1.45x) and was refuted on Krea2 (1.07x). **Requantization
+is not idempotent**: a no-op patch already costs 0.157 → 0.163 (convrot) and 0.0731 → 0.0835
+(asym W4A8 with codebook).
+
+The Wan row is the trap that only exists on quantized models. A LoRA from another architecture
+matched 300 keys **by name**, failed every `calculate_weight` on shape, and ComfyUI logged
+`ERROR lora ... shape` and **continued** — delta zero, weight requantized anyway, model 14% worse in
+weight error with nothing applied. On a BF16 model the same failure rewrites the weight unchanged
+and is harmless. The only evidence is one log line per layer.
+
+`LoraLoaderBypassModelOnly` (`comfy_extras/nodes_lora_debug.py`, labelled "for debugging") keeps the
+delta as a BF16 low-rank branch in the forward and never touches the weight, so it has none of this
+noise. Whether the noise is *visible* is a render question; the criterion for those renders was
+written before running them in `bench/criterio_lora.md` (R1–R6), with the control that has to fail
+— Qwen-Image-Edit at 4 steps **without** its Lightning LoRA — named first.
+
+Not covered: one strength (1.0), one LoRA per model, a sample of layers; nothing on text-encoder
+LoRAs; the bypass loader is measured only at the output, since by construction it leaves the
+weight alone.
+
 ## Testing a converted model
 
 Structural verification is not acceptance. Every output must additionally pass, in order: normal ComfyUI loader compatibility (real node, not a hand-rolled load), a prompt-encoding smoke test through a long-lived ComfyUI process, and a matched-parameter benchmark against the BF16 source (identical prompt, seed, steps, resolution, sampler, scheduler, frames) recording disk, VRAM, load time, s/it, GPU utilization, power, warnings, and visual quality. Workflows for this live in `ComfyUI/user/default/workflows/` (e.g. `Video-LTX2_MultiGPU.app.json` for the Gemma text encoder).
