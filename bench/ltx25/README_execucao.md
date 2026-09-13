@@ -57,3 +57,45 @@ Isso é indistinguível de "já terminou" e de "nunca começou". `tools/ltx25_vi
   quanto custa.
 - O `s/quadro` inclui carga e staging de 40 GB. Não é custo marginal por quadro, e **não
   escala linearmente**: uma corrida de 249 quadros amortiza a carga sobre 5,08x mais trabalho.
+
+---
+
+## Duas armadilhas que custaram 36 minutos, registradas para não custarem de novo
+
+### 1. O worker do MultiGPU ignora o `compute_device` do nó
+
+Com `COMFYUI_MGPU_DISABLED` diferente de 1, o pacote sobe um worker por placa e distribui os
+trabalhos **por rodízio**. A primeira corrida foi para o worker da GPU 0; a segunda foi para o
+worker da **GPU 1** — a 3080 Ti de 12 GB — mesmo com o nó pedindo `compute_device: cuda:0`.
+
+O resultado, lido do log do worker:
+
+```
+mem_free_cuda, _ = torch.cuda.mem_get_info(dev)
+torch.AcceleratorError: CUDA error: out of memory
+```
+
+39,13 GiB numa placa de 12 GB. E o mais caro: a fila continuou dizendo `rodando: 1` **depois**
+do OOM, com a GPU 0 ociosa em 659 MiB — 36 minutos parecendo progresso.
+
+**A alocação da DisTorch2 não protege contra isso**, porque ela decide onde os *blocos* moram
+dentro do processo que já foi escolhido. Quem escolhe o processo é o rodízio, antes.
+
+Correção: `COMFYUI_MGPU_DISABLED=1`. Os nós `*DisTorch2MultiGPU` continuam registrados e
+funcionando — a variável controla o *spawn de workers*, não o registro dos nós.
+
+### 2. Matar o servidor pelo arquivo de pid pode matar o processo errado
+
+O `.pid` foi sobrescrito por um lançamento posterior, então `taskkill` matou um número que já
+não era o servidor. O antigo continuou dono da porta 8190, e o teste de saúde respondeu
+**`ONLINE após 5s`** — rápido demais para o ComfyUI, que leva ~60 s para subir. Essa velocidade
+foi o sinal, e quase passou batido.
+
+O que decide é quem **possui a porta**, não quem responde nela:
+
+```powershell
+Get-NetTCPConnection -LocalPort 8190 -State Listen | Select-Object OwningProcess
+```
+
+Deu `17964` quando o esperado era `34100`. Confirmar isso antes de acreditar que o servidor foi
+reiniciado.
