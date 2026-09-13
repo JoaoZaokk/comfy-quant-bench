@@ -46,6 +46,24 @@ PROFILE_PATTERNS = {
     "hunyuan_video_15": re.compile(
         r"^double_blocks\.\d+\.(?:(?:img|txt)_attn_(?:qkv|proj)|(?:img|txt)_mlp\.fc[12])\.weight$"
     ),
+    # LTX 2.3 / 2.5: the same regex `quant_w4a8.py` uses, so the W4A4 control arm quantizes
+    # EXACTLY the 1440 layers the W4A8 build does and the two differ in activation path only.
+    # Verified 2026-09-13 on both headers: 2.3 and 2.5 share 76 identical 2-D weight families and
+    # this selects 1440/1772 on each. Works on the transformer-only file (2.5) and on the
+    # single-file checkpoint (2.3, `model.diffusion_model.` prefix) alike.
+    "ltx_2_5": re.compile(
+        r"^(?:model\.diffusion_model\.)?"
+        r"(?:"
+        r"transformer_blocks\.\d+\."
+        r"(?:"
+        r"(?:audio_)?attn\d+\.(?:to_[qkv]|to_out\.\d+)"
+        r"|(?:audio_to_video|video_to_audio)_attn\.(?:to_[qkv]|to_out\.\d+)"
+        r"|(?:audio_)?ff\.net\.\d+(?:\.proj)?"
+        r")"
+        r"|(?:audio|video)_embeddings_connector\.transformer_\d+d_blocks\.\d+\."
+        r"(?:attn\d+\.(?:to_[qkv]|to_out\.\d+)|ff\.net\.\d+(?:\.proj)?)"
+        r")\.weight$"
+    ),
 }
 EXCLUSIONS = {
     "gemma": ["embed_tokens", "norm", "lm_head", "vision"],
@@ -57,6 +75,10 @@ EXCLUSIONS = {
         "_mod.linear", "_norm", "norm", "img_in", "txt_in", "byt5_in", "vision_in",
         "time_in", "final_layer", "_embedding", "task_bias",
     ],
+    # Second net for LTX: modulation, norms, patch/caption projections, the VAEs and the vocoder
+    # of the single-file checkpoint. The allowlist already excludes all of them.
+    "ltx_2_5": ["norm", "adaln_single", "scale_shift", "proj_in", "proj_out", "caption_projection",
+                "patchify", "vae.", "audio_vae.", "vocoder.", "text_embedding_projection", "to_gate_logits"],
 }
 HIGH_PRECISION_DTYPES = {"BF16", "F16", "F32"}
 TORCH_DTYPES = {

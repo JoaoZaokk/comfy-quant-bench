@@ -86,12 +86,21 @@ def monta_prompt(a) -> dict:
 
     if a.checkpoint:
         # ---- LTX 2.3: checkpoint unico ----
+        # `--aux-checkpoint` e de onde saem os VAEs e a projecao de texto (default: o proprio
+        # --checkpoint). Um braco quantizado passa `--checkpoint <w4a8> --aux-checkpoint <bf16>`:
+        # o modelo vem do arquivo quantizado pelo caminho de checkpoint (que le
+        # `_quantization_metadata`, como faz com o `dev-fp8` de fabrica), e VAEs/projecao vem
+        # SEMPRE do BF16 -- sao byte a byte iguais no arquivo convertido, mas assim o eixo fica
+        # puro por construcao e nao por confianca no conversor.
+        aux = a.aux_checkpoint or a.checkpoint
         if a.distorch:
             g["1c"] = {"class_type": "CheckpointLoaderSimpleDisTorch2MultiGPU",
                        "inputs": {"ckpt_name": a.checkpoint, "compute_device": "cuda:0",
                                   "expert_mode_allocations": aloc, "eject_models": True}}
         else:
             g["1c"] = {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": a.checkpoint}}
+        if aux != a.checkpoint:
+            g["1a"] = {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": aux}}
         if a.transformer:
             g["1"] = ({"class_type": "UNETLoaderDisTorch2MultiGPU",
                        "inputs": {"unet_name": a.transformer, "weight_dtype": "default",
@@ -107,14 +116,13 @@ def monta_prompt(a) -> dict:
         else:
             modelo = ["1c", 0]
         g["2"] = {"class_type": "LTXAVTextEncoderLoader",
-                  "inputs": {"text_encoder": a.encoder, "ckpt_name": a.checkpoint,
-                             "device": "default"}}
+                  "inputs": {"text_encoder": a.encoder, "ckpt_name": aux, "device": "default"}}
         if a.video_vae:
             g["5"] = {"class_type": "VAELoader", "inputs": {"vae_name": a.video_vae}}
             vae_video = ["5", 0]
         else:
-            vae_video = ["1c", 2]
-        g["6"] = {"class_type": "LTXVAudioVAELoader", "inputs": {"ckpt_name": a.checkpoint}}
+            vae_video = ["1a", 2] if aux != a.checkpoint else ["1c", 2]
+        g["6"] = {"class_type": "LTXVAudioVAELoader", "inputs": {"ckpt_name": aux}}
     else:
         # ---- LTX 2.5: pecas separadas ----
         if a.distorch:
@@ -281,6 +289,9 @@ def main() -> int:
                         "--checkpoint troca so o MODELO, mantendo VAEs e projecao do checkpoint")
     p.add_argument("--checkpoint", default=None,
                    help="LTX 2.3: checkpoint UNICO em checkpoints/ (DiT + VAEs + projecao)")
+    p.add_argument("--aux-checkpoint", default=None,
+                   help="com --checkpoint: de onde vem VAEs e projecao de texto (default: o proprio "
+                        "--checkpoint). Braco quantizado: --checkpoint <w4a8> --aux-checkpoint <bf16>")
     p.add_argument("--gguf", default=None,
                    help="com --checkpoint: modelo de um GGUF de terceiro (UnetLoaderGGUF)")
     p.add_argument("--encoder", default="gemma4-12b-with-proj-ltx-2.5-bf16.safetensors",
@@ -342,7 +353,8 @@ def main() -> int:
     modelo = a.gguf or a.transformer or a.checkpoint
     print(f"modelo      : {modelo}", flush=True)
     if a.checkpoint:
-        print(f"checkpoint  : {a.checkpoint}   (VAEs e projecao de texto, FIXO entre bracos)", flush=True)
+        print(f"checkpoint  : {a.checkpoint}", flush=True)
+        print(f"aux         : {a.aux_checkpoint or a.checkpoint}   (VAEs e projecao de texto, FIXO entre bracos)", flush=True)
     print(f"encoder     : {a.encoder}   (FIXO entre bracos)", flush=True)
     if a.lora:
         print(f"lora        : {a.lora} x{a.lora_strength} "
@@ -375,6 +387,7 @@ def main() -> int:
 
     passos = len([s for s in a.sigmas.split(",") if s.strip()]) - 1
     reg = {"modelo": modelo, "transformer": a.transformer, "checkpoint": a.checkpoint,
+           "aux_checkpoint": (a.aux_checkpoint or a.checkpoint) if a.checkpoint else None,
            "gguf": a.gguf, "encoder": a.encoder, "video_vae": a.video_vae,
            "audio_vae": None if a.checkpoint else a.audio_vae,
            "lora": a.lora, "lora_strength": a.lora_strength if a.lora else None,
