@@ -1,0 +1,64 @@
+{
+  "reference": "ComfyUI\\models\\diffusion_models\\wan2.2_ti2v_5B_fp16.safetensors",
+  "steps": 20,
+  "size": 480,
+  "seeds": [
+    1
+  ],
+  "prompts": [
+    "a red apple on a weathered wooden table, soft window light, shallow depth of field",
+    "close-up portrait of an elderly fisherman, weathered skin, grey stubble, 85mm lens, overcast light",
+    "a potter's hands shaping wet clay on a spinning wheel, close up, studio light",
+    "a vintage enamel shop sign reading OPEN, chipped paint, red brick wall, afternoon sun",
+    "a crowded night market street, food stalls, hanging paper lanterns, people walking, motion",
+    "macro photograph of frost crystals on a window pane, backlit by cold morning light"
+  ],
+  "models": {
+    "P:\\ComfyBench\\diffusion_models\\wan2.2_ti2v_5B_w4a8.safetensors": {
+      "divergence_mean": 0.21153619761268297,
+      "divergence_min": 0.11854978650808334,
+      "divergence_max": 0.32754260301589966,
+      "per_run": {
+        "prompt0_seed1": 0.14943425357341766,
+        "prompt1_seed1": 0.2682182788848877,
+        "prompt2_seed1": 0.11854978650808334,
+        "prompt3_seed1": 0.32754260301589966,
+        "prompt4_seed1": 0.15467874705791473,
+        "prompt5_seed1": 0.2507935166358948
+      },
+      "s_per_step_median": 0.9935372200001438,
+      "gib": 2.7479116916656494,
+      "paired_vs_baseline": {
+        "baseline": "P:\\ComfyBench\\diffusion_models\\wan2.2_ti2v_5B_w4a8.safetensors",
+        "mean": 0.0,
+        "worst": 0.0,
+        "best": 0.0,
+        "wins": 0,
+        "runs": 6
+      }
+    },
+    "P:\\ComfyBench\\diffusion_models\\wan2.2_ti2v_5B_w4a4.safetensors": {
+      "divergence_mean": 0.38467560708522797,
+      "divergence_min": 0.24307885766029358,
+      "divergence_max": 0.5748053789138794,
+      "per_run": {
+        "prompt0_seed1": 0.32293957471847534,
+        "prompt1_seed1": 0.3843533396720886,
+        "prompt2_seed1": 0.24307885766029358,
+        "prompt3_seed1": 0.44895052909851074,
+        "prompt4_seed1": 0.3339259624481201,
+        "prompt5_seed1": 0.5748053789138794
+      },
+      "s_per_step_median": 0.7530448974999672,
+      "gib": 2.4621825963258743,
+      "paired_vs_baseline": {
+        "baseline": "P:\\ComfyBench\\diffusion_models\\wan2.2_ti2v_5B_w4a8.safetensors",
+        "mean": 0.173139409472545,
+        "worst": 0.3240118622779846,
+        "best": 0.11613506078720093,
+        "wins": 0,
+        "runs": 6
+      }
+    }
+  }
+}
