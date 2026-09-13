@@ -49,6 +49,7 @@ idempotente e parte do "custo do LoRA" é custo de *qualquer* patch — inclusiv
 | Wan 2.2 TI2V 5B, W4A8 | `stock_photography_wan22_LOW` (LoRA de **14B**) | 300 casam pelo NOME, 300 chaves sem mapa | **0** (todo `calculate_weight` falha) | — | — | — | 0,0731 → **0,0835** → 0,0835 | 1,14x sem LoRA nenhum |
 | LTX 2.5 22B, W4A8 | `ltx2-squish` (LoRA do LTX **2.0**, r32) | 2304 → 1152 alvos, 0 sem mapa | 0,013–0,086 onde há delta; **zero em 16 de 24** | 0,956 (n=8) | 0,39 | 3,1x | 0,0731 → 0,0837 → 0,0837 (zero) / até 0,114 | 1,15x |
 | LTX 2.5 22B, W4A8 | `LTX23_Product_Commercial` (LoRA do 2.3, r16) | 3264 → 1632, 0 sem mapa | 0,0021 | **0,909** (0,87–0,93) | 0,05 | **19x** | 0,0731 → 0,0836 → 0,0838 | 1,15x |
+| Qwen-Image-Edit 2511, W4A8 | `Lightning-4steps-V1.0` (r64) | 2160 → 720, 0 sem mapa | 0,0005 | **0,858** (0,71–0,91) | 0,01 | **103x** | 0,0731 → 0,0836 → 0,0835 | 1,14x |
 
 Erro de peso = `‖W − W_bf16‖ / ‖W_bf16‖` por camada, mediana da amostra (12, 21 e 24 camadas).
 **É erro de peso, não o `err_w4a4` de ativação da tabela de bandas do CLAUDE.md** — as duas
@@ -107,6 +108,37 @@ sem, fusão e bypass, mesma semente.
 
 **LTX 2.3 W4A8 + `LTX23_Product_Commercial_LoRA`** (r16, inclui `to_gate_logits`, que o perfil
 NÃO quantiza): mesmo desenho, depois que a conversão do 2.3 terminar.
+
+## Camada 2 — MEDIDO (2026-09-13, depois das previsões acima)
+
+**Qwen-Image-Edit 2511 W4A8 + Lightning, 4 passos, cfg 1, semente 1, três pares
+(`bench/qwen_edit_lora/grade_lightning_4passos.png`):**
+
+- **R1 confirmada — o controle falha, nos dois formatos.** Sem o LoRA, a 4 passos: o cachecol
+  NÃO aparece, a placa continua OPEN, a maçã vira um híbrido pintalgado, e mesa, pele e tijolo
+  saem sobreafiados. INT8 e W4A8 falham do mesmo jeito. O teste distingue.
+- **R2 confirmada — W4A8 + LoRA fundido obedece às três instruções**, imagem acabada: pêra verde
+  lisa, cachecol de tricô vermelho, CLOSED legível.
+- **R3 confirmada — bypass também obedece**, as três.
+- **R4 (dica) não se sustenta**: fusão vs bypass no W4A8 divergem **1,26** na região quieta
+  (`analisa_edicao.py`), contra **3,54** (fusão) e **3,85** (bypass) de cada um para o
+  INT8+Lightning. O bypass NÃO fica mais perto do INT8 que a fusão — a diferença entre os dois
+  caminhos de LoRA é menor que a diferença entre formatos, e cabe no ruído de trajetória.
+
+**E a camada 1 deste mesmo par, medida no mesmo dia, dizia o contrário do que a imagem mostra.**
+No peso, o Lightning sobre o W4A8 do Qwen é o pior caso da tabela: |δ|/|W| = 0,0005, sobrevivência
+**0,86** (P1 refutada aqui: 14 % do delta perdido, até 29 % em camadas isoladas), cosseno 0,01,
+ruído acrescentado **103x o LoRA** — a camada com LoRA é indistinguível da camada só requantizada
+(0,0835 vs 0,0836). Pela camada 1, o LoRA estaria enterrado. Pela camada 2, ele funciona
+inteiro. **A leitura é a mesma que esta bancada já fez para o erro por camada dos formatos: o
+número por peso ordena e alarma, mas não decide — 720 camadas de ruído sem viés se cancelam no
+forward, e 14 % de magnitude a menos a força 1,0 não muda o comportamento.** O que decide é a
+saída, com o controle que tem de falhar ao lado.
+
+Não coberto na camada 2: uma semente, três pares, força 1,0, um LoRA (o de 4 passos — o mais
+robusto por construção, porque muda o regime inteiro; um LoRA de estilo sutil pode se perder onde
+este não se perdeu). LTX squish e LTX 2.3 Product Commercial: renders em curso, abaixo quando
+saírem.
 
 ## Não coberto
 

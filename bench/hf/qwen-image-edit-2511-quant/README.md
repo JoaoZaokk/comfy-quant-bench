@@ -252,6 +252,46 @@ Second, that median per-layer error × layer count predicts the break: it separa
 perfectly, and then dies on a tenth that was already on disk — `hunyuan15-misto-t025` scores 79.0
 and renders correctly while a Z-Image build scores 31.4 and renders garbage.
 
+## Does a LoRA work on this file? The Lightning 4-step LoRA, with the control that has to fail
+
+A LoRA loaded the normal way (`LoraLoaderModelOnly`) onto a quantized weight is not kept as a
+separate branch: ComfyUI dequantizes the weight, adds the delta, and **requantizes it back to
+4 bits** (`comfy/ops.py:1449-1457`). So the question "does the LoRA arrive?" has two layers, and
+they disagree here — which is the finding.
+
+**At the weight** (`tools/probe_lora_requant.py`, 24 sampled layers, the real
+`patch_weight_to_device` path): `Qwen-Image-Edit-2511-Lightning-4steps-V1.0` matches all 720
+target weights (0 unmapped keys); its delta is tiny (|δ|/|W| median 0.0005); after requantization
+**86 % of the delta survives** (71–91 % per layer), the cosine between what the LoRA asked and what
+landed is 0.01, and the noise the requantization adds is **103x the LoRA itself**. Per-layer weight
+error against the BF16 source goes 0.0731 → 0.0835 — indistinguishable from requantizing with no
+LoRA at all (0.0836). By this layer the LoRA looks buried.
+
+**At the output**, on the three edits above, 4 steps, cfg 1.0, seed 1:
+
+![Lightning LoRA, five arms](images/lora_lightning_4steps.png)
+
+Columns: input · INT8 without the LoRA · INT8 + Lightning · **this file** without the LoRA ·
+**this file** + Lightning merged (the normal loader) · **this file** + Lightning in bypass
+(`LoraLoaderBypassModelOnly`, which keeps the delta as a BF16 branch and never touches the weight).
+
+The Lightning LoRA is what makes 4 steps possible, so it carries its own control: **without it,
+4 steps must fail — and they do, identically in INT8 and in this file**: no scarf, the sign still
+says OPEN, the apple becomes a speckled hybrid, every texture oversharpened. **With it, all three
+LoRA arms obey all three instructions** — smooth green pear, red knitted scarf, legible CLOSED.
+Merged and bypass on this file differ by 1.26 in the region both left alone
+(`tools/analisa_edicao.py`), against 3.5–3.9 between either of them and INT8 + Lightning: the
+difference between the two LoRA paths is smaller than the difference between formats, and inside
+trajectory noise.
+
+**So the weight-level numbers overstate the damage, in the same way per-layer error does for
+formats on this bench: they rank and they alarm, they do not decide.** Seven hundred layers of
+unbiased noise cancel in the forward pass, and losing 14 % of a rank-64 delta at strength 1.0 does
+not change the regime it installs. The output, with the control that has to fail beside it, is the
+judge. One caveat travels with this: the 4-step LoRA is the most robust kind by construction — it
+changes the whole sampling regime. A subtle style LoRA could be lost where this one was not, and
+that was not measured here.
+
 ## What is NOT covered
 
 - **The W4A4 and mixed builds are not published as usable models.** They are a measured negative.

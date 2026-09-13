@@ -925,7 +925,19 @@ Krea2 Turbo W4A4 cg256     krea2 turbo LoRA r64        0.0086    1.000     0.14 
 Wan 2.2 5B  W4A8           a 14B LoRA (wrong model)    0 (shape fails)  -   -       -           0.0731 -> 0.0835          (1.14x, NO LoRA applied)
 LTX 2.5 22B W4A8           ltx2-squish (an LTX 2.0 LoRA) 0.013-0.086, ZERO in 16/24  0.956  0.39   3.1x    0.0731 -> 0.0837 -> 0.0837 (zero) .. 0.114
 LTX 2.5 22B W4A8           LTX23 Product Commercial r16 0.0021    0.909     0.05    19x         0.0731 -> 0.0836 -> 0.0838   (1.15x)
+Qwen-Edit 2511 W4A8        Lightning 4-step r64         0.0005    0.858     0.01    103x        0.0731 -> 0.0836 -> 0.0835   (1.14x)
 ```
+
+**And the output contradicts the weight, which is the finding.** Rendered the same day
+(`bench/qwen_edit_lora/grade_lightning_4passos.png`, criterion R1-R4 written first in
+`bench/criterio_lora.md`): at 4 steps without the LoRA both INT8 and W4A8 **fail** — no scarf, the
+sign stays OPEN, a speckled apple-pear hybrid, oversharpened texture (the control that had to
+fail, failed); with the LoRA, INT8, W4A8 merged and W4A8 bypass **all obey all three instructions**;
+merged vs bypass differ by 1.26 in the untouched region against 3.5-3.9 between either and INT8.
+The layer where the LoRA looked most buried (86% survival, noise 103x the delta) is the one whose
+output is intact. **Weight-space per-layer numbers rank and alarm; they do not decide** — the same
+lesson this file already records for per-layer error across formats. Caveat: a 4-step LoRA changes
+the whole regime and is the most robust kind; a subtle style LoRA was not tested at the output.
 
 The two LTX rows add two things. `ltx2-squish` ships **all-zero `lora_B` for 768 of its 1152
 matrices** (every audio and cross-modal attention family, read from the file); ComfyUI matches the
