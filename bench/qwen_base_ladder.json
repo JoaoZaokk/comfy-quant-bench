@@ -1,0 +1,77 @@
+{
+  "reference": "P:\\ComfyBench\\diffusion_models\\qwen_image_2512_bf16.safetensors",
+  "steps": 20,
+  "size": 1024,
+  "seeds": [
+    1,
+    2
+  ],
+  "prompts": [
+    "a red apple on a weathered wooden table, soft window light, shallow depth of field",
+    "close-up portrait of an elderly fisherman, weathered skin, grey stubble, 85mm lens, overcast light",
+    "a potter's hands shaping wet clay on a spinning wheel, close up, studio light",
+    "a vintage enamel shop sign reading OPEN, chipped paint, red brick wall, afternoon sun",
+    "a crowded night market street, food stalls, hanging paper lanterns, people walking, motion",
+    "macro photograph of frost crystals on a window pane, backlit by cold morning light"
+  ],
+  "models": {
+    "P:\\ComfyBench\\diffusion_models\\qwen_image_2512_w4a8.safetensors": {
+      "divergence_mean": 0.3875280184050401,
+      "divergence_min": 0.20234790444374084,
+      "divergence_max": 0.7235005497932434,
+      "per_run": {
+        "prompt0_seed1": 0.32004207372665405,
+        "prompt0_seed2": 0.20234790444374084,
+        "prompt1_seed1": 0.24046829342842102,
+        "prompt1_seed2": 0.32438862323760986,
+        "prompt2_seed1": 0.7235005497932434,
+        "prompt2_seed2": 0.30317792296409607,
+        "prompt3_seed1": 0.4061310589313507,
+        "prompt3_seed2": 0.6060648560523987,
+        "prompt4_seed1": 0.3848039209842682,
+        "prompt4_seed2": 0.4842742681503296,
+        "prompt5_seed1": 0.4166366159915924,
+        "prompt5_seed2": 0.23850013315677643
+      },
+      "s_per_step_median": 1.5660909800000808,
+      "gib": 10.785788111388683,
+      "paired_vs_baseline": {
+        "baseline": "P:\\ComfyBench\\diffusion_models\\qwen_image_2512_w4a8.safetensors",
+        "mean": 0.0,
+        "worst": 0.0,
+        "best": 0.0,
+        "wins": 0,
+        "runs": 12
+      }
+    },
+    "P:\\ComfyBench\\diffusion_models\\qwen_image_2512_w4a4.safetensors": {
+      "divergence_mean": 1.3369066019852955,
+      "divergence_min": 1.1017589569091797,
+      "divergence_max": 1.5449336767196655,
+      "per_run": {
+        "prompt0_seed1": 1.3169361352920532,
+        "prompt0_seed2": 1.2690143585205078,
+        "prompt1_seed1": 1.3267245292663574,
+        "prompt1_seed2": 1.2691930532455444,
+        "prompt2_seed1": 1.5449336767196655,
+        "prompt2_seed2": 1.4364936351776123,
+        "prompt3_seed1": 1.449407696723938,
+        "prompt3_seed2": 1.4359358549118042,
+        "prompt4_seed1": 1.3463401794433594,
+        "prompt4_seed2": 1.2665643692016602,
+        "prompt5_seed1": 1.2795767784118652,
+        "prompt5_seed2": 1.1017589569091797
+      },
+      "s_per_step_median": 1.0381611750000956,
+      "gib": 9.599002853035927,
+      "paired_vs_baseline": {
+        "baseline": "P:\\ComfyBench\\diffusion_models\\qwen_image_2512_w4a8.safetensors",
+        "mean": 0.9493785835802555,
+        "worst": 1.1333157122135162,
+        "best": 0.7822901010513306,
+        "wins": 0,
+        "runs": 12
+      }
+    }
+  }
+}
