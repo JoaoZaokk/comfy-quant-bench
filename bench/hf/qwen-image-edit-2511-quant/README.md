@@ -89,6 +89,27 @@ about a path the model is not named after. This section is the repair.
 both conditionings through `FluxKontextMultiReferenceLatentMethod(index_timestep_zero)`,
 `ModelSamplingAuraFlow` + `CFGNorm`), 1 megapixel, 30 steps, cfg 2.5, shift 3.0.
 
+### What was asked, verbatim
+
+The first version of this section said "apple→pear" and left the reader to guess the rest. The
+owner's objection was fair: *"you say you asked it to edit — asked it to edit **what**?"* Every
+instruction, the input it was given, and the check applied to the result:
+
+| input image (1024×1024) | instruction, exactly as sent | counts as obeyed when |
+|---|---|---|
+| `edit_maca.png` — a red apple on a weathered wooden table, soft window light | `change the apple to a green pear, keep the table, the window light and the composition exactly the same` | a green pear where the apple was; table, light and framing unchanged |
+| `edit_pescador.png` — close-up portrait of an elderly fisherman, weathered skin, grey stubble | `add a red knitted scarf around his neck, change nothing else` | a red knitted scarf; the face and everything else unchanged |
+| `edit_placa.png` — a vintage enamel shop sign reading OPEN, chipped paint, red brick wall | `change the word on the sign to CLOSED, keep the same enamel sign, the same brick wall and the same lighting` | the sign legibly reads CLOSED; same sign, wall and light |
+
+Negative prompt: a single space (the graph requires one; nothing was asked to be avoided). The
+instructions were chosen so that success is **checkable by eye**, not a matter of taste.
+
+**Where the inputs came from:** they are this model's own BF16 text-to-image renders from the
+ladder above (prompts 0, 1 and 3, seed 1) — `qwen_image_edit_2511_bf16__p0_s1.png`, `__p1_s1.png`
+and `__p3_s1.png`, copied unchanged into `ComfyUI/input/`. That is a deliberate choice with a
+known cost: the inputs are in-distribution for the model, so a real photograph may behave
+differently. It is also why the texture finding below is not about photographs.
+
 ![edits](images/edicao_tres_colunas.png)
 
 Input, Comfy-Org's int8, ours. Seed 1.

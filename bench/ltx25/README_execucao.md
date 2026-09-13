@@ -45,7 +45,7 @@ Quadros 1, 17, 33 e 49. Farol, ondas quebrando, gaivotas — coerente e com movi
 Com `COMFYUI_MGPU_DISABLED` diferente de 1, o ComfyUI-MultiGPU sobe **um worker por placa** em
 portas escolhidas em tempo de execução e encaminha o trabalho. O resultado aparece no
 `/history` **do worker**; a fila do servidor principal fica vazia enquanto a GPU está a 85%.
-Isso é indistinguível de "já terminou" e de "nunca começou". `tools/ltx25_video.py` e
+Isso é indistinguível de "já terminou" e de "nunca começou". `tools/ltx_video.py` e
 `tools/qwen_edit_test.py` agora leem as portas dos logs do pacote e olham nos dois lugares.
 
 ## O que NÃO está coberto

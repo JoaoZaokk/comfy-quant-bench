@@ -1,7 +1,7 @@
 ---
 license: other
 license_name: ltx-2.x-community-license
-license_link: LICENSE_LTX_2x_COMMUNITY.txt
+license_link: https://huggingface.co/JoaoZaokk/LTX-2.5-22B-distilled-W4A8-ConvRot/blob/main/LICENSE_LTX_2x_COMMUNITY.txt
 base_model: Lightricks/LTX-2.5
 base_model_relation: quantized
 library_name: diffusion-single-file

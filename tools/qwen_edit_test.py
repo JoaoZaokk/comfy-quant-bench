@@ -59,7 +59,15 @@ def monta_prompt(a) -> dict:
         carga_unet = {"class_type": "UNETLoader",
                       "inputs": {"unet_name": a.transformer, "weight_dtype": "default"}}
 
-    return {
+    modelo = ["1", 0]
+    g = {}
+    if getattr(a, "lora", None):
+        # Segundo eixo, so para o teste de LoRA. Fusao: dequantiza, soma, REQUANTIZA para 4 bits
+        # (`comfy/ops.py:1455`); bypass: ramo BF16 de baixo posto no forward, peso intocado.
+        g["1L"] = {"class_type": "LoraLoaderBypassModelOnly" if a.lora_bypass else "LoraLoaderModelOnly",
+                   "inputs": {"model": modelo, "lora_name": a.lora, "strength_model": a.lora_strength}}
+        modelo = ["1L", 0]
+    g.update({
         "1": carga_unet,
         "2": {"class_type": "CLIPLoader",
               "inputs": {"clip_name": a.encoder, "type": "qwen_image"}},
@@ -87,7 +95,7 @@ def monta_prompt(a) -> dict:
                          "reference_latents_method": "index_timestep_zero"}},
         "10": {"class_type": "VAEEncode", "inputs": {"pixels": ["5", 0], "vae": ["3", 0]}},
         "11": {"class_type": "ModelSamplingAuraFlow",
-               "inputs": {"model": ["1", 0], "shift": a.shift}},
+               "inputs": {"model": modelo, "shift": a.shift}},
         "12": {"class_type": "CFGNorm", "inputs": {"model": ["11", 0], "strength": 1.0}},
         "13": {"class_type": "KSampler",
                "inputs": {"model": ["12", 0], "positive": ["8", 0], "negative": ["9", 0],
@@ -97,11 +105,12 @@ def monta_prompt(a) -> dict:
         "14": {"class_type": "VAEDecode", "inputs": {"samples": ["13", 0], "vae": ["3", 0]}},
         "15": {"class_type": "SaveImage",
                "inputs": {"images": ["14", 0], "filename_prefix": a.saida}},
-    }
+    })
+    return g
 
 
 def portas_worker(raiz: Path) -> list[str]:
-    """Ver tools/ltx25_video.py: com os workers do MultiGPU ligados o resultado cai no /history
+    """Ver tools/ltx_video.py: com os workers do MultiGPU ligados o resultado cai no /history
     DELES e o do servidor principal fica vazio, o que e indistinguivel de 'nunca comecou'."""
     portas = []
     d = raiz / "ComfyUI" / "logs" / "mgpu-workers"
@@ -159,6 +168,10 @@ def main() -> int:
     p.add_argument("--scheduler", default="simple")
     p.add_argument("--denoise", type=float, default=1.0)
     p.add_argument("--shift", type=float, default=3.0)
+    p.add_argument("--lora", default=None, help="arquivo em loras/ (segundo eixo, so para teste de LoRA)")
+    p.add_argument("--lora-strength", type=float, default=1.0)
+    p.add_argument("--lora-bypass", action="store_true",
+                   help="LoraLoaderBypassModelOnly: delta como ramo BF16, peso quantizado intocado")
     p.add_argument("--saida", default="qwen_edit")
     p.add_argument("--servidor", default="http://127.0.0.1:8190")
     p.add_argument("--limite", type=int, default=1800)
@@ -174,6 +187,9 @@ def main() -> int:
     print(f"transformer : {a.transformer}", flush=True)
     print(f"entrada     : {a.imagem}", flush=True)
     print(f"instrucao   : {a.instrucao[:90]}", flush=True)
+    if a.lora:
+        print(f"lora        : {a.lora} x{a.lora_strength} "
+              f"({'bypass' if a.lora_bypass else 'fusao + requantizacao'})", flush=True)
     r = roda(a, a.servidor, Path(__file__).resolve().parent.parent)
     imagens = [i.get("filename")
                for no in r["saida"].get("outputs", {}).values()
@@ -185,7 +201,10 @@ def main() -> int:
         Path(a.json).write_text(json.dumps(
             {"transformer": a.transformer, "encoder": a.encoder, "imagem": a.imagem,
              "instrucao": a.instrucao, "seed": a.seed, "steps": a.steps, "cfg": a.cfg,
-             "shift": a.shift, "segundos": r["segundos"], "arquivos": imagens,
+             "shift": a.shift, "denoise": a.denoise, "sampler": a.sampler, "scheduler": a.scheduler,
+             "lora": a.lora, "lora_strength": a.lora_strength if a.lora else None,
+             "lora_bypass": bool(a.lora and a.lora_bypass),
+             "segundos": r["segundos"], "arquivos": imagens,
              "distorch": a.distorch, "alocacao": a.alocacao if a.distorch else None,
              "status": st}, indent=2), encoding="utf-8")
     return 0 if st == "success" else 1
