@@ -41,17 +41,38 @@ from pathlib import Path
 
 
 def monta_prompt(a) -> dict:
+    # O braco BF16 (38,05 GiB) nao cabe por este caminho nem com a placa limpa: aqui ele coexiste
+    # com o encoder de 15,45 GiB e ainda faz um VAEEncode, e o resultado e
+    # `CUDA error: out of memory` vindo de `mem_get_info`. O ladder de t2i roda o mesmo arquivo a
+    # 113,9 s/render porque ele mesmo forca NORMAL_VRAM antes de carregar; o servidor nao faz isso.
+    #
+    # DisTorch2 muda ONDE os blocos moram, nao a matematica -- entao a imagem comparada continua
+    # valida. O TEMPO nao continua: um braco espalhado paga transferencia por passo e o s/render
+    # dele nao se compara com o de um braco residente. Por isso o JSON grava `distorch` por corrida.
+    if a.distorch:
+        carga_unet = {"class_type": "UNETLoaderDisTorch2MultiGPU",
+                      "inputs": {"unet_name": a.transformer, "weight_dtype": "default",
+                                 "compute_device": "cuda:0",
+                                 "expert_mode_allocations": a.alocacao,
+                                 "eject_models": True}}
+    else:
+        carga_unet = {"class_type": "UNETLoader",
+                      "inputs": {"unet_name": a.transformer, "weight_dtype": "default"}}
+
     return {
-        "1": {"class_type": "UNETLoader",
-              "inputs": {"unet_name": a.transformer, "weight_dtype": "default"}},
+        "1": carga_unet,
         "2": {"class_type": "CLIPLoader",
               "inputs": {"clip_name": a.encoder, "type": "qwen_image"}},
         "3": {"class_type": "VAELoader", "inputs": {"vae_name": a.vae}},
         "4": {"class_type": "LoadImage", "inputs": {"image": a.imagem}},
         # 1 megapixel e o que o workflow de fabrica usa. Sem isto uma entrada grande muda o
         # custo por braco e a comparacao deixa de ser casada.
+        # `resolution_steps` nao tem default aplicado pela API: o servidor recusa o grafo com
+        # `required_input_missing` se ele faltar, mesmo o /object_info anunciando default 1.
+        # Conferido em /object_info depois da recusa; o valor 1 e o que o workflow de fabrica usa.
         "5": {"class_type": "ImageScaleToTotalPixels",
-              "inputs": {"image": ["4", 0], "upscale_method": "lanczos", "megapixels": 1.0}},
+              "inputs": {"image": ["4", 0], "upscale_method": "lanczos",
+                         "megapixels": 1.0, "resolution_steps": 1}},
         "6": {"class_type": "TextEncodeQwenImageEditPlus",
               "inputs": {"clip": ["2", 0], "vae": ["3", 0], "image1": ["5", 0],
                          "prompt": a.instrucao}},
@@ -141,6 +162,12 @@ def main() -> int:
     p.add_argument("--saida", default="qwen_edit")
     p.add_argument("--servidor", default="http://127.0.0.1:8190")
     p.add_argument("--limite", type=int, default=1800)
+    p.add_argument("--distorch", action="store_true",
+                   help="espalha os blocos em vez de carregar inteiro. Obrigatorio para o braco "
+                        "BF16 de 38 GiB, que sem isto da CUDA OOM neste grafo")
+    p.add_argument("--alocacao", default="cpu,40gb",
+                   help="expert_mode_allocations da DisTorch2. A unidade de byte e obrigatoria: "
+                        "o parser so aceita o curinga '*' no ramo que ve g/m/k/b na string")
     p.add_argument("--json", help="grava o registro da corrida aqui")
     a = p.parse_args()
 
@@ -159,6 +186,7 @@ def main() -> int:
             {"transformer": a.transformer, "encoder": a.encoder, "imagem": a.imagem,
              "instrucao": a.instrucao, "seed": a.seed, "steps": a.steps, "cfg": a.cfg,
              "shift": a.shift, "segundos": r["segundos"], "arquivos": imagens,
+             "distorch": a.distorch, "alocacao": a.alocacao if a.distorch else None,
              "status": st}, indent=2), encoding="utf-8")
     return 0 if st == "success" else 1
 
