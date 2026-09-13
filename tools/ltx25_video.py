@@ -51,15 +51,16 @@ def monta_prompt(a) -> dict:
     # suas"). O valor NAO e 12 GiB: a 3080 Ti hospeda o embedding do cortex, ~2,3 GiB medidos, que
     # nao pode ser expulso. `--doar-gb` default 6 deixa ~4 GiB de folga sobre o que ja esta la.
     if a.distorch:
+        aloc = a.alocacao or f"cuda:1,{a.doar_gb}gb;cpu,*"
         carga_unet = {"class_type": "UNETLoaderDisTorch2MultiGPU",
                       "inputs": {"unet_name": a.transformer, "weight_dtype": "default",
                                  "compute_device": "cuda:0",
-                                 "expert_mode_allocations": f"cuda:1,{a.doar_gb}gb;cpu,*",
+                                 "expert_mode_allocations": aloc,
                                  "eject_models": True}}
         carga_clip = {"class_type": "CLIPLoaderDisTorch2MultiGPU",
                       "inputs": {"clip_name": a.encoder, "type": "ltxv",
                                  "device": "cuda:0",
-                                 "expert_mode_allocations": f"cuda:1,{a.doar_gb}gb;cpu,*",
+                                 "expert_mode_allocations": aloc,
                                  "eject_models": True}}
     else:
         carga_unet = {"class_type": "UNETLoader",
@@ -194,6 +195,10 @@ def main() -> int:
     p.add_argument("--distorch", action="store_true",
                    help="distribui os blocos entre as placas em vez de descarregar inteiro. "
                         "Obrigatorio para o braco BF16 de 39 GiB, que sem isto da CUDA OOM")
+    p.add_argument("--alocacao", default=None,
+                   help="string crua de expert_mode_allocations da DisTorch2, ex 'cpu,*'. "
+                        "Sobrepoe --doar-gb. Com 249 quadros a doacao cruzada entre placas "
+                        "derrubou o processo com access violation; 'cpu,*' evita esse caminho")
     p.add_argument("--doar-gb", type=float, default=6.0,
                    help="quanto da 3080 Ti a DisTorch2 pode usar. NAO e 12: o cortex mora la "
                         "com ~2,3 GiB e nao pode ser expulso")
