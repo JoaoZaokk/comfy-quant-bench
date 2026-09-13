@@ -222,6 +222,11 @@ Also read [AGENTS.md](AGENTS.md) (root policy) and [ComfyUI/AGENTS.md](ComfyUI/A
   misto, 607/840 em A4       4 bits   4 bits    9,88      1,8846    1,236   ESTATICA
   ```
 
+  Publicado, com as duas grades como prova -- a do build bom e a dos dois que falharam:
+  **https://huggingface.co/JoaoZaokk/Qwen-Image-Edit-2511-W4A8-ConvRot**. Os pesos `w4a4` e
+  `misto` NAO subiram: negativo medido se publica como prova, nao como checkpoint que alguem
+  baixa e usa.
+
   **Nao e o peso, e a ativacao.** E o build misto fecha o mecanismo: 233 camadas ja promovidas a
   ativacao de 8 bits, erro efetivo **0,0744** -- metade do erro de um Z-Image que presta -- e
   ainda assim estatica. **Basta sobrar camada no caminho A4.** E penhasco, nao ladeira.
