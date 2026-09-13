@@ -42,11 +42,34 @@ SIGMAS_DESTILADO = "0.909375, 0.725, 0.421875, 0.0"
 
 def monta_prompt(a) -> dict:
     """O grafo de LTX25-int8-acceptance-v2.json em formato de API."""
+    # DisTorch2 distribui os BLOCOS entre placas em vez de descarregar o modelo inteiro para o
+    # host. E o que torna o braco BF16 possivel: 39,13 GiB contra 24 GiB de VRAM deu
+    # `CUDA error: out of memory` dentro de `mem_get_info` -- a placa esgotou de verdade, nao foi
+    # uma alocacao infeliz.
+    #
+    # `cuda:1` como doadora e instrucao explicita do dono ("offload na 3080ti, ambas as placas sao
+    # suas"). O valor NAO e 12 GiB: a 3080 Ti hospeda o embedding do cortex, ~2,3 GiB medidos, que
+    # nao pode ser expulso. `--doar-gb` default 6 deixa ~4 GiB de folga sobre o que ja esta la.
+    if a.distorch:
+        carga_unet = {"class_type": "UNETLoaderDisTorch2MultiGPU",
+                      "inputs": {"unet_name": a.transformer, "weight_dtype": "default",
+                                 "compute_device": "cuda:0",
+                                 "expert_mode_allocations": f"cuda:1,{a.doar_gb}gb;cpu,*",
+                                 "eject_models": True}}
+        carga_clip = {"class_type": "CLIPLoaderDisTorch2MultiGPU",
+                      "inputs": {"clip_name": a.encoder, "type": "ltxv",
+                                 "device": "cuda:0",
+                                 "expert_mode_allocations": f"cuda:1,{a.doar_gb}gb;cpu,*",
+                                 "eject_models": True}}
+    else:
+        carga_unet = {"class_type": "UNETLoader",
+                      "inputs": {"unet_name": a.transformer, "weight_dtype": "default"}}
+        carga_clip = {"class_type": "CLIPLoader",
+                      "inputs": {"clip_name": a.encoder, "type": "ltxv"}}
+
     return {
-        "1": {"class_type": "UNETLoader",
-              "inputs": {"unet_name": a.transformer, "weight_dtype": "default"}},
-        "2": {"class_type": "CLIPLoader",
-              "inputs": {"clip_name": a.encoder, "type": "ltxv"}},
+        "1": carga_unet,
+        "2": carga_clip,
         "5": {"class_type": "VAELoader", "inputs": {"vae_name": a.video_vae}},
         "6": {"class_type": "VAELoader", "inputs": {"vae_name": a.audio_vae}},
         "3": {"class_type": "CLIPTextEncode",
@@ -100,15 +123,46 @@ def posta(base: str, prompt: dict) -> str:
         raise SystemExit(f"o servidor RECUSOU o grafo ({e.code}):\n{corpo[:2000]}") from None
 
 
-def espera(base: str, pid: str, limite_s: int) -> dict:
-    """Espera no /history. Imprime batimento para uma corrida longa nao parecer travada."""
+def portas_worker(raiz: Path) -> list[str]:
+    """As portas que o ComfyUI-MultiGPU escolheu em tempo de execucao, lidas dos logs dele.
+
+    Quando `COMFYUI_MGPU_DISABLED` NAO esta em 1, o pacote sobe um worker por placa em portas
+    decididas na hora e o servidor principal encaminha o trabalho para la. O resultado aparece no
+    `/history` DO WORKER, e o principal fica com a fila vazia -- o que e indistinguivel de "ja
+    terminou" e de "nunca comecou". Isto custou uma corrida aqui: a GPU em 85%, a fila do 8190
+    zerada, e o script esperando um id que nunca ia aparecer.
+    """
+    portas = []
+    for log in sorted((raiz / "ComfyUI" / "logs" / "mgpu-workers").glob("gpu-*.log")):
+        try:
+            texto = log.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for pedaco in texto.split("http://127.0.0.1:")[1:]:
+            porta = pedaco.split()[0].split("/")[0].strip(",)")
+            if porta.isdigit() and porta not in portas:
+                portas.append(porta)
+    return portas
+
+
+def espera(base: str, pid: str, limite_s: int, raiz: Path) -> dict:
+    """Espera no /history, e tambem no dos workers do MultiGPU se eles existirem."""
+    bases = [base] + [f"http://127.0.0.1:{p}" for p in portas_worker(raiz)]
+    if len(bases) > 1:
+        print(f"  tambem olhando os workers do MultiGPU: {bases[1:]}", flush=True)
     t0 = time.time()
     ultimo = 0.0
     while time.time() - t0 < limite_s:
-        with urllib.request.urlopen(f"{base}/history/{pid}", timeout=60) as r:
-            h = json.load(r)
-        if pid in h:
-            return h[pid]
+        for b in bases:
+            try:
+                with urllib.request.urlopen(f"{b}/history/{pid}", timeout=60) as r:
+                    h = json.load(r)
+            except Exception:  # noqa: BLE001 -- worker pode nao estar de pe
+                continue
+            if pid in h:
+                if b != base:
+                    print(f"  resultado veio do worker {b}, nao do servidor principal", flush=True)
+                return h[pid]
         agora = time.time() - t0
         if agora - ultimo >= 60:
             ultimo = agora
@@ -137,6 +191,12 @@ def main() -> int:
     p.add_argument("--seed", type=int, default=1234)
     p.add_argument("--saida", default="ltx25")
     p.add_argument("--webp", action="store_true", help="grava um WEBP animado em vez de PNGs")
+    p.add_argument("--distorch", action="store_true",
+                   help="distribui os blocos entre as placas em vez de descarregar inteiro. "
+                        "Obrigatorio para o braco BF16 de 39 GiB, que sem isto da CUDA OOM")
+    p.add_argument("--doar-gb", type=float, default=6.0,
+                   help="quanto da 3080 Ti a DisTorch2 pode usar. NAO e 12: o cortex mora la "
+                        "com ~2,3 GiB e nao pode ser expulso")
     p.add_argument("--servidor", default="http://127.0.0.1:8190")
     p.add_argument("--limite", type=int, default=7200)
     p.add_argument("--json", help="grava o registro da corrida aqui")
@@ -156,7 +216,7 @@ def main() -> int:
     t0 = time.time()
     pid = posta(a.servidor, prompt)
     print(f"prompt_id {pid}", flush=True)
-    saida = espera(a.servidor, pid, a.limite)
+    saida = espera(a.servidor, pid, a.limite, Path(__file__).resolve().parent.parent)
     segundos = time.time() - t0
 
     imagens = []
@@ -173,7 +233,8 @@ def main() -> int:
     reg = {"transformer": a.transformer, "encoder": a.encoder, "frames": a.frames,
            "fps": a.fps, "size": a.size, "cfg": a.cfg, "sigmas": a.sigmas, "seed": a.seed,
            "prompt": a.prompt, "segundos": segundos, "arquivos": imagens,
-           "s_por_quadro": segundos / a.frames}
+           "s_por_quadro": segundos / a.frames,
+           "distorch": a.distorch, "doar_gb": a.doar_gb if a.distorch else None}
     if a.json:
         Path(a.json).write_text(json.dumps(reg, indent=2), encoding="utf-8")
         print(f"registro em {a.json}", flush=True)
