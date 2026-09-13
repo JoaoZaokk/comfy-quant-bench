@@ -9,6 +9,24 @@ Contados os `.safetensors` acima de 3 GiB em `diffusion_models`, `checkpoints` e
 descartando o que já passou por esta bancada: **11 candidatos**. Nem todos são de imagem e nem
 todos são conversíveis.
 
+## O "switch" do goal NÃO é um modelo, e isso foi conferido
+
+O goal original manda "converter todo o **switch**". Não existe nenhum checkpoint com esse nome
+nesta máquina — procurado em `ComfyUI/models` e no compartilhamento `D:\ComfyUI-Models` com
+`find -iname "*switch*" -size +100M`, resultado **vazio**.
+
+E o dono esclareceu na terceira mensagem da conversa que era exemplo:
+
+> "switch = node completo, eu dei como exemplo ainda, todo o projeto, se ele usa diffuser,
+> checkpoint, text encoder e etc, quantizar tudo"
+
+Então o alvo é a **cadeia completa por projeto** — difusor, checkpoint, text encoder — e não um
+modelo chamado Switch. Registrado aqui porque a palavra reaparece em toda leitura do goal e sem
+isto escrito ela conta como etapa não feita, quando na verdade é uma etapa que não existe.
+
+O VAE fica de fora por instrução explícita do dono: *"VAE nao quantiza, nao precisa, só pra deixar
+claro!"*
+
 ## Fora de escopo porque não são imagem
 
 | arquivo | GiB | o que é |
