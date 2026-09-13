@@ -5307,3 +5307,66 @@ referencia -- o que nao era possivel afirmar ontem.
 
 Nao coberto: tres prompts, um modelo, uma placa, `alpha 0.5` unico, sem varredura de alpha. Mede
 condicionamento, nao imagem.
+
+## Parte 49 -- 2026-09-13: o LTX gera audio e eu media so o video; e o que um LoRA vira dentro de 4 bits
+
+Tres correcoes do dono na mesma mensagem, e uma tarefa nova. Na ordem em que foram atacadas.
+
+**1. "Um gerador de video como o LTX nao gera somente imagens, ele gera imagem e audio ao mesmo
+tempo, entao voce tem que comparar os dois."** Verdade, e o proprio `tools/ltx25_video.py` dizia no
+docstring: *"Nao decodifica o audio"*. O card do LTX 2.5 no Hub comparou tres transformadores por
+249 quadros e zero amostras de audio -- metade do que o modelo produz, publicada como o todo.
+
+Corrigido em `tools/ltx_video.py` (renomeado; historico preservado com `git mv`): a segunda saida
+do `LTXVSeparateAVLatent` passa por `LTXVAudioVAEDecode`, e cada corrida grava PNGs (metrica de
+video sem perda), FLAC (metrica de audio sem perda) e MP4 com faixa de audio (para uma pessoa
+assistir; h264 e lossy e NAO entra em metrica). Fumaca de 9 quadros no W4A8 do 2.5: FLAC 48 kHz
+estereo com sinal (RMS -16,9 dBFS), MP4 com h264 + AAC. `tools/compara_av.py` mede os dois ramos
+contra a referencia -- MAE/PSNR/SSIM e energia de movimento nos quadros; MAE de onda, SNR, lag por
+correlacao cruzada, L1 de log-mel, convergencia espectral, RMS e fracao de silencio no audio --
+com dois controles sinteticos (silencio e ruido branco de mesmo RMS) para os numeros de audio
+terem escala. Selftest contra si mesmo: MAE 0, SNR 99, lag 0. Os tres bracos do 2.5 estao sendo
+rerenderizados com audio; numeros na proxima parte deste log.
+
+**2. "Faz tambem o 2.3."** Nao havia fonte sem quantizacao do LTX 2.3 na maquina (o `dev-fp8` ja e
+fp8; os dois GGUF sao de terceiro). Baixado `Lightricks/LTX-2.3/ltx-2.3-22b-distilled-1.1.safetensors`,
+46.149.345.334 B (42,98 GiB) em 1569 s a 28,1 MiB/s, para `P:/ComfyBench/checkpoints/` -- e um
+checkpoint UNICO (DiT 4444 tensores + VAE de video 170 + VAE de audio 102 + vocoder 1227 + projecao
+de texto 4). Comparados os headers do 2.3 e do 2.5: **76 familias de peso 2-D, identicas, mesmas
+formas**, o perfil `ltx_2_5` seleciona 1440/1772 nos dois. Conversoes W4A8 e W4A4 em andamento na
+3080 Ti (para nao contaminar o s/quadro dos renders na 3090). O text encoder de fabrica do 2.3 e o
+Gemma 3 12B; o unico BF16 local e o `heretic` (abliterado), entao o `gemma_3_12B_it.safetensors`
+da Comfy-Org (22,71 GiB) esta baixando para ser o eixo fixo entre bracos. `extra_model_paths.yaml`
+ganhou `bench_p.checkpoints` e `bench_p.loras` -- o servidor precisa reiniciar para enxergar.
+
+**3. "Verifica se os LoRAs estao funcionando do jeito que deveria."** A unica medicao anterior
+(2026-08-19) dizia que o kernel nativo continua sendo chamado com LoRA aplicado. Se o LoRA chega
+inteiro ao peso ninguem tinha medido. Tracado: `LoraLoaderModelOnly` sobre `QuantizedTensor` e
+dequantiza -> soma -> REQUANTIZA para 4 bits com escalas recalculadas e arredondamento estocastico
+(`comfy/model_patcher.py:899`, `comfy/ops.py:1449-1457`). Medido no caminho real com
+`tools/probe_lora_requant.py`, previsoes escritas antes no docstring (commit `d113a3a`):
+
+    modelo, formato          LoRA                        |d|/|W|  sobrev  cos    ruido/LoRA  err peso: antes -> requant vazia -> com LoRA
+    Z-Image v2 W4A4          RealisticSnapshot r32       0,095    1,000   0,51   1,7x        0,157 -> 0,163 -> 0,238  (1,45x)
+    Krea2 Turbo W4A4         krea2 turbo r64             0,0086   1,000   0,14   7,2x        0,162 -> 0,168 -> 0,176  (1,07x)
+    Wan 2.2 5B W4A8          LoRA de 14B (errado)        0        --      --     --          0,0731 -> 0,0835        (1,14x SEM LoRA)
+
+P1 (sem vies) confirmada: o LoRA esta la em media, tres casas. P2 (ruido independente, raiz de 2)
+confirmada no Z-Image e REFUTADA no Krea2: o ruido cresce com a magnitude do proprio LoRA, nao com
+a grade. P3 confirmada: o que a requantizacao acrescenta e sempre maior que o LoRA. E o controle de
+delta zero, acrescentado antes de concluir, pegou a armadilha: um LoRA de outra arquitetura casa
+pelo NOME, falha na forma dentro de `calculate_weight`, o ComfyUI loga `ERROR lora ... shape` e
+SEGUE, e o peso e requantizado assim mesmo -- modelo 14% pior em erro de peso, nada aplicado, uma
+linha de log como unica evidencia. Num BF16 a mesma falha e inofensiva. Criterio dos renders com e
+sem LoRA (Qwen Edit Lightning 4 passos, LTX squish, LTX 2.3 Product Commercial) escrito em
+`bench/criterio_lora.md` ANTES de rodar, com o controle que tem de falhar nomeado primeiro.
+
+**4. "Anota o que voce pediu para editar."** O card do Qwen-Image-Edit dizia "apple->pear" e nada
+mais. Agora carrega as tres instrucoes textualmente, a imagem dada a cada uma, o criterio de
+"obedeceu", e a procedencia das entradas (renders BF16 do proprio modelo, prompts 0/1/3, semente 1).
+Subido ao Hub e conferido pelo raw. Os dois cards de encoder (Qwen2.5-VL, Gemma heretic) estavam
+DESATUALIZADOS no Hub em relacao ao git (48 e 63 linhas de diff: o Hub ainda dizia "ComfyUI offers
+no way to do that"); ressubidos e conferidos byte a byte.
+
+Nao coberto ate aqui: nenhum numero de audio ainda (rerender em curso); o 2.3 ainda nao converteu;
+LoRA medido no peso, nao na saida; uma forca por LoRA.
