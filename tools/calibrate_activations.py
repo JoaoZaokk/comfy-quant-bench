@@ -200,6 +200,18 @@ PROFILE_PATTERNS = {
     "wan_2_1": re.compile(
         r"^blocks\.\d+\.(?:(?:self|cross)_attn\.[qkvo]|ffn\.[02])$"
     ),
+    # WAN 2.2. O `ti2v_5B` e IDENTICO ao 2.1 em nomes -- 30 blocks x 10 = 300, e o perfil acima
+    # ja serve. O `animate_14B` NAO: ele tem 40 blocks e mais duas familias por bloco,
+    # `cross_attn.k_img` e `cross_attn.v_img`, as projecoes de cross-attention de IMAGEM, que nao
+    # existem num T2V puro e por isso nunca precisaram entrar no perfil do 2.1.
+    #
+    # NAO adivinhado: conferido contra o `wan2.2_animate_14B_int8_convrot` do proprio Comfy-Org,
+    # que carrega 480 tensores `.comfy_quant`. O perfil do 2.1 casava 400 -- subconjunto ESTRITO,
+    # zero camadas nossas fora da lista deles -- e as 80 que faltavam sao exatamente essas duas
+    # familias. Conferido pelos dois lados, como o `qwen_image`.
+    "wan_2_2": re.compile(
+        r"^blocks\.\d+\.(?:(?:self|cross)_attn\.(?:[qkvo]|[kv]_img)|ffn\.[02])$"
+    ),
     # Qwen-Image / Qwen-Image-Edit, MMDiT com duas correntes, 60 `transformer_blocks` x 14
     # Linears = 840. NAO adivinhado: derivado do `qwen_image_edit_2511_int8_convrot` do
     # proprio Comfy-Org, cujas 840 chaves `comfy_quant` sao exatamente estas -- sem falso
@@ -284,6 +296,10 @@ PROFILE_FILE_PATTERNS["hunyuan_video_15"] = re.compile(
 )
 PROFILE_FILE_PATTERNS["wan_2_1"] = re.compile(
     r"^(?:model\.diffusion_model\.)?blocks\.\d+\.(?:(?:self|cross)_attn\.[qkvo]|ffn\.[02])$"
+)
+PROFILE_FILE_PATTERNS["wan_2_2"] = re.compile(
+    r"^(?:model\.diffusion_model\.)?blocks\.\d+\."
+    r"(?:(?:self|cross)_attn\.(?:[qkvo]|[kv]_img)|ffn\.[02])$"
 )
 
 
