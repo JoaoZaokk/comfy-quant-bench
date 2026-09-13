@@ -867,6 +867,39 @@ All three refutation conditions stayed silent: **3.19x** separates the broken ar
 
 Two things layer 1 established on its first pass. **The Z-Image card had 0.1241 on the wrong row** — it belongs to `zimage-v2-w4a4` (170 convrot), not to the mixed build, which is 0.0774; confirmed across nine independent calibrations, corrected the same day. The band's `tolerado` value is unchanged, it just gained an owner, and it is the *most aggressive* build measured. And **the calibration seed moves the median 2-6%**: the same Wan checkpoint measures 0.051807 or 0.054631 depending on which calibration you use. Smaller than the band's own 45% width, so the per-model line survives — but a four-decimal number from one calibration claims precision this bench does not have, so the spread now travels beside it.
 
+## The LTX card measured half the model, and the half it skipped ranks the arms the same way
+
+LTX 2.x generates **video and audio in one latent**. Until 2026-09-13 `tools/ltx25_video.py`
+decoded the video branch only — its own docstring said so — and the published LTX 2.5 card compared
+three transformers on 249 frames and zero audio samples. The owner called it: *"um gerador de video
+como o LTX nao gera somente imagens, ele gera imagem e audio ao mesmo tempo, entao voce tem que
+comparar os dois."* `tools/ltx_video.py` now decodes both (`LTXVAudioVAEDecode` on the second
+output of `LTXVSeparateAVLatent`) and writes PNGs, a FLAC and an MP4 with the track;
+`tools/compara_av.py` measures both branches against a reference with silence and same-RMS white
+noise as controls. Re-rendered, same seed, three arms:
+
+```
+arm                   MAE   PSNR   SSIM  | log-mel L1   SNR      lag    spec.conv  RMS
+int8 Lightricks      4.10  29.71  0.941  |   0.041     11.2 dB   0 ms    0.124   -38.8 dBFS
+W4A8 ours            7.81  25.39  0.895  |   0.120      3.4 dB   0 ms    0.311   -38.3 dBFS
+control: silence                        |   6.980      0.0 dB
+control: white noise, same RMS          |   1.471     -3.0 dB            1.097
+```
+
+Audio ranks the arms as the picture does and by a wider margin (1.9x further in frames, 2.9x in
+sound); neither arm changed level or slid in time. **The re-render came back pixel-identical to
+the first run in all three arms** (MAE 0.0 on frames 1/63/125/187/249), across a server restart
+and, for BF16, a different disk — the PNG hashes differ only by the embedded workflow metadata.
+
+**And the BF16 arm killed the server once.** `Windows fatal exception: access violation` in
+`torch/storage.py __getitem__` under `comfy/utils.py:136 load_torch_file` — the memory-map of the
+39 GiB file, which the name resolver was reading from **D: (SMB)** with ~24 GiB of RAM free while
+a 43 GiB conversion and a 23 GiB download ran. The same bytes exist on W: (local disk); a hardlink
+under another name (`..._bf16_W.safetensors`, same inode, nothing copied or moved) made the loader
+read from W:, and with 40 GiB free it rendered in 769.6 s. `folder_paths` returns the **first**
+yaml root that has the name, so yaml order decides which disk a 39 GiB mmap comes from, and no log
+says which. Proofs on the Hub: `av/*.mp4`, `av/*.flac`, `av/contato_av.png`, `av/comparacao_av.json`.
+
 ## LoRA over a quantized weight: it is a requantization, and that is measured
 
 The owner asked on 2026-09-13 whether LoRAs "work the way they should" on the quantized builds. The
@@ -890,7 +923,16 @@ model, format              LoRA                       |δ|/|W|   survival  cosin
 Z-Image v2  W4A4 cg256     RealisticSnapshot r32       0.095     1.000     0.51     1.7x        0.157 -> 0.163 -> 0.238   (1.45x)
 Krea2 Turbo W4A4 cg256     krea2 turbo LoRA r64        0.0086    1.000     0.14     7.2x        0.162 -> 0.168 -> 0.176   (1.07x)
 Wan 2.2 5B  W4A8           a 14B LoRA (wrong model)    0 (shape fails)  -   -       -           0.0731 -> 0.0835          (1.14x, NO LoRA applied)
+LTX 2.5 22B W4A8           ltx2-squish (an LTX 2.0 LoRA) 0.013-0.086, ZERO in 16/24  0.956  0.39   3.1x    0.0731 -> 0.0837 -> 0.0837 (zero) .. 0.114
+LTX 2.5 22B W4A8           LTX23 Product Commercial r16 0.0021    0.909     0.05    19x         0.0731 -> 0.0836 -> 0.0838   (1.15x)
 ```
+
+The two LTX rows add two things. `ltx2-squish` ships **all-zero `lora_B` for 768 of its 1152
+matrices** (every audio and cross-modal attention family, read from the file); ComfyUI matches the
+key, applies a zero delta and requantizes the layer anyway, so two thirds of the layers that LoRA
+names pay the +14% for nothing. And on the `asym_w4a8_int8` codebook layout the survival is **not**
+1.000 — 0.956 and 0.909 — a small delta loses 5-9% in the requantization, a bias the convrot W4A4
+rows do not show; with |δ|/|W| = 0.002 the added noise is 19x the LoRA itself.
 
 Three things that hold across the rows. **The LoRA is there, in expectation** — survival 1.000 to
 three decimals, stochastic rounding has no bias. **What lands in the weight is the delta plus noise
