@@ -78,10 +78,23 @@ if sys.platform == "win32" and os.environ.get("COMFY_BYPASS_WMI_UNAME") == "1":
                 versao,
                 os.environ.get("PROCESSOR_ARCHITECTURE", "AMD64"),
             )
+
+            # SAO DOIS CAMINHOS, e cobrir so o primeiro nao adianta. O cache de `uname` atende
+            # `platform.machine()` (o que o torch usa), mas `platform.win32_ver()` chamado
+            # DIRETAMENTE nao le cache nenhum -- vai ao WMI toda vez. O ComfyUI faz exatamente
+            # isso em `comfy/model_management.py:845`, e o servidor pendurava la depois de o
+            # torch ja ter importado bem. Achado com o mesmo faulthandler, na segunda rodada.
+            _ver = (lancamento, versao, "", "")
+
+            def win32_ver(release="", version="", csd="", ptype=""):  # noqa: ARG001
+                return _ver
+
+            platform.win32_ver = win32_ver
+
             print(
-                "[sitecustomize] COMFY_BYPASS_WMI_UNAME=1: platform.uname() preenchido do "
-                f"registro ({lancamento}/{versao}) porque o WMI desta maquina esta travado. "
-                "Ver o cabecalho de sitecustomize.py.",
+                "[sitecustomize] COMFY_BYPASS_WMI_UNAME=1: platform.uname() e "
+                f"platform.win32_ver() servidos do registro ({lancamento}/{versao}) porque o "
+                "WMI desta maquina esta travado. Ver o cabecalho de sitecustomize.py.",
                 file=sys.stderr,
             )
     except Exception as exc:  # noqa: BLE001
