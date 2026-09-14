@@ -5403,8 +5403,13 @@ por peso ordena e alarma, nao decide** -- a mesma licao do erro por camada entre
 **Dois servidores mortos pelo mesmo golpe.** `Windows fatal exception: access violation` em
 `torch/storage.py __getitem__`, dentro do mmap de `load_torch_file`: (1) o transformer BF16 do
 2.5 (39 GiB) lido de D: (SMB) com ~24 GiB de RAM livre; (2) o checkpoint UNICO do 2.3 (43 GiB)
-pelo caminho de checkpoint + DisTorch2, lido de W: (disco local) com ~40 GiB livres. O que
-sobreviveu, duas vezes: o transformer sozinho pelo `UNETLoader`, de disco local, 39 GiB. Por isso
+pelo caminho de checkpoint + DisTorch2, lido de W: com ~40 GiB livres. [CORRIGIDO 22:08: W: NAO e
+disco local -- `net use` da `\\192.168.3.40\zfe`, SMB; eu deduzi "local" de um grep que so
+procurava D:. Depois desta parte morreram mais dois, ambos o transformer extraido lido de W:, com
+32-44 GiB livres, enquanto um processo nu percorre o arquivo em 4 s. Mecanismo: mmap de dezenas de
+GiB por SMB sob carga -> in-page error -> access violation. O braco BF16 do 2.3 foi para C:, o
+unico NTFS local com espaco.] O que sobreviveu, uma vez: o transformer sozinho pelo `UNETLoader`,
+39 GiB, tambem por SMB. Por isso
 `tools/extrai_transformer.py` extrai o DiT do checkpoint unico por faixa de bytes (sem mmap) e o
 braco BF16 do 2.3 roda por esse caminho, com VAEs e projecao de arquivos pequenos byte a byte
 iguais aos do checkpoint (1503 tensores conferidos por hash entre BF16, W4A8 e W4A4). E cada

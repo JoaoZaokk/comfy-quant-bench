@@ -126,12 +126,22 @@ braço mudou de nível nem deslocou no tempo.
 violation` em `torch/storage.py __getitem__`, chamado de `comfy/utils.py:136 load_torch_file`
 dentro do `UNETLoaderDisTorch2MultiGPU` — o mmap do arquivo de 39 GiB, que o resolvedor de nomes
 lia de **D: (SMB)**, com ~24 GiB de RAM livre (uma conversão de 43 GiB e um download de 23 GiB
-corriam ao mesmo tempo). O mesmo arquivo existe em W: (disco local, byte a byte igual); um
-**hardlink com outro nome** (`ltx-2.5-22b-distilled-transformer-bf16_W.safetensors`, mesmo inode,
-nada copiado nem movido) faz o loader ler de W:. Com 40 GiB livres e sem conversão concorrente:
-769,6 s, `cpu,40gb`, sucesso, e pixel-idêntico. Lição registrada: o resolvedor do ComfyUI devolve o
-PRIMEIRO caminho do yaml que tem o nome, e a ordem do yaml decide de qual disco um mmap de 39 GiB
-sai — o que não aparece em log nenhum.
+corriam ao mesmo tempo). O mesmo arquivo existe em W: (byte a byte igual); um **hardlink com outro
+nome** (`ltx-2.5-22b-distilled-transformer-bf16_W.safetensors`, mesmo inode, nada copiado nem
+movido) faz o loader ler de W:. Com 40 GiB livres e sem conversão concorrente: 769,6 s, `cpu,40gb`,
+sucesso, e pixel-idêntico.
+
+**CORREÇÃO (22:08 do mesmo dia): W: NÃO é disco local.** `net use` lista `W: \\192.168.3.40\zfe`
+— compartilhamento SMB, como P: e D:. Eu tinha deduzido "local" de um grep de `net use` que só
+procurava D:. Logo as duas cargas do BF16 foram mmap por SMB: uma morreu, uma sobreviveu. O 2.3
+acrescentou TRÊS mortes com a mesma assinatura (`access violation` em `torch/storage.py
+__getitem__`, dentro do `get_tensor` do `load_torch_file`), em arquivos de 39–43 GiB, com 32–44 GiB
+de RAM livre — enquanto um processo Python nu percorreu o mesmo arquivo de 39 GiB em 4 s. O que é
+frágil é **safetensors de dezenas de GiB mapeado em memória por um redirecionador SMB sob carga**:
+leitura de paginação que falha vira in-page error, que vira access violation, que leva o processo
+inteiro. Os únicos discos NTFS locais são C: e F:; o transformer BF16 do 2.3 foi para C:. Lição que
+fica: o resolvedor do ComfyUI devolve o PRIMEIRO caminho do yaml que tem o nome, e a ordem do yaml
+decide de qual VOLUME um mmap de 39 GiB sai — e isso não aparece em log nenhum.
 
 Os tempos da tabela do card continuam sendo os da primeira rodada (rede ociosa). Nesta rodada o
 int8 levou 801,5 s e o W4A8 511,5 s porque a carga saiu do NAS durante o download e a conversão —

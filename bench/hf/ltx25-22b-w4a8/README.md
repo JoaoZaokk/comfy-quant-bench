@@ -142,13 +142,22 @@ BF16, DisTorch2 40 GB on cpu,      249 frames, file on an SMB share, 24 GiB RAM 
                                               -> access violation inside torch/storage.py __getitem__
                                                  while load_torch_file memory-maps the 39 GiB file;
                                                  the ComfyUI process died with it
-BF16, DisTorch2 40 GB on cpu,      249 frames, same file on a local NTFS disk, 40 GiB RAM free
+BF16, DisTorch2 40 GB on cpu,      249 frames, same bytes under a second name on ANOTHER SMB
+                                              share (W:), 40 GiB RAM free
                                               -> works, 769.6 s, and pixel-identical to the first run
 ```
 
-The frame count alone is not the problem — 249 frames run fine on this W4A8 build with no
-splitting at all. A 39 GiB model that has to be memory-mapped is what is fragile, and where the
-bytes come from matters as much as how many there are.
+**Correction, 2026-09-13 (later the same day).** The first version of this list called W: "a
+local NTFS disk". It is not: `net use` lists it as `\\192.168.3.40\zfe`, a network share like D:
+and P:. So both BF16 loads were memory-maps over SMB — one died, one survived — and the LTX 2.3
+work that followed added three more deaths with the same signature (`access violation` inside
+`torch/storage.py __getitem__` while `load_torch_file` pages the mapped file), on 39–43 GiB files,
+with 32–44 GiB of RAM free, while a bare Python process paged the same 39 GiB file through in four
+seconds. What is fragile is **a multi-tens-of-GiB safetensors memory-mapped over an SMB redirector
+under load**: a paging read that fails surfaces as an in-page access violation and takes the whole
+ComfyUI process with it. The only genuinely local NTFS disk on this machine with room is C:, and
+that is where the 2.3 reference arm was moved. Judgement, not measurement: the redirector is the
+suspect because it is the only thing the failing and surviving loads did not share evenly.
 
 ## What is NOT covered
 

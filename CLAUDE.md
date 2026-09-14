@@ -891,14 +891,20 @@ sound); neither arm changed level or slid in time. **The re-render came back pix
 the first run in all three arms** (MAE 0.0 on frames 1/63/125/187/249), across a server restart
 and, for BF16, a different disk — the PNG hashes differ only by the embedded workflow metadata.
 
-**And the BF16 arm killed the server once.** `Windows fatal exception: access violation` in
-`torch/storage.py __getitem__` under `comfy/utils.py:136 load_torch_file` — the memory-map of the
-39 GiB file, which the name resolver was reading from **D: (SMB)** with ~24 GiB of RAM free while
-a 43 GiB conversion and a 23 GiB download ran. The same bytes exist on W: (local disk); a hardlink
-under another name (`..._bf16_W.safetensors`, same inode, nothing copied or moved) made the loader
-read from W:, and with 40 GiB free it rendered in 769.6 s. `folder_paths` returns the **first**
-yaml root that has the name, so yaml order decides which disk a 39 GiB mmap comes from, and no log
-says which. Proofs on the Hub: `av/*.mp4`, `av/*.flac`, `av/contato_av.png`, `av/comparacao_av.json`.
+**And the BF16 arm killed the server once — then the 2.3 work killed it three more times, same
+signature.** `Windows fatal exception: access violation` in `torch/storage.py __getitem__` under
+`comfy/utils.py:136` (`f.get_tensor(k)` inside `load_torch_file`) — the page-in of a memory-mapped
+39–43 GiB safetensors. First from D: with ~24 GiB RAM free; the retry from W: under a second name
+(hardlink, same inode) rendered in 769.6 s with 40 GiB free. **This file first recorded W: as "a
+local disk". It is not**: `net use` lists `W: \\192.168.3.40\zfe`, an SMB share like D: and P:;
+the claim came from a grep of `net use` that only looked for D:. So every BF16 load here was an
+mmap over SMB — one survived, four died (32–44 GiB free, no correlation with RAM), while a bare
+Python process paged the same 39 GiB file through in 4 s. What is fragile is a tens-of-GiB mmap
+over an SMB redirector under load: a failed paging read surfaces as an in-page access violation
+and takes the process. The only local NTFS volumes are C: and F:; the 2.3 reference arm runs from
+C:. `folder_paths` returns the **first** yaml root that has the name, so yaml order decides which
+*volume* a 39 GiB mmap comes from, and no log says which. Proofs on the Hub: `av/*.mp4`,
+`av/*.flac`, `av/contato_av.png`, `av/comparacao_av.json`.
 
 ## LoRA over a quantized weight: it is a requantization, and that is measured
 
