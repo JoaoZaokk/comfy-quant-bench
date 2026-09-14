@@ -84,7 +84,14 @@ def monta_prompt(a) -> dict:
     aloc = a.alocacao or f"cuda:1,{a.doar_gb}gb;cpu,*"
     g: dict = {}
 
-    if a.checkpoint:
+    if a.encode_only and a.checkpoint:
+        # so o encoder de texto; nada de modelo, VAEs ou LoRA
+        proj_ck = a.proj_checkpoint or a.checkpoint
+        g["2"] = {"class_type": "LTXAVTextEncoderLoader",
+                  "inputs": {"text_encoder": a.encoder, "ckpt_name": proj_ck, "device": "default"}}
+    elif a.encode_only:
+        g["2"] = {"class_type": "CLIPLoader", "inputs": {"clip_name": a.encoder, "type": "ltxv"}}
+    elif a.checkpoint:
         # ---- LTX 2.3: checkpoint unico ----
         # Cada loader auxiliar le o arquivo INTEIRO que recebe (`load_torch_file`), entao apontar
         # `LTXVAudioVAELoader` e `LTXAVTextEncoderLoader` para o checkpoint de 43 GiB mapeia 43 GiB
@@ -158,9 +165,33 @@ def monta_prompt(a) -> dict:
                               "strength_model": a.lora_strength}}
         modelo = ["1L", 0]
 
+    if a.cond_from:
+        # Condicionamento pre-computado (ver --encode-only): o encoder nem e carregado. Os
+        # arquivos moram em models/embeddings/, que e onde LTXVSaveConditioning grava.
+        g.pop("2", None)
+        cond_nodes = {
+            "3": {"class_type": "LTXVLoadConditioning",
+                  "inputs": {"file_name": f"{a.cond_from}_pos.safetensors", "device": "gpu"}},
+            "4": {"class_type": "LTXVLoadConditioning",
+                  "inputs": {"file_name": f"{a.cond_from}_neg.safetensors", "device": "gpu"}},
+        }
+    else:
+        cond_nodes = {
+            "3": {"class_type": "CLIPTextEncode", "inputs": {"text": a.prompt, "clip": ["2", 0]}},
+            "4": {"class_type": "CLIPTextEncode", "inputs": {"text": a.negative, "clip": ["2", 0]}},
+        }
+    if a.encode_only:
+        # So o encoder: codifica os dois textos e grava. Depois disto o chamador faz POST /free
+        # e roda o sampler com --cond-from, sem o encoder na memoria.
+        g = {k: v for k, v in g.items() if k in ("2",)}
+        g.update(cond_nodes)
+        g["30"] = {"class_type": "LTXVSaveConditioning",
+                   "inputs": {"conditioning": ["3", 0], "filename": f"{a.saida}_pos", "dtype": "bfloat16"}}
+        g["31"] = {"class_type": "LTXVSaveConditioning",
+                   "inputs": {"conditioning": ["4", 0], "filename": f"{a.saida}_neg", "dtype": "bfloat16"}}
+        return g
+    g.update(cond_nodes)
     g.update({
-        "3": {"class_type": "CLIPTextEncode", "inputs": {"text": a.prompt, "clip": ["2", 0]}},
-        "4": {"class_type": "CLIPTextEncode", "inputs": {"text": a.negative, "clip": ["2", 0]}},
         "7": {"class_type": "EmptyLTXVLatentVideo",
               "inputs": {"width": a.size, "height": a.size, "length": a.frames, "batch_size": 1}},
         # `frames_number`, nao `length`. O no de VIDEO ao lado usa `length`, e os dois ficam
@@ -311,6 +342,12 @@ def main() -> int:
                         "sobrepoe o VAE do checkpoint")
     p.add_argument("--audio-vae", default="ltx-2.5-audio-vae-bf16.safetensors",
                    help="so no modo 2.5; no 2.3 vem do checkpoint")
+    p.add_argument("--encode-only", action="store_true",
+                   help="so codifica prompt e negativo com o encoder e grava em models/embeddings/ como "
+                        "<saida>_pos/<saida>_neg (LTXVSaveConditioning). Nada e amostrado")
+    p.add_argument("--cond-from", default=None,
+                   help="prefixo gravado por --encode-only: amostra com LTXVLoadConditioning e NAO carrega "
+                        "o encoder. E o que deixa o transformer BF16 de 39 GiB caber no commit da maquina")
     p.add_argument("--lora", default=None, help="arquivo em loras/ (segundo eixo, so para teste de LoRA)")
     p.add_argument("--lora-strength", type=float, default=1.0)
     p.add_argument("--lora-bypass", action="store_true",
@@ -344,7 +381,9 @@ def main() -> int:
     p.add_argument("--json", help="grava o registro da corrida aqui")
     a = p.parse_args()
 
-    if not a.checkpoint and not a.transformer:
+    if a.encode_only and a.cond_from:
+        raise SystemExit("--encode-only e --cond-from sao passos opostos; um por chamada")
+    if not a.checkpoint and not a.transformer and not a.encode_only:
         raise SystemExit("modo 2.5 exige --transformer; modo 2.3 exige --checkpoint")
     if a.gguf and not a.checkpoint:
         raise SystemExit("--gguf so faz sentido com --checkpoint (VAEs e projecao vem dele)")
@@ -361,6 +400,10 @@ def main() -> int:
 
     prompt = monta_prompt(a)
     modelo = a.gguf or a.transformer or a.checkpoint
+    if a.encode_only:
+        print(f"SO ENCODER  : {a.encoder} -> models/embeddings/{a.saida}_pos|_neg.safetensors", flush=True)
+    if a.cond_from:
+        print(f"condicion.  : de models/embeddings/{a.cond_from}_pos|_neg.safetensors (encoder NAO carregado)", flush=True)
     print(f"modelo      : {modelo}", flush=True)
     if a.checkpoint:
         print(f"checkpoint  : {a.checkpoint}", flush=True)
@@ -392,7 +435,7 @@ def main() -> int:
                   flush=True)
     if estado.get("status_str") and estado["status_str"] != "success":
         print(f"  STATUS {estado['status_str']}", flush=True)
-    if not arq["audio"]:
+    if not arq["audio"] and not a.encode_only:
         print("  ATENCAO: nenhum arquivo de audio na saida -- o ramo de audio nao foi gravado",
               flush=True)
 
@@ -402,6 +445,7 @@ def main() -> int:
            "proj_checkpoint": (a.proj_checkpoint or a.checkpoint) if a.checkpoint else None,
            "gguf": a.gguf, "encoder": a.encoder, "video_vae": a.video_vae,
            "audio_vae": None if a.checkpoint else a.audio_vae,
+           "encode_only": bool(a.encode_only), "cond_from": a.cond_from,
            "lora": a.lora, "lora_strength": a.lora_strength if a.lora else None,
            "lora_bypass": bool(a.lora and a.lora_bypass),
            "frames": a.frames, "fps": a.fps, "size": a.size, "cfg": a.cfg,
