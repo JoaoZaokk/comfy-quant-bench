@@ -5769,3 +5769,22 @@ Turbo (gated) e Qwen3-VL 4B.
 contra flag (0,001) no custo de destravar o W4A8; a velocidade do capybara W4A8; a divergência do
 `hv15_w4a8` não está em `bench/` para pôr ao lado do capybara; nenhuma métrica de áudio validada
 contra ouvido.
+
+### Limpeza (05:17–05:30): so os originais + o melhor quant de cada modelo
+
+Ordem do dono: *"deixa so os originais + o melhor quant de cada modelo. O que foi pro HF ta
+liberado pra limpar aqui."* Regra escrita antes (`.scratch/limpeza_2026-09-14.py`): apaga so o que
+tem sidecar (conversao nossa) E esta no Hub com o mesmo nome, tamanho e **sha256 do LFS** (calculado
+local, arquivo a arquivo, antes do `os.remove`) E nao e o build escolhido do modelo — o MENOR build
+que o card marca como usavel. Originais e terceiros (sem sidecar) nunca entraram na lista; o que nao
+esta no Hub fica.
+
+Apagados, 10 pesos + sidecars, **89,79 GiB**, 10 de 10 com sha igual ao Hub (log em
+`.scratch/limpeza_2026-09-14.log`): os dois int8 do 2.5 (20,03 cada, D:), a copia em P: do W4A8
+do 2.3 (fica a de W:), `krea2_turbo_mixed` (fica o W4A4), os dois W4A4 do Gemma heretic (fica o
+W4A8), `qwen3vl_4b_w4a4_convrot` (fica o W4A8), e os tres `*_mixed` do Z-Image (ficam os tres
+W4A4). Ficam com sidecar e peso: 14 builds escolhidos (LTX 2.3 W4A8 em W:, LTX 2.5 W4A8,
+Qwen-Image-Edit W4A8, Qwen-Image W4A8, Gemma fabrica W4A8, capybara W4A8, Krea 2 W4A4, Gemma
+heretic W4A8, Qwen2.5-VL W4A4, Qwen3-VL W4A8, Z-Image v2/Turbo/De-Turbo W4A4, Wan 2.2 W4A8) e 3
+que nao estao no Hub (LTX 2.3 W4A4, Qwen-Image 2512 W4A4, Wan 2.2 W4A4). Renders, embeddings de
+condicionamento, latentes e logs nao foram tocados. `quant_audit.py` refeito depois.

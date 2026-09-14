@@ -222,3 +222,11 @@ Estado da maquina: nenhum servidor 8190 vivo; GPU 0 livre; GPU 1 so com o cortex
 capybara em `bench/capybara_w4a8/latents/` (nao versionados). Monitores parados. Scripts das
 passadas em `.scratch/fila_gpu0_fecha{,2,3,4,5,6}.sh`, logs ao lado; uploads em
 `.scratch/sobe_fecha.py` (`--item`, `--sem-readme`).
+
+## Limpeza (05:17) — "so os originais + o melhor quant de cada modelo"
+
+10 pesos apagados (89,79 GiB), cada um com sha256 local = LFS do Hub antes do remove
+(`.scratch/limpeza_2026-09-14.log`, regra em `.scratch/limpeza_2026-09-14.py`). Ficam 14 builds
+escolhidos (o menor usavel por modelo) + 3 que nao estao no Hub (LTX 2.3 W4A4, Qwen-Image 2512
+W4A4, Wan 2.2 W4A4). Originais e terceiros intocados. O W4A8 do 2.3 agora so existe em
+`W:\ltx-2.3\ltx-2.3-22b-distilled-1.1_w4a8_W.safetensors` (a copia de P: caiu).
