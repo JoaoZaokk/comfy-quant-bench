@@ -891,6 +891,28 @@ sound); neither arm changed level or slid in time. **The re-render came back pix
 the first run in all three arms** (MAE 0.0 on frames 1/63/125/187/249), across a server restart
 and, for BF16, a different disk — the PNG hashes differ only by the embedded workflow metadata.
 
+**LTX 2.3 distilled 1.1, measured 2026-09-14 on the same protocol at 8 steps, every arm on the
+same saved conditioning, reference BF16 through the lossless GGUF container:**
+
+```
+arm                            GiB    sampler 8 steps     MAE   PSNR   SSIM  | log-mel  conv   lag    level
+BF16 (GGUF, partial load)     39.15   8.05 s/it (66 s)     --     --     --  |   --      --     --   -23.5
+GGUF Q6_K (third party)       16.55   5.04 s/it (40 s)   3.59  29.00  0.941 |  0.163  0.419  0 ms   -24.1
+W4A8 ours (transformer 11.66) 15.51   2.30 s/it (18 s)  10.39  21.89  0.829 |  0.163  0.424  0 ms   -24.0
+W4A4 ours (control)           14.31   1.59 s/it (12 s)  14.45  20.36  0.734 |  0.281  0.491  0 ms   -25.8
+controls (log-mel): silence 8.460, white noise at the reference's RMS 1.748
+```
+
+W4A8 is a usable 2.3 (P1); W4A4 does not break and is worse (P2 — fourth family that tolerates
+A4); the 6-bit GGUF is 2.9x closer in the frames and 2.2x slower per step (P3); **the sound does
+not separate W4A8 from Q6_K** (0.163 against 0.163) while the picture puts them 3x apart — on 2.5
+the sound ranked the arms with a wider margin than the picture, on 2.3 it ties the first two, and
+why is not known (P4 not refuted, with a tie). P5 was untestable as written (no DisTorch BF16 arm
+ever ran) and P6 refuted (`bench/criterio_ltx23.md`). The "whole run" wall-clock ranked the arms by
+which disk they were read from (BF16 GGUF from local C: 155 s; W4A8 from the W: share 208 s) — one
+more reason that column is not a speed. Published with MP4/FLAC proofs, the identity control and
+the broken-saver negative: **https://huggingface.co/JoaoZaokk/LTX-2.3-22B-distilled-1.1-W4A8-ConvRot**
+
 **And the BF16 arm killed the server once — then the 2.3 work killed it three more times, same
 signature.** `Windows fatal exception: access violation` in `torch/storage.py __getitem__` under
 `comfy/utils.py:136` (`f.get_tensor(k)` inside `load_torch_file`) — the page-in of a memory-mapped
@@ -899,12 +921,84 @@ signature.** `Windows fatal exception: access violation` in `torch/storage.py __
 local disk". It is not**: `net use` lists `W: \\192.168.3.40\zfe`, an SMB share like D: and P:;
 the claim came from a grep of `net use` that only looked for D:. So every BF16 load here was an
 mmap over SMB — one survived, four died (32–44 GiB free, no correlation with RAM), while a bare
-Python process paged the same 39 GiB file through in 4 s. What is fragile is a tens-of-GiB mmap
-over an SMB redirector under load: a failed paging read surfaces as an in-page access violation
-and takes the process. The only local NTFS volumes are C: and F:; the 2.3 reference arm runs from
-C:. `folder_paths` returns the **first** yaml root that has the name, so yaml order decides which
+Python process paged the same 39 GiB file through in 4 s. The redirector was the suspect for a few
+hours; the paragraph after this one is the measurement that replaced it. The only local NTFS
+volumes are C: and F:. `folder_paths` returns the **first** yaml root that has the name, so yaml order decides which
 *volume* a 39 GiB mmap comes from, and no log says which. Proofs on the Hub: `av/*.mp4`,
 `av/*.flac`, `av/contato_av.png`, `av/comparacao_av.json`.
+
+**And the redirector was the wrong suspect too — measured 2026-09-14.** The same two-view
+mapping that `safe_open` performs, done by hand in a bare Python process without ComfyUI, dies the
+same way on the local C: drive as on W:. What was measured on this 39.13 GiB file, with the system
+commit counters read before and after each call (`GetPerformanceInfo`):
+
+```
+call                                                       commit charge
+safetensors.safe_open(framework="pt")                      +40.8 GiB at open, before any tensor is read
+   (two copy-on-write views of the same file: memmap2 for the header and
+    torch.UntypedStorage.from_file(shared=False) for the data; +80.2 GiB while both are alive)
+torch.empty of the model's parameters                      +40.7 GiB more
+read-only mmap (what numpy and the GGUF loader use)          0
+UntypedStorage.from_file(shared=True)                        0
+```
+
+Windows charges a copy-on-write view its whole size at mapping time, so ComfyUI's normal
+safetensors path needs twice the file in commit just to open it and three times to build the
+model. This machine's commit limit is 124.8 GiB (63.6 GiB of RAM plus a 61 GiB system-managed
+pagefile) with about 70 GiB already committed by other processes. When the charge forces the
+pagefile to grow, the new view sometimes comes back with the limit raised but the charge not
+taken, and the first read through it is an access violation in `torch/storage.py __getitem__` —
+the server's exact signature (`safe_open` + first `get_tensor` on W:, 3 of 3 runs; the hand-made
+two-view mapping on C:, 1 of 1; the same calls survive on other runs, which is why one BF16 load
+in seven succeeded). The two deaths inside `nn.Linear.__init__` — the model's `torch.empty` —
+carry the same signature and were not reproduced in isolation. So the list above stays, with a
+different reading: rows 3 to 5 died of commit, not of the network. The LTX 2.3 reference was
+rendered without the safetensors reader at all: the same BF16 weights, bit for bit, in a GGUF
+container read through a read-only memmap (`tools/safetensors_to_gguf_bf16.py`; bytes,
+dequantized weight and Linear output verified identical on 12 sampled layers with
+`tools/probe_gguf_bf16_equivalence.py`).
+
+**Rule that follows, for this machine:** never open a safetensors bigger than about half the free
+commit through ComfyUI's normal reader (`safe_open` costs 2x the file; the model another 1x). For a
+BF16 reference of a 20 B+ model, convert it losslessly with `tools/safetensors_to_gguf_bf16.py`
+and load it with `UnetLoaderGGUF`; keep the text encoder out of the process with
+`tools/ltx_video.py --encode-only` / `--cond-from` (saved conditioning costs nothing). The pagefile
+is the owner's, not ours: `?:\pagefile.sys`, system-managed, 61.2 GiB on C: at the time of writing,
+and every death above needed it to grow.
+
+**And `LTXVSaveConditioning` is not a way to keep the text encoder out of the process for LTX 2.3 —
+measured 2026-09-14.** ComfyUI-LTXVideo's saver keeps the tensor and an attention mask. The LTX 2.3
+encoder returns `{"unprocessed_ltxav_embeds": True}` beside the tensor
+(`comfy/text_encoders/lt.py:201-204`), and the model applies `caption_projection` and the embeddings
+connectors only when that key arrives (`comfy/model_base.py:1185` →
+`comfy/ldm/lightricks/av_model.py:583`). Loaded back through `LTXVLoadConditioning` the key is gone,
+the 6144-wide context passes the "already processed" width check and goes raw into the
+cross-attention: the same W4A8 model, same seed, renders brown noise with noise for sound — **MAE
+75.9, SSIM 0.19, log-mel 1.05** against the live encoder (`bench/ltx23/cond_identity_ltxv_saver/`).
+Four LoRA renders and one BF16 attempt were made on that conditioning before the identity control
+caught it; they stay under `bench/ltx23/*_ltxv_saver/` as what the wrong tool produces and decide
+nothing. **The identity control is not optional**: a render on saved conditioning that was never
+compared with the live path is a render of an unknown prompt. The replacement keeps every option —
+`tools/ltx_encode_lowcommit.py` (bare process, zero-commit reader, float32 tensor, options as
+tensors and JSON metadata) and `VoidLoadConditioningFull` in `custom_nodes/comfy-void-stage-tools`,
+which refuses a file without them; `tools/ltx_video.py --cond-from` uses that node. The encoder run
+on the 3080 Ti differs from the server's 3090 encode by rel-L2 1.0e-3 (87 % of elements bit-equal
+in bf16, max |Δ| 1.0 on a [−148, 294] range): not bit-identical, and said so where it is used.
+
+**"Per-step time depends on residency by 3x" sat in this file for an hour and was wrong — the
+field it came from is not per-step time.** `tools/ltx_video.py` writes `s_por_passo` and
+`s_por_quadro` as the whole run's wall-clock divided by steps or frames: model load, text-encoder
+load and encode, sampling, both VAE decodes and muxing, in one number. The per-step instrument is
+the sampler's own tqdm bar in the server log, and it says the same W4A8 249-frame render sampled
+**8 steps in 18 s (2.30 s/it) with the encoder live and 8 steps in 18 s (2.30 s/it) with saved
+conditioning**. The 638 s against 208 s of wall-clock was loading the 22.7 GB encoder over SMB and
+encoding once; residency changed nothing the sampler could see. Same instrument, same protocol,
+the other 2.3 arms: W4A4 **1.60 s/it**, GGUF Q6_K **5.12 s/it** (dequantized math), all 249 frames
+at 512 px on the 3090. The 2.5 card's "s/frame" column had the same defect — its 3 steps sample in
+about 25 s and the runs took 400–800 s — and now says so. **Rule: a speed number from
+`ltx_video.py`'s JSON is the wall-clock of a run; a per-step number comes from the progress bar,
+or from a tool that times the sampler alone.** The JSON now carries a `nota_tempo` field saying
+exactly that.
 
 ## LoRA over a quantized weight: it is a requantization, and that is measured
 
@@ -931,6 +1025,7 @@ Krea2 Turbo W4A4 cg256     krea2 turbo LoRA r64        0.0086    1.000     0.14 
 Wan 2.2 5B  W4A8           a 14B LoRA (wrong model)    0 (shape fails)  -   -       -           0.0731 -> 0.0835          (1.14x, NO LoRA applied)
 LTX 2.5 22B W4A8           ltx2-squish (an LTX 2.0 LoRA) 0.013-0.086, ZERO in 16/24  0.956  0.39   3.1x    0.0731 -> 0.0837 -> 0.0837 (zero) .. 0.114
 LTX 2.5 22B W4A8           LTX23 Product Commercial r16 0.0021    0.909     0.05    19x         0.0731 -> 0.0836 -> 0.0838   (1.15x)
+LTX 2.3 22B W4A8           LTX23 Product Commercial r16 0.0020    0.908     0.05     20x        0.0731 -> 0.0837 -> 0.0838   (1.15x)
 Qwen-Edit 2511 W4A8        Lightning 4-step r64         0.0005    0.858     0.01    103x        0.0731 -> 0.0836 -> 0.0835   (1.14x)
 ```
 
@@ -951,6 +1046,19 @@ hole, so this measures the cost of loading the LoRA, not its effect): merged and
 seed change; neither moved the audio level or timing, while the other seed moved both (RMS -28 vs
 -20 dBFS, lag +78 ms). The requantization noise perturbs the output by a third of what the LoRA does
 and a quarter of what a seed does. `bench/ltx25/lora/`.
+
+**LTX 2.3 W4A8 with its own LoRA (`LTX23_Product_Commercial`, trigger `srx_commercial`), measured
+at the output on 2026-09-14 on valid conditioning, two rounds of 49 frames.** With the trigger,
+merged and bypass both execute the prompt's "rotating slowly" (motion 4.6 against the no-LoRA
+reference's 1.25) and draw a different headphone: 41 MAE from the same-seed reference, against 57
+for a seed change — the LoRA still moves less than a seed (R7 refuted, as on 2.5), and R9 was
+undecidable because a commercial prompt already renders as a commercial without the LoRA. Merged
+and bypass sit 7.5 apart (5.1 without the trigger) against 23–41 from the reference — a fifth of
+the LoRA's effect, the third round with that proportion (R8 confirmed). Bypass lowered the audio
+level both times (−2.2 / −4.7 dB; merged −0.1 / −2.6) and costs 24 % per step (0.68 against 0.55
+s/it, from the sampler's progress bar); merged costs nothing. The same LoRA was not rendered on the
+BF16 original, so "same effect as unquantized" is not measured. `bench/criterio_lora.md`,
+`bench/ltx23/lora*/`.
 
 The two LTX rows add two things. `ltx2-squish` ships **all-zero `lora_B` for 768 of its 1152
 matrices** (every audio and cross-modal attention family, read from the file); ComfyUI matches the

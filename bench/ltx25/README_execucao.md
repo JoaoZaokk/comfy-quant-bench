@@ -136,12 +136,42 @@ sucesso, e pixel-idêntico.
 procurava D:. Logo as duas cargas do BF16 foram mmap por SMB: uma morreu, uma sobreviveu. O 2.3
 acrescentou TRÊS mortes com a mesma assinatura (`access violation` em `torch/storage.py
 __getitem__`, dentro do `get_tensor` do `load_torch_file`), em arquivos de 39–43 GiB, com 32–44 GiB
-de RAM livre — enquanto um processo Python nu percorreu o mesmo arquivo de 39 GiB em 4 s. O que é
-frágil é **safetensors de dezenas de GiB mapeado em memória por um redirecionador SMB sob carga**:
-leitura de paginação que falha vira in-page error, que vira access violation, que leva o processo
-inteiro. Os únicos discos NTFS locais são C: e F:; o transformer BF16 do 2.3 foi para C:. Lição que
+de RAM livre — enquanto um processo Python nu percorreu o mesmo arquivo de 39 GiB em 4 s. O
+redirecionador ficou como suspeito por algumas horas, e como julgamento; o parágrafo seguinte é a
+medição que o substituiu. Os únicos discos NTFS locais são C: e F:. Lição que
 fica: o resolvedor do ComfyUI devolve o PRIMEIRO caminho do yaml que tem o nome, e a ordem do yaml
 decide de qual VOLUME um mmap de 39 GiB sai — e isso não aparece em log nenhum.
+
+**CORREÇÃO DA CORREÇÃO (2026-09-14, 00:18–00:30, MEDIDO): não é o SMB, é COMMIT.** Três probes num
+processo nu, sem ComfyUI, lendo os contadores de commit do sistema antes e depois de cada chamada
+(`scratchpad/probe_commit_mmap.py`, `probe_safeopen_trace.py`, `probe_double_map.py`), no mesmo
+arquivo de 39,13 GiB:
+
+```
+chamada                                                   cobrança de commit
+safetensors.safe_open(framework="pt")                     +40,8 GiB ao abrir, antes de ler tensor algum
+   (duas views copy-on-write do mesmo arquivo: memmap2 para o cabeçalho e
+    torch.UntypedStorage.from_file(shared=False) para os dados; +80,2 GiB enquanto as duas vivem)
+torch.empty dos parâmetros do modelo                      +40,7 GiB a mais
+mmap somente-leitura (numpy, loader GGUF)                    0
+UntypedStorage.from_file(shared=True)                        0
+```
+
+O Windows cobra uma view copy-on-write pelo tamanho inteiro no ato do mapeamento, então o caminho
+normal do ComfyUI precisa de 2x o arquivo em commit só para abrir e 3x para construir o modelo. O
+teto desta máquina é 124,8 GiB (63,6 GiB de RAM + pagefile de 61 GiB gerido pelo sistema) com ~70 GiB
+já comprometidos por outros processos. Quando a cobrança força o pagefile a crescer, a view às vezes
+volta com o limite aumentado e a cobrança NÃO feita, e a primeira leitura por ela dá access violation
+em `torch/storage.py __getitem__` — a assinatura exata do servidor (`safe_open` + primeiro
+`get_tensor` em W:, 3 de 3; o mapeamento duplo feito à mão em C:, 1 de 1; a mesma chamada sobrevive
+em outras corridas, que é por que uma carga do BF16 em sete deu certo). As duas mortes dentro de
+`nn.Linear.__init__` (o `torch.empty` do modelo) têm a mesma assinatura e não foram reproduzidas
+isoladas. O volume nunca importou. O braço BF16 do 2.3 foi renderizado SEM o leitor de safetensors:
+os mesmos bytes BF16 num GGUF (`tools/safetensors_to_gguf_bf16.py`), lido por memmap
+somente-leitura pelo `UnetLoaderGGUF` — bytes, peso dequantizado e saída do Linear conferidos
+idênticos em 12 camadas (`tools/probe_gguf_bf16_equivalence.py`). Regra que fica: nesta máquina, não
+abrir por `safe_open` arquivo maior que metade do commit livre; encoder fora do processo
+(`--encode-only` / `--cond-from`).
 
 Os tempos da tabela do card continuam sendo os da primeira rodada (rede ociosa). Nesta rodada o
 int8 levou 801,5 s e o W4A8 511,5 s porque a carga saiu do NAS durante o download e a conversão —

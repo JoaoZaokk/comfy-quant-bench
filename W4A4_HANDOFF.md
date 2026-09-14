@@ -868,3 +868,8 @@ conjugado mascarado sobre `H = X^T X`), nao fine-tuning. Sobre as MESMAS linhas 
 - **Calibragem grande residente faz o ComfyUI despejar o modelo no meio da amostragem** e apagar
   patches de peso em silencio. O controle do probe pegou; a calibragem agora e liberada antes de
   amostrar.
+
+## 2026-09-14 00:50 — LTX 2.3: filas h/i rodando, mecanismo das mortes medido (commit, não SMB), braço BF16 por GGUF
+
+Estado completo, o que está rodando e os próximos passos em ordem: `.scratch/HANDOFF_ltx23_2026-09-14.md`.
+Probes do mecanismo copiados para `tools/probe_commit_mmap.py`, `tools/probe_safeopen_trace.py`, `tools/probe_double_map.py`, `tools/probe_cow_offset.py`; novos `tools/safetensors_to_gguf_bf16.py` e `tools/probe_gguf_bf16_equivalence.py` (nenhum commitado ainda).

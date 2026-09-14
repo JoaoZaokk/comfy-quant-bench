@@ -170,9 +170,9 @@ def monta_prompt(a) -> dict:
         # arquivos moram em models/embeddings/, que e onde LTXVSaveConditioning grava.
         g.pop("2", None)
         cond_nodes = {
-            "3": {"class_type": "LTXVLoadConditioning",
+            "3": {"class_type": "VoidLoadConditioningFull",
                   "inputs": {"file_name": f"{a.cond_from}_pos.safetensors", "device": "gpu"}},
-            "4": {"class_type": "LTXVLoadConditioning",
+            "4": {"class_type": "VoidLoadConditioningFull",
                   "inputs": {"file_name": f"{a.cond_from}_neg.safetensors", "device": "gpu"}},
         }
     else:
@@ -346,7 +346,7 @@ def main() -> int:
                    help="so codifica prompt e negativo com o encoder e grava em models/embeddings/ como "
                         "<saida>_pos/<saida>_neg (LTXVSaveConditioning). Nada e amostrado")
     p.add_argument("--cond-from", default=None,
-                   help="prefixo gravado por --encode-only: amostra com LTXVLoadConditioning e NAO carrega "
+                   help="prefixo gravado por tools/ltx_encode_lowcommit.py (NAO pelo --encode-only: o LTXVSaveConditioning perde a chave unprocessed_ltxav_embeds e o LTX 2.3 sai ruido): amostra com VoidLoadConditioningFull e NAO carrega "
                         "o encoder. E o que deixa o transformer BF16 de 39 GiB caber no commit da maquina")
     p.add_argument("--lora", default=None, help="arquivo em loras/ (segundo eixo, so para teste de LoRA)")
     p.add_argument("--lora-strength", type=float, default=1.0)
@@ -443,14 +443,14 @@ def main() -> int:
     reg = {"modelo": modelo, "transformer": a.transformer, "checkpoint": a.checkpoint,
            "audio_checkpoint": (a.audio_checkpoint or a.checkpoint) if a.checkpoint else None,
            "proj_checkpoint": (a.proj_checkpoint or a.checkpoint) if a.checkpoint else None,
-           "gguf": a.gguf, "encoder": a.encoder, "video_vae": a.video_vae,
+           "gguf": a.gguf, "encoder": (None if a.cond_from else a.encoder), "video_vae": a.video_vae,
            "audio_vae": None if a.checkpoint else a.audio_vae,
            "encode_only": bool(a.encode_only), "cond_from": a.cond_from,
            "lora": a.lora, "lora_strength": a.lora_strength if a.lora else None,
            "lora_bypass": bool(a.lora and a.lora_bypass),
            "frames": a.frames, "fps": a.fps, "size": a.size, "cfg": a.cfg,
            "sigmas": a.sigmas, "passos": passos, "seed": a.seed, "prompt": a.prompt,
-           "negative": a.negative, "segundos": segundos, "s_por_quadro": segundos / a.frames,
+           "negative": a.negative, "segundos": segundos, "nota_tempo": "segundos = parede da corrida inteira (carga do modelo, condicionamento ou encoder, sampler, VAEs, mux); s_por_* = segundos/N, NAO tempo do sampler -- esse esta na barra tqdm do log do servidor", "s_por_quadro": segundos / a.frames,
            "s_por_passo": segundos / max(passos, 1),
            "quadros": arq["quadros"], "audio": arq["audio"], "video": arq["video"],
            "distorch": a.distorch,

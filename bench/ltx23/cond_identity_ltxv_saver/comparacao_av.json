@@ -1,0 +1,75 @@
+{
+  "referencia": {
+    "json": ".scratch\\ltx23av_w4a8.json",
+    "modelo": "ltx-2.3-22b-distilled-1.1_w4a8.safetensors",
+    "segundos": 637.9539847373962,
+    "quadros": 249,
+    "sr": 48000,
+    "audio_s": 9.93,
+    "rms_dbfs": -23.91994390439292,
+    "silencio_frac": 0.0,
+    "movimento": 2.0075650215148926
+  },
+  "controles": {
+    "silencio": {
+      "amostras_comparadas": 476640,
+      "amostras_ref": 476640,
+      "amostras_braco": 476640,
+      "sr": 48000,
+      "mae_onda": 0.04648006334900856,
+      "snr_db": 0.0,
+      "lag_ms": -200.0,
+      "logmel_l1": 8.378161430358887,
+      "conv_espectral": 1.0,
+      "rms_dbfs": -240.0000000347071,
+      "silencio_frac": 1.0
+    },
+    "ruido_branco_mesmo_rms": {
+      "amostras_comparadas": 476640,
+      "amostras_ref": 476640,
+      "amostras_braco": 476640,
+      "sr": 48000,
+      "mae_onda": 0.0704861432313919,
+      "snr_db": -3.012272971675955,
+      "lag_ms": -155.52083333333334,
+      "logmel_l1": 1.7451719045639038,
+      "conv_espectral": 0.9910687208175659,
+      "rms_dbfs": -23.913419981608264,
+      "silencio_frac": 0.0
+    }
+  },
+  "bracos": {
+    "W4A8, saved conditioning": {
+      "json": ".scratch/ltx23av_w4a8_cond.json",
+      "modelo": "ltx-2.3-22b-distilled-1.1_w4a8_W.safetensors",
+      "lora": null,
+      "segundos": 211.12322878837585,
+      "s_por_quadro": 0.8478844529653649,
+      "video": {
+        "quadros_comparados": 249,
+        "quadros_ref": 249,
+        "quadros_braco": 249,
+        "mae": 75.8965072631836,
+        "mae_min": 74.66715240478516,
+        "mae_max": 76.9996337890625,
+        "psnr": 8.383118629455566,
+        "psnr_min": 8.286320686340332,
+        "ssim": 0.1920734397135675
+      },
+      "audio": {
+        "amostras_comparadas": 476640,
+        "amostras_ref": 476640,
+        "amostras_braco": 476640,
+        "sr": 48000,
+        "mae_onda": 0.07241184264421463,
+        "snr_db": -3.218019064813249,
+        "lag_ms": -8.416666666666666,
+        "logmel_l1": 1.0479871034622192,
+        "conv_espectral": 1.1220824718475342,
+        "rms_dbfs": -23.427844740328005,
+        "silencio_frac": 0.0
+      },
+      "movimento": 9.963827133178711
+    }
+  }
+}

@@ -58,7 +58,7 @@ same prompt, the same seed and the same sigmas.
 
 ### Picture
 
-| arm | GiB | 249 frames | s/frame | MAE vs BF16 | PSNR | SSIM |
+| arm | GiB | whole run, 249 frames | run s/frame | MAE vs BF16 | PSNR | SSIM |
 |---|---|---|---|---|---|---|
 | BF16 original | 39.13 | 780.7 s | 3.14 | — | — | — |
 | `comfy-int8-convrot` (Lightricks) | 20.03 | 481.5 s | 1.93 | **4.10** | **29.71 dB** | **0.941** |
@@ -68,6 +68,15 @@ MAE is the mean absolute per-pixel difference on the 0–255 scale, averaged ove
 frames**; the spread is tight (ours 7.16–8.84, theirs 3.61–4.61). Motion energy — mean
 |frame_t − frame_t−1| — is 1.73 for BF16, 1.78 for INT8, 1.71 for ours: nobody froze and nobody
 jittered.
+
+**The two time columns are the wall-clock of the whole run, not generation speed** (corrected
+2026-09-14; the header used to say "s/frame" with no qualifier). They include loading the
+transformer (39 / 20 / 11.66 GiB) and the 22.7 GB text encoder from a network share, the encode,
+the 3 sampling steps, both VAE decodes and the muxing. The sampler's own 3 steps take about 25 s
+(7.9–8.5 s/it, read from the server's progress bar) in the two 249-frame runs whose bars survived
+in the logs; which arm each of those was is not recoverable from the logs, so **this card makes no
+speed claim between the arms**. The 2.3 sibling card reports the sampler's time separately from
+the run's.
 
 ### Sound
 
@@ -153,11 +162,39 @@ and P:. So both BF16 loads were memory-maps over SMB — one died, one survived 
 work that followed added three more deaths with the same signature (`access violation` inside
 `torch/storage.py __getitem__` while `load_torch_file` pages the mapped file), on 39–43 GiB files,
 with 32–44 GiB of RAM free, while a bare Python process paged the same 39 GiB file through in four
-seconds. What is fragile is **a multi-tens-of-GiB safetensors memory-mapped over an SMB redirector
-under load**: a paging read that fails surfaces as an in-page access violation and takes the whole
-ComfyUI process with it. The only genuinely local NTFS disk on this machine with room is C:, and
-that is where the 2.3 reference arm was moved. Judgement, not measurement: the redirector is the
-suspect because it is the only thing the failing and surviving loads did not share evenly.
+seconds. The redirector was the suspect for a few hours, as a judgement; the next paragraph is the
+measurement that replaced it.
+
+**And the redirector was the wrong suspect too — measured 2026-09-14.** The same two-view
+mapping that `safe_open` performs, done by hand in a bare Python process without ComfyUI, dies the
+same way on the local C: drive as on W:. What was measured on this 39.13 GiB file, with the system
+commit counters read before and after each call (`GetPerformanceInfo`):
+
+```
+call                                                       commit charge
+safetensors.safe_open(framework="pt")                      +40.8 GiB at open, before any tensor is read
+   (two copy-on-write views of the same file: memmap2 for the header and
+    torch.UntypedStorage.from_file(shared=False) for the data; +80.2 GiB while both are alive)
+torch.empty of the model's parameters                      +40.7 GiB more
+read-only mmap (what numpy and the GGUF loader use)          0
+UntypedStorage.from_file(shared=True)                        0
+```
+
+Windows charges a copy-on-write view its whole size at mapping time, so ComfyUI's normal
+safetensors path needs twice the file in commit just to open it and three times to build the
+model. This machine's commit limit is 124.8 GiB (63.6 GiB of RAM plus a 61 GiB system-managed
+pagefile) with about 70 GiB already committed by other processes. When the charge forces the
+pagefile to grow, the new view sometimes comes back with the limit raised but the charge not
+taken, and the first read through it is an access violation in `torch/storage.py __getitem__` —
+the server's exact signature (`safe_open` + first `get_tensor` on W:, 3 of 3 runs; the hand-made
+two-view mapping on C:, 1 of 1; the same calls survive on other runs, which is why one BF16 load
+in seven succeeded). The two deaths inside `nn.Linear.__init__` — the model's `torch.empty` —
+carry the same signature and were not reproduced in isolation. So the list above stays, with a
+different reading: rows 3 to 5 died of commit, not of the network. The LTX 2.3 reference was
+rendered without the safetensors reader at all: the same BF16 weights, bit for bit, in a GGUF
+container read through a read-only memmap (`tools/safetensors_to_gguf_bf16.py`; bytes,
+dequantized weight and Linear output verified identical on 12 sampled layers with
+`tools/probe_gguf_bf16_equivalence.py`).
 
 ## What is NOT covered
 

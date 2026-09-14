@@ -1,0 +1,139 @@
+{
+  "referencia": {
+    "json": ".scratch\\ltx23lora_base.json",
+    "modelo": "ltx-2.3-22b-distilled-1.1_w4a8_W.safetensors",
+    "segundos": 172.78343772888184,
+    "quadros": 49,
+    "sr": 48000,
+    "audio_s": 1.93,
+    "rms_dbfs": -11.859175837719707,
+    "silencio_frac": 0.0,
+    "movimento": 1.4207714796066284
+  },
+  "controles": {
+    "silencio": {
+      "amostras_comparadas": 92640,
+      "amostras_ref": 92640,
+      "amostras_braco": 92640,
+      "sr": 48000,
+      "mae_onda": 0.20855069160461426,
+      "snr_db": 0.0,
+      "lag_ms": -200.0,
+      "logmel_l1": 8.484489440917969,
+      "conv_espectral": 1.0,
+      "rms_dbfs": -240.0000000347071,
+      "silencio_frac": 1.0
+    },
+    "ruido_branco_mesmo_rms": {
+      "amostras_comparadas": 92640,
+      "amostras_ref": 92640,
+      "amostras_braco": 92640,
+      "sr": 48000,
+      "mae_onda": 0.2901904582977295,
+      "snr_db": -3.036108388348204,
+      "lag_ms": -183.45833333333334,
+      "logmel_l1": 2.4916229248046875,
+      "conv_espectral": 1.134983777999878,
+      "rms_dbfs": -11.843217507008157,
+      "silencio_frac": 0.0
+    }
+  },
+  "bracos": {
+    "LoRA merged": {
+      "json": ".scratch/ltx23lora_merge.json",
+      "modelo": "ltx-2.3-22b-distilled-1.1_w4a8_W.safetensors",
+      "lora": "LTX23_Product_Commercial_LoRA.safetensors",
+      "segundos": 200.32042050361633,
+      "s_por_quadro": 4.088171847012578,
+      "video": {
+        "quadros_comparados": 49,
+        "quadros_ref": 49,
+        "quadros_braco": 49,
+        "mae": 22.924453735351562,
+        "mae_min": 21.112247467041016,
+        "mae_max": 27.033300399780273,
+        "psnr": 16.788877487182617,
+        "psnr_min": 15.51175308227539,
+        "ssim": 0.6439952169145856
+      },
+      "audio": {
+        "amostras_comparadas": 92640,
+        "amostras_ref": 92640,
+        "amostras_braco": 92640,
+        "sr": 48000,
+        "mae_onda": 0.2402324378490448,
+        "snr_db": -1.4984168773398334,
+        "lag_ms": -0.14583333333333334,
+        "logmel_l1": 0.5433947443962097,
+        "conv_espectral": 0.586421012878418,
+        "rms_dbfs": -11.987456320013454,
+        "silencio_frac": 0.0
+      },
+      "movimento": 2.910947561264038
+    },
+    "LoRA bypass": {
+      "json": ".scratch/ltx23lora_bypass.json",
+      "modelo": "ltx-2.3-22b-distilled-1.1_w4a8_W.safetensors",
+      "lora": "LTX23_Product_Commercial_LoRA.safetensors",
+      "segundos": 172.83665418624878,
+      "s_por_quadro": 3.52727865686222,
+      "video": {
+        "quadros_comparados": 49,
+        "quadros_ref": 49,
+        "quadros_braco": 49,
+        "mae": 23.98000717163086,
+        "mae_min": 22.378173828125,
+        "mae_max": 27.452255249023438,
+        "psnr": 16.475936889648438,
+        "psnr_min": 15.399112701416016,
+        "ssim": 0.6321160878453936
+      },
+      "audio": {
+        "amostras_comparadas": 92640,
+        "amostras_ref": 92640,
+        "amostras_braco": 92640,
+        "sr": 48000,
+        "mae_onda": 0.2420138120651245,
+        "snr_db": -1.5027580656096218,
+        "lag_ms": -17.708333333333332,
+        "logmel_l1": 0.6128212809562683,
+        "conv_espectral": 0.6387685537338257,
+        "rms_dbfs": -14.117182392394067,
+        "silencio_frac": 0.0
+      },
+      "movimento": 2.9620275497436523
+    },
+    "no LoRA, other seed": {
+      "json": ".scratch/ltx23lora_seed2.json",
+      "modelo": "ltx-2.3-22b-distilled-1.1_w4a8_W.safetensors",
+      "lora": null,
+      "segundos": 172.93027806282043,
+      "s_por_quadro": 3.529189348220825,
+      "video": {
+        "quadros_comparados": 49,
+        "quadros_ref": 49,
+        "quadros_braco": 49,
+        "mae": 80.99163818359375,
+        "mae_min": 80.76879119873047,
+        "mae_max": 81.21785736083984,
+        "psnr": 8.54703426361084,
+        "psnr_min": 8.52408218383789,
+        "ssim": 0.4519497624465397
+      },
+      "audio": {
+        "amostras_comparadas": 92640,
+        "amostras_ref": 92640,
+        "amostras_braco": 92640,
+        "sr": 48000,
+        "mae_onda": 0.2858661115169525,
+        "snr_db": -2.8782295946982424,
+        "lag_ms": -85.89583333333333,
+        "logmel_l1": 1.0825011730194092,
+        "conv_espectral": 0.8370576500892639,
+        "rms_dbfs": -12.151087310154516,
+        "silencio_frac": 0.0
+      },
+      "movimento": 1.909862995147705
+    }
+  }
+}

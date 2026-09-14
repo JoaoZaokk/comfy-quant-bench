@@ -78,10 +78,26 @@ Lightning 4-step LoRA — 86 % survival, noise 103x the delta — works complete
 control that has to fail (4 steps without it) failing identically on INT8 and W4A8. Weight-space
 numbers rank and alarm; the render decides. Criterion and results: [`bench/criterio_lora.md`](bench/criterio_lora.md).
 
-**In progress at the time of this commit:** LTX 2.3 distilled 1.1 (BF16 source on disk, W4A8 and W4A4
-converted, the factory Gemma 3 12B encoder converted to W4A8), rendered on the same 10-second
-protocol with audio against the BF16 original and a third-party GGUF Q6_K; and the LoRA tests on both
-LTX versions. Criterion written first: [`bench/criterio_ltx23.md`](bench/criterio_ltx23.md).
+**LTX 2.3 distilled 1.1, measured 2026-09-14** on the same 10-second protocol with audio, at 8 steps,
+against the BF16 original, a W4A4 build of the same source and a third-party GGUF Q6_K — every arm on
+the same saved conditioning: W4A8 at MAE 10.39 / log-mel 0.163 is usable and 3.4x smaller in the
+transformer; W4A4 does not break and is worse (fourth family that tolerates A4); the 6-bit GGUF is
+2.9x closer in the frames and 2.2x slower per step; **and the soundtrack does not separate W4A8 from
+Q6_K** (0.163 against 0.163) where the picture puts them 3x apart. Three things had to be built to
+get there, each measured before being trusted. The BF16 reference could not be opened through
+ComfyUI's safetensors reader on a 64 GB Windows box — the cause is **commit charge**, not the network
+share (`safe_open` costs 2x the file, the model another 1x; six server deaths) — so the same bytes
+went into a lossless GGUF container (`tools/safetensors_to_gguf_bf16.py`, 12/12 layers bit-identical
+through the loader). ComfyUI-LTXVideo's conditioning saver drops the flag LTX 2.3 needs and renders
+noise (MAE 75.9), so `tools/ltx_encode_lowcommit.py` and the `VoidLoadConditioningFull` node keep
+every option, behind an identity control (MAE 1.74) that is not optional. And the render tool's own
+"s/step" field turned out to be whole-run wall-clock — the sampler's progress bar is the per-step
+instrument (`tools/sampler_tempo_do_log.py`), and the 2.5 card was corrected for the same defect.
+LoRAs on the 2.3 W4A8, measured at the output twice: the LoRA arrives (with its trigger it rotates
+the product as asked; a seed change still moves more), merged and bypass agree to within a fifth of
+the effect, and the bypass loader lowers the audio level both times and costs 24 % per step.
+Criteria written first: [`bench/criterio_ltx23.md`](bench/criterio_ltx23.md),
+[`bench/criterio_lora.md`](bench/criterio_lora.md).
 
 **What this repo does not carry:** the evidence images and videos of each card live on the Hub repo
 they belong to (the `bench/hf/*/README.md` files here reference them by relative path), and models are
@@ -105,6 +121,7 @@ that the gap between them is invisible to every structural check and costs almos
 | [Qwen-Image-2512-W4A8-ConvRot](https://huggingface.co/JoaoZaokk/Qwen-Image-2512-W4A8-ConvRot) | *2026-09-13* — 38.05 → 10.79 GiB, W4A4 coloured speckle as a negative | Apache 2.0 |
 | [Wan2.2-TI2V-5B-W4A8-ConvRot](https://huggingface.co/JoaoZaokk/Wan2.2-TI2V-5B-W4A8-ConvRot) | *2026-09-13* — 9.31 → 2.75 GiB, W4A4 blur as a negative, and the counterexample that shows latent divergence is biased toward soft failure | Apache 2.0 |
 | [LTX-2.5-22B-distilled-W4A8-ConvRot](https://huggingface.co/JoaoZaokk/LTX-2.5-22B-distilled-W4A8-ConvRot) | *2026-09-13* — a full 10 s video **with its audio** against BF16 and Lightricks' INT8; MP4/FLAC proofs in the repo | LTX-2.x Community Licence — read it there |
+| [LTX-2.3-22B-distilled-1.1-W4A8-ConvRot](https://huggingface.co/JoaoZaokk/LTX-2.3-22B-distilled-1.1-W4A8-ConvRot) | *2026-09-14* — the single-file 2.3 at 42.98 → 15.51 GiB; 10 s with audio against BF16, W4A4 and a 6-bit GGUF on one saved conditioning; the conditioning trap, the commit-charge mechanism and two LoRA rounds, with proofs | LTX-2 Community Licence — read it there |
 | [Qwen2.5-VL-7B-W4A4-ConvRot](https://huggingface.co/JoaoZaokk/Qwen2.5-VL-7B-W4A4-ConvRot) · [Gemma-3-12B-it-Heretic-W4A8](https://huggingface.co/JoaoZaokk/Gemma-3-12B-it-Heretic-W4A8) | text encoders: memory saved, time not, unless ComfyUI's two text-encoder locks are released | Apache 2.0 / Gemma |
 
 Read the Hunyuan repository's licence before downloading from it: it is redistributed under

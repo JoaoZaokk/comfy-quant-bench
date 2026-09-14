@@ -5406,9 +5406,9 @@ por peso ordena e alarma, nao decide** -- a mesma licao do erro por camada entre
 pelo caminho de checkpoint + DisTorch2, lido de W: com ~40 GiB livres. [CORRIGIDO 22:08: W: NAO e
 disco local -- `net use` da `\\192.168.3.40\zfe`, SMB; eu deduzi "local" de um grep que so
 procurava D:. Depois desta parte morreram mais dois, ambos o transformer extraido lido de W:, com
-32-44 GiB livres, enquanto um processo nu percorre o arquivo em 4 s. Mecanismo: mmap de dezenas de
-GiB por SMB sob carga -> in-page error -> access violation. O braco BF16 do 2.3 foi para C:, o
-unico NTFS local com espaco.] O que sobreviveu, uma vez: o transformer sozinho pelo `UNETLoader`,
+32-44 GiB livres, enquanto um processo nu percorre o arquivo em 4 s. Mecanismo escrito aqui como "mmap por SMB
+sob carga -> in-page error"; CORRIGIDO DE NOVO na parte 51: e COMMIT, nao SMB -- medido em processo
+nu, morre igual em C:. O braco BF16 do 2.3 foi para C: e nao adiantou por isso.] O que sobreviveu, uma vez: o transformer sozinho pelo `UNETLoader`,
 39 GiB, tambem por SMB. Por isso
 `tools/extrai_transformer.py` extrai o DiT do checkpoint unico por faixa de bytes (sem mmap) e o
 braco BF16 do 2.3 roda por esse caminho, com VAEs e projecao de arquivos pequenos byte a byte
@@ -5435,3 +5435,165 @@ mudou desde 2026-09-01. Varredura de segredos nos 480 arquivos rastreados: nenhu
 
 Nao coberto nesta parte: os numeros do 2.3 contra o BF16 (na fila); LoRA do 2.3 (na fila); uma
 semente e um prompt em tudo.
+
+## Parte 51 -- 2026-09-14 (madrugada): era commit, nao rede; o BF16 do 2.3 por GGUF; e o condicionamento salvo que nao era o prompt
+
+**Sete mortes de servidor, uma causa, e a causa nao era a que a parte 50 registrou.** A parte 50
+escreveu "mmap por SMB sob carga". Medido em processo nu, sem ComfyUI, com os contadores de commit
+do sistema (`GetPerformanceInfo`) lidos antes e depois de cada chamada, sobre o transformer BF16 do
+2.3 (39,13 GiB) -- `tools/probe_commit_mmap.py`, `probe_safeopen_trace.py`, `probe_double_map.py`,
+`probe_cow_offset.py`:
+
+    chamada                                                    commit
+    safetensors.safe_open(framework="pt")                      +40,8 GiB ao abrir, antes de ler tensor
+       (duas views copy-on-write do mesmo arquivo: memmap2 para o header e
+        torch.UntypedStorage.from_file(shared=False) para os dados; +80,2 GiB
+        enquanto as duas vivem; a do header cai depois do open)
+    torch.empty dos parametros do modelo                       +40,7 GiB
+    mmap somente-leitura (numpy, leitor do GGUF)                0
+    UntypedStorage.from_file(shared=True)                       0
+
+O Windows cobra uma view copy-on-write pelo tamanho inteiro na hora de mapear. Limite de commit desta
+maquina: 124,8 GiB (63,6 de RAM + pagefile de 61,2 GiB gerenciado pelo sistema em C:), com ~70 GiB
+ja tomados por outros processos (VM do WSL etc.). Abrir o arquivo pelo leitor normal custa 2x o
+arquivo; montar o modelo, mais 1x.
+
+Hipoteses derrubadas na ordem em que cairam: (1) redirector SMB -- morre igual em C:, NTFS local;
+(2) view RO + view COW do mesmo arquivo -- T1/T2 sobrevivem; (3) duas views COW com expansao do
+pagefile -- T5/T9 sobrevivem em W:; (4) tocar o header -- T10-W sobrevive, **T10-C morreu**. Mortes
+reproduzidas: `safe_open` + primeiro `get_tensor` em W:, **3 de 3**; o mapeamento de duas views COW
+feito a mao em C:, **1 de 1**; as mesmas chamadas sobrevivem em outras corridas. Assinatura
+identica a do servidor: `Windows fatal exception: access violation` em `torch/storage.py:471
+__getitem__` (faulthandler diz "access violation" = 0xc0000005; um in-page error imprimiria "page
+error"); o log de eventos tem as quedas de 19:21:51 e 20:56:00 em `torch_cpu.dll` offset
+`0x8e4a279`. [JULGAMENTO, apoiado nos contadores: quando a cobranca forca o pagefile a crescer, a
+view as vezes volta com o limite subido e a cobranca nao tomada, e o primeiro toque e o AV. E
+loteria, nao determinismo -- por isso um BF16 em sete passou. O que me faria mudar de ideia: N
+corridas de T10-C com a expansao impedida e a mesma taxa de morte.]
+
+Cronologia das seis tentativas do BF16 do 2.3, reconstruida dos logs: `ltx23` 19:00 (morte muda),
+`ltx23b` 19:21, `ltx23c` 20:55, `ltx23d` 21:05 -- as quatro em `load_torch_file`; `ltx23e` 22:16 em
+`nn.Linear.__init__` (o `torch.empty` do modelo, mesma assinatura, nao reproduzida isolada);
+`ltx23f` 22:21 com dynamic VRAM (`HostBuffer.read_file_slice failed`, `cudaErrorMemoryAllocation`).
+A setima queda, `ltx23g` 22:24, foi a construcao do encoder na rodada de LoRA -- mesmo golpe, outro
+arquivo. Corrigido no mesmo dia: card do 2.5 no Hub (paragrafo do mecanismo no lugar do julgamento
+sobre SMB, re-subido), `CLAUDE.md`, `bench/ltx25/README_execucao.md`, e o colchete da parte 50.
+
+**O BF16 do 2.3 renderiza sem o leitor de safetensors.** `tools/safetensors_to_gguf_bf16.py` escreve
+os mesmos bytes BF16 num container GGUF por memmap somente-leitura (`.partial` + `os.replace`,
+recusa sobrescrever, confere disco), com a politica de tipos do `convert.py` do ComfyUI-GGUF (1-D,
+<=1024 elementos, `scale_shift_table` e `learnable_registers` em F32 exato a partir do BF16; o resto
+BF16) e o Q6_K de terceiro como gabarito: **4444 de 4444** nomes e formas conferem, 32 de 32 F32
+amostrados byte a byte iguais aos deles. O conversor recusou a primeira tentativa porque o gabarito
+tinha `learnable_registers` em F32 e o plano dizia BF16 -- `--hiprec scale_shift_table,learnable_registers`.
+Saida: `C:/ComfyBench/ltx-2.3/ltx-2.3-22b-distilled-1.1-BF16.gguf`, 42.035.412.384 B (39,15 GiB),
+4444 tensores, F32 2672 / BF16 1772. `UnetLoaderGGUF` le por `gguf.GGUFReader` -> `numpy.memmap` ->
+`torch.from_numpy` (commit zero), `GGMLOps.Linear.__init__` nasce com `weight=None` (ops.py:232-239)
+e recebe o Parameter em `ggml_load_from_state_dict` (ops.py:120-133) -- sem `torch.empty`. A
+dequantizacao BF16 do ComfyUI-GGUF e `(int16<<16).view(float32).to(dtype)`, exata.
+`tools/probe_gguf_bf16_equivalence.py`, 12 camadas Linear amostradas na placa: bytes iguais aos do
+safetensors, peso dequantizado bit a bit igual, saida de `GGMLOps.Linear` igual a de
+`comfy.ops.manual_cast.Linear` com bias -- **12/12 IDENTICO, diferenca maxima 0,0**
+(`.scratch/gguf_bf16_equivalence_ltx23.json`). O braco de referencia e o modelo BF16; o que o loader
+muda e onde o peso mora entre passos, que e eixo de velocidade e vai reportado, nao comparado.
+
+**Regra que sai disso, para esta maquina:** nunca abrir pelo leitor normal um safetensors maior que
+~metade do commit livre; para referencia BF16 de 20 B+, converter sem perda para GGUF e carregar por
+`UnetLoaderGGUF`; manter o encoder fora do processo com condicionamento salvo. O pagefile e do dono
+(registrar, nao mexer).
+
+**O condicionamento salvo nao era o prompt -- e o controle de identidade foi o unico que viu.**
+Para tirar o encoder de 22,7 GB do processo, a fila h/i salvou o condicionamento com
+`LTXVSaveConditioning` (ComfyUI-LTXVideo) e leu com `LTXVLoadConditioning`. Controle de identidade:
+W4A8, 249 quadros, mesma semente, condicionamento salvo contra encoder vivo -- **MAE 75,9 / PSNR 8,4
+/ SSIM 0,19 / log-mel 1,05**: ruido marrom com som de ruido
+(`bench/ltx23/cond_identity_ltxv_saver/`). Causa, lida no codigo DEPOIS de medir: o encoder do 2.3
+devolve `extra = {"unprocessed_ltxav_embeds": True}` (`comfy/text_encoders/lt.py:201-204`; saida
+float32 de 6144 = 4096 cross_attention_dim + 2048 audio) e o modelo so aplica `caption_projection` +
+connectors com essa chave (`comfy/model_base.py:1185` -> `av_model.py:583 preprocess_text_embeds`,
+que devolve o contexto intocado quando `unprocessed=False` e a largura bate). O saver guarda so
+`conditioning_data_{i}` em bf16/fp16 + mascara; o loader devolve sem a chave; 6144 passa pela
+checagem de largura como "ja processado" e entra cru na cross-attention. Os quatro renders de LoRA
+(00:50) e o BF16 da fila i foram feitos sobre isso: movidos para `bench/ltx23/*_ltxv_saver/`,
+tabela do `criterio_lora.md` marcada INVALIDA com a causa. Substituto: `tools/ltx_encode_lowcommit.py`
+(processo nu, leitor RO em lugar de `load_torch_file`, `LTXAVTextEncoderLoader.execute` na 3080 Ti,
+tensor float32, `opt_{i}_*` como tensores e `options_{i}` em JSON nos metadados, `--compare`) e o no
+`VoidLoadConditioningFull` (`custom_nodes/comfy-void-stage-tools`), que RECUSA arquivo sem as opcoes;
+`tools/ltx_video.py --cond-from` passou a usar esse no. Encoder na 3080 Ti contra o encode do
+servidor na 3090: rel-L2 1,0e-3 (pos) / 8,1e-4 (neg), 87% dos elementos bit-iguais em bf16, max
+|delta| 1,0 numa faixa [-148, 294]; o formato completo em float32 contra o salvo em bf16: dif_max 1
+(pos) / 0,25 (neg). **O controle de identidade nao e opcional**: render sobre condicionamento salvo
+que nunca foi comparado com o caminho vivo e render de prompt desconhecido.
+
+**"O s/passo depende da residencia, por 3x" -- ERRADO, e o erro e de instrumento [CORRIGIDO
+01:20].** O `s_por_passo` que o `ltx_video.py` grava e a parede da corrida INTEIRA dividida por
+passos (carga do modelo, carga e encode do encoder, sampler, dois VAEs, mux). O instrumento por
+passo e a barra do tqdm no log do servidor, e ela diz: W4A8 249 quadros, **8 passos em 18 s (2,30
+s/it) com o encoder vivo e 8 passos em 18 s (2,30 s/it) com condicionamento salvo**. Os 638 s contra
+208 s eram carga do encoder de 22,7 GB por SMB + encode; a residencia nao mudou nada que o sampler
+visse. Mesmo instrumento, outros bracos do 2.3: W4A4 **1,60 s/it**, Q6_K **5,12 s/it**
+(dequantizado). Ficou com o numero errado por uma hora em `CLAUDE.md` e no card do 2.3 (secao do
+condicionamento); os dois corrigidos. O card do 2.5 tem a mesma coluna doente -- "s/frame" era
+parede da corrida (os 3 passos amostram em ~25 s e a corrida leva 400-800 s) -- e ganhou a
+advertencia e re-upload; os tempos de sampler por braco do 2.5 nao sobreviveram nos logs, entao o
+card do 2.5 deixa de fazer QUALQUER afirmacao de velocidade entre bracos. O JSON do `ltx_video.py`
+agora carrega `nota_tempo` dizendo o que `segundos`/`s_por_*` medem. Memoria: `escrevo-mais-rapido-
+do-que-confiro` -- li o nome do campo, nao o que ele media.
+
+**LoRA no peso do 2.3 W4A8** (`LTX23_Product_Commercial_LoRA`, r16, gatilho `srx_commercial` em
+`ss_tag_frequency`, base `ltx2`; `.scratch/lora_requant_ltx23_product.json`): 3264 tensores de LoRA,
+1632 alvos, 1632 aplicados, 0 falhas de `calculate_weight`, 0 camadas com delta zero; em 19 camadas
+quantizadas amostradas, |delta|/|W| 0,0020 (0,0008-0,0157), sobrevivencia **0,908** (0,872-0,930),
+cosseno 0,046 (0,017-0,261), ruido 20,1x o delta (3,4-50,2x), erro 0,0731 -> 0,0837 (requant sem
+LoRA) -> 0,0838 (com LoRA). Mesmo quadro do 2.5. R7-R9 escritas em `bench/criterio_lora.md` antes
+da rodada com gatilho: R7 `MAE(fundido, ref) > MAE(outra semente, ref)`; R8 `MAE(fundido, bypass) <
+min(...)`; R9 o visual comercial aparece.
+
+**Fila j (rodando ao fechar esta parte):** encoder NUNCA residente; condicionamento completo por
+`ltx_encode_lowcommit.py` (farol -> `ltx23condf`, comercial com gatilho -> `ltx23cond_srx`);
+servidor reiniciado com o no novo; (a) identidade W4A8 249 condf vs vivo; (b) LoRA farol x4, 49
+quadros; (c) LoRA com gatilho x4; (d) Q6_K e W4A4 249 condf; (e) BF16 por GGUF 249 condf;
+comparacao dos quatro bracos no MESMO condicionamento. Resultados na subsecao abaixo quando sairem.
+
+Nao coberto ate aqui: estatistica da loteria (T10-C e o estagio A tem N=1 e N=3; repetir so depois
+do trabalho de GPU, porque cada corrida pode derrubar o servidor); a morte dentro do `torch.empty`
+(`ltx23e`) nao foi reproduzida isolada; o mecanismo do 3x de residencia; os numeros do 2.3 contra o
+BF16 e o LoRA do 2.3 na saida (fila j).
+
+### Resultados da fila j (01:46) -- os quatro bracos, o LoRA duas vezes, e o som que empata
+
+Identidade do condicionamento: MAE 1,74 [1,46-2,08], PSNR 35,75, SSIM 0,977; log-mel 0,074, lag
+0 ms (contra 75,9 / 0,19 / 1,05 do saver quebrado). Passou; o rodape de ~2 MAE e comum aos bracos.
+
+    braco                        GiB   sampler 8 passos    parede    MAE    PSNR   SSIM  | log-mel  conv   nivel
+    BF16 (GGUF, carga parcial)  39,15   8,05 s/it (66 s)    155 s     --      --     --  |   --      --   -23,5
+    Q6_K terceiro               16,55   5,04 s/it (40 s)     91 s   3,59   29,00  0,941 |  0,163  0,419  -24,1
+    W4A8 nosso (DiT 11,66)      15,51   2,30 s/it (18 s)    208 s  10,39   21,89  0,829 |  0,163  0,424  -24,0
+    W4A4 nosso (controle)       14,31   1,59 s/it (12 s)    219 s  14,45   20,36  0,734 |  0,281  0,491  -25,8
+    controles (log-mel): silencio 8,460; ruido branco no RMS da referencia 1,748
+
+P1 confirmada, P2 confirmada (2.3 e a quarta familia que aguenta A4), P3 confirmada no video e
+empate no audio, P4 nao refutada com empate, P5 nao testavel como escrita, P6 refutada
+(`bench/criterio_ltx23.md`). O BF16 por GGUF carregou PARCIAL (20,7 GB na placa, 19,6 GB
+descarregados) e rodou sem morrer -- setima tentativa, primeira sem o leitor de safetensors. A
+parede da corrida ordenou os bracos pelo DISCO de origem (GGUFs locais 91-155 s, safetensors por
+SMB 208-219 s), nao pelo transformer.
+
+**O som nao separa W4A8 de Q6_K** (0,163 contra 0,163; convergencia 0,42 contra 0,42; lag 0 nos
+dois) enquanto o quadro os poe 2,9x longe. No 2.5 o som ordenava com margem MAIOR que o quadro (2,9x
+contra 1,9x). Nao sei por que; fica registrado como esta. Hipotese barata para testar depois: 8
+passos contra 3 -- a 8 passos o SNR de onda e ~-1 dB em todos (fase descorrelacionada) e o log-mel
+pode estar num piso; teste = a mesma comparacao a 3 passos.
+
+LoRA (Product Commercial, r16, gatilho `srx_commercial`), 49 quadros, condicionamento valido:
+sem gatilho fundido 22,9 / bypass 24,0 / outra semente 81,0 / fundido-vs-bypass 5,1; com gatilho
+40,9 / 40,6 / 57,5 / 7,5. R7 refutada (LoRA move menos que semente, com ou sem gatilho), R8
+confirmada (terceira rodada com fundido-vs-bypass em ~1/5 do efeito), R9 indecidivel (o prompt
+comercial ja rende comercial sem LoRA). O que a folha mostra: com o gatilho os dois bracos com
+LoRA giram o fone como o prompt pede (movimento 4,6 contra 1,25 da referencia) e desenham outro
+fone. Bypass abaixa o nivel do audio nas duas rodadas (-2,2 / -4,7 dB) e custa 24% por passo
+(0,68 contra 0,55 s/it). `bench/criterio_lora.md`, `bench/ltx23/lora*/`.
+
+Nao coberto: uma semente, um prompt por rodada, 512 px, uma placa; nenhuma metrica de audio
+validada contra ouvido; o mesmo LoRA nao foi renderizado sobre o BF16; o empate do audio nao tem
+mecanismo; a loteria do commit sem estatistica (N=1 em C:, N=3 em W:).

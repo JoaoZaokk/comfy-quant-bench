@@ -165,7 +165,130 @@ fundido vs bypass, um contra o outro:  MAE 6,30  SSIM 0,959  | log-mel 0,082  SN
 - Não coberto: sem gatilho, o efeito próprio do LoRA não foi exercitado — um teste com a palavra
   certa no prompt é o que faltaria para fechar R6 de verdade.
 
-LTX 2.3 Product Commercial: renders na fila, abaixo quando saírem.
+**LTX 2.3 W4A8 + `LTX23_Product_Commercial_LoRA` (r16), 49 quadros, semente 1234, SEM gatilho
+no prompt (o do farol), referência = mesmo W4A8 sem LoRA, condicionamento salvo (o mesmo arquivo)
+nos quatro braços, MEDIDO 2026-09-14 00:50 — **INVÁLIDO, descoberto às 01:00** (ver a nota logo
+abaixo da tabela; movido para `bench/ltx23/lora_ltxv_saver/` e `lora_par_ltxv_saver/`):**
+
+```
+braço                         MAE   PSNR   SSIM    mov  | log-mel   SNR      lag
+fundido                      10,65  25,6  0,696   8,43 |  0,151    7,4 dB     0 ms
+bypass                       10,43  25,9  0,732   9,10 |  0,088    8,8 dB     0 ms
+sem LoRA, OUTRA semente      11,10  25,1  0,627  12,23 |  0,359   -2,5 dB  -196 ms
+referência (movimento 13,14, -22,6 dBFS)
+fundido vs bypass, um contra o outro:  MAE 2,40 [1,47-2,74]  SSIM 0,960  | log-mel 0,136  SNR 6,3 dB  lag 0
+```
+
+- **NOTA (01:00): estes quatro braços NÃO são o farol.** O controle de identidade (W4A8, 249 quadros,
+  mesmo condicionamento salvo, contra o render com encoder vivo) deu **MAE 75,9 / SSIM 0,19 /
+  log-mel 1,05** — quadros de ruído marrom, áudio de ruído (`bench/ltx23/cond_identity_ltxv_saver/
+  contato_av.png`). Causa, lida no código depois de medir: o encoder do LTX 2.3 devolve
+  `extra = {"unprocessed_ltxav_embeds": True}` (`comfy/text_encoders/lt.py:201-204`) e o modelo só
+  aplica `caption_projection` + connectors com essa chave (`comfy/model_base.py:1185` →
+  `av_model.py:583`); o `LTXVSaveConditioning` grava só o tensor e o `LTXVLoadConditioning` devolve
+  sem a chave — o contexto de 6144 canais passa por já processado e entra cru na cross-attention.
+  Os números abaixo medem LoRA sobre ruído condicionado errado; ficam como registro do que a
+  ferramenta errada produz, e são substituídos pela rodada da fila j (condicionamento completo por
+  `tools/ltx_encode_lowcommit.py` + `VoidLoadConditioningFull`). O par fundido-vs-bypass de 2,40 também.
+- No vídeo, aqui a distância com/sem LoRA (10,4–10,7) fica DENTRO da distância semente-a-semente
+  (11,1) — no 2.5 era 15–18 contra 28. No áudio o LoRA move 2,4–4x menos que a semente (0,088–0,151
+  contra 0,359) e não desloca nada (lag 0 contra −196 ms). Os dois braços com LoRA são mais calmos
+  que a referência (movimento 8,4–9,1 contra 13,1); a outra semente não (12,2).
+- **Fundido e bypass distam 2,40 entre si** (SSIM 0,960), contra 10,4–10,7 de cada um para a
+  referência: o ruído de requantização (sobrevivência 0,908, ruído 20x o delta no peso) move o
+  vídeo por um quarto do que o LoRA move. Mesma leitura do 2.5 (6,3 contra 15–18).
+- Mesmo furo do 2.5: sem o gatilho, isto mede a perturbação de carregar o LoRA, não o efeito dele.
+  O gatilho existe e está no arquivo: `ss_tag_frequency = {"1_srx_commercial": {"srx_commercial": 1}}`,
+  `ss_base_model_version = ltx2`.
+
+**Rodada SEM gatilho refeita sobre condicionamento VÁLIDO (fila j, MEDIDO 2026-09-14 01:25;
+`bench/ltx23/lora/`, par em `bench/ltx23/lora_par/`).** Mesmo prompt do farol, 49 quadros, W4A8,
+os quatro braços lendo o MESMO arquivo de condicionamento (`ltx23condf`, formato completo, controle
+de identidade MAE 1,74 contra o encoder vivo):
+
+```
+braço                    MAE vs ref        PSNR    SSIM   mov  | log-mel  SNR      lag       RMS
+LoRA fundido            22,92 [21,1-27,0]  16,79  0,644  2,91 |  0,543  -1,5 dB   -0,1 ms  -12,0 dBFS
+LoRA bypass             23,98 [22,4-27,5]  16,48  0,632  2,96 |  0,613  -1,5 dB  -17,7 ms  -14,1 dBFS
+sem LoRA, semente 4321  80,99 [80,8-81,2]   8,55  0,452  1,91 |  1,083  -2,9 dB  -85,9 ms  -12,2 dBFS
+fundido vs bypass        5,13 [4,7-5,8]    26,60  0,894       |  0,232  -0,05 dB   0,0 ms
+referência: sem LoRA, semente 1234, RMS -11,9 dBFS, mov 2,0
+```
+
+- **Os números da rodada inválida (10,65 / 11,10 / 2,40) não sobrevivem em valor, mas a ORDEM
+  sobrevive**: LoRA move menos que uma semente (22,9-24,0 contra 81,0), e fundido-vs-bypass move
+  um quarto do que o LoRA move (5,1 contra 23). Mesma leitura do 2.5 (6,3 / 15-18 / 28).
+- **O que o olho vê na folha**: os dois braços com LoRA mantêm a composição da referência (mesmo
+  farol, mesmas rochas, mesma câmera) e mudam o acabamento — céu mais claro, mais aves, tons
+  limpos; a outra semente muda a composição inteira (farol centrado, céu laranja), que é o que
+  MAE 81 com faixa [80,8-81,2] quer dizer. Sem gatilho o LoRA já age como estilo; o que ele NÃO faz
+  é mudar o que é gerado.
+- Áudio: fundido não muda nível (-12,0 contra -11,9) nem tempo (-0,1 ms); bypass desloca 17,7 ms e
+  cai 2,2 dB (dentro dos ±3 dB da A2); a outra semente desloca 85,9 ms. Fundido e bypass entre si:
+  0,0 ms, -0,05 dB.
+- Sampler (barra do tqdm no log do servidor, 49 quadros, 8 passos): sem LoRA 0,55 s/it, fundido
+  0,55 s/it, **bypass 0,69 s/it** — o ramo de baixo posto no forward custa 25% por passo; o fundido
+  custa zero porque o kernel é o mesmo. A parede da corrida (170-200 s) é 97% carga do modelo por
+  SMB com `--cache-none`, não sampler.
+
+**Rodada COM gatilho — previsões escritas ANTES de renderizar (2026-09-14 00:58).** Prompt:
+`srx_commercial, a sleek matte black wireless headphone rotating slowly on a white pedestal, soft
+studio lighting, clean seamless background, product commercial, gentle camera push-in`; negativo
+padrão; 49 quadros; braços: sem LoRA semente 1234 (referência), fundido 1234, bypass 1234, sem LoRA
+semente 4321. Condicionamento gerado FORA do servidor por `tools/ltx_encode_lowcommit.py` (o
+encoder de 24 GB não cabe no commit do servidor pelo leitor normal — ver CLAUDE.md), o mesmo
+arquivo nos quatro braços; antes disso o mesmo tool recodifica o prompt do farol e compara com o
+`ltx23cond` que o servidor gravou (autoteste do caminho, resultado impresso, não presumido).
+
+- **R7** com o gatilho, `MAE(fundido vs referência) > MAE(outra semente vs referência)` — o LoRA
+  muda o que é gerado, não só onde a trajetória cai. Refuta: fundido ≤ outra semente (como ficou
+  sem gatilho: 10,65 contra 11,10).
+- **R8** fundido e bypass ficam mais perto um do outro do que qualquer um da referência
+  (`MAE(fundido, bypass) < min(MAE(fundido, ref), MAE(bypass, ref))`), como nas duas rodadas sem
+  gatilho (2,40 contra 10,4; 6,3 contra 15). Refuta: o par ≥ o mínimo.
+- **R9 (olho, na folha, não é métrica)** os braços com LoRA têm cara de comercial — fundo limpo,
+  produto centrado, luz de estúdio, movimento suave — e a referência sem LoRA, com o mesmo prompt,
+  não necessariamente. Se a referência já parecer comercial, o gatilho não separa nada e R9 fica
+  indecidível, não confirmada.
+
+**Resultados da rodada com gatilho (MEDIDO 2026-09-14 01:37; `bench/ltx23/lora_trigger/`, par em
+`bench/ltx23/lora_trigger_par/`; condicionamento `ltx23cond_srx`, formato completo, o mesmo arquivo
+nos quatro braços):**
+
+```
+braço                    MAE vs ref        PSNR    SSIM   mov  | log-mel  SNR      lag       RMS
+LoRA fundido            40,85 [35,2-47,3]  10,44  0,702  4,55 |  0,588  -1,2 dB   -0,3 ms  -14,9 dBFS
+LoRA bypass             40,63 [35,7-47,8]  10,50  0,705  4,70 |  0,719  -1,2 dB  +14,8 ms  -17,0 dBFS
+sem LoRA, semente 4321  57,49 [45,7-74,7]   9,33  0,699  5,88 |  1,747  -3,4 dB  +41,5 ms  -11,8 dBFS
+fundido vs bypass        7,54 [5,3-11,5]   22,21  0,870       |  0,328  -0,5 dB    0,0 ms
+referência: sem LoRA, semente 1234, RMS -12,3 dBFS, mov 1,25; controles: silêncio 7,90, ruído branco 2,97
+```
+
+- **R7 REFUTADA.** 40,85 < 57,49: mesmo com o gatilho, o LoRA move menos que uma semente. Mais
+  perto do que sem gatilho (0,71 da semente contra 0,28), mas do mesmo lado. A métrica não
+  distingue "muda o que é gerado" de "cai em outro lugar" — ver R9.
+- **R8 CONFIRMADA.** 7,54 < min(40,85; 40,63); SSIM 0,870 entre fundido e bypass contra 0,70 de
+  cada um para a referência. O ruído de requantização (sobrevivência 0,908, ruído 20x o delta no
+  peso) move o vídeo por um quinto do que o LoRA move — terceira rodada com essa proporção (2.5:
+  6,3/15; farol: 5,1/23; gatilho: 7,5/41).
+- **R9 INDECIDÍVEL, pela cláusula escrita antes:** a referência sem LoRA já é um comercial — fones
+  centrados em pedestal branco, luz de estúdio, fundo limpo — porque o prompt é um comercial. O
+  gatilho não separa "cara de comercial". O que a folha mostra e a métrica confirma é outra coisa:
+  **os dois braços com LoRA executam o "rotating slowly" do prompt** (vista lateral no quadro 1,
+  frontal no 49; movimento 4,55-4,70) **e a referência quase não gira** (movimento 1,25, 3,6x
+  menos); o fone dos braços com LoRA é outro desenho, mais refinado. Isso é efeito do LoRA no que
+  é gerado, visível a olho — e não é R9, que perguntava por estética, não por obediência ao
+  movimento. Fica como observação, não como previsão confirmada.
+- Áudio: fundido não desloca (-0,3 ms) e cai 2,6 dB; **bypass desloca 14,8 ms e cai 4,7 dB**,
+  fora dos ±3 dB da A2. Segunda rodada em que o bypass abaixa o nível mais que o fundido (farol:
+  -2,2 dB contra -0,1). Duas observações no mesmo sentido; mecanismo não isolado.
+- Sampler (barra do tqdm, 49 quadros, 8 passos): sem LoRA 0,55 s/it, fundido 0,55, bypass 0,68,
+  outra semente 0,55 — o bypass custa 24% por passo, o fundido nada.
+- **O que responde à pergunta do dono ("os LoRAs funcionam como deveriam?") no 2.3 W4A8:** o LoRA
+  chega à saída — muda o vídeo (41 MAE, o giro pedido, outro desenho) e o som (log-mel 0,59 contra
+  1,75 de uma semente) — e fundido e bypass concordam entre si (7,5). O que a bancada NÃO tem é um
+  render do mesmo LoRA sobre a referência BF16 para dizer se o efeito é o mesmo que no modelo
+  original; não foi feito nesta rodada.
 
 ## Não coberto
 
