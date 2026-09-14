@@ -112,10 +112,12 @@ in the process. Proofs: `ltx23_encoder_test/render_contato_av.png`, `render_comp
   (cosine 0.977–0.988) to lose a word. The abliterated BF16 sits 0.10 from the factory BF16 and
   keeps the scene; the flip is somewhere between 0.10 and 0.16 of relative L2 on this prompt — one
   prompt, one seed, so a range, not a line.
-- **The W4A4 weights are therefore not in this repo.** Their conditioning numbers, the contact
-  sheet and the comparison JSON are, so the negative is on the record with its proof — and so
-  are their sidecars (`w4a4_not_published/`), so the exact format of what was measured is on
-  record too.
+- **The W4A4 weights are in this repo under `w4a4/`, at the owner's decision, next to the
+  measurement that says what they do.** The first version of this section kept them off the Hub
+  as a measured negative; they went up later the same night with their sidecars, the conditioning
+  numbers, the contact sheets and the comparison JSONs, so whoever downloads them sees the
+  scene change before the file. On this project's ComfyUI (quantized math by default) they change
+  the scene; on stock ComfyUI (locked path) they keep it at 3–5x this file's distance.
 - **On stock ComfyUI's locked path (4-bit weight, dequantized math) both W4A4 builds keep the
   scene** — rendered afterwards on the same transformer and seed: ConvRot **16.38** MAE [15.43–17.37],
   SSIM 0.786, log-mel 0.111; SmoothQuant **27.41** [26.33–28.46], SSIM 0.699, log-mel 0.160; dusk
@@ -125,7 +127,17 @@ in the process. Proofs: `ltx23_encoder_test/render_contato_av.png`, `render_comp
   not make them: the render order on the locked path (ConvRot closer than SmoothQuant) inverts the
   conditioning order (SmoothQuant 0.082 closer than ConvRot 0.111) — one seed, noted, not
   explained — and at 3–5x this file's distance, for 8 % less memory than this file and no speed
-  on that path, nothing recommends them. The weights stay off the Hub.
+  on that path, nothing recommends them over this file. They are published anyway, labelled.
+
+### The W4A4 files
+
+| file | bytes | GiB | layout | verdict |
+|---|---|---|---|---|
+| `w4a4/gemma_3_12B_it_heretic_w4a4_convrot.safetensors` | 7,417,110,666 | 6.91 | 336 × `convrot_w4a4`, `convrot_groupsize` 256 | changes the scene on the released path (38.1 MAE); keeps it locked (16.4) |
+| `w4a4/gemma_3_12B_it_heretic_w4a4_smooth.safetensors` | 7,417,110,698 | 6.91 | the same, SmoothQuant α 0.5 folded into the norms first | changes the scene on the released path (29.8); keeps it locked (27.4) |
+
+Sidecars beside each file. Converted with `tools/quant_w4a4.py --profile gemma` (16.1 s) and
+`tools/quant_w4a4_smooth.py` (23.3 s) on the RTX 3090, comfy-kitchen 0.2.31.
 
 ## Not covered
 

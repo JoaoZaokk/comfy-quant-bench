@@ -5749,7 +5749,9 @@ velocidade. `bench/capybara_w4a8/`.
 **W4A4 do heretic no caminho travado (passada 6):** os dois MANTÊM a cena — convrot 16,4 MAE
 (SSIM 0,786), smooth 27,4 (0,699), crepúsculo nos dois — onde o destravado a perdia (38,1 / 29,8,
 dia). Virada entre rel-L2 0,11 e 0,16. A ordem do render travado (convrot < smooth) inverte a do
-condicionamento (smooth < convrot): uma semente, registrado. Pesos continuam fora do Hub; provas em
+condicionamento (smooth < convrot): uma semente, registrado. Pesos ficaram fora do Hub ate as 05:10,
+quando o dono mandou subir ("pode comitar ai e subir os pesos"): subiram em `w4a4/` no repo do
+heretic, rotulados no card com a troca de cena. Provas em
 `bench/ltx23/encoder_heretic_locked/` e no repo do heretic.
 
 **Por-passo do 2.5 (passada 4):** Lightricks int8 2,14, W4A8 2,26 s/it (3 passos); com os 2,02 /

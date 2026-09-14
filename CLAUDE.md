@@ -1077,7 +1077,9 @@ A/C/D/E/G) and the verdicts sit in the same file with the hour. What each one ta
   one seed, noted, not explained — conditioning distance orders formats coarsely and does not
   order two neighbouring W4A4 builds, the per-layer-error lesson again, now on the encoder. Nothing
   recommends either build (3–5x the W4A8's distance for 8 % less memory and no speed on that
-  path); the weights stayed off the Hub, the proofs went up (`bench/ltx23/encoder_heretic_locked/`).
+  path); the weights stayed off the Hub at first and the proofs went up
+  (`bench/ltx23/encoder_heretic_locked/`). **Then the owner said to upload them** (05:10), so they
+  are on the heretic card under `w4a4/`, labelled with the scene change beside the file.
 
 Published in this round: Krea 2 Turbo W4A4 (gated, licence terms met), Qwen3-VL 4B W4A8, the
 factory Gemma W4A8 (new repo), the two 2.5 int8 builds (2.5 repo), capybara W4A8 (Hunyuan repo),

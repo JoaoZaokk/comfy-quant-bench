@@ -114,14 +114,15 @@ output**, against a criterion written first (`bench/criterio_fechamento_2026-09-
 Gemma 3 12B W4A8 is a usable LTX 2.3 encoder (conditioning 0.043 from BF16, render MAE 6.75 with the
 scene intact) and releasing ComfyUI's text-encoder locks on it costs 0.001 — while on two W4A4 builds
 of the abliterated Gemma the release costs 2x and both render a coherent but *different* scene
-(daylight for "dusk"), so those weights stay off the Hub and their proofs went up instead. On LTX 2.5,
+(daylight for "dusk"); their proofs went up first and the weights followed at the owner's decision,
+labelled with that result. On LTX 2.5,
 our `int8_tensorwise` + ConvRot reproduces Lightricks' int8 (4.19 against 4.10 MAE) and the same int8
 without the rotation lands 2x farther, behind our 4-bit W4A8 in the frames. The audio tie on 2.3 was
 the metric saturating: at 3 steps the 6-bit GGUF stays in phase with the reference and W4A8 does not.
 The community `capybara_v0.1` checkpoint in W4A8 renders correctly (divergence 0.14 against 0.71 for its
 W4A4) and the reconversion reproduced the deleted 2026-09-01 file byte for byte; on stock ComfyUI's locked
-path the two W4A4 encoders keep the scene at 3–5x the W4A8's distance, which is why only their proofs are
-published. Every verdict, with the prediction it answers, is in that criterion file.
+path the two W4A4 encoders keep the scene at 3–5x the W4A8's distance. Every verdict, with the prediction
+it answers, is in that criterion file.
 
 **What this repo does not carry:** the evidence images and videos of each card live on the Hub repo
 they belong to (the `bench/hf/*/README.md` files here reference them by relative path), and models are

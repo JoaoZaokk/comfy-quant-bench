@@ -304,7 +304,8 @@ W4A4 smooth, destravado     0,158          29,82 [29,2-30,6]     0,645  0,220   
   condicionamento (smooth 0,082 < convrot 0,111).** Uma semente; registrado, não explicado. A
   distância de condicionamento ordena formatos grosseiramente (W4A8 ≪ W4A4) e não ordena dois W4A4
   vizinhos — a mesma lição do erro por camada, agora no encoder.
-- Decisão mantida: os pesos W4A4 não sobem. No caminho que esta árvore usa por padrão eles mudam a
+- Decisão mantida ate as 05:10, quando o dono mandou subir; subiram em `w4a4/` no repo do heretic,
+  ao lado da medicao e rotulados. O que continua verdade: no caminho que esta árvore usa por padrão eles mudam a
   cena; no de fábrica ficam a 3–5x da distância do W4A8 por 8 % menos memória e sem ganho de
   velocidade (travado = dequantizado). Provas e sidecars sobem.
 
