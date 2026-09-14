@@ -1,0 +1,31 @@
+{
+  "reference": "capybara_v0.1.safetensors",
+  "steps": 6,
+  "size": 480,
+  "seeds": [
+    12345
+  ],
+  "prompts": [
+    "a red apple on a wooden table, soft daylight"
+  ],
+  "models": {
+    "capybara_v0.1_w4a8r.safetensors": {
+      "divergence_mean": 0.14388631284236908,
+      "divergence_min": 0.14388631284236908,
+      "divergence_max": 0.14388631284236908,
+      "per_run": {
+        "prompt0_seed12345": 0.14388631284236908
+      },
+      "s_per_step_median": 6.557372900000094,
+      "gib": 8.240001365542412,
+      "paired_vs_baseline": {
+        "baseline": "capybara_v0.1_w4a8r.safetensors",
+        "mean": 0.0,
+        "worst": 0.0,
+        "best": 0.0,
+        "wins": 0,
+        "runs": 1
+      }
+    }
+  }
+}

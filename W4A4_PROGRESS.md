@@ -5597,3 +5597,173 @@ fone. Bypass abaixa o nivel do audio nas duas rodadas (-2,2 / -4,7 dB) e custa 2
 Nao coberto: uma semente, um prompt por rodada, 512 px, uma placa; nenhuma metrica de audio
 validada contra ouvido; o mesmo LoRA nao foi renderizado sobre o BF16; o empate do audio nao tem
 mecanismo; a loteria do commit sem estatistica (N=1 em C:, N=3 em W:).
+
+## Parte 52 -- 2026-09-14 (madrugada, depois da fila j): fechar as seis, publicar o que faltava, e o empate do audio explicado
+
+O dono perguntou "100% finalizado? Quantos foram verificados? Convertidos?" e depois mandou:
+*"fecha todos eles e sobe pro hf os modelos e comita no gh."* Esta parte e a resposta, com a
+contagem feita antes de qualquer coisa e o criterio escrito antes de qualquer numero.
+
+### A contagem (medida, nao lembrada)
+
+Varredura dos `.quant.json` nas quatro raizes do yaml (`ComfyUI/models`, `P:/ComfyBench`,
+`C:/ComfyBench`, `D:/ComfyUI-Models`), lista guardada em `.scratch/sidecars_2026-09-14.txt`
+porque a primeira copia em `/tmp` sumiu entre dois shells:
+
+```
+sidecars .quant.json           53
+  com peso no disco            25
+  orfaos (peso apagado)        28   -- limpeza anterior; quase todos ja no Hub
+verificados na SAIDA           44   -- render ou condicionamento comparado com a referencia
+sem verificacao de saida        6
+```
+
+As seis: `gemma_3_12B_it_w4a8` (fabrica, P:), `gemma_3_12B_it_heretic_w4a4_convrot`,
+`gemma_3_12B_it_heretic_w4a4_smooth`, `ltx-2.5-22b-distilled-transformer-bf16_int8`,
+`..._int8_convrot` (D:, 20,03 GiB cada) e `capybara_v0.1_w4a8` (orfao: so reconvertendo). Mais
+dois itens abertos que nao sao conversao: o Krea 2 Turbo W4A4 medido e nao publicado (licenca por
+ler) e o empate do audio da parte 51 sem mecanismo.
+
+### O criterio, antes (`bench/criterio_fechamento_2026-09-14.md`, 02:20)
+
+A (Gemma de fabrica W4A8 como encoder do 2.3: rel-L2 0,05-0,30 no condicionamento; render na
+mesma cena, MAE 3-12), C (os dois int8 nossos do 2.5: MAE 3-6, ConvRot igual ou melhor), D (tres
+builds do heretic contra o heretic BF16: ordem w4a8 < smooth < convrot; renders na mesma cena), E
+(capybara W4A8 reconvertido: imagem coerente), G (o empate do audio testado a 3 passos: se e
+saturacao, o Q6_K separa em >= 25 %). Cada um com o que o refuta.
+
+### O que a execucao ensinou antes de qualquer veredito
+
+- **Esta arvore ja roda o encoder quantizado com matematica quantizada por padrao.** O patch
+  `patches/comfyui_text_encoder_quantized_math.patch` esta aplicado (quatro arquivos; opt-out
+  `--disable-quantized-text-encoder`, `comfy/cli_args.py:111`). Entao "o que o usuario recebe" sao
+  DOIS caminhos, e A e D passaram a medir os dois: `tools/ltx_encode_lowcommit.py --stock-locks`
+  injeta a flag e grava `stock_locks` no JSON. So o destravado e renderizado.
+- **Encoder quantizado de 12 B nao cabe na 3080 Ti com o cortex la.** Quatro encodes quantizados,
+  quatro `CUDA error: out of memory` (W4A8 8,3 GB, W4A4 6,9 GB) na placa com ~8 GB livres; o BF16
+  de 23,5 GB passa pela carga parcial. Refeitos na 3090 numa segunda passada, servidor derrubado.
+  Nao isolado: se a carga parcial nao cobre camada quantizada ou se e a ativacao dequantizada.
+- **A reconversao do capybara recusou por disco em F:** (10,34 GiB livres contra 16,51 pedidos --
+  estimativa conservadora, o arquivo real tem 8,24 GiB). Refeita para P:, 391 s na 3080 Ti,
+  8.847.634.096 B, 432 camadas, sidecar novo.
+- **O BF16 a 3 passos rodou sob pressao de commit** (encode do heretic BF16 na 3080 Ti ao mesmo
+  tempo: 183 GiB de pico, pagefile a 166) e fez 41-56 s/it contra 8,05 na fila j. A distancia nao
+  depende disso; a coluna de tempo dessa rodada nao vale e esta marcada assim.
+
+### G fechado: o empate era a metrica saturando (03:16, `bench/ltx23/av_3steps/`)
+
+```
+braco            MAE vs BF16        SSIM  | log-mel   SNR onda   conv    RMS
+Q6_K terceiro     7,52 [6,4-8,7]   0,821 |  0,063    +8,35 dB   0,164  -32,8 dBFS
+W4A8 nosso       13,32 [10,8-15,5] 0,672 |  0,223    -1,05 dB   0,687  -36,1 dBFS
+controles: silencio 7,13; ruido branco no RMS da referencia 1,96
+```
+
+G1 e G2 confirmadas: a 3 passos o som separa 3,5x e o video mantem a ordem. O mecanismo esta na
+coluna do SNR: o Q6_K **continua em fase** com a referencia (+8,35 dB) e o W4A8 nao (-1,05 dB); a 8
+passos os dois estavam em -1 dB, descorrelacionados, e o log-mel dos dois caiu no mesmo piso
+(~0,16). Ressalva impressa junto: a 3 passos o 2.3 distilled 1.1 nao renderiza a cena normal (galhos
+secos e aves em todos os bracos, farol escondido), entao a rodada responde so ao mecanismo do empate,
+nada sobre o modelo como se usa. Card do 2.3 e CLAUDE.md corrigidos no mesmo minuto.
+
+### Publicado antes dos renders
+
+- **Krea 2 Turbo W4A4** (`JoaoZaokk/Krea-2-Turbo-W4A4-ConvRot`, gated automatico). A licenca
+  (Krea 2 Community License v.1, 2026-06-22, lida com `pdftotext` porque o PDF nao tem camada de
+  texto que o WebFetch enxergue) permite derivado (par. 2.1) com nome comecando por "Krea", copia do
+  acordo, `NOTICE.txt` com a frase prescrita e declaracao de modificacao (par. 3.1-3.3); comercial
+  so abaixo de US$ 1M/ano (par. 2.3); filtros de conteudo (par. 4.2). Tudo isso esta no repo. Os dois
+  builds do teto (cg 16 e 64) nao subiram: nao estao mais no disco.
+- **Qwen3-VL 4B W4A8** (`JoaoZaokk/Qwen3-VL-4B-W4A8-ConvRot`), o encoder do Krea 2, com o W4A4 ao
+  lado como comparacao 2,5x pior. Numeros de `bench/krea2_suite.md` par. 8.
+
+### D3 (heretic BF16 contra fabrica BF16, no render): 03:19
+
+Mesmo transformer W4A8, mesma semente, condicionamento do heretic BF16 (encodado na 3080 Ti, 63 s,
+commit de pico 170,9 GiB) contra o da fabrica BF16: **MAE 9,34 [8,73-10,08], PSNR 21,37, SSIM
+0,832, log-mel 0,131, lag 0, nivel -23,8 contra -24,0 dBFS** (`bench/ltx23/encoder_heretic_vs_factory/`).
+Mesma cena, distancia da ordem da quantizacao do transformer (10,39) -- dentro do 10-40 previsto.
+O rel-L2 do condicionamento entra na passada 2.
+
+### Resultados: A, C e D (03:36–04:08)
+
+Tabelas completas e vereditos por previsão em `bench/criterio_fechamento_2026-09-14.md`; aqui o
+que muda o que se sabe.
+
+**C (2.5, dois int8 nossos, encoder int8 vivo, 3 passos):** com ConvRot o nosso int8 cai em cima do
+da Lightricks — MAE 4,19 contra 4,10 (faixas sobrepostas), log-mel 0,043 contra 0,041, SNR 11,6
+contra 11,2. **Sem a rotação, os mesmos 8 bits ficam 2x mais longe nos quadros (8,23)** — mais
+longe que o nosso W4A8 (7,81), que mantém a rotação e desce o peso a 4 bits — e ainda 2x mais
+perto no som que o W4A8 (0,060 contra 0,120). C1 refutada para o int8 sem rotação, mas a leitura
+colada à refutação ("pior que 4 bits = quebrado") não vale: mesma cena, SSIM 0,889 contra 0,895. A
+rotação é um termo do tamanho da largura do peso neste modelo. Sampler: 2,02 e 2,12 s/it contra
+8,48 do BF16 (barra do `comfy_8190_b.err`, lida só depois de a ferramenta aprender o formato
+`HH:MM:SS` que o ComfyUI usa acima de 600 s). Os dois builds sobem para o card do 2.5, o sem
+rotação rotulado como negativo medido. `bench/ltx25/int8_ours/`.
+
+**A (Gemma de fábrica W4A8 como encoder do 2.3):** condicionamento rel-L2 0,043 do BF16 no caminho
+quantizado e 0,042 no dequantizado — **destravar custa 0,001 no W4A8**, e o sinal troca entre pos
+e neg. Render W4A8 sobre ele: **MAE 6,75 [6,40-7,15], SSIM 0,894, log-mel 0,087**, mesma cena,
+abaixo da distância do próprio transformer (10,39), 4x o rodapé salvo-vs-vivo (1,74). A1 errou o
+piso por 15 % (0,043 contra 0,05–0,30) sem refutar; A2 confirmada. Publicado como repo novo
+(`JoaoZaokk/Gemma-3-12B-it-W4A8-ConvRot`) com o card, o sidecar e as provas. Discrepância aberta,
+escrita nos dois cards: o monkeypatch de 2026-08-31 dizia que destravar o W4A8 heretic somava
+1,84e-1 no output cru do encoder; a flag mede 0,001 no condicionamento projetado.
+
+**D (heretic: W4A8, W4A4 convrot, W4A4 smooth contra o heretic BF16):** ordem prevista confirmada
+nos dois caminhos — 0,042 < 0,158 < 0,221 destravado, 0,043 < 0,082 < 0,111 travado. Suavizar canal
+paga 1,4x (a pergunta de 2026-09-01, fechada: paga, e não salva). **Destravar custa 2x no W4A4 e
+0,001 no W4A8**: a ativação de 4 bits é o termo grande. No render, W4A8 mantém a cena (5,45 MAE);
+**os dois W4A4 desenham uma cena coerente, bem iluminada e ERRADA** — farol numa ilha rochosa sob
+céu azul, de dia, onde o prompt pede crepúsculo e BF16/W4A8/fábrica desenham a silhueta — 29,8 e
+38,1 MAE. D2 refutada na cena para os W4A4 (a folha decide; o smooth fica 0,6 % abaixo do limiar
+numérico e é visivelmente a mesma cena diurna). D3 refutada: heretic BF16 está a 0,10 do de fábrica
+(previsto > 0,3) e mantém a cena (9,34); a virada está entre 0,10 e 0,16 de rel-L2 neste prompt.
+**Os pesos W4A4 do heretic não sobem**; sobem os sidecars e as provas. Sampler 2,30 s/it nos
+quatro renders. `bench/ltx23/encoder_heretic/`, `encoder_heretic_vs_factory/`,
+`encoder_cond_heretic.json`.
+
+**E morreu na primeira tentativa por um motivo que vale mais que a ladder.** A passada 1 escolheu
+o VAE com `ls | grep | head -1` e pegou `hunyuanvideo15_vae_fp16.info` (sidecar de outro node) — mas
+antes disso o sampler morreu em `time_in` com `mat1 and mat2 must have the same dtype, but got Half
+and BFloat16`. O capybara é BF16 uniforme (568 tensores 2-D, `perigoso_para_lazy` → None) e o
+HunyuanVideo 1.5 calcula em fp16 (`supported_inference_dtypes` começa por float16): o carregador
+normal casta tudo na entrada, o preguiçoso deixa as Linear em BF16 e a conv sai fp16. Segundo
+modo da armadilha do Krea2 — o guarda perguntava se o arquivo discordava de si mesmo, quando a
+comparação que falha é arquivo contra dtype de cálculo. `quality_ladder.py` agora casta todo braço
+para `model.model.get_dtype()` depois de carregar, pulando `QuantizedTensor`;
+`casta_pesos_divergentes` recebe o alvo explícito (a maioria como alvo teria castado a conv para
+BF16 e mudado o crash de camada). Ladder refeita na passada 5.
+
+### E, os W4A4 travados, e o que subiu (04:35–05:00)
+
+**E (capybara W4A8, ladder refeita na passada 5):** coerente — divergência de latente **0,1439** do
+capybara BF16 contra **0,7072** do W4A4 no mesmo prompt/semente (`bench/capybara_previsao`); a
+mesma maçã, um pouco mais mole, sem o cabo. E2: a reconversão na 3080 Ti saiu **byte-idêntica** à
+de 2026-09-01 na 3090 (sha256 `4317156bea06…b1fcc`, 8.847.634.096 B): conversor W4A8 com codebook
+determinístico entre placas. O decode in-process morreu com o `hostbuf_allocate` de sempre;
+imagens pelo `decode_latents.py` na 3080 Ti. A ladder deu 6,56 s/passo no W4A8 contra 1,42 no BF16
+numa corrida única após uma referência de 15,5 GiB no mesmo processo — não publicado como
+velocidade. `bench/capybara_w4a8/`.
+
+**W4A4 do heretic no caminho travado (passada 6):** os dois MANTÊM a cena — convrot 16,4 MAE
+(SSIM 0,786), smooth 27,4 (0,699), crepúsculo nos dois — onde o destravado a perdia (38,1 / 29,8,
+dia). Virada entre rel-L2 0,11 e 0,16. A ordem do render travado (convrot < smooth) inverte a do
+condicionamento (smooth < convrot): uma semente, registrado. Pesos continuam fora do Hub; provas em
+`bench/ltx23/encoder_heretic_locked/` e no repo do heretic.
+
+**Por-passo do 2.5 (passada 4):** Lightricks int8 2,14, W4A8 2,26 s/it (3 passos); com os 2,02 /
+2,12 dos nossos int8 e os 8,48 do BF16, os quatro quantizados ficam a 12 % um do outro. Os dois
+re-renders bateram pixel a pixel com 13/09 pela terceira vez.
+
+**Subiu (todos com prova):** `JoaoZaokk/Gemma-3-12B-it-W4A8-ConvRot` (novo: peso, sidecar, card,
+condicionamento e render), `LTX-2.5-22B-distilled-W4A8-ConvRot/int8_ours/` (dois pesos, sidecars,
+folha, JSON, MP4/FLAC), `HunyuanVideo-1.5-720p-T2V-Quantized` (capybara W4A8, sidecar, ladder,
+duas imagens), `Gemma-3-12B-it-Heretic-W4A8` (provas dos W4A4, sidecars em `w4a4_not_published/`),
+mais os READMEs refeitos do 2.5, heretic, Hunyuan e 2.3. Antes deles, nesta mesma rodada: Krea 2
+Turbo (gated) e Qwen3-VL 4B.
+
+**Não coberto:** um prompt e uma semente por braço em tudo; a discrepância monkeypatch (0,18)
+contra flag (0,001) no custo de destravar o W4A8; a velocidade do capybara W4A8; a divergência do
+`hv15_w4a8` não está em `bench/` para pôr ao lado do capybara; nenhuma métrica de áudio validada
+contra ouvido.

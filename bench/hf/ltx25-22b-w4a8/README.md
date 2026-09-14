@@ -62,6 +62,8 @@ same prompt, the same seed and the same sigmas.
 |---|---|---|---|---|---|---|
 | BF16 original | 39.13 | 780.7 s | 3.14 | — | — | — |
 | `comfy-int8-convrot` (Lightricks) | 20.03 | 481.5 s | 1.93 | **4.10** | **29.71 dB** | **0.941** |
+| `int8_tensorwise` ours, no rotation (`int8_ours/`, added 2026-09-14) | 20.03 | 493.9 s | 1.98 | 8.23 | 25.15 dB | 0.889 |
+| `int8_tensorwise` + ConvRot ours (`int8_ours/`, added 2026-09-14) | 20.03 | 481.6 s | 1.93 | 4.19 | 30.18 dB | 0.944 |
 | **this file, W4A8** | **11.66** | **400.9 s** | **1.61** | 7.81 | 25.39 dB | 0.895 |
 
 MAE is the mean absolute per-pixel difference on the 0–255 scale, averaged over **all 249
@@ -84,6 +86,8 @@ the run's.
 |---|---|---|---|---|---|
 | `comfy-int8-convrot` (Lightricks) | **0.041** | **11.2 dB** | **0.124** | 0.0 ms | −38.8 dBFS |
 | **this file, W4A8** | 0.120 | 3.4 dB | 0.311 | 0.0 ms | −38.3 dBFS |
+| `int8_tensorwise` ours, no rotation (added 2026-09-14) | 0.060 | 9.0 dB | 0.166 | 0.0 ms | −38.6 dBFS |
+| `int8_tensorwise` + ConvRot ours (added 2026-09-14) | 0.043 | 11.6 dB | 0.119 | 0.0 ms | −38.7 dBFS |
 | *control: silence* | 6.980 | 0.0 dB | — | — | — |
 | *control: white noise at the reference's RMS* | 1.471 | −3.0 dB | 1.097 | — | — |
 
@@ -111,6 +115,41 @@ further from the original, in both senses.** If you want the original's picture 
 Lightricks' INT8 and pay 8.4 GiB and 20 % more time for it. If VRAM is what binds you, this file
 gets a real ten seconds of video and audio out of a 24 GB card faster than anything else here.
 
+### Two more int8 builds, added 2026-09-14: the rotation is the recipe
+
+Two `int8_tensorwise` builds of the same BF16 were converted on this bench on 2026-08-17 with `tools/quant_int8.py`
+(1440 layers each, 20.03 GiB, sidecars beside the weights in `int8_ours/`) and sat unmeasured until
+the closing round; the criterion was written before the numbers
+(`bench/criterio_fechamento_2026-09-14.md`, C, in the method repo). Same protocol as the tables
+above, same BF16 reference, live int8 encoder in every arm; contact sheet and JSON in `int8_ours/`.
+
+- **With ConvRot, our int8 lands on Lightricks' int8.** 4.19 against 4.10 in the frames (per-frame
+  ranges 3.64–4.71 and 3.61–4.61), 0.043 against 0.041 in log-mel, SNR 11.6 against 11.2 dB. The
+  same recipe — `int8_tensorwise` plus the ConvRot rotation, which is what `comfy-int8-convrot` is —
+  reproduces the same result from the same BF16.
+- **Without the rotation, the same 8-bit weights and 8-bit activations land 2x farther in the
+  frames (8.23) and 1.4x in the sound (0.060).** In the frames that is farther than this W4A8 file
+  (7.81), which keeps the rotation and drops the weight to 4 bits; in the sound the unrotated int8
+  is still 2x closer than W4A8. A per-tensor int8 scale over an 8192-wide activation with outliers is
+  a coarse scale, and the rotation is what makes it acceptable. On the contact sheet the two rotated
+  int8 arms keep the BF16's composition; the unrotated one draws the lighthouse taller, closer and
+  redder — the same drift this W4A8 makes. The criterion had put both int8 builds inside 3–6 MAE; the
+  unrotated one refuted it, and the refutation's own reading ("worse than 4 bits = broken build")
+  does not hold: same scene, SSIM 0.889 against W4A8's 0.895, ranges overlapping.
+- **Sampler time from the server's progress bar** (3 steps, 249 frames, 512 px, RTX 3090): BF16
+  **8.48 s/it** (partial load, 25 s), int8 ours **2.02 s/it**, int8 + ConvRot ours **2.12 s/it**,
+  Lightricks' int8 **2.14 s/it**, this W4A8 file **2.26 s/it** — single runs each, so the four
+  quantized arms sit within 12 % of each other and this W4A8 is not faster per step than int8 at
+  this size; what it buys is the 11.66 GiB against 20.03. The "whole run" column is wall-clock
+  that includes loading a 20 GB transformer and the 20 GB encoder over the network on every run —
+  6 s of sampling inside 400–850 s runs — which is why it ranks the arms by disk and not by
+  transformer.
+
+| | video + audio (MP4, h264 + AAC) | lossless audio (FLAC) |
+|---|---|---|
+| int8 ours, no rotation | `int8_ours/int8_no_rotation.mp4` | `int8_ours/int8_no_rotation.flac` |
+| int8 + ConvRot ours | `int8_ours/int8_convrot.mp4` | `int8_ours/int8_convrot.flac` |
+
 ### Listen for yourself
 
 The proofs ship in this repo, not in a description of them:
@@ -129,6 +168,8 @@ Every number above was computed on the lossless PNG frames and FLAC files, never
 | file | bytes | GiB | layout |
 |---|---|---|---|
 | `ltx-2.5-22b-distilled-transformer-w4a8.safetensors` | 12,520,267,816 | **11.66** | 1440 × `asym_w4a8_int8`, `group_size` 16, `convrot_groupsize` 256 |
+| `int8_ours/ltx-2.5-22b-distilled-transformer-bf16_int8.safetensors` | 21,503,879,904 | 20.03 | 1440 × `int8_tensorwise`, no rotation — 2x farther from BF16 than the rotated one; kept as the measured negative |
+| `int8_ours/ltx-2.5-22b-distilled-transformer-bf16_int8_convrot.safetensors` | 21,503,941,832 | 20.03 | 1440 × `int8_tensorwise` + ConvRot, `convrot_groupsize` 256 — indistinguishable from Lightricks' int8 on this measurement |
 
 Source: `ltx-2.5-22b-distilled-transformer-bf16.safetensors`, 42,018,190,584 B, byte-for-byte the
 file `Lightricks/LTX-2.5` publishes. Backend recorded in the sidecar:
@@ -211,6 +252,10 @@ dequantized weight and Linear output verified identical on 12 sampled layers wit
   build predates the calibration record, so its sidecar has no `source_identity_sha256` and there
   is no `err_w4a8` distribution to quote.
 - `convrot_groupsize` **256 only**.
+- **The two int8 builds were measured once each**, one seed, one prompt; their per-step times come
+  from a single run's progress bar. The BF16 per-step (8.48 s/it) is from the one server log that
+  survived the 2026-09-13 renders; Lightricks' int8 and this file were re-rendered on 2026-09-14
+  for their bars alone (pixels identical to the first run, as before).
 
 ## License and changes
 

@@ -1,0 +1,20 @@
+Krea 2 is licensed under the Krea 2 Community License Agreement. For more information, visit https://krea.ai/krea-2-licensing.
+
+This repository distributes Derivatives of the Krea 2 Turbo model, as defined in that Agreement.
+The Krea Model was MODIFIED: the 224 Linear layers of the Krea 2 Turbo transformer were re-encoded
+from BF16 into ComfyUI's ConvRot `convrot_w4a4` format (4-bit weights, 4-bit activation path,
+Hadamard rotation at group size 256) in `krea2_turbo_w4a4.safetensors`, and into a mixed 4-bit /
+8-bit assignment (173 `convrot_w4a4` + 51 `asym_w4a8_int8`) in `krea2_turbo_mixed.safetensors`.
+No weights were fine-tuned and no architecture was altered; every other tensor is preserved from
+the source byte-for-byte.
+
+These Derivatives are NOT official Krea products and are not endorsed by Krea.
+
+The complete Krea 2 Community License Agreement (v.1, June 22, 2026) is distributed beside these
+files as LICENSE_KREA_2_COMMUNITY.pdf (and a text extraction, LICENSE_KREA_2_COMMUNITY.txt). By
+downloading or using these files you agree to be bound by that Agreement and by the Krea
+Acceptable Use Policy (https://www.krea.ai/krea-2-use-policy). Section 2.3 of the Agreement limits
+Commercial Use to entities with company-wide annual revenue below US$1,000,000; Section 4.2
+requires Content Filters in any deployment.
+
+All copyright notices, license terms and attribution notices of the source are retained.

@@ -132,11 +132,29 @@ def casta_pesos_divergentes(model_object, alvo=None) -> dict:
     O alvo, quando nao dado, e o dtype de ponto flutuante mais comum entre os pesos 2-D. Nao e o
     dtype "declarado" de lugar nenhum: e o que a maioria das camadas de fato tem, que e o unico
     que nao depende de qual campo do ComfyUI ainda existe nesta versao.
+
+    **O alvo certo, quando se conhece, e o dtype de CALCULO do modelo (`model.model.get_dtype()`),
+    nao a maioria.** MEDIDO 2026-09-14: `capybara_v0.1` e BF16 uniforme (568 tensores 2-D, um so
+    dtype, `perigoso_para_lazy` devolve None) e o HunyuanVideo 1.5 calcula em fp16
+    (`supported_inference_dtypes` comeca por float16 e `unet_dtype` anda a lista na ordem). O
+    caminho normal casta tudo para fp16 na carga; o preguicoso deixa as Linear em BF16, a conv de
+    entrada sai fp16 e `time_in` morre com `mat1 and mat2 must have the same dtype, but got Half
+    and BFloat16`. Com a maioria como alvo esta funcao teria castado a conv para BF16 e a entrada
+    (fp16) morreria nela. Por isso o ladder passa `alvo=` explicitamente.
+
+    Tensores quantizados (`comfy.quant_ops.QuantizedTensor`) sao pulados: o container e int8 com
+    escala dentro do layout, e `.to(dtype)` nele nao e um cast de peso.
     """
     import torch
+    try:
+        from comfy.quant_ops import QuantizedTensor
+    except Exception:  # noqa: BLE001 -- fora do ComfyUI o helper continua servindo
+        QuantizedTensor = ()
     if alvo is None:
         contagem: dict = {}
         for _, p in model_object.named_parameters():
+            if isinstance(p, QuantizedTensor) or isinstance(p.data, QuantizedTensor):
+                continue
             if p.is_floating_point() and p.ndim == 2:
                 contagem[p.dtype] = contagem.get(p.dtype, 0) + 1
         if not contagem:
@@ -145,6 +163,8 @@ def casta_pesos_divergentes(model_object, alvo=None) -> dict:
     nomes = []
     with torch.no_grad():
         for nome, p in model_object.named_parameters():
+            if isinstance(p, QuantizedTensor) or isinstance(p.data, QuantizedTensor):
+                continue
             if p.is_floating_point() and p.dtype != alvo:
                 p.data = p.data.to(alvo)
                 nomes.append(nome)

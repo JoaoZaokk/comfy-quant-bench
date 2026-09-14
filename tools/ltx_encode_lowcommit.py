@@ -118,12 +118,14 @@ def main() -> int:
                    help="dtype do tensor gravado; float32 e o que o encoder vivo entrega ao sampler")
     p.add_argument("--compare", default=None, help="prefixo de um par gravado pelo servidor para comparar bit a bit")
     p.add_argument("--json", default=None)
+    p.add_argument("--stock-locks", action="store_true",
+                   help="passa --disable-quantized-text-encoder ao ComfyUI: matematica dequantizada, o caminho do ComfyUI de fabrica (esta arvore tem o patch que destrava por padrao)")
     a = p.parse_args()
 
     os.environ["CUDA_VISIBLE_DEVICES"] = str(a.gpu)
     os.chdir(ROOT)
     sys.path.insert(0, str(ROOT / "ComfyUI"))
-    sys.argv = ["main.py"]
+    sys.argv = ["main.py"] + (["--disable-quantized-text-encoder"] if a.stock_locks else [])
     import comfy.options
     comfy.options.enable_args_parsing()
     import numpy as np
@@ -224,7 +226,7 @@ def main() -> int:
         with open(a.json, "w", encoding="utf-8") as fh:
             json.dump({"encoder": a.encoder, "proj_checkpoint": a.proj_checkpoint, "prompt": a.prompt, "negative": a.negative,
                        "saida": a.saida, "device": a.device, "gpu": a.gpu, "commit_antes": c0, "commit_depois_encoder": c1,
-                       "commit_limite": lim, "escritos": escritos, "compare": comparacao}, fh, indent=1)
+                       "commit_limite": lim, "escritos": escritos, "compare": comparacao, "stock_locks": bool(a.stock_locks)}, fh, indent=1)
         print(f"json em {a.json}")
     comfy.utils.load_torch_file = original
     print("NAO COBERTO: o render; so este encoder e esta projecao; igualdade com o servidor depende da placa e e "

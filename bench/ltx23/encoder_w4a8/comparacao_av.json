@@ -1,0 +1,75 @@
+{
+  "referencia": {
+    "json": ".scratch\\ltx23av_w4a8_condf.json",
+    "modelo": "ltx-2.3-22b-distilled-1.1_w4a8_W.safetensors",
+    "segundos": 208.0910017490387,
+    "quadros": 249,
+    "sr": 48000,
+    "audio_s": 9.93,
+    "rms_dbfs": -24.031882823182972,
+    "silencio_frac": 0.0,
+    "movimento": 2.020289421081543
+  },
+  "controles": {
+    "silencio": {
+      "amostras_comparadas": 476640,
+      "amostras_ref": 476640,
+      "amostras_braco": 476640,
+      "sr": 48000,
+      "mae_onda": 0.04576827585697174,
+      "snr_db": 0.0,
+      "lag_ms": -200.0,
+      "logmel_l1": 8.382959365844727,
+      "conv_espectral": 1.0,
+      "rms_dbfs": -240.0000000347071,
+      "silencio_frac": 1.0
+    },
+    "ruido_branco_mesmo_rms": {
+      "amostras_comparadas": 476640,
+      "amostras_ref": 476640,
+      "amostras_braco": 476640,
+      "sr": 48000,
+      "mae_onda": 0.06950576603412628,
+      "snr_db": -3.0099813502490917,
+      "lag_ms": -24.291666666666668,
+      "logmel_l1": 1.725894570350647,
+      "conv_espectral": 0.9918134808540344,
+      "rms_dbfs": -24.02535969025798,
+      "silencio_frac": 0.0
+    }
+  },
+  "bracos": {
+    "W4A8 transformer, W4A8 Gemma encoder": {
+      "json": ".scratch/ltx23av_w4a8_gw4a8.json",
+      "modelo": "ltx-2.3-22b-distilled-1.1_w4a8_W.safetensors",
+      "lora": null,
+      "segundos": 209.90642666816711,
+      "s_por_quadro": 0.8429976974625185,
+      "video": {
+        "quadros_comparados": 249,
+        "quadros_ref": 249,
+        "quadros_braco": 249,
+        "mae": 6.748658180236816,
+        "mae_min": 6.396324157714844,
+        "mae_max": 7.147965908050537,
+        "psnr": 24.67017936706543,
+        "psnr_min": 24.231918334960938,
+        "ssim": 0.8937787543982267
+      },
+      "audio": {
+        "amostras_comparadas": 476640,
+        "amostras_ref": 476640,
+        "amostras_braco": 476640,
+        "sr": 48000,
+        "mae_onda": 0.024916227906942368,
+        "snr_db": 4.347401965357005,
+        "lag_ms": 0.0,
+        "logmel_l1": 0.08740369230508804,
+        "conv_espectral": 0.2480074167251587,
+        "rms_dbfs": -23.76127117318972,
+        "silencio_frac": 0.0
+      },
+      "movimento": 1.9022679328918457
+    }
+  }
+}

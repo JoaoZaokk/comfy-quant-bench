@@ -99,6 +99,30 @@ the effect, and the bypass loader lowers the audio level both times and costs 24
 Criteria written first: [`bench/criterio_ltx23.md`](bench/criterio_ltx23.md),
 [`bench/criterio_lora.md`](bench/criterio_lora.md).
 
+**Krea 2 Turbo went to the Hub on 2026-09-14, and its licence shaped the repo.** The Krea 2 Community
+License (v.1, June 22, 2026; the PDF Krea links from its own model card, read here with `pdftotext`)
+grants the right to distribute derivatives (§2.1) on conditions: a copy of the agreement and every
+recipient bound by it, "Krea" at the start of the model name, a Notice file with a prescribed sentence
+and a statement of modification (§3.1–3.2). So the repo is named `Krea-2-Turbo-W4A4-ConvRot`, ships
+`LICENSE_KREA_2_COMMUNITY.pdf` and `NOTICE.txt`, and is **gated** like the source. Two clauses travel
+with the files: commercial use only below US$1,000,000 of annual revenue (§2.3) and content filters in
+any deployment (§4.2). The two ceiling builds (groupsize 16 and 64) were measured and are not on the Hub:
+they answered a question about the format and were not kept on disk.
+
+**The closing round of 2026-09-14 measured the six conversions that had never been checked at the
+output**, against a criterion written first (`bench/criterio_fechamento_2026-09-14.md`). The factory
+Gemma 3 12B W4A8 is a usable LTX 2.3 encoder (conditioning 0.043 from BF16, render MAE 6.75 with the
+scene intact) and releasing ComfyUI's text-encoder locks on it costs 0.001 — while on two W4A4 builds
+of the abliterated Gemma the release costs 2x and both render a coherent but *different* scene
+(daylight for "dusk"), so those weights stay off the Hub and their proofs went up instead. On LTX 2.5,
+our `int8_tensorwise` + ConvRot reproduces Lightricks' int8 (4.19 against 4.10 MAE) and the same int8
+without the rotation lands 2x farther, behind our 4-bit W4A8 in the frames. The audio tie on 2.3 was
+the metric saturating: at 3 steps the 6-bit GGUF stays in phase with the reference and W4A8 does not.
+The community `capybara_v0.1` checkpoint in W4A8 renders correctly (divergence 0.14 against 0.71 for its
+W4A4) and the reconversion reproduced the deleted 2026-09-01 file byte for byte; on stock ComfyUI's locked
+path the two W4A4 encoders keep the scene at 3–5x the W4A8's distance, which is why only their proofs are
+published. Every verdict, with the prediction it answers, is in that criterion file.
+
 **What this repo does not carry:** the evidence images and videos of each card live on the Hub repo
 they belong to (the `bench/hf/*/README.md` files here reference them by relative path), and models are
 never committed. The three text-encoder repos on the Hub carry a measured caveat: stock ComfyUI routes
@@ -122,6 +146,9 @@ that the gap between them is invisible to every structural check and costs almos
 | [Wan2.2-TI2V-5B-W4A8-ConvRot](https://huggingface.co/JoaoZaokk/Wan2.2-TI2V-5B-W4A8-ConvRot) | *2026-09-13* — 9.31 → 2.75 GiB, W4A4 blur as a negative, and the counterexample that shows latent divergence is biased toward soft failure | Apache 2.0 |
 | [LTX-2.5-22B-distilled-W4A8-ConvRot](https://huggingface.co/JoaoZaokk/LTX-2.5-22B-distilled-W4A8-ConvRot) | *2026-09-13* — a full 10 s video **with its audio** against BF16 and Lightricks' INT8; MP4/FLAC proofs in the repo | LTX-2.x Community Licence — read it there |
 | [LTX-2.3-22B-distilled-1.1-W4A8-ConvRot](https://huggingface.co/JoaoZaokk/LTX-2.3-22B-distilled-1.1-W4A8-ConvRot) | *2026-09-14* — the single-file 2.3 at 42.98 → 15.51 GiB; 10 s with audio against BF16, W4A4 and a 6-bit GGUF on one saved conditioning; the conditioning trap, the commit-charge mechanism and two LoRA rounds, with proofs | LTX-2 Community Licence — read it there |
+| [Krea-2-Turbo-W4A4-ConvRot](https://huggingface.co/JoaoZaokk/Krea-2-Turbo-W4A4-ConvRot) | *2026-09-14* — 24.48 → 7.50 GiB, 1.47x faster per step than the int8 build, 40 renders none broken, the ceiling searched at every legal groupsize and not reached, and Comfy-Org's int8 more faithful in 10 of 10 paired runs; **gated** because the licence requires every recipient to accept it | Krea 2 Community Licence — commercial use below US$1M revenue only, content filters required; read it there |
+| [Qwen3-VL-4B-W4A8-ConvRot](https://huggingface.co/JoaoZaokk/Qwen3-VL-4B-W4A8-ConvRot) | *2026-09-14* — the Krea 2 text encoder, 8.27 → 3.41 GiB, conditioning rel-RMSE 0.1438 at 76 tokens and 2.09x faster with the quantized-math patch; the W4A4 build beside it as the 2.5x-worse comparison | Apache 2.0 |
+| [Gemma-3-12B-it-W4A8-ConvRot](https://huggingface.co/JoaoZaokk/Gemma-3-12B-it-W4A8-ConvRot) | *2026-09-14* — the factory LTX-2 text encoder, 22.70 → 8.31 GiB, measured at the output for once: conditioning 0.043 rel-L2 from BF16 on either math path, and the LTX 2.3 W4A8 render on it lands MAE 6.75 / log-mel 0.087 from the BF16-encoder render, under the transformer's own quantization distance | Gemma Terms of Use |
 | [Qwen2.5-VL-7B-W4A4-ConvRot](https://huggingface.co/JoaoZaokk/Qwen2.5-VL-7B-W4A4-ConvRot) · [Gemma-3-12B-it-Heretic-W4A8](https://huggingface.co/JoaoZaokk/Gemma-3-12B-it-Heretic-W4A8) | text encoders: memory saved, time not, unless ComfyUI's two text-encoder locks are released | Apache 2.0 / Gemma |
 
 Read the Hunyuan repository's licence before downloading from it: it is redistributed under

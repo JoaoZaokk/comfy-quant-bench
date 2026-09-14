@@ -25,7 +25,10 @@ from pathlib import Path
 
 RE_GOT = re.compile(r"got prompt")
 RE_BAR = re.compile(r"(\d+)/(\d+) \[(\d+):(\d+)<00:00, +([0-9.]+)(s/it|it/s)\]")
-RE_END = re.compile(r"Prompt executed in ([0-9.]+) seconds")
+# Acima de 600 s o ComfyUI troca o formato (main.py:400-402): "Prompt executed in 00:12:41".
+# A primeira versao desta ferramenta so lia "in X seconds" e marcava toda corrida longa como
+# "(sem fim)" -- foi assim que o BF16 do 2.5 (761 s) ficou sem parede na leitura de 2026-09-14.
+RE_END = re.compile(r"Prompt executed in (?:([0-9.]+) seconds|(\d+):(\d\d):(\d\d))")
 RE_LOAD = re.compile(r"Requested to load ([A-Za-z_0-9]+)")
 
 
@@ -58,7 +61,11 @@ def parse(texto: str) -> list[dict]:
             atual["barras"].append(barra)
         m = RE_END.search(linha)
         if m:
-            atual["parede_s"] = float(m.group(1))
+            if m.group(1) is not None:
+                atual["parede_s"] = float(m.group(1))
+            else:
+                h, mi, se = (int(x) for x in m.groups()[1:])
+                atual["parede_s"] = float(h * 3600 + mi * 60 + se)
             prompts.append(atual)
             atual = None
     if atual is not None:

@@ -16,9 +16,30 @@ tags:
   - w4a4
 language:
   - en
+gated: auto
+extra_gated_heading: "Access Krea 2 Turbo (ConvRot 4-bit derivatives)"
+extra_gated_description: >-
+  These files are Derivatives of Krea 2 Turbo. Section 3.1 of the Krea 2 Community License
+  Agreement requires every recipient to be bound by it, so access is gated on agreeing to it.
+extra_gated_prompt: >-
+  By clicking "Agree", you agree to the Krea 2 Community License Agreement
+  (LICENSE_KREA_2_COMMUNITY.pdf in this repository, also at
+  https://cdn.jsdelivr.net/gh/krea-ai/krea-2@db3984fbc6e13b34c0064990fc2d95ac64d00058/assets/hf_samples/LICENSE.pdf)
+  and acknowledge the Krea Acceptable Use Policy (https://www.krea.ai/krea-2-use-policy).
+  Commercial Use is limited by Section 2.3 to entities with company-wide annual revenue below
+  US$1,000,000; deployments must implement Content Filters (Section 4.2).
+extra_gated_fields:
+  I agree to the Krea 2 Community License Agreement and the Acceptable Use Policy: checkbox
+extra_gated_button_content: "Agree and access repository"
 ---
 
 # Krea 2 Turbo — ConvRot W4A4, 3.26x lighter, 1.47x faster per step, and the ceiling we could not reach
+
+> **Derivative of Krea 2 Turbo, distributed under the Krea 2 Community License Agreement (v.1,
+> June 22, 2026).** Not an official Krea product, not endorsed by Krea. The full agreement ships
+> beside these files (`LICENSE_KREA_2_COMMUNITY.pdf`, text in `.txt`) with the required
+> `NOTICE.txt`; read them before use — the licence is not permissive (revenue threshold for
+> commercial use, content-filter requirement, acceptable-use policy).
 
 Native `convrot_w4a4` and mixed 4/8-bit builds of `krea/Krea-2-Turbo` for ComfyUI.
 
@@ -42,6 +63,11 @@ Method, tools and the full measurement log: **https://github.com/JoaoZaokk/comfy
 
 Source: 24.48 GiB BF16, **12,820,073,036 parameters** summed from the safetensors header, not
 estimated from the file size.
+
+Both files ship with their `.quant.json` sidecar (per-layer format, `convrot_groupsize`, source
+sha256, backend, conversion log). The two ceiling builds of §4 (`convrot_groupsize` 16 and 64) were
+measured and **not kept** — they answer a question about the format and are not a trade anybody
+should download.
 
 "Per-layer error" is, for each layer, the measured relative error of the format that layer
 *actually* received, on the real activations it saw during sampling — captured with forward hooks
@@ -221,7 +247,31 @@ files here do not hit it** — they load with zero divergent dtypes.
 
 ---
 
-## 7. What none of this covers
+## 7. License, name and notices — what the Krea 2 Community License requires of a derivative
+
+Krea 2 is distributed under the **Krea 2 Community License Agreement v.1 (June 22, 2026)**, and
+Section 2.1 grants the right to create and distribute Derivatives. Distributing one carries
+obligations (Sections 3.1–3.3), and this repository meets them as follows:
+
+- **A copy of the Agreement, and recipients bound by it** — `LICENSE_KREA_2_COMMUNITY.pdf` (the
+  file Krea links from its own model card) plus a text extraction; this repository is gated on
+  agreeing to it, the same way the source repository is.
+- **"Krea" at the beginning of the model name** — the repository is `Krea-2-Turbo-W4A4-ConvRot`.
+- **The attribution notice in a Notice file, and a statement of modification** — `NOTICE.txt`
+  carries the sentence the Agreement prescribes and states exactly what was modified: the 224
+  Linear layers of the transformer re-encoded into `convrot_w4a4` (and, in the mixed file, 173
+  into `convrot_w4a4` and 51 into `asym_w4a8_int8`). Nothing was fine-tuned, no architecture
+  changed, every other tensor is byte-identical to the source.
+- **No conflicting terms, no claim of endorsement** — these files are offered under the same
+  Agreement and nothing else; they are not official Krea products and Krea has not endorsed them.
+- **Notices retained** — nothing from the source's notices was removed or altered.
+
+Two clauses bind you the same way they bind the source model: **Commercial Use is only permitted
+below US$1,000,000 of company-wide annual revenue** (Section 2.3; above it, an Enterprise License
+from Krea), and **any deployment must implement Content Filters** (Section 4.2) and comply with
+the Acceptable Use Policy (Section 4.4).
+
+## 8. What none of this covers
 
 - **Five prompts, two seeds, one card, one resolution, no perceptual metric.** "40 of 40 usable" is
   the judgement of someone who looked at two contact sheets.

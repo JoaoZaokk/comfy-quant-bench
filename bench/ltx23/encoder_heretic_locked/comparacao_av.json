@@ -1,0 +1,171 @@
+{
+  "referencia": {
+    "json": ".scratch\\ltx23av_w4a8_hbf16.json",
+    "modelo": "ltx-2.3-22b-distilled-1.1_w4a8_W.safetensors",
+    "segundos": 200.0390031337738,
+    "quadros": 249,
+    "sr": 48000,
+    "audio_s": 9.93,
+    "rms_dbfs": -23.793737154863578,
+    "silencio_frac": 0.0,
+    "movimento": 1.8963314294815063
+  },
+  "controles": {
+    "silencio": {
+      "amostras_comparadas": 476640,
+      "amostras_ref": 476640,
+      "amostras_braco": 476640,
+      "sr": 48000,
+      "mae_onda": 0.047186244279146194,
+      "snr_db": 0.0,
+      "lag_ms": -200.0,
+      "logmel_l1": 8.374646186828613,
+      "conv_espectral": 1.0,
+      "rms_dbfs": -240.0000000347071,
+      "silencio_frac": 1.0
+    },
+    "ruido_branco_mesmo_rms": {
+      "amostras_comparadas": 476640,
+      "amostras_ref": 476640,
+      "amostras_braco": 476640,
+      "sr": 48000,
+      "mae_onda": 0.07150310277938843,
+      "snr_db": -3.0101350354451495,
+      "lag_ms": 152.45833333333334,
+      "logmel_l1": 1.7599846124649048,
+      "conv_espectral": 0.9891141653060913,
+      "rms_dbfs": -23.787214226358934,
+      "silencio_frac": 0.0
+    }
+  },
+  "bracos": {
+    "W4A4 convrot, locked (stock path)": {
+      "json": ".scratch/ltx23av_w4a8_hw4a4cL.json",
+      "modelo": "ltx-2.3-22b-distilled-1.1_w4a8_W.safetensors",
+      "lora": null,
+      "segundos": 270.043940782547,
+      "s_por_quadro": 1.0845138184038032,
+      "video": {
+        "quadros_comparados": 249,
+        "quadros_ref": 249,
+        "quadros_braco": 249,
+        "mae": 16.379911422729492,
+        "mae_min": 15.425049781799316,
+        "mae_max": 17.36656951904297,
+        "psnr": 19.329465866088867,
+        "psnr_min": 19.033052444458008,
+        "ssim": 0.7859973795711994
+      },
+      "audio": {
+        "amostras_comparadas": 476640,
+        "amostras_ref": 476640,
+        "amostras_braco": 476640,
+        "sr": 48000,
+        "mae_onda": 0.022897740826010704,
+        "snr_db": 5.396369069216557,
+        "lag_ms": 0.0,
+        "logmel_l1": 0.11081794649362564,
+        "conv_espectral": 0.23841863870620728,
+        "rms_dbfs": -24.063878847043092,
+        "silencio_frac": 0.0
+      },
+      "movimento": 1.7678859233856201
+    },
+    "W4A4 smooth, locked (stock path)": {
+      "json": ".scratch/ltx23av_w4a8_hw4a4sL.json",
+      "modelo": "ltx-2.3-22b-distilled-1.1_w4a8_W.safetensors",
+      "lora": null,
+      "segundos": 264.03891801834106,
+      "s_por_quadro": 1.0603972611178356,
+      "video": {
+        "quadros_comparados": 249,
+        "quadros_ref": 249,
+        "quadros_braco": 249,
+        "mae": 27.414230346679688,
+        "mae_min": 26.328893661499023,
+        "mae_max": 28.45981788635254,
+        "psnr": 15.621281623840332,
+        "psnr_min": 15.373571395874023,
+        "ssim": 0.698926754295826
+      },
+      "audio": {
+        "amostras_comparadas": 476640,
+        "amostras_ref": 476640,
+        "amostras_braco": 476640,
+        "sr": 48000,
+        "mae_onda": 0.04576577991247177,
+        "snr_db": -0.026257266540450047,
+        "lag_ms": 0.0,
+        "logmel_l1": 0.15967048704624176,
+        "conv_espectral": 0.3933572769165039,
+        "rms_dbfs": -24.400439666867616,
+        "silencio_frac": 0.0
+      },
+      "movimento": 1.5834940671920776
+    },
+    "W4A4 convrot, released": {
+      "json": ".scratch/ltx23av_w4a8_hw4a4c.json",
+      "modelo": "ltx-2.3-22b-distilled-1.1_w4a8_W.safetensors",
+      "lora": null,
+      "segundos": 263.97204327583313,
+      "s_por_quadro": 1.0601286878547516,
+      "video": {
+        "quadros_comparados": 249,
+        "quadros_ref": 249,
+        "quadros_braco": 249,
+        "mae": 38.11628341674805,
+        "mae_min": 35.892181396484375,
+        "mae_max": 40.407562255859375,
+        "psnr": 13.10993766784668,
+        "psnr_min": 12.786890029907227,
+        "ssim": 0.5669021550565958
+      },
+      "audio": {
+        "amostras_comparadas": 476640,
+        "amostras_ref": 476640,
+        "amostras_braco": 476640,
+        "sr": 48000,
+        "mae_onda": 0.04763423278927803,
+        "snr_db": -0.3250510678225681,
+        "lag_ms": 0.0,
+        "logmel_l1": 0.19278942048549652,
+        "conv_espectral": 0.40819719433784485,
+        "rms_dbfs": -24.440119282797585,
+        "silencio_frac": 0.0
+      },
+      "movimento": 1.9508017301559448
+    },
+    "W4A4 smooth, released": {
+      "json": ".scratch/ltx23av_w4a8_hw4a4s.json",
+      "modelo": "ltx-2.3-22b-distilled-1.1_w4a8_W.safetensors",
+      "lora": null,
+      "segundos": 309.66976523399353,
+      "s_por_quadro": 1.2436536756385281,
+      "video": {
+        "quadros_comparados": 249,
+        "quadros_ref": 249,
+        "quadros_braco": 249,
+        "mae": 29.82158660888672,
+        "mae_min": 29.188507080078125,
+        "mae_max": 30.63299560546875,
+        "psnr": 14.674169540405273,
+        "psnr_min": 14.482681274414062,
+        "ssim": 0.6447881925851107
+      },
+      "audio": {
+        "amostras_comparadas": 476640,
+        "amostras_ref": 476640,
+        "amostras_braco": 476640,
+        "sr": 48000,
+        "mae_onda": 0.046889618039131165,
+        "snr_db": -0.24060949247174657,
+        "lag_ms": 0.0,
+        "logmel_l1": 0.2201959639787674,
+        "conv_espectral": 0.4143002927303314,
+        "rms_dbfs": -24.774805355066,
+        "silencio_frac": 0.0
+      },
+      "movimento": 1.6945503950119019
+    }
+  }
+}

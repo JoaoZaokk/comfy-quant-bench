@@ -90,10 +90,16 @@ time); level is RMS. Proofs: `av/*.mp4` (with the track), `av/*.flac`, `av/conta
   frames (3.59 against 10.39) with high-precision dequantized math — the direction this bench has
   measured every time more weight bits met a 4-bit build — and pays for it with a 2.2x slower step
   and a transformer 1.4x larger.
-- **The sound does not separate W4A8 from Q6_K.** 0.163 against 0.163 in log-mel, 0.42 against
-  0.42 in spectral convergence, 0.0 ms lag in both. The picture ranks them 3x apart; the soundtrack
-  calls them equal. On the 2.5 card the sound ranked the arms as the picture did, by a wider
-  margin; on 2.3 it does not, and this card does not know why. Listen to the FLACs.
+- **The sound does not separate W4A8 from Q6_K at 8 steps — and that is the metric saturating,
+  not the audio being insensitive.** 0.163 against 0.163 in log-mel, 0.42 against 0.42 in spectral
+  convergence, waveform SNR near −1 dB for every arm: after eight steps both quantized arms' audio
+  has drifted out of phase with the reference and the log-mel distance lands on the same floor.
+  Re-run at 3 steps (the tail of the same schedule, same conditioning), the sound separates
+  **3.5x** — Q6_K 0.063 with SNR +8.4 dB (still in phase), W4A8 0.223 with SNR −1.1 dB — and the
+  picture keeps the same order (7.5 against 13.3). Caveat printed with the number: at 3 steps this
+  model does not render its normal scene (every arm, BF16 included, draws bare branches and birds
+  with the lighthouse hidden), so the 3-step run answers only the question about the tie, nothing
+  about the model as used (`av_3steps/` in the method repo). Listen to the FLACs.
 - **W4A4 does not break** (same scene, coherent motion, `av/w4a4_control.mp4`), unlike every Qwen
   and Wan build on this bench, and it is worse than W4A8 in both branches — 14.45 against 10.39 in
   the frames, 0.281 against 0.163 in the sound, and it drops the level by 2.3 dB. It has the fastest
@@ -286,9 +292,13 @@ Windows box with 64 GB of RAM:
   encoded on an RTX 3080 Ti and the transformers ran on the RTX 3090; the two cards' encodes differ
   by relative L2 1.0e-3 (87 % of elements bit-equal in bf16), and that footprint — about 2 MAE on
   the frames, 0.07 log-mel — is common to every arm because every arm reads the same file. A W4A8
-  build of the factory Gemma 3 12B exists on this bench (8.31 GiB, 336 layers); stock ComfyUI
-  routes every text encoder's math through the dequantized path, so it saves memory and not time,
-  and it is not part of this measurement.
+  build of the same factory Gemma 3 12B (8.31 GiB, 336 layers) **was measured on this exact render
+  on 2026-09-14**: its conditioning sits 0.043 rel-L2 from the BF16's (the same on the quantized
+  and the dequantized math path), and the W4A8 transformer on that conditioning lands **MAE 6.75 /
+  SSIM 0.894 / log-mel 0.087** from the BF16-encoder render — under the transformer's own
+  quantization distance (10.39), the same scene, level unchanged. Proofs and the card:
+  https://huggingface.co/JoaoZaokk/Gemma-3-12B-it-W4A8-ConvRot. It is not one of the four arms
+  above; every arm above reads the BF16 conditioning.
 - **The BF16 reference ran through a different loader than the other arms** (GGUF container,
   weights streamed from the page cache) because ComfyUI's safetensors reader cannot open a 39 GiB
   file on this machine. The weights are bit-identical and the Linear outputs were verified equal on

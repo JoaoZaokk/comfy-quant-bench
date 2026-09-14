@@ -240,10 +240,16 @@ def sample_all(args, name, conditioning, comfy_sample, comfy_sd, comfy_mm, folde
     # conversao, e um checkpoint com F32 no meio de BF16 morre em `F.linear`. Isto alcanca o
     # mesmo estado que o caminho nao-preguicoso produz sozinho -- medido: zero parametros em
     # float32 apos a carga normal.
-    if name in getattr(args, "_castar", ()):
-        from _dynamic_vram import casta_pesos_divergentes
-        r = casta_pesos_divergentes(model.get_model_object("diffusion_model"))
-        print(f"  castados {r['castados']} tensores para {r['alvo']}"
+    # E nao so o arquivo MISTO: um arquivo BF16 uniforme num modelo que calcula em fp16 morre do
+    # mesmo jeito (capybara_v0.1 no HunyuanVideo 1.5, medido 2026-09-14 -- `perigoso_para_lazy`
+    # devolvia None e o sampler morreu em `time_in`). O alvo e o dtype de CALCULO do modelo, que e
+    # o que o caminho nao-preguicoso ja produz; tensores quantizados ficam como estao.
+    from _dynamic_vram import casta_pesos_divergentes
+    alvo = model.model.get_dtype()
+    dm = model.get_model_object("diffusion_model")
+    r = casta_pesos_divergentes(dm, alvo=alvo)
+    if r["castados"]:
+        print(f"  castados {r['castados']} tensores para {r['alvo']} (dtype de calculo do modelo)"
               + (f" (ex: {r['nomes'][:3]})" if r["nomes"] else ""), flush=True)
     # O `ModelSamplingSD3` e o no que os workflows de fabrica de modelo de flow inserem, e existe
     # aqui para que este ladder possa reproduzir um workflow real.
@@ -352,7 +358,6 @@ def main() -> int:
     # `krea2_turbo_bf16` (24,5 GiB) sem carga preguicosa comprometeu 19,7 GiB de pagefile com
     # 8,5 GiB residentes e 0,03 s de CPU por 6 s de relogio -- paginando, nao lento. Trocar um
     # bug de dtype por um de memoria nao e consertar.
-    args._castar = set(mistos)
     if enable_dynamic_vram():
         print("DynamicVRAM enabled: weights load lazily rather than all at once", flush=True)
     else:

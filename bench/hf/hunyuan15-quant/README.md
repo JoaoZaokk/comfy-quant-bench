@@ -55,6 +55,7 @@ Method, tools and the full measurement log: **https://github.com/JoaoZaokk/comfy
 | `hv15_w4a8.safetensors` | — | 432 × `asym_w4a8_int8` | 8.24 | **use this one** |
 | `hunyuan15-misto-t025.safetensors` | **0.1837** | 282 × 4-bit / 150 × 8-bit | 8.03 | correct, visibly grainy |
 | `hunyuan15-misto-t040.safetensors` | **0.2147** | 402 × 4-bit / 30 × 8-bit | 7.95 | **DESTROYED — AN EXAMPLE OF WHAT NOT TO DO** |
+| `capybara_v0.1_w4a8r.safetensors` | — | 432 × `asym_w4a8_int8` | 8.24 | **usable** — the community `capybara_v0.1` checkpoint of this architecture in W4A8, added 2026-09-14; latent divergence 0.1439 from its BF16 against 0.7072 for its W4A4 |
 
 Source: 15.51 GiB FP16. The usable build is **1.88x lighter**.
 
@@ -71,6 +72,8 @@ Same prompt, same seed (12345), same steps, resolution, sampler and scheduler:
 | `misto-t025` — 0.1837, correct but grainy | ![](images/misto_t025_0.1837_correta_granulada.png) |
 | `misto-t040` — 0.2147, destroyed | ![](images/misto_t040_0.2147_DESTRUIDA.png) |
 | pure ConvRot W4A4 — destroyed | ![](images/w4a4_puro_DESTRUIDO.png) |
+| `capybara_v0.1` BF16 reference (2026-09-14) | ![](images/capybara_v0.1__p0_s12345.png) |
+| `capybara_v0.1_w4a8r` — 0.1439, usable: same apple, a little softer, stem lost | ![](images/capybara_v0.1_w4a8r__p0_s12345.png) |
 
 `images/` carries the **whole** ladder that was measured — `t015`, `t021`, `t022` and the pure
 ConvRot W4A4 build as well. Their weights are **not** published here: they sit between or beyond the
@@ -118,6 +121,14 @@ file it carries 1364 tensors and 54 `double_blocks`, against Z-Image's 453 and z
 version of this table put its 0.2163 break in the Z-Image row. Moving it here is the second
 independent break measured on this architecture, and it leaves Z-Image's upper bound **unmeasured**:
 what is known there is that 0.1241 works, and nothing more.
+
+**And on 2026-09-14 the same checkpoint was converted to W4A8** (`capybara_v0.1_w4a8r`, 432 layers,
+8.24 GiB — the converter reproduced the 2026-09-01 build byte for byte, sha256 `4317156b…`, on a
+different card): latent divergence **0.1439** from the capybara BF16 at the same seed, against
+**0.7072** for its W4A4 on the same prompt and seed, and the picture is the same apple on the same
+table, a little softer and without the stem (`images/capybara_*`, `images/capybara_w4a8_ladder.json`;
+criterion E in the method repo's `bench/criterio_fechamento_2026-09-14.md`, written first). So the
+family's W4A8 holds on a second checkpoint of this architecture, and that file is in this repo.
 
 **Latent divergence does not decide it either.** 0.8255 (destroyed) against 0.7173 (fine) is a 15%
 gap on that axis too, so no cut on latent distance separates usable from unusable. Only a render
@@ -180,7 +191,10 @@ verified as such. The `.quant.json` sidecars record full conversion provenance.
 One prompt, one seed for the image ladder (three for the timing), 480x480, one frame, one scheduler,
 one card. No perceptual metric — "correct", "grainy" and "destroyed" are the judgement of someone
 who looked at them. No SASS. Only `convrot_groupsize` 256 in the ladder. The monotonicity across
-model sizes rests on three points.
+model sizes rests on three points. The capybara W4A8: one prompt, one seed; its
+per-step time from that ladder (a single run, taken after a 15.5 GiB reference had been loaded in
+the same process) is deliberately not reported — this card has already seen a single-run speed
+invert its sign, and the W4A8's residency in that run is unknown.
 
 ---
 

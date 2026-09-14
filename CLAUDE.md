@@ -594,6 +594,22 @@ floating dtypes among **2-D** tensors, or `None`. 2-D because that is what becom
 weight -- a 1-D F32 scale beside BF16 weights is normal. `beyond-reality-zimage-v2_native`
 returns `None`; all four Krea2 arms return `{BF16, F32}`.
 
+**And a uniform-dtype file is not safe either — the second mode, measured 2026-09-14.**
+`capybara_v0.1` is BF16 in all 568 of its 2-D tensors, so `perigoso_para_lazy()` returns `None`,
+and the ladder died in the sampler anyway: `mat1 and mat2 must have the same dtype, but got Half
+and BFloat16`, at `time_in`, the first lazy Linear after the input conv. `HunyuanVideo15` lists
+`supported_inference_dtypes = [float16, bfloat16, float32]` and `unet_dtype()` walks that list in
+order, so the model computes in **fp16** whatever the file holds; the normal loader casts every
+BF16 weight to fp16 on the way in, the lazy loader leaves the Linears in BF16, and the conv, which
+is not lazy, comes out fp16. The guard was asking the wrong question — "does the file disagree
+with itself?" — when the comparison that fails is file against **compute dtype**.
+`quality_ladder.py` now casts every arm to `model.model.get_dtype()` after loading, skipping
+`QuantizedTensor` weights (int8 container with the scale inside the layout; `.to(dtype)` on it is
+not a weight cast), and `casta_pesos_divergentes` takes that target explicitly — its
+majority-dtype default would have cast the conv to BF16 and moved the crash one layer earlier.
+[JULGAMENTO] the 2026-09-01 capybara ladder never hit this because the ladder's lazy load arrived
+with the Krea 2 work around 2026-09-12 (the tool's own comments date it); not re-run to confirm.
+
 ```bash
 .\python_embeded\python.exe -s .\ComfyUI\main.py --windows-standalone-build --use-sage-attention --disable-dynamic-vram --listen 127.0.0.1 --port 8190
 ```
@@ -906,8 +922,13 @@ controls (log-mel): silence 8.460, white noise at the reference's RMS 1.748
 W4A8 is a usable 2.3 (P1); W4A4 does not break and is worse (P2 — fourth family that tolerates
 A4); the 6-bit GGUF is 2.9x closer in the frames and 2.2x slower per step (P3); **the sound does
 not separate W4A8 from Q6_K** (0.163 against 0.163) while the picture puts them 3x apart — on 2.5
-the sound ranked the arms with a wider margin than the picture, on 2.3 it ties the first two, and
-why is not known (P4 not refuted, with a tie). P5 was untestable as written (no DisTorch BF16 arm
+the sound ranked the arms with a wider margin than the picture, on 2.3 it ties the first two (P4
+not refuted, with a tie). **The tie is the metric saturating, measured the same night:** at 3 steps
+(tail of the same schedule, same conditioning) Q6_K stays in phase with the reference (log-mel
+0.063, waveform SNR +8.4 dB) and W4A8 does not (0.223, −1.1 dB) — at 8 steps both had drifted out
+of phase (SNR −1 dB each) and landed on the same log-mel floor. Caveat: at 3 steps the 2.3 renders a
+different, degraded scene in every arm, so that run answers only the mechanism
+(`bench/criterio_fechamento_2026-09-14.md`, G). P5 was untestable as written (no DisTorch BF16 arm
 ever ran) and P6 refuted (`bench/criterio_ltx23.md`). The "whole run" wall-clock ranked the arms by
 which disk they were read from (BF16 GGUF from local C: 155 s; W4A8 from the W: share 208 s) — one
 more reason that column is not a speed. Published with MP4/FLAC proofs, the identity control and
@@ -1000,6 +1021,69 @@ about 25 s and the runs took 400–800 s — and now says so. **Rule: a speed nu
 or from a tool that times the sampler alone.** The JSON now carries a `nota_tempo` field saying
 exactly that.
 
+## The closing round of 2026-09-14: the six conversions nobody had measured at the output
+
+Counted first (`.scratch/sidecars_2026-09-14.txt`): **53** `.quant.json` sidecars across the four
+yaml roots, 25 with their weights still on disk, 44 verified at the output, **6 never verified**.
+The criterion for all six was written before any number (`bench/criterio_fechamento_2026-09-14.md`,
+A/C/D/E/G) and the verdicts sit in the same file with the hour. What each one taught:
+
+- **A — the factory Gemma 3 12B in W4A8 as the LTX 2.3 encoder is usable, and releasing the two
+  text-encoder locks on it is free.** Conditioning rel-L2 0.043 from BF16 on the quantized-math
+  path and 0.042 on the dequantized one — they differ by 0.001, in opposite directions on the
+  positive and negative prompt — and the W4A8 transformer on that conditioning lands **MAE 6.75 /
+  SSIM 0.894 / log-mel 0.087** from the BF16-encoder render: same scene, under the transformer's own
+  quantization distance (10.39). Published: **https://huggingface.co/JoaoZaokk/Gemma-3-12B-it-W4A8-ConvRot**.
+  Open, and written on both Gemma cards: the 2026-08-31 monkeypatch measurement said releasing
+  W4A8 added 0.18 on the encoder's raw output; the flag measures 0.001 on the projected
+  conditioning. Different tensor, different instrument; not reconciled.
+- **C — on LTX 2.5, `int8_tensorwise` + ConvRot reproduces Lightricks' int8 (MAE 4.19 against
+  4.10, log-mel 0.043 against 0.041), and the same int8 WITHOUT the rotation lands 2x farther in
+  the frames (8.23) — farther than our W4A8 (7.81), which keeps the rotation and drops the weight to
+  4 bits.** In the sound the unrotated int8 still beats W4A8 by 2x (0.060 against 0.120). The
+  criterion's reading "int8 worse than 4 bits = broken build" did not hold: same scene, SSIM 0.889
+  against 0.895, per-frame ranges overlapping. On this model the rotation is a term of the same
+  size as the weight bit-width. Sampler from the progress bar: int8 2.02–2.12 s/it, BF16 8.48 s/it
+  (3 steps, 512 px); the "whole run" column ranked the arms by disk again. Both builds and the
+  proofs went to the 2.5 card, the unrotated one labelled as the measured negative.
+- **D — the three heretic Gemma builds against the heretic BF16: W4A8 keeps the scene (5.45 MAE);
+  both W4A4 builds render a coherent, well-lit, DIFFERENT scene — daylight where the prompt said
+  dusk — at 29.8 and 38.1 MAE.** Conditioning: W4A8 0.042 < SmoothQuant 0.158 < ConvRot 0.221
+  released, 0.043 < 0.082 < 0.111 locked — the predicted order on both paths; smoothing pays 1.4x
+  and does not rescue (the 2026-09-01 open question, closed). **Releasing the locks costs 2x on
+  W4A4 and 0.001 on W4A8**: the 4-bit activation is the term that hurts. The abliterated BF16 sits
+  0.10 from the factory BF16 and keeps the scene (MAE 9.34), so the flip is somewhere between 0.10
+  and 0.16 of rel-L2 on this prompt — one prompt, one seed. The W4A4 encoder weights stay off the
+  Hub; their proofs and sidecars are on the heretic card.
+- **G — the audio tie explained** (in the LTX section above: saturation under phase
+  decorrelation, shown at 3 steps).
+- **Two instrument defects found on the way.** `tools/sampler_tempo_do_log.py` read only
+  `Prompt executed in X seconds`; ComfyUI switches to `HH:MM:SS` above 600 s (`main.py:400`), so
+  every long run showed as `(sem fim)` — that is how the 2.5 BF16's 8.48 s/it (761 s wall) had gone
+  missing. And the lazy-load dtype guard asked whether the file disagreed with itself, when the
+  failing comparison is file against compute dtype (the capybara paragraph in the dynamic-VRAM
+  section above).
+
+- **E — `capybara_v0.1` in W4A8 is usable**: latent divergence 0.1439 from its own BF16 against
+  0.7072 for its W4A4 on the same prompt and seed; the same apple, a little softer, stem lost. The
+  reconversion came out **byte-identical** to the 2026-09-01 build across two cards (sha256
+  `4317156b…`, 8,847,634,096 B). Its per-step from that single ladder run (6.56 s against 1.42 for
+  BF16, after a 15.5 GiB reference in the same process) is not reported as a speed. Uploaded to
+  the Hunyuan repo with both images.
+- **The W4A4 encoders on stock ComfyUI's locked path keep the scene** — ConvRot 16.4 MAE,
+  SmoothQuant 27.4, both dusk — where the released path lost it (38.1 / 29.8, daylight), so the flip
+  sits between rel-L2 0.11 (locked ConvRot, kept) and 0.16 (released SmoothQuant, lost). The render
+  order on the locked path (ConvRot closer) inverts the conditioning order (SmoothQuant closer):
+  one seed, noted, not explained — conditioning distance orders formats coarsely and does not
+  order two neighbouring W4A4 builds, the per-layer-error lesson again, now on the encoder. Nothing
+  recommends either build (3–5x the W4A8's distance for 8 % less memory and no speed on that
+  path); the weights stayed off the Hub, the proofs went up (`bench/ltx23/encoder_heretic_locked/`).
+
+Published in this round: Krea 2 Turbo W4A4 (gated, licence terms met), Qwen3-VL 4B W4A8, the
+factory Gemma W4A8 (new repo), the two 2.5 int8 builds (2.5 repo), capybara W4A8 (Hunyuan repo),
+the heretic W4A4 proofs and sidecars (heretic repo); the 2.5, heretic, Hunyuan and 2.3 cards
+rewritten. Still open: the monkeypatch-against-flag discrepancy on what releasing costs W4A8; the
+capybara W4A8 speed; one prompt and one seed per arm everywhere here.
 ## LoRA over a quantized weight: it is a requantization, and that is measured
 
 The owner asked on 2026-09-13 whether LoRAs "work the way they should" on the quantized builds. The
