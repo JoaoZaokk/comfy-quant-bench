@@ -4,6 +4,85 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ---
 
+## RECADO TEMPORARIO — do projeto de TTS/STT (2026-09-18). Apagar esta secao depois de agir.
+
+Escrito pela sessao que roda em `P:\PROJETOS\TTS_TRAINING_LORA` a pedido do dono. Sao tres coisas
+que sairam de la' e tocam este repo. **Verificar, agir, e remover este bloco inteiro.**
+
+### 1. Risco latente: `.hf/` nao esta no `.gitignore`
+
+MEDIDO aqui em 2026-09-18. **Nada vazou** — o risco e' prospectivo, nao retroativo. Conferido nos
+**260 commits** do historico, por quatro caminhos independentes:
+
+    objetos cujo path contem `.hf/`, em todo o historico      0
+    `git log --full-history -- .hf .hf/*`                     vazio
+    token literal `hf_` + 30 ou mais caracteres, 260 commits  nenhum
+    `sk-`, `ghp_`, `github_pat_`, `AKIA`, chave PEM           nenhum
+
+(Um `git log -S "hf_"` devolve ~10 commits, mas e' `hf_parallel_get.py` e `hf_download` — nome de
+arquivo e de funcao, nao token. Por isso a busca com comprimento minimo, que separa os dois.)
+
+**Nao ha' nada a revogar nem historico a reescrever.** O que existe e' que `.hf` **nao aparece no
+`.gitignore`**, enquanto o `W4A4_HANDOFF.md:611` documenta por escrito que o token de ESCRITA do
+HuggingFace vive em `.hf/token`. Hoje o arquivo esta' fora do repo porque ninguem o adicionou, nao
+porque alguma regra impeca — um `git add -A` distraido bastaria.
+
+**FEITO em 2026-09-20.** O dono concordou e `.hf/` esta no `.gitignore:119`, conferido por prova
+positiva (`git check-ignore -v .hf/token` responde `.gitignore:119:.hf/`). A porta fechou antes de
+ser usada, e a conclusao do levantamento acima -- nada vazou nos 260 commits -- nao mudou.
+
+**E no mesmo dia essa mesma pasta cobrou o preco por outro lado:** `HfApi()` sem token explicito
+pega o que o ambiente tiver, e `F:/hf-cache/token` e de **leitura**. O upload comeca e morre em
+`403 Forbidden: you must use a write token` **depois** de a transferencia ja estar andando. Os dois
+arquivos tem **37 bytes**, entao tamanho nao distingue qual e qual. Quem sobe qualquer coisa daqui
+fixa `HF_HOME = <repo>/.hf` primeiro -- `.scratch/sobe_fecha.py` agora faz isso a partir de
+`__file__`, e a permissao se confere por **prova positiva** (subir 1 byte e apagar), nunca por
+`whoami`, que responde igual para token de leitura.
+
+### 2. Ferramenta: varredor de vazamento antes do push
+
+`github.com/JoaoZaokk/speech-quant-lab` -> `bench/varrer_antes_de_publicar.py`. Procura caminho de
+disco, compartilhamento de rede, home de usuario, e-mail, chave/token e caminho de dado de saida.
+Sai com codigo 1, entao cabe num hook de pre-commit.
+
+Rodando aqui ele acusa **1708 ocorrencias**, e a maioria **nao e' defeito** — este repo publica
+handoffs que citam `F:\COMFY_PORTABLE` de proposito, porque sao instrucao para o agente. Se for
+usar, alimente `.publicacao-isencoes` com esses casos e o relatorio fica util; sem isso vira ruido,
+que e' pior que nao ter relatorio porque da' a sensacao de ter conferido.
+
+### 3. Achado tecnico que toca o `compile_support.py` deste repo
+
+Este repo registra `convrot_w4a4_linear` como `torch.library.custom_op` porque o Dynamo tracava
+para dentro do kernel. Ha' uma segunda armadilha na mesma familia, e ela NAO aparece como erro —
+aparece como ganho que some:
+
+**Escrever o backward como `torch.autograd.Function` em Python anula o ganho sob `torch.compile`.**
+O Dynamo nao consegue tracar o `backward()` dela (e' Python arbitrario), embrulha em
+`autograd_function_apply` e marca o ponto como opaco; o AOTAutograd entao nao gera o backward dentro
+do grafo e **o backward inteiro volta a ser eager**. MEDIDO no S2 Pro: com DOIS lineares trocados o
+estrago ja' era de 75 ms num passo de 183 ms — nao e' custo por chamada, e' o grafo desmontando.
+
+O conserto e' `torch.library.register_autograd` no op, e ai' o backward vira um op comum que o
+AOTAutograd poe no grafo. So' importa se algo aqui fizer BACKWARD (treino/LoRA); para inferencia
+pura nao muda nada.
+
+De quebra, dois numeros que podem servir de referencia, medidos numa 3090 sm86 com
+`comfy_kitchen::int8_linear` (cuBLASLt, peso ja' em int8, ativacao quantizada por linha dentro do
+kernel), M = 145 linhas:
+
+    GEMM              bf16    int8    _int_mm + sanduiche
+    155776 x 2560    2,302   0,892    3,844     2,58x  contra  0,60x
+    9728 x 2560      0,220   0,119    0,339     1,85x
+    2560 x 9728      0,201   0,102    0,500     1,98x
+
+`torch._int_mm` fica **pior que o bf16** porque obriga a quantizar fora, multiplicar, e reescalar
+fora — tres kernels, dois trafegando bf16. Se algum lugar deste repo usa `_int_mm` como referencia
+de "int8 nao acelera", a referencia esta' furada; o problema e' a API, nao o formato.
+
+A nota completa: `github.com/JoaoZaokk/speech-quant-lab` -> `notes/acelerar-o-treino.md`.
+
+---
+
 ## REGRA ZERO: nunca assumir. Testar, ou pesquisar, antes de afirmar.
 
 Posta pelo dono em 2026-09-01, depois de ele me corrigir **quatro vezes num dia**. Fica no topo
@@ -76,14 +155,43 @@ Also read [AGENTS.md](AGENTS.md) (root policy) and [ComfyUI/AGENTS.md](ComfyUI/A
   So the rule's original reason is gone, but the rule stands until the owner says otherwise, because `wsl --shutdown` is still destructive to what *is* running:
 
   ```
-  glm-w4              qwen38-pp-dspark:0.27.1   <- the owner's own GPU work; holds the 3090
-  macrozao            tributario-macrozao       (healthy)  } project `tributario`
-  gestao-db           postgres:16-alpine        (healthy)  } the MacroLog rollback copy
-  macrozao-api        app_api-api
-  nostalgic_torvalds  cloudflare/cloudflared
+  recensa             s40911120/recensa         (healthy, up 24h)
+  gestao-db           postgres:16-alpine        (healthy, up 37h)  <- the MacroLog rollback copy
+  macrozao-api        app_api-api               (up 37h)
+  nostalgic_torvalds  cloudflare/cloudflared    (up 37h)
+```
+
+**That list was measured 2026-09-20 and it is NOT the one this file carried until then.** The old
+one named `glm-w4` (`qwen38-pp-dspark`) as the container holding the 3090 and `macrozao` as
+healthy. Neither is true: **`glm-w4` does not exist** -- today's GPU container is `glm46v`
+(`vllm/vllm-openai`), **Exited 3 days ago**, and the 3090 measured **49 MiB used at 0%**, i.e.
+free; `macrozao` is `Exited (137) 2 weeks ago`. Of **20** containers in `docker ps -a`, **4** run.
+Every paragraph below that says "while `glm-w4` held the 3090" is still a valid *measurement of
+2026-08-30*; it is not a statement about today's machine.
+
+```
   ```
 
-  **Consequence worth knowing: the `.vhdx` compaction is no longer blocked by the ERP.** ~140 GB sits in `docker_data.vhdx` (229 GB, ~90 GB of build cache with zero active entries) and `ext4.vhdx` (63 GB with 22 GB used). `Optimize-VHD` needs `wsl --shutdown` because all distros share one VM — that was unthinkable with the ERP here and is now a scheduling question, not a hazard. Still the owner's call, and still never `--allow-unsafe`.
+  **Consequence worth knowing: the `.vhdx` compaction is no longer blocked by the ERP.** `Optimize-VHD` needs `wsl --shutdown` because all distros share one VM — that was unthinkable with the ERP here and is now a scheduling question, not a hazard. Still the owner's call, and still never `--allow-unsafe`.
+
+  **But the numbers this paragraph carried were wrong, and so was the mechanism.** It said "~140 GB sits in `docker_data.vhdx` (229 GB, ~90 GB of build cache with zero active entries) and `ext4.vhdx` (63 GB with 22 GB used)". Measured 2026-09-20:
+
+```
+  docker_data.vhdx   318.86 GiB   (was 229 -- it grew ~90 GiB)
+  ext4.vhdx (Ubuntu)  39.61 GiB   (was 63)
+  docker system df   TOTAL  ACTIVE   SIZE      RECLAIMABLE
+    Images              54      15   191.1 GB   101.6 GB (53%)
+    Local Volumes       23       9    56.77      44.62   (78%)
+    Build Cache        161       0    63.3        8.798
+    Containers          20       4     2.36       2.359  (99%)
+                                                 157.4 GB
+```
+
+  191.1 + 2.36 + 56.77 + 63.3 = **313.5 GB of real content inside a 318.86 GiB file**. **The vhdx is not inflated — it is genuinely full**, so compacting *before* pruning returns almost nothing. The order is **prune first, compact second**, and the big item is now **images** (101.6 GB reclaimable), not the build cache the old text blamed. Two cautions: `docker volume prune` targets 44.62 GB across 14 inactive volumes and one of them may hold the MacroLog rollback or the rakazo postgres data, so that one goes volume by volume, never in bulk; and `wsl --shutdown` drops the four running containers including `gestao-db`.
+
+  **Also measured the same day, and it makes every commit-charge number in this file worse:** the pagefile is **35.07 GiB**, not 61, so the commit limit is **98.72 GiB**, not 124.8 — and free commit was **24.27 GiB**. A 38 GiB safetensors needs 76 GiB of commit through ComfyUI's normal reader. Re-read the pagefile before trusting any commit arithmetic here; it is system-managed and moves.
+
+  **And two distro facts this file had wrong:** `Ubuntu` is **Running** (this file says it was *Stopped* and "holds no project"), with its `ext4.vhdx` written the same day; and `NVIDIA-Workbench` **exists, Stopped** — the memory `topologia-da-maquina-e-o-erp` recorded it as `wsl --unregister`ed and that is false.
 
 - **On a shared card, `torch.cuda.mem_get_info` reports memory that is real but belongs to somebody else.** Measured 2026-08-30 while the `glm-w4` container (inside WSL2) held the 3090: torch reported **23332 MiB free** where `nvidia-smi` reported **8362 MiB** — a 15 GiB disagreement on the same card in the same second. Same direction on the 3080 Ti, 41x, stable over six interleaved rounds.
 
@@ -965,7 +1073,10 @@ UntypedStorage.from_file(shared=True)                        0
 
 Windows charges a copy-on-write view its whole size at mapping time, so ComfyUI's normal
 safetensors path needs twice the file in commit just to open it and three times to build the
-model. This machine's commit limit is 124.8 GiB (63.6 GiB of RAM plus a 61 GiB system-managed
+model. This machine's commit limit was 124.8 GiB (63.6 GiB of RAM plus a 61 GiB system-managed
+pagefile) when this was measured and is **98.72 GiB as of 2026-09-20**, because the pagefile shrank
+to 35.07 GiB -- so the trap below is tighter now than the numbers in it suggest. The old figure, for
+the record: 124.8 GiB (63.6 GiB of RAM plus a 61 GiB system-managed
 pagefile) with about 70 GiB already committed by other processes. When the charge forces the
 pagefile to grow, the new view sometimes comes back with the limit raised but the charge not
 taken, and the first read through it is an access violation in `torch/storage.py __getitem__` —

@@ -5788,3 +5788,86 @@ Qwen-Image-Edit W4A8, Qwen-Image W4A8, Gemma fabrica W4A8, capybara W4A8, Krea 2
 heretic W4A8, Qwen2.5-VL W4A4, Qwen3-VL W4A8, Z-Image v2/Turbo/De-Turbo W4A4, Wan 2.2 W4A8) e 3
 que nao estao no Hub (LTX 2.3 W4A4, Qwen-Image 2512 W4A4, Wan 2.2 W4A4). Renders, embeddings de
 condicionamento, latentes e logs nao foram tocados. `quant_audit.py` refeito depois.
+
+## Parte 53 -- 2026-09-19/20: os tres W4A4 que faltavam, um card que afirmava o que nao existia, e a porta do token
+
+O dono pediu espaco em disco e, no meio, duas perguntas: o que nao esta no Hub, e da pra reproduzir
+o Bonsai Image. A parte de quantizacao rendeu tres publicacoes e tres defeitos de processo.
+
+### Os tres W4A4 subiram, cada um com o numero colado
+
+Estavam so no disco desde 13-14/09. A regra desta bancada e que negativo medido se publica **como
+prova**, nao como checkpoint que alguem baixa e usa, entao cada um subiu em `w4a4/` com o
+`README.md` **antes** do peso -- para o arquivo nunca existir sem etiqueta.
+
+| repo | bytes | medicao ja existente | leitura |
+|---|---:|---|---|
+| `LTX-2.3-22B-distilled-1.1-W4A8-ConvRot` | 15 367 403 670 | MAE 14,45 / PSNR 20,36 / SSIM 0,734; log-mel 0,281; 1,59 s/it | funciona; troca legitima, nao defeito |
+| `Qwen-Image-2512-W4A8-ConvRot` | 10 306 850 832 | divergencia 1,3369 [1,1018-1,5449]; 1,038 s/passo | pontilhado colorido, sujeito visivel |
+| `Wan2.2-TI2V-5B-W4A8-ConvRot` | 2 643 748 432 | divergencia 0,3847 [0,2431-0,5748]; 0,753 s/it | borrado |
+
+O LTX 2.3 W4A4 e o unico dos tres que nao e negativo: 1,45x mais rapido por passo que o W4A8
+(1,59 contra 2,30) e 1,2 GiB menor, com imagem coerente. Entrou com a tabela dos quatro bracos.
+
+### O card do 2512 afirmava uma publicacao que nao existia
+
+`bench/hf/qwen-image-2512-quant/README.md` dizia, desde 13/09, *"The W4A4 build is published as a
+measured negative"*. Medido hoje por `list_repo_files`: o repo tinha **5 arquivos** e o peso W4A4
+**nao estava entre eles**. A alegacao estava publicada sem o objeto. Corrigido subindo o peso; o
+repo foi para 8 arquivos e o card virou verdade.
+
+**Alegacao sobre o proprio repo tambem e alegacao.** Um card que descreve o que ele contem precisa
+ser conferido contra o repo, nao contra a intencao de quem o escreveu.
+
+### E eu declarei "nunca foi medido" olhando um lugar so
+
+Antes disso eu disse ao dono que o 2512 W4A4 **nao tinha medicao de saida**, porque a tabela de
+`ESTATICA` do `CLAUDE.md` esta rotulada Qwen-Image-**Edit 2511** e o `qwen_image_edit_2511_w4a4`
+esta entre os pesos ja apagados. O numero do 2512 estava no card do proprio 2512, no disco, o tempo
+todo. Ele ia gastar GPU por causa disso -- *"aproveita que o mano do fish esqueceu que tem gpu"* --
+e nao foi preciso rodar nada.
+
+A confusao tem causa fisica: as duas bases diferem em **72 bytes** (40 861 031 488 do 2512 contra
+40 861 031 560 do Edit 2511) e os dois W4A8 em **72 bytes** (11 581 151 800 contra 11 581 151 872).
+Tamanho arredondado nao distingue as duas familias. O que distingue e o campo `source` do sidecar,
+e e por ele que a identidade foi confirmada antes de mandar peso para repo nenhuma -- a armadilha
+do capybara, que ja custou uma linha inteira de tabela neste arquivo.
+
+### A porta do token: 403 depois do upload comecar
+
+`HfApi()` sem token explicito pega o que o ambiente tiver. Com `HF_HOME=F:/hf-cache` o upload comeca
+e morre em `403 Forbidden: you must use a write token`. O token de **escrita** vive em
+`<repo>/.hf/token`; o de **leitura** em `F:/hf-cache/token`. **Os dois tem 37 bytes**, entao tamanho
+nao distingue, e o sintoma so aparece depois de a transferencia ter comecado.
+
+Consertado em `.scratch/sobe_fecha.py`, que tinha o mesmo defeito latente: agora fixa
+`HF_HOME = <repo>/.hf` a partir de `__file__`, e a permissao de escrita foi confirmada por **prova
+positiva** (sonda de 1 byte que subiu e foi removida), nao por `whoami`. De passagem, `.hf/` entrou
+no `.gitignore` -- o item 1 do recado temporario do `CLAUDE.md`, conferido por
+`git check-ignore -v .hf/token`.
+
+### Tres portas que nao barravam nada
+
+Todas as exclusoes de hoje passaram por portas escritas, e **tres delas dispararam por motivo que
+eu mesmo criei**:
+
+- `P4 nenhum rastreado cita os nomes` barrou o `F:\_migracao` porque o unico arquivo que cita os
+  nomes e o `bench/janela_gpu_migracao.md`, onde **eu** acabara de gravar os sha256. Registro nao e
+  dependencia.
+- A mesma porta barrou o `C:\ComfyBench` porque `git grep ComfyBench` casa `P:\ComfyBench`, que e
+  caminho corrente da bancada. A porta perguntava "alguem cita?" quando a pergunta era "algum
+  script LE de la?".
+- Um `robocopy /MOVE` pelo Bash virou `C:/Program Files/Git/MOVE` (traducao de caminho do MSYS) e
+  foi recusado -- e o meu `$?` leu o codigo do `tail`, imprimindo "0 = sucesso" para um move que
+  nao aconteceu. **Porta que sempre passa e pior que porta nenhuma.**
+
+E o inverso tambem apareceu: `robocopy` sai com **1** quando copia com sucesso, e o harness marca a
+tarefa como `failed`. Duas vezes eu quase reportei sucesso como falha. Codigo de saida de
+ferramenta externa se le na tabela dela, nao na convencao do shell.
+
+### Nao coberto
+
+Nenhuma medicao nova de GPU nesta parte -- os tres numeros publicados sao de 13-14/09. A camada 3
+do `W:` (67,59 GiB de originais do Hub do LTX 2.5 + 30,64 do snapshot do Z-Image-Turbo) nao foi
+tocada. O erro por camada do 2512 W4A4 nao foi re-medido para este upload. E o Bonsai Image nao foi
+executado em lugar nenhum: tudo sobre ele nesta bancada e leitura de fonte primaria.

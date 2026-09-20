@@ -194,3 +194,37 @@ falhou, e a falha era o achado.**
 `convrot_groupsize` tem de ser potencia de **4**, nao de 2: 128 levanta `Regular Hadamard size must
 be a power of 4` em `comfy_kitchen/tensor/int8_utils.py:22`. Explica 64 e 256 serem os unicos
 valores usados aqui. O preflight de backend pegou antes de qualquer trabalho.
+
+## Adendo 2026-09-16 -- as duas saidas da "aceitacao mais fraca" agora tem sha256 registrado
+
+A tabela de aceitacao fraca acima existe porque `quant_int8` e `svdq_to_bf16` **nao tinham saida
+anterior no disco** contra a qual comparar. As saidas que eles escreveram em 2026-09-01 ficaram em
+`F:/_migracao/`, fora de toda raiz declarada de modelo -- o ComfyUI nunca as enxergou -- e nenhum
+documento desta arvore as citava pelo nome nem pelo tamanho.
+
+Medido em 2026-09-16, antes de qualquer decisao sobre elas:
+
+| conversor | saida de 2026-09-01 | bytes | sha256 |
+|---|---|---|---|
+| `quant_int8` | `hv15_int8_convrot.safetensors` | 11 225 609 256 | `0b8a704aa664f450b1118a25b457c222a4b03bc0ca7feaa6ccc6ad9653a6dad3` |
+| `svdq_to_bf16` | `zimage_turbo_recuperado_bf16.safetensors` | 12 309 874 184 | `ba4392077d3d3e25ebc8306ebfbcfb2b8229c741760de0c84142c6d433cf566e` |
+
+**Com estes dois numeros, os sete conversores passam a ter referencia de identidade byte a byte** --
+nao so os quatro pares fortes da tabela de cima. Uma proxima migracao do nucleo reconverte e compara
+o sha, em vez de aceitar com o "converteu e carregou", que e o que a tabela fraca registrava.
+
+Como reconverter, se for preciso:
+
+- `quant_int8`: fonte `ComfyUI/models/diffusion_models/hunyuanvideo1.5_720p_t2v_fp16.safetensors`
+  (16 653 368 128 B, no disco), `--convrot`, `convrot_groupsize 256`, arquitetura `hunyuan_video_15`.
+  Tudo isso esta no `.quant.json` ao lado. A conversao original levou **23,4 s**.
+- `svdq_to_bf16`: fonte `ComfyUI/models/diffusion_models/svdq-int4_r32-z-image-turbo.safetensors`
+  (3,36 GiB, no disco). **Esta saida nao tem sidecar**; os unicos parametros conhecidos sao os que o
+  proprio `__metadata__` do arquivo carregava (`dequantized_from`, `dequantized_note`, 521 tensores,
+  todos BF16). Tempo da conversao original: nao registrado.
+
+**Nao coberto.** O sha de uma saida so vale como referencia se a FONTE tambem for a mesma: o sidecar
+do int8 grava `source_size`, nao `source_identity_sha256`, entao a fonte esta casada por tamanho e
+nome, nao por hash -- mais fraco que os quatro pares fortes, e dito aqui para nao ser lido como
+igual a eles. A do `svdq_to_bf16` nao tem sidecar nenhum. E identidade byte a byte nunca foi
+afirmacao sobre qualidade: nenhuma das duas saidas foi medida na saida, em nenhum render.
