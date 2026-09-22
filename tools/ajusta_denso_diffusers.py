@@ -188,6 +188,12 @@ def main() -> int:
     p.add_argument("--casar-com",
                    help="json de um ajuste, obrigatorio no modo ruido: a escala da perturbacao "
                         "sai do desvio rel-L2 MEDIDO ali, tensor a tensor")
+    p.add_argument("--mestre", choices=["bf16", "fp32", "bf16-sr"], default="bf16",
+                   help="dtype do peso MESTRE dos treinaveis. bf16 e o que o braco 1 usou: com lr "
+                        "1e-5 o passo do Adam fica abaixo de meio-ulp do bf16 e 63,4%% dos "
+                        "elementos NUNCA mudaram (medido 2026-09-22). fp32 = mestre fp32 com "
+                        "autocast bf16 no forward. bf16-sr = peso bf16 com arredondamento "
+                        "estocastico (`torchao.optim._AdamW`, weight_decay 0 = Adam).")
     p.add_argument("--device", type=int, default=0)
     a = p.parse_args()
 
@@ -246,13 +252,31 @@ def main() -> int:
         print(f"  ruido casado com {Path(a.casar_com).name}: rel-L2 alvo "
               f"{min(alvo_rel.values()):.3e} a {max(alvo_rel.values()):.3e}")
     elif a.modo == "ajuste":
-        opt = torch.optim.Adam([v for _, v in treinaveis], lr=a.lr)
+        from contextlib import nullcontext
+        # O EIXO `--mestre`. So muda ONDE a atualizacao e acumulada; dado, epocas, lr e ordem ficam
+        # os do braco 1. Os 9 treinaveis sao todos `nn.Linear`, entao sob autocast o matmul roda em
+        # bf16 igual ao braco 1 -- o que muda e so o peso guardado entre um passo e o proximo.
+        params = [v for _, v in treinaveis]
+        contexto = nullcontext()
+        if a.mestre == "fp32":
+            for v in params:
+                v.data = v.data.float()
+            opt = torch.optim.Adam(params, lr=a.lr)
+            contexto = torch.autocast("cuda", dtype=torch.bfloat16)
+        elif a.mestre == "bf16-sr":
+            from torchao.optim import _AdamW
+            opt = _AdamW(params, lr=a.lr, weight_decay=0.0, bf16_stochastic_round=True)
+        else:
+            opt = torch.optim.Adam(params, lr=a.lr)
+        print(f"  mestre {a.mestre}: {type(opt).__module__}.{type(opt).__name__}, "
+              f"peso {params[0].dtype}", flush=True)
         for ep in range(a.epocas):
             perdas = []
             for ex in prof:
                 kw = {k: (v.to(dev) if torch.is_tensor(v) else v) for k, v in ex["kw"].items()}
                 alvo = ex["out"].to(dev, torch.float32)
-                out = aluno(**kw)
+                with contexto:
+                    out = aluno(**kw)
                 saida = out[0] if isinstance(out, tuple) else getattr(out, "sample", out)
                 perda = torch.nn.functional.mse_loss(saida.float(), alvo)
                 opt.zero_grad(set_to_none=True)
@@ -266,8 +290,13 @@ def main() -> int:
     else:
         print("  modo zero: nenhum passo de otimizacao, por construcao")
 
-    depois = {k: v.detach().to("cpu", torch.float32).clone() for k, v in treinaveis}
+    # Medido no dtype em que o arquivo GRAVA (bf16): um mestre fp32 que mudou menos que meio-ulp
+    # volta ao mesmo bf16 na escrita, e contar isso como mudanca mentiria sobre o arquivo.
+    depois = {k: v.detach().to("cpu", torch.bfloat16).float() for k, v in treinaveis}
     mudou = sum(1 for k in antes if not torch.equal(antes[k], depois[k]))
+    n_el = sum(t.numel() for t in antes.values())
+    el_mud = sum(int((antes[k] != depois[k]).sum()) for k in antes)
+    print(f"  ELEMENTOS mudados (no bf16 gravado): {el_mud / n_el * 100:.2f}% de {n_el:,}")
     # POR TENSOR, nao so o maior: o modo `ruido` precisa casar o tamanho da perturbacao camada a
     # camada, e um unico maximo obrigaria a aplicar o desvio do pior tensor em todos.
     por_tensor = {k: float((depois[k] - antes[k]).norm() / antes[k].norm().clamp(min=1e-30))
@@ -293,7 +322,8 @@ def main() -> int:
     parcial.replace(sai)
     print(f"  escrito {sai}  {sai.stat().st_size:,} B")
 
-    rel = {"modo": a.modo, "n_exemplos": len(prof), "epocas": a.epocas, "lr": a.lr,
+    rel = {"modo": a.modo, "mestre": a.mestre, "elementos_mudados_frac": el_mud / n_el,
+           "n_exemplos": len(prof), "epocas": a.epocas, "lr": a.lr,
            "treinaveis": len(treinaveis), "params_treinaveis": n_par,
            "densos_mudados": mudou, "maior_desvio_rel_l2": desvio,
            "desvios_por_tensor": por_tensor,

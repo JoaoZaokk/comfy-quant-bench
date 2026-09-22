@@ -77,7 +77,11 @@ model.model_options = dict(model.model_options)
 model.model_options["model_function_wrapper"] = wrapper
 
 lf = model.model.latent_format
-latent = torch.zeros([1, lf.latent_channels, SIDE // 8, SIDE // 8], device="cpu")
+# O divisor e o do FORMATO, nao 8. Ate 2026-09-22 isto era `SIDE // 8`, certo para todo modelo
+# /8 e errado para o FLUX.2 (`spacial_downscale_ratio = 16`): `--size 512` no klein virava
+# latente 64x64, ou seja imagem de 1024 px, e o resultado do braco 1 foi publicado como "512 px".
+RED = getattr(lf, "spacial_downscale_ratio", 8)
+latent = torch.zeros([1, lf.latent_channels, SIDE // RED, SIDE // RED], device="cpu")
 noise = comfy.sample.prepare_noise(latent, SEED, None)
 comfy.sample.sample(model, noise, STEPS, CFG, "euler", "simple", positive, negative,
                     latent, denoise=1.0, disable_pbar=True, seed=SEED)

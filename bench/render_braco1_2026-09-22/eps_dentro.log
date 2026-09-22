@@ -1,0 +1,82 @@
+########## SEMENTE 411 ##########
+# prompt 4: a red apple on a weathered wooden table, soft window light
+device cuda:0  |  a trajetoria do BF16 e imposta a TODOS os bracos
+
+--- referencia BF16 (grava a trajetoria) ---
+  8 chamadas, saida [1, 128, 64, 64]
+  sigmas: 1.000, 0.981, 0.958, 0.926, 0.883, 0.819, 0.715, 0.519
+
+--- braco0_ptq  (klein4b_braco0_ternario_ingenuo_bfl.safetensors) ---
+  8 passos medidos
+--- braco1_ajuste  (klein4b_braco1_compensado_bfl.safetensors) ---
+  8 passos medidos
+--- braco2_bonsai  (klein4b_braco2_bonsai_ternario_bfl.safetensors) ---
+  8 passos medidos
+
+------------------------------------------------------------------------------
+rel-RMSE do epsilon contra o BF16, entradas casadas
+------------------------------------------------------------------------------
+ passo    sigma    braco0_ptq braco1_ajuste braco2_bonsai
+     0    1.000    1.1253e+00    6.7524e-01    4.1287e-01
+     1    0.981    1.0364e+00    6.8519e-01    3.7131e-01
+     2    0.958    1.0524e+00    6.4932e-01    3.3950e-01
+     3    0.926    1.0656e+00    6.0352e-01    2.9340e-01
+     4    0.883    1.0568e+00    5.4605e-01    2.6222e-01
+     5    0.819    1.0075e+00    4.8916e-01    2.1744e-01
+     6    0.715    8.9676e-01    4.3455e-01    1.6844e-01
+     7    0.519    6.5586e-01    3.3519e-01    1.1513e-01
+
+------------------------------------------------------------------------------
+media por faixa, e a razao sempre >= 1 com a direcao dita
+------------------------------------------------------------------------------
+                     faixa    braco0_ptq braco1_ajuste braco2_bonsai   quem ganha
+           todos os passos    9.8709e-01    5.5228e-01    2.7254e-01   braco2_bonsai 3.6218x mais fiel
+     sigma ALTO (>= 0.926)    1.0699e+00    6.5332e-01    3.5427e-01   braco2_bonsai 3.0201x mais fiel
+     sigma BAIXO (< 0.926)    9.0423e-01    4.5124e-01    1.9081e-01   braco2_bonsai 4.7389x mais fiel
+
+           passos vencidos             0             0             8   de 8
+
+NAO COBERTO: um prompt, uma semente, uma placa, sem metrica perceptual. O BF16 e o
+  alvo e nao a verdade -- nunca foi validado contra float32. E isto mede a PREVISAO
+  do modelo, nao a imagem: a imagem livre ja foi medida e nao carrega este sinal.
+########## SEMENTE 412 ##########
+# prompt 4: a red apple on a weathered wooden table, soft window light
+device cuda:0  |  a trajetoria do BF16 e imposta a TODOS os bracos
+
+--- referencia BF16 (grava a trajetoria) ---
+  8 chamadas, saida [1, 128, 64, 64]
+  sigmas: 1.000, 0.981, 0.958, 0.926, 0.883, 0.819, 0.715, 0.519
+
+--- braco0_ptq  (klein4b_braco0_ternario_ingenuo_bfl.safetensors) ---
+  8 passos medidos
+--- braco1_ajuste  (klein4b_braco1_compensado_bfl.safetensors) ---
+  8 passos medidos
+--- braco2_bonsai  (klein4b_braco2_bonsai_ternario_bfl.safetensors) ---
+  8 passos medidos
+
+------------------------------------------------------------------------------
+rel-RMSE do epsilon contra o BF16, entradas casadas
+------------------------------------------------------------------------------
+ passo    sigma    braco0_ptq braco1_ajuste braco2_bonsai
+     0    1.000    1.1339e+00    6.4856e-01    4.2096e-01
+     1    0.981    1.0391e+00    7.6445e-01    4.0775e-01
+     2    0.958    1.0479e+00    7.0948e-01    3.5944e-01
+     3    0.926    1.0501e+00    6.3716e-01    3.3718e-01
+     4    0.883    1.0490e+00    5.7510e-01    2.8251e-01
+     5    0.819    1.0095e+00    5.0688e-01    2.3270e-01
+     6    0.715    9.1075e-01    4.4372e-01    1.7882e-01
+     7    0.519    6.5938e-01    3.3617e-01    1.1883e-01
+
+------------------------------------------------------------------------------
+media por faixa, e a razao sempre >= 1 com a direcao dita
+------------------------------------------------------------------------------
+                     faixa    braco0_ptq braco1_ajuste braco2_bonsai   quem ganha
+           todos os passos    9.8745e-01    5.7769e-01    2.9227e-01   braco2_bonsai 3.3785x mais fiel
+     sigma ALTO (>= 0.926)    1.0677e+00    6.8991e-01    3.8133e-01   braco2_bonsai 2.8000x mais fiel
+     sigma BAIXO (< 0.926)    9.0716e-01    4.6547e-01    2.0321e-01   braco2_bonsai 4.4641x mais fiel
+
+           passos vencidos             0             0             8   de 8
+
+NAO COBERTO: um prompt, uma semente, uma placa, sem metrica perceptual. O BF16 e o
+  alvo e nao a verdade -- nunca foi validado contra float32. E isto mede a PREVISAO
+  do modelo, nao a imagem: a imagem livre ja foi medida e nao carrega este sinal.

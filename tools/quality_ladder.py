@@ -266,7 +266,9 @@ def sample_all(args, name, conditioning, comfy_sample, comfy_sd, comfy_mm, folde
         model = ModelSamplingSD3().patch(model, args.shift)[0]
         print(f"  ModelSamplingSD3 shift={args.shift}", flush=True)
     latent_format = model.model.latent_format
-    side = max(args.size // 8, 8)
+    # Divisor do FORMATO, nao 8: o FLUX.2 reduz 16x, e `size // 8` renderizava o dobro do lado
+    # pedido. Mesmo defeito do probe de epsilon, corrigido junto em 2026-09-22.
+    side = max(args.size // getattr(latent_format, "spacial_downscale_ratio", 8), 8)
     if getattr(latent_format, "latent_dimensions", 2) == 3:
         ratio = getattr(latent_format, "temporal_downscale_ratio", 4)
         frames = max(1, (args.frames - 1) // ratio + 1)
