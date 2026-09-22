@@ -164,3 +164,36 @@ klein e 7,12 B contra 3,88 B o custo do braco 1 sobe. **Terceiro, nao primeiro.*
 - A regra de selecao foi calibrada no klein-4B e conferida no Qwen-2512. Nas outras oito linhas da
   tabela ela e **extrapolacao**, e a Q5 mostra que a cobertura cai em video.
 - O text encoder do Qwen-Image-2.1 (16,7 GiB, Qwen2.5-VL) **nao** foi baixado; sem ele nao ha render.
+
+---
+
+## 6. Apendice 2026-09-22: os pesos chegaram, e o Qwen-Image-2.1 NAO RODA nesta pilha
+
+Baixados e conferidos byte a byte contra o que o HF declara:
+
+    P:\ComfyBench\originais\Qwen-Image-2.1\transformer\    14.230.284.408 B em 2 shards
+    P:\ComfyBench\originais\FLUX.2-klein-4B\flux-2-klein-4b.safetensors   7.751.105.712 B
+    P:\ComfyBench\originais\FLUX.2-klein-4B\vae\...              168.120.878 B
+
+O arquivo no disco **confirma a projecao feita por Range HTTP**: 297 tensores, **7.115.124.736
+parametros e 224 camadas quantizaveis**, os mesmos numeros que sairam do header remoto. A tecnica de
+projetar sem baixar esta validada contra o arquivo real.
+
+**E aqui esta o bloqueio que nao e de peso nem de matematica.** O config do 2.1 diz
+`_class_name: QwenImage21Transformer2DModel`, com `axes_dims_rope [16, 56, 56]`, `context_in_dim 4096`
+e `num_layers 32` -- **outra classe**, nao a do 2512. Testado por EXECUCAO, nao por grep, chamando o
+detector do proprio ComfyUI sobre os tensores em `device='meta'`:
+
+    comfy.model_detection.model_config_from_unet, ComfyUI 0.33.0
+      Qwen-Image-2.1,  prefixo ''                        -> None
+      Qwen-Image-2.1,  prefixo 'model.diffusion_model.'  -> None
+      Qwen-Image-2512  (controle, que ESTA rodando aqui)  -> QwenImage
+
+O controle detecta, o 2.1 nao. **O ComfyUI 0.33.0 desta bancada nao carrega o Qwen-Image-2.1**, e
+subir ComfyUI e decisao dele e proibida a mim pela regra de nao fazer upgrade em massa. Os pesos ficam
+no disco para o dia em que houver suporte, e toda a parte matematica ja esta feita sem eles.
+
+**Consequencia pratica, e ela e boa:** se ele quiser o experimento de GPU na familia Qwen, o alvo e o
+**2512**, que o ComfyUI carrega hoje -- e a tabela da secao 1 ja dizia que o 2512 e o melhor alvo da
+familia de qualquer forma (2,5305 bit/peso contra 2,7577 do 2.1). O modelo que ele pediu e, ao mesmo
+tempo, o pior da familia para a receita e o unico que nao roda.
