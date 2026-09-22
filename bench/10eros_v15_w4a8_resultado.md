@@ -73,33 +73,51 @@ E os ops ainda resolvem para o backend nativo HOJE (`probe_backend_resolution.py
 `w4a8_int8_linear -> comfy_kitchen.backends.cuda`, e o nativo difere do GEMM com peso dequantizado
 por rel-L2 **1,43e-1** -- a metade A4 e real, nao e so peso de 4 bits com matematica de 16.
 
-## Por que P4 nao rodou -- tres motivos, todos medidos
+## P4 nao fechou, e o caminho ate a parede foi MEDIDO -- inclusive contra o que eu havia previsto
 
-`probe_quant_dispatch.py --mode diffusion` e a ferramenta de camada 2 desta bancada, e ela nao
-alcanca este arquivo por tres razoes independentes:
+**A primeira versao desta secao dizia que a tentativa "morreria com `access violation`". Isso era
+inferencia declarada como limite, que e o modo de falha que a REGRA ZERO proibe.** Tentei. Nao morreu.
+O que aconteceu de verdade, em ordem:
 
-1. **Resolucao de nome.** Ela chama `folder_paths.get_full_path_or_raise("diffusion_models", CKPT)`.
-   O arquivo mora em `P:/ComfyBench/checkpoints/`, e a estrofe `bench_p` do
-   `extra_model_paths.yaml` declara `checkpoints: checkpoints` -- outra pasta. E o caso
-   `NAO_PROBAVEL` que o `CLAUDE.md` ja registra.
-2. **Loader errado.** Este e um **checkpoint empacotado** (DiT + VAE + audio VAE + vocoder +
-   projecao). O proprio yaml anota que o LTX 2.3 se carrega por `CheckpointLoaderSimple`, nao por
-   `load_diffusion_model`, e o probe so tem os modos `te` e `diffusion`.
-3. **Commit.** Qualquer um desses caminhos passa por `load_torch_file` -> `safe_open`, que cobra
-   **2x o arquivo**: 16,64 GiB x 2 = **33,3 GiB**, contra **23,00 GiB** de commit livre medidos as
-   23:25 (a 3090 do vizinho segura muito). Morreria com `access violation` em
-   `torch/storage.py`, que e a assinatura que esta bancada ja pagou quatro vezes.
+**Primeira tentativa: `FileNotFoundError`, e a causa que eu havia escrito estava INCOMPLETA.** Criei um
+**hardlink** em `P:/ComfyBench/diffusion_models/` -- funciona sobre SMB, 16.641.963.302 bytes, zero
+disco extra -- e o probe ainda assim nao achou. Motivo real: **`probe_quant_dispatch.py` nunca
+carregava o `extra_model_paths.yaml`**, que o `ComfyUI/main.py:130-132` carrega. Sem isso ele so ve
+`ComfyUI/models/*`, e **todos os roots montados ficam invisiveis** -- D:, W:, P:, U:, C:\ComfyBench,
+**119 dos 359 arquivos de modelo** desta instalacao, incluindo justamente `P:\ComfyBench`, onde as
+conversoes daqui sao escritas. O `avaliar_despacho.py:75` documentava a limitacao por PASTA e nao
+conhecia esta, por ROOT, e o `NAO_PROBAVEL` do `CLAUDE.md` tinha a causa incompleta. **Consertado**
+(commit `cb29b85`): carregado o yaml como o `main.py` faz, com aviso em stderr se falhar.
+
+**Segunda tentativa, com o yaml carregado: NAO deu access violation. Deu thrashing.** O processo
+subiu a **31,70 GiB privados** -- os 2x do `safe_open` sobre 16,64 GiB, como a aritmetica previa -- e
+**sobreviveu**, porque o pagefile cresceu e o limite de commit foi de 98,72 (documentado) para
+**137,91 GiB**. Mas ali platoou: 15 minutos com o CPU avancando ~9 s por minuto de relogio (15% de um
+nucleo), commit livre em 16,78 GiB, e **nada nunca chegou na placa** (a 3080 Ti ficou em 2557 MiB do
+comeco ao fim). Estava paginando, nao progredindo.
+
+**Parei por decisao, e o motivo nao e tecnico.** O vizinho estava com **23,7 GiB de VRAM** na 3090 em
+trabalho ativo, e o meu processo segurando 31,70 GiB de commit num limite de 137,91 com 16,78 livres
+punha a maquina perto da borda -- se ele precisasse de commit, a minha medicao poderia derrubar o
+trabalho **dele**. A regra permite eu matar os meus proprios processos de bancada; e a medicao e
+desejavel, mas desestabilizar a maquina na ausencia do dono nao e. Lock liberado, hardlink removido,
+original conferido intacto (16.641.963.302 B), commit de volta a 27,77 GiB.
+
+**Entao a barreira real de P4 nao e "morre", e "nao cabe sem paginar"**, e sobra um terceiro motivo
+que continua valido: este e um **checkpoint empacotado** (DiT + VAE + audio VAE + vocoder + projecao),
+que o proprio yaml anota carregar por `CheckpointLoaderSimple`, e o probe so tem os modos `te` e
+`diffusion`. Mesmo com commit sobrando, faltaria um modo `checkpoint` usando
+`load_checkpoint_guess_config`.
 
 O que EXISTE no lugar, e e mais fraco de proposito: o kernel smoke acima roda um kernel real sobre
 **uma** camada real deste arquivo e prova que o backend nativo resolve e executa. Ele **nao** conta
 quantos dos 1440 forwards passam pelo caminho quantizado nem quantos `dequantize` acontecem, que e a
 pergunta de P4. **Nao tratar "kernel smoke PASS" como "despacha".**
 
-Para fechar P4 depois seria preciso: (a) um hardlink ou copia do arquivo em
-`P:/ComfyBench/diffusion_models/`, (b) um modo `checkpoint` no probe usando
-`load_checkpoint_guess_config`, e (c) commit livre acima de ~35 GiB, ou o leitor do dynamic-VRAM --
-com a ressalva de que este arquivo tem **2-D em BF16 e em F32** (os `weight_s_rel`), o que e
-exatamente a armadilha de dtype do lazy-load que o `CLAUDE.md` registra.
+Para fechar P4 depois: (a) rodar com a 3090 livre, ou com o vizinho fora, para nao competir por
+commit; (b) um modo `checkpoint` no probe; e (c) considerar o leitor do dynamic-VRAM, que nao cobra 2x,
+**com a ressalva medida** de que este arquivo tem 2-D em BF16 e em F32 (os `weight_s_rel`), que e
+exatamente a armadilha de dtype do lazy-load registrada no `CLAUDE.md`.
 
 ---
 
