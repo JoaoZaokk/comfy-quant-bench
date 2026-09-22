@@ -378,6 +378,38 @@ Every paragraph below that says "while `glm-w4` held the 3090" is still a valid 
   W4A4. O criterio por camada **ordena formatos corretamente** (ele disse que W4A8 era 3,02x
   melhor, e era) e **nao localiza penhascos**. Isso deixou de ser suspeita e virou demonstracao.
 
+  **E toda esta tabela responde uma pergunta de PTQ, que nao e a pergunta que a referencia publica
+  de baixissimo bit responde.** Medido 2026-09-21 fazendo engenharia reversa do **Bonsai Image**
+  (`prism-ml/bonsai-image-*`, FLUX.2-klein-4B a 1,58 bit) contra o original, peso a peso --
+  `bench/bonsai_image_engenharia_reversa.md`, `tools/probe_bonsai_ptq_ou_treino.py`. Tres caminhos
+  independentes provam que **eles treinaram**, nao quantizaram: **2.727.589 inversoes de sinal** no
+  braco ternario com **0 de 100 camadas limpas** (um PTQ de magnitude nao pode inverter nenhum
+  sinal, por construcao); **6,06%** de sinais trocados no braco binario, onde PTQ e *definido* como
+  `sign(w)*escala`; e derrota **unanime, 100/100**, para um PTQ ingenuo estilo BitNet na propria
+  metrica de distancia ao peso -- o que um quantizador nao pode fazer.
+
+  O mecanismo importa mais que o veredito. O `quantization_config.json` deles declara 100 camadas
+  quantizadas e 9 "puladas" por uma lista de nomes escrita a mao, **sem erro medido por camada em
+  lugar nenhum**. E o controle revelou por que isso basta: **8 das 9 "puladas" MUDARAM** (rel-L2 ate
+  0,235) e **os 60 `norm_q`/`norm_k` tambem**, 0/60 identicos. "Pulada" significa *nao quantizada*,
+  nao *nao modificada*: essas camadas ficaram em FP16 para **poderem ser treinadas e compensar** as
+  100 esmagadas. O conjunto em alta precisao e **capacidade de adaptacao, nao o conjunto de camadas
+  sensiveis**.
+
+  Isso tambem resolve a colisao com a modulacao sem nenhum lado estar errado. Eles pulam os tres
+  `*_modulation.linear`; esta bancada mediu `adaLN_modulation` como a camada de **menor** erro em
+  W4A4 do bloco (0,1263 contra 0,1569), e isso segue verdadeiro. **Aguentar quantizacao e servir de
+  compensador sao propriedades diferentes**, e o mapa deles otimiza a segunda -- por isso a
+  modulacao, barata e alimentando 20 blocos, e boa escolha para deixar solta.
+
+  **Entao: o teto do PTQ nao e o teto deles.** Tudo nesta secao -- as tres hipoteses de transferencia
+  que morreram, o `--promote-error`, o criterio por camada -- vale para PTQ e nao se compara com um
+  modelo que foi treinado na grade. [JULGAMENTO] o proximo ganho real aqui provavelmente nao vem de
+  criterio de promocao melhor, e sim de um **estagio de compensacao**: deixar poucas camadas em alta
+  precisao e ajusta-las contra a saida do modelo denso, sem retreinar o corpo. O que me faria mudar
+  de ideia: se o Bonsai tiver treinado em escala de pre-treino, o mecanismo e "retreinar" e nao cabe
+  aqui -- o sinal a favor do ajuste CURTO e que os pesos ternarios ficaram a sinal 0,9999 do original.
+
   Descartada por medicao a leitura facil de que o arquivo estava quebrado: `probe_quant_dispatch
   --forward-only` da 840 modulos `convrot_w4a4`, **8/8 forwards quantizados, 0 dequantize**,
   `convrot_linear_dtype=int4`, `backends.cuda`, 840 pesos em `cuda:0`; `verify_w4a4` passa em
@@ -1415,5 +1447,15 @@ entry. See [docs/agents/domain.md](docs/agents/domain.md).
 ## Memory gotchas
 
 Conversions check free disk (`estimate + 1 GiB`) and free RAM (`3 × largest selected tensor + 2 GiB`) and exit rather than thrash. If it refuses, the fix is to close memory-heavy WSL/worker processes **manually** — never change the pagefile or kill processes automatically.
+
+**But that guard measures the wrong quantity for `quant_w4a8.py`, and the real limit is commit, not disk.** Measured 2026-09-21 converting the 46.14 GB `10Eros_v1.5_bf16` (1440 layers): `quant_w4a8.py:286` is a **two-pass** design — *"pass one fills `quantized` with every layer, pass two writes"* — so the whole quantized payload is held in RAM before a single byte lands. Consequences, all observed on this run:
+
+- **No `.partial` exists on disk for most of the conversion.** The `[N/1440] quantized` counter is pass one. Looking for the output file to check progress reads as "nothing is happening" for ~35 minutes.
+- The process reached **15.38 GiB private** with **3.45 GiB of free commit** on this host, and the pagefile had grown to 72.06 GiB (limit 135.70, which is *not* the 98.72 recorded elsewhere in this file — it is system-managed and moves, so re-read it every time). It fit, but with no margin.
+- The per-layer growth is what makes it predictable: 1056 → 1248 layers cost only 0.57 GiB, so extrapolating from a third of the way through is reliable.
+
+So for a model meaningfully larger than this one, **the commit limit bites before the disk does**, and the existing guard will not catch it because it checks `3 × largest tensor`, not the sum of all of them. Read free commit before starting, not free disk.
+
+**And one harness fact that cost 40 minutes twice the same night:** `nohup … &` launched from the Bash tool **does not survive a turn interruption** — both a 43 GiB and a 24 GiB download died silently, one at 69.3%, with a zero-byte log and no live process. Use the harness's `run_in_background`, which is tracked and notifies. `hf_hub_download`'s `.incomplete` does survive, so a resume costs only the remainder; the way to tell a dead download from a slow one is the `.incomplete`'s **mtime**, not its size.
 
 Known benign noise: `ModelPatcher.__del__` prints an `ON_DETACH` AttributeError on short-lived interpreter shutdown; loading itself still exits 0.
