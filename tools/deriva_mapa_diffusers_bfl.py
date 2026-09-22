@@ -95,7 +95,7 @@ def main() -> int:
         por_forma[tuple(v["shape"][1:])].append(k)
 
     mapa: dict[str, dict] = {}
-    um_para_um = fundidos = ambiguos = nao = 0
+    um_para_um = fundidos = permutados = ambiguos = nao = 0
     nao_resolvidos: list[tuple[str, list]] = []
 
     for k in sorted(b.header):
@@ -135,6 +135,35 @@ def main() -> int:
                     achou = True
                     break
         if not achou:
+            # Caso 4: MESMO shape, mas os pedacos em outra ORDEM. Aparece de verdade: no klein-4B,
+            # `norm_out.linear.weight` (diffusers, [shift, scale]) e
+            # `final_layer.adaLN_modulation.1.weight` (BFL, [scale, shift]) tem as duas metades
+            # TROCADAS -- medido, `metade1 == metade2` e `metade2 == metade1`. Era o unico dos 149
+            # que o casamento por sha nao resolvia, e a ferramenta o deixou como NAO RESOLVIDO em vez
+            # de chutar, que e por isso que ele foi achado em vez de virar um checkpoint quebrado.
+            brutos = bytes(b.bytes_de(k))
+            for n_pedacos in range(2, a.max_fusao + 1):
+                if forma[0] % n_pedacos:
+                    continue
+                tam = len(brutos) // n_pedacos
+                sha_b = [hashlib.sha256(brutos[i * tam:(i + 1) * tam]).hexdigest()
+                         for i in range(n_pedacos)]
+                for c in por_forma.get(resto, []):
+                    if tuple(d.header[c]["shape"]) != tuple(forma):
+                        continue
+                    cru_d = bytes(d.bytes_de(c))
+                    sha_d = [hashlib.sha256(cru_d[i * tam:(i + 1) * tam]).hexdigest()
+                             for i in range(n_pedacos)]
+                    if sorted(sha_b) != sorted(sha_d) or sha_b == sha_d:
+                        continue                      # nao e permutacao, ou ja era 1-para-1
+                    perm = [sha_d.index(s) for s in sha_b]
+                    mapa[k] = {"tipo": f"permuta-{n_pedacos}", "de": c, "ordem": perm, "eixo": 0}
+                    permutados += 1
+                    achou = True
+                    break
+                if achou:
+                    break
+        if not achou:
             nao += 1
             nao_resolvidos.append((k, forma))
 
@@ -142,6 +171,7 @@ def main() -> int:
     print(f"  1-para-1 por sha256 exato   {um_para_um}")
     print(f"    dos quais AMBIGUOS        {ambiguos}  (mais de um diffusers com o mesmo conteudo)")
     print(f"  fundidos (concat no eixo 0) {fundidos}")
+    print(f"  permutados (mesmo shape, pedacos em outra ordem) {permutados}")
     print(f"  NAO RESOLVIDOS              {nao}")
     for k, forma in nao_resolvidos[:20]:
         print(f"      {k}  {forma}  {b.header[k]['dtype']}")
@@ -150,7 +180,7 @@ def main() -> int:
 
     cobertos = set()
     for v in mapa.values():
-        if v["tipo"] == "1-para-1":
+        if isinstance(v["de"], str):
             cobertos.add(v["de"])
         else:
             cobertos.update(v["de"])
