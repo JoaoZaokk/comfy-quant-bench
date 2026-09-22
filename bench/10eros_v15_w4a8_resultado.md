@@ -110,12 +110,43 @@ O que sobrou depende de julgamento visual e da placa grande. O modelo e adulto; 
 ### 1. Renderizar o W4A8
 
 O arquivo esta em `P:/ComfyBench/checkpoints/`, que a estrofe `bench_p` monta como `checkpoints`,
-entao `CheckpointLoaderSimple` ja o ve como `10Eros_v1.5_bf16_w4a8.safetensors`.
+entao **`CheckpointLoaderSimple` ja o ve** como `10Eros_v1.5_bf16_w4a8.safetensors` -- confirmado
+lendo o workflow oficial, que usa exatamente esse loader.
 
-O workflow oficial do autor e
-`TenStrip/LTX2.3-10Eros_Workflows -> 10Eros_10SNodes_I2V_Basic_DMD_V5.json`, e ele exige os nodes de
-`github.com/TenStrip/10S-Comfy-nodes` -- **nao conferi se estao instalados aqui**. A v1.5 e hibrida e
-o README do autor recomenda uma LoRA DMD (`TenStrip/LTX2.3_DMD_Lora -> LTX2.3_DMD_hybrid_v2.safetensors`).
+**Os parametros reais, lidos do JSON oficial** (`bench/10eros/10Eros_10SNodes_I2V_Basic_DMD_V5.json`,
+85 nodes, baixado do repo do autor) -- nao adivinhados:
+
+    loader            CheckpointLoaderSimple            (no original: 10Eros_v1.3_fp8mixed_learned)
+    LoRA              LoraLoaderModelOnly, strength 1   LTX2.3_DMD_reshaped_r256.safetensors
+    DUAS passadas de SamplerCustom, com sigmas manuais:
+      passada 1   euler_ancestral        9 passos   1.000 0.955 0.893 0.812 0.715 0.603 0.482 0.241 0.121 0.0
+      passada 2   euler_ancestral_cfg_pp 3 passos   0.92 0.725 0.421875 0.0
+    entre elas        LTXVLatentUpsamplerTiled com ltx-2.3-spatial-upscaler-x2-1.1.safetensors
+    cfg 1, seed 42 fixa
+    latente de audio  LTXVEmptyLatentAudio [1, 24, 1]
+    resolucao         vem da imagem de entrada (I2V, via ImageResizeKJv2 / GetImageSize),
+                      nao do EmptyLTXVLatentVideo
+
+**Atencao a LoRA: o workflow V5 usa `LTX2.3_DMD_reshaped_r256`, e o README do 10Eros recomenda
+`LTX2.3_DMD_hybrid_v2` para a v1.5.** Sao arquivos diferentes (5.095.405.082 contra 5.095.398.920 B).
+**As duas ja estao em `P:/ComfyBench/loras/`**, baixadas e conferidas por tamanho, para nao esperar
+download na hora de comparar.
+
+**O upscaler espacial JA esta em disco:**
+`ComfyUI/models/latent_upscale_models/ltx-2.3-spatial-upscaler-x2-1.1.safetensors`.
+
+**Nodes: `10S-Comfy-nodes` NAO esta instalado** (nada casa `*10S*` / `*TenStrip*` em
+`ComfyUI/custom_nodes/`). Instalar pacote de node e mudanca no ComfyUI e **e decisao sua** -- nao
+instalei. Um grep dos 41 tipos usados pelo workflow contra o codigo nao localizou 9 deles:
+
+    GetNode  SetNode  mxSlider  TwoWaySwitch  MarkdownNote  Power Lora Loader (rgthree)
+    LTXReferenceConditioning  LTXReferenceEnable  LTXVLatentUpsamplerTiled
+
+**Esse grep e fraco e provavelmente tem falso negativo**: `ImageResizeKJv2` do MESMO pacote
+(KJNodes) FOI encontrado, e `GetNode`/`SetNode` moram nele -- um node registrado por dicionario
+computado nao casa em busca de texto. `MarkdownNote` e nativo do frontend. **A checagem que vale e
+abrir o JSON na UI**, que lista os faltantes com precisao. O que da para afirmar sem ressalva e so o
+`10S-Comfy-nodes`, procurado por nome de pasta.
 
 O servidor precisa de `--disable-dynamic-vram` (duas razoes independentes ja medidas nesta bancada) e
 de um launcher que passe a flag: `run_nvidia_gpu_8190_ultra_video.bat` passa.
