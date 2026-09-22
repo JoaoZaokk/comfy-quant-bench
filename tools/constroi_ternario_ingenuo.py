@@ -141,7 +141,11 @@ def main() -> int:
             if k in alvo_set:
                 cru = bytearray(memoryview(mm)[base + a0:base + b0])
                 w = torch.frombuffer(cru, dtype=DT[v["dtype"]]).view(*v["shape"])
-                out.write(ternariza(w, a.grupo).contiguous().numpy().tobytes())
+                # `.numpy()` nao aceita BFloat16 (TypeError: unsupported ScalarType) -- a primeira
+                # versao morreu aqui, depois de escrever 1,6 GiB. Reinterpretar como uint8 sai pelos
+                # bytes crus e serve para qualquer dtype de largura fixa.
+                t = ternariza(w, a.grupo).contiguous()
+                out.write(t.flatten().view(torch.uint8).numpy().tobytes())
                 feitos += 1
                 if feitos % 20 == 0:
                     print(f"    [{feitos}/{len(alvo)}] ternarizadas", flush=True)

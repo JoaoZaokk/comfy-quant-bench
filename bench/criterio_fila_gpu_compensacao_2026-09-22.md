@@ -114,3 +114,34 @@ como este.
 - Nada aqui mede velocidade: gemlite nao esta instalado e o braco 0/1 nao tem kernel de 1,58 bit.
   O corpo ternario roda **desempacotado** para bf16, entao **nenhum numero de tempo desta fila vale
   como ganho de inferencia.**
+
+---
+
+## Apendice: o braco 0 foi construido e conferido, ainda em CPU
+
+Acrescentado 2026-09-22 depois de construir, **sem mudar nenhuma previsao acima**. Sao fatos do
+arquivo, nao resultado do experimento.
+
+`P:\ComfyBench\originais\klein4b_ternario_ingenuo.safetensors`, 7.751.109.744 B -- **a mesma contagem
+de bytes do original**, porque os pesos saem desempacotados nos mesmos shapes e dtypes.
+
+    camadas alvo MUDADAS               100/100    como tem de ser
+    tensores fora do alvo IDENTICOS      69/69    o conjunto denso esta byte a byte intacto
+    niveis distintos por grupo de 128         3   ternario de verdade, em 8 de 8 amostradas
+
+E um numero que enquadra a fila inteira, mediana de 8 camadas:
+
+    braco 0  PTQ ternario ingenuo   rel-L2 ao original  0,46626
+    braco 2  Bonsai publicado       rel-L2 ao original  0,53474    1,1469x MAIS LONGE
+
+**O braco 0 esta MAIS PERTO do original em espaco de peso que o Bonsai.** Isso reproduz, por uma
+construcao independente, o que foi medido em 2026-09-21 (o Bonsai perde de um PTQ BitNet ingenuo em
+100 de 100 camadas na propria metrica de peso).
+
+E deixa a pergunta da GPU na forma mais limpa possivel: **o braco 0 e mais fiel no peso e deve ser
+pior na saida.** Se for, e a demonstracao mais direta que esta bancada consegue de que o treino deles
+comprou algo que distancia de peso nao ve -- e e o mesmo padrao que este repo ja registra para erro
+por camada, que ordena formatos e nao localiza penhasco.
+
+Se o braco 0 for melhor na saida tambem, entao nada aqui aponta para treino e eu tenho um problema
+maior que a hipotese de compensacao.
