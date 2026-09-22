@@ -43,6 +43,23 @@ import comfy.options; comfy.options.enable_args_parsing()
 import torch, folder_paths, comfy.sd, comfy.sample
 from comfy_kitchen.tensor.base import QuantizedTensor
 
+# Carregar o `extra_model_paths.yaml`, como `ComfyUI/main.py:130-132` faz. SEM isto o probe so ve
+# `ComfyUI/models/*`, e **todos os roots montados ficam invisiveis** -- D:, W:, P:, U: e
+# C:\ComfyBench, que somam 119 dos 359 arquivos de modelo desta instalacao, incluindo
+# `P:\ComfyBench` onde as conversoes desta bancada sao escritas. Medido 2026-09-21 tentando contar
+# despacho no `10Eros_v1.5_bf16_w4a8`: `get_full_path_or_raise` levantou `FileNotFoundError` para um
+# arquivo que estava la, com hardlink ja criado na pasta certa, e que `folder_paths` ENCONTRA assim
+# que o yaml e carregado (77 nomes em `diffusion_models` contra os poucos de `ComfyUI/models`).
+# `avaliar_despacho.py:75` documentava a limitacao por PASTA e nao conhecia esta, por ROOT.
+try:
+    import utils.extra_config, os.path as _op
+    _yaml = _op.join("ComfyUI", "extra_model_paths.yaml")
+    if _op.isfile(_yaml):
+        utils.extra_config.load_extra_path_config(_yaml)
+except Exception as _e:
+    print(f"AVISO: extra_model_paths.yaml nao carregou ({_e!r}); so `ComfyUI/models` sera visivel",
+          file=sys.stderr)
+
 TE_TRAVADO = %(TE_TRAVADO)s
 if TE_TRAVADO:
     # Braco de controle do cadeado do text encoder. Repoe o comportamento anterior a flag
