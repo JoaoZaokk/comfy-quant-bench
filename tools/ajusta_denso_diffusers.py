@@ -19,8 +19,11 @@ Conferido antes de escrever isto: `from_config` no config deles instancia **3.87
 parametros e **169 tensores**, com **zero** nome faltando, zero sobrando e zero shape divergente
 contra o nosso checkpoint em nomenclatura diffusers. O remap para BFL nao entra aqui.
 
-E em nomenclatura diffusers o conjunto denso volta a ser **69 tensores** (as 60 normas ficam fora dos
-blocos aqui), o que casa com o criterio -- a correcao para 9 valia so para a nomenclatura BFL.
+**O conjunto denso sao 9 tensores, 195.035.136 valores, NAS DUAS NOMENCLATURAS.** Esta linha dizia
+69 em diffusers, com o argumento de que as 60 normas cairiam fora dos blocos aqui; a propria
+execucao desta ferramenta imprimiu `9 treinaveis` e a medicao direta confirmou: as 60 `norm_q`/
+`norm_k` sao `single_transformer_blocks.N.attn.norm_k.weight` -- DENTRO de bloco -- em diffusers
+tambem. Entao a correcao de 69 para 9 vale para as duas, e o criterio fica corrigido aqui.
 
 AS ENTRADAS DO PROFESSOR sao capturadas embrulhando `pipe.transformer.forward`, nao reconstruidas: o
 `img_ids`/`txt_ids`/`guidance` do Flux2 saem do proprio pipeline, e reconstrui-los a mao seria
@@ -29,6 +32,13 @@ exatamente o tipo de reimplementacao que produz diferenca silenciosa.
 OS DOIS CONTROLES, do criterio:
   zero    ajuste com ZERO passos tem de dar peso byte a byte identico ao braco 0
   ruido   perturbar o denso com ruido do mesmo tamanho tem de PIORAR
+
+DE PASSAGEM, LIDO NO PIPELINE DELES e nao suposto: `Flux2KleinPipeline.encode_prompt` tem
+`text_encoder_out_layers: tuple[int] = (9, 18, 27)` (`pipeline_flux2_klein.py:434`). O
+condicionamento do klein e um TAP DE TRES CAMADAS do Qwen3, nao o ultimo hidden state -- o que
+significa que qualquer tentativa de reproduzir esse condicionamento fora do diffusers tem de
+reproduzir o tap tambem. Aqui nao importa, porque o professor e o aluno recebem o MESMO
+`encoder_hidden_states` capturado do pipeline; fica registrado porque estava na lista de aberto.
 
 NAO COBRE: nenhuma imagem. Mede e otimiza PREVISAO em entradas casadas. Nenhum tempo daqui vale: o
 corpo ternario roda desempacotado em bf16/fp16, sem kernel de 1,58 bit.
@@ -81,15 +91,49 @@ def carrega_transformer(caminho: Path, config: Path, dtype, dev):
     return m.to(device=dev, dtype=dtype).eval()
 
 
+def ler_metadata(p: Path) -> dict[str, str] | None:
+    """`__metadata__` do safetensors, lendo SO o header. Devolve None se nao houver."""
+    import struct
+    with p.open("rb") as f:
+        n = struct.unpack("<Q", f.read(8))[0]
+        return json.loads(f.read(n)).get("__metadata__")
+
+
+def classe_do_pipeline(raiz: Path):
+    """A classe sai do `_class_name` do `model_index.json`, nunca de um chute meu.
+
+    MEDIDO, e custou uma corrida: eu tinha escrito `Flux2Pipeline` e o klein declara
+    `Flux2KleinPipeline`. As duas existem no diffusers 0.38.0 e NAO usam o mesmo text encoder --
+    a generica chama `_get_mistral_3_small_prompt_embeds`, a do klein chama
+    `_get_qwen3_prompt_embeds`, e o `model_index.json` do klein diz `Qwen3ForCausalLM`. O erro
+    que isso produz nao fala de pipeline nenhum: morre em `apply_chat_template` dizendo que o
+    tokenizer nao tem `chat_template`, o que manda o leitor consertar o tokenizer.
+    """
+    import diffusers
+    nome = json.loads((raiz / "model_index.json").read_text(encoding="utf-8"))["_class_name"]
+    cls = getattr(diffusers, nome, None)
+    if cls is None:
+        raise RuntimeError(f"diffusers {diffusers.__version__} nao tem {nome}")
+    return nome, cls
+
+
 def grava_professor(raiz: Path, ref_transformer: Path, n_prompts, sementes, passos, lado, dev):
     """Roda o pipeline do diffusers e CAPTURA as entradas e a saida do transformer."""
-    from diffusers import Flux2Pipeline
-    print(f"--- professor: pipeline do diffusers em {raiz} ---", flush=True)
+    nome, Pipe = classe_do_pipeline(raiz)
+    print(f"--- professor: {nome} do diffusers em {raiz} ---", flush=True)
     tr = carrega_transformer(ref_transformer, raiz / "transformer" / "config.json",
                              torch.bfloat16, dev)
-    pipe = Flux2Pipeline.from_pretrained(str(raiz), transformer=tr, vae=None,
-                                         torch_dtype=torch.bfloat16)
+    # A VAE ENTRA, e nao e desperdicio. Com `vae=None` o `vae_scale_factor` cai no fallback 8 --
+    # que por sorte e o valor certo do klein (`block_out_channels` tem 4 entradas, 2**3 = 8, lido
+    # no config) -- mas `pipeline_flux2_klein.py:907` le `self.vae.bn.running_mean`
+    # INCONDICIONALMENTE depois do loop, inclusive com `output_type="latent"`. Morreria de
+    # AttributeError no fim, com todo o trabalho feito e nenhuma captura devolvida.
+    pipe = Pipe.from_pretrained(str(raiz), transformer=tr, torch_dtype=torch.bfloat16)
     pipe.to(dev)
+    # ... e sai da placa em seguida: `decode` nunca e chamado, e `bn.running_mean` faz `.to(...)`
+    # para o device do latente. 168 MB que nao competem com o encoder de 8,04 GiB.
+    if getattr(pipe, "vae", None) is not None:
+        pipe.vae.to("cpu")
 
     capt: list[dict] = []
     orig = tr.forward
@@ -97,9 +141,15 @@ def grava_professor(raiz: Path, ref_transformer: Path, n_prompts, sementes, pass
     def espia(*args, **kw):
         out = orig(*args, **kw)
         saida = out[0] if isinstance(out, tuple) else getattr(out, "sample", out)
+        # O ALVO FICA NO DTYPE EM QUE O PROFESSOR O PRODUZIU. A primeira versao gravava
+        # `.to("cpu", torch.float32)`, o que dobra a RAM sem ganhar informacao nenhuma: o
+        # transformer roda em bf16, entao promover a fp32 e exato-e-inutil e voltar depois tambem.
+        # O custo real vai IMPRESSO em `grava_professor` em vez de estimado aqui -- a primeira
+        # versao deste comentario citava 3,62 GiB para 64 exemplos, numero que eu DEDUZI de um
+        # shape errado ([1, 4608, 3072]); o medido no smoke foi 0,02 GiB para 2 exemplos.
         capt.append({"kw": {k: (v.detach().to("cpu").clone() if torch.is_tensor(v) else v)
                             for k, v in kw.items()},
-                     "out": saida.detach().to("cpu", torch.float32).clone()})
+                     "out": saida.detach().to("cpu").clone()})
         return out
 
     tr.forward = espia
@@ -114,7 +164,11 @@ def grava_professor(raiz: Path, ref_transformer: Path, n_prompts, sementes, pass
 
     del pipe, tr
     torch.cuda.empty_cache()
-    print(f"  professor: {len(capt)} exemplos\n", flush=True)
+    custo = sum(t.numel() * t.element_size()
+                for ex in capt
+                for t in [ex["out"], *[v for v in ex["kw"].values() if torch.is_tensor(v)]])
+    print(f"  professor: {len(capt)} exemplos, {custo / 2**30:.2f} GiB de RAM retidos "
+          f"(alvo em {capt[0]['out'].dtype})\n", flush=True)
     return capt
 
 
@@ -131,6 +185,9 @@ def main() -> int:
     p.add_argument("--epocas", type=int, default=30)
     p.add_argument("--lr", type=float, default=1e-5)
     p.add_argument("--modo", choices=["ajuste", "zero", "ruido"], default="ajuste")
+    p.add_argument("--casar-com",
+                   help="json de um ajuste, obrigatorio no modo ruido: a escala da perturbacao "
+                        "sai do desvio rel-L2 MEDIDO ali, tensor a tensor")
     p.add_argument("--device", type=int, default=0)
     a = p.parse_args()
 
@@ -159,13 +216,35 @@ def main() -> int:
     hist: list[float] = []
 
     if a.modo == "ruido":
+        # O CONTROLE EXIGE RUIDO DO MESMO TAMANHO DO AJUSTE, e `lr * epocas` nao e esse tamanho --
+        # e uma proxy que o Adam nao respeita (passo normalizado, momento, 30 epocas de direcao
+        # coerente). Com `--casar-com` a escala vem do desvio rel-L2 que o ajuste MEDIU, tensor a
+        # tensor, e o controle passa a responder "a mesma perturbacao, sem direcao, piora?".
+        # Sem `--casar-com` o tool RECUSA em vez de silenciosamente medir outra coisa.
+        if not a.casar_com:
+            print("RECUSADO: modo ruido exige --casar-com <json do ajuste>, para que a perturbacao "
+                  "tenha o tamanho MEDIDO do ajuste e nao uma proxy.", file=sys.stderr)
+            return 2
+        ref = json.loads(Path(a.casar_com).read_text(encoding="utf-8"))
+        alvo_rel = ref.get("desvios_por_tensor")
+        if not alvo_rel:
+            print(f"RECUSADO: {a.casar_com} nao tem `desvios_por_tensor`; foi escrito por uma "
+                  "versao anterior desta ferramenta.", file=sys.stderr)
+            return 2
+        faltando = [k for k, _ in treinaveis if k not in alvo_rel]
+        if faltando:
+            print(f"RECUSADO: {len(faltando)} treinaveis sem desvio de referencia, p.ex. "
+                  f"{faltando[:3]}", file=sys.stderr)
+            return 2
         g = torch.Generator(device="cpu").manual_seed(20260922)
-        escala = a.lr * a.epocas
-        for _k, v in treinaveis:
-            r = torch.randn(v.shape, generator=g, dtype=torch.float32) * escala
+        for k, v in treinaveis:
+            r = torch.randn(v.shape, generator=g, dtype=torch.float32)
+            n = v.detach().to("cpu", torch.float32).norm()
+            r *= alvo_rel[k] * n / r.norm().clamp(min=1e-30)   # ||r|| = rel * ||W||, exato
             with torch.no_grad():
                 v.add_(r.to(v.device, v.dtype))
-        print(f"  ruido aplicado, escala {escala:.3e}")
+        print(f"  ruido casado com {Path(a.casar_com).name}: rel-L2 alvo "
+              f"{min(alvo_rel.values()):.3e} a {max(alvo_rel.values()):.3e}")
     elif a.modo == "ajuste":
         opt = torch.optim.Adam([v for _, v in treinaveis], lr=a.lr)
         for ep in range(a.epocas):
@@ -189,8 +268,11 @@ def main() -> int:
 
     depois = {k: v.detach().to("cpu", torch.float32).clone() for k, v in treinaveis}
     mudou = sum(1 for k in antes if not torch.equal(antes[k], depois[k]))
-    desvio = max((float((depois[k] - antes[k]).norm() / antes[k].norm().clamp(min=1e-30))
-                  for k in antes), default=0.0)
+    # POR TENSOR, nao so o maior: o modo `ruido` precisa casar o tamanho da perturbacao camada a
+    # camada, e um unico maximo obrigaria a aplicar o desvio do pior tensor em todos.
+    por_tensor = {k: float((depois[k] - antes[k]).norm() / antes[k].norm().clamp(min=1e-30))
+                  for k in antes}
+    desvio = max(por_tensor.values(), default=0.0)
     print(f"  densos mudados: {mudou}/{len(antes)}   maior desvio rel-L2 {desvio:.3e}")
 
     from safetensors.torch import load_file, save_file
@@ -201,14 +283,20 @@ def main() -> int:
     base = load_file(str(a.aluno_transformer))
     for k, v in treinaveis:
         base[k] = v.detach().to("cpu", base[k].dtype).clone()
+    # O `__metadata__` DA ORIGEM VIAJA. `save_file` sem `metadata=` grava None, e foi assim que o
+    # controle `zero` saiu com os 169 tensores byte a byte identicos e o ARQUIVO diferente do braco
+    # 0 por 32 bytes -- exatamente o `{"format": "pt"}` que o escritor de la grava. Perder isso e
+    # perder proveniencia num artefato que pode ser publicado.
+    meta = ler_metadata(Path(a.aluno_transformer))
     parcial = sai.with_suffix(sai.suffix + ".partial")
-    save_file(base, str(parcial))
+    save_file(base, str(parcial), metadata=meta)
     parcial.replace(sai)
     print(f"  escrito {sai}  {sai.stat().st_size:,} B")
 
     rel = {"modo": a.modo, "n_exemplos": len(prof), "epocas": a.epocas, "lr": a.lr,
            "treinaveis": len(treinaveis), "params_treinaveis": n_par,
            "densos_mudados": mudou, "maior_desvio_rel_l2": desvio,
+           "desvios_por_tensor": por_tensor,
            "perda_inicial": hist[0] if hist else None, "perda_final": hist[-1] if hist else None}
     sai.with_suffix(".json").write_text(json.dumps(rel, indent=2), encoding="utf-8")
 
