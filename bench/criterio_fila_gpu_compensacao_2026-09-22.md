@@ -94,17 +94,18 @@ canal em 2026-09-21.
 
     [ok]     klein-4B em diffusers (original)          F:\bonsai-re\FLUX.2-klein-4B\transformer
     [ok]     Bonsai ternario e binario desempacotados   F:\bonsai-re\bonsai-image-*-unpacked
-    [baixando] klein-4B em nomenclatura ComfyUI        flux-2-klein-4b.safetensors, 7,39 GiB
-    [baixando] VAE do klein                            160,33 MiB
+    [ok]     klein-4B em nomenclatura ComfyUI  7.751.105.712 B, detectado como `Flux2`
+    [ok]     VAE do klein                      168.120.878 B
     [ok]     text encoder: klein usa Qwen3ForCausalLM hidden 2560, 36 camadas = Qwen3-4B, e
              `qwen_3_4b.safetensors` esta no disco  (CONFERIR hidden e camadas antes de usar)
-    [FALTA]  o Bonsai ternario em nomenclatura ComfyUI -- o braco 2 nao roda sem isso, e e a maior
-             peca de engenharia da fila: um remap diffusers -> BFL como o `tools/to_native.py` faz
-             para o Z-Image. **149 tensores contra 169, com fusao**, entao nao e renomear um a um.
+    [ok]     **o braco 2 esta DESBLOQUEADO.** O remap diffusers -> BFL foi derivado por sha256 dos
+             bytes entre as duas publicacoes do mesmo klein (`tools/deriva_mapa_diffusers_bfl.py`):
+             138 um-para-um, 10 fundidos-3 (qkv), 1 permutado (metades de `norm_out.linear`
+             trocadas). 149 de 149, 169 de 169, nada nao resolvido. Aplicado ao original ele
+             reproduz o `flux-2-klein-4b.safetensors` oficial **byte a byte**, sha256 `ec3d4e73`.
+    [ok]     braco 0 e braco 2 escritos em nomenclatura BFL, 7.751.105.712 B cada
 
-**Sem o braco 2 a fila nao roda como planejada** e o que sobra e 0 contra 1 contra 3, sem teto. Isso
-seria um experimento diferente e mais fraco, e se for esse o caso ele vai reportado como tal, nao
-como este.
+Sobra **so o braco 1**, que e o experimento. Tudo que era engenharia de arquivo esta feito.
 
 ## O que esta fila nao responde, de nenhum jeito
 
@@ -145,3 +146,37 @@ por camada, que ordena formatos e nao localiza penhasco.
 
 Se o braco 0 for melhor na saida tambem, entao nada aqui aponta para treino e eu tenho um problema
 maior que a hipotese de compensacao.
+
+---
+
+## Apendice 2: os tres bracos estao em disco e o ComfyUI detecta os tres
+
+Medido 2026-09-22, ainda em CPU, **sem mudar previsao nenhuma**.
+
+    arquivo                                          tensores   deteccao
+    klein4b_braco0_ternario_ingenuo_bfl              149        Flux2
+    klein4b_braco2_bonsai_ternario_bfl               149        Flux2
+    flux-2-klein-4b.safetensors  (braco 3)           149        Flux2
+
+`comfy.model_detection.model_config_from_unet` em tensores `device='meta'`. Os tres em
+`P:\ComfyBench\diffusion_models\`, 7.751.105.712 B cada, **nomes identicos nos tres**.
+
+Corrigido no caminho: eu os escrevi primeiro em `checkpoints/`, e eles sao **so o transformer**. Um
+`CheckpointLoaderSimple` procura VAE e CLIP dentro e falharia de um jeito que nao aponta a causa.
+Movidos para `diffusion_models/` e conferidos pelo `folder_paths` -- e conferido tambem que **nao
+sobrou copia em `checkpoints`**, que e o erro simetrico.
+
+### P5 (orcamento casado) conferida ANTES de qualquer medicao
+
+    69 tensores fora dos blocos, 80 dentro   (80 e nao 100 porque a nomenclatura BFL funde o qkv)
+
+    denso identico ao original:   braco 0  69/69      braco 2   1/69
+    dentro dos blocos MUDADO:     braco 0  80/80      braco 2  80/80
+    braco 0 != braco 2 nos blocos:         80/80
+
+O braco 0 tem o **conjunto denso byte a byte intacto** e todas as 80 esmagadas -- que e exatamente o
+que P5 exige dele. E o braco 2 volta a dar **1 de 69**: a assinatura de treino do Bonsai sobrevive ao
+remap, que e a **quarta** confirmacao independente dela, agora atravessando uma transformacao de nome
+que reproduz o arquivo oficial byte a byte.
+
+Falta **so o braco 1**. Toda a engenharia de arquivo esta feita; o que resta e o experimento.
