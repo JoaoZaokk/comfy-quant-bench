@@ -183,10 +183,41 @@ Se o braco sem LoRA sair igualmente bom, o teste nao esta medindo o que diz.
 - **O braco de referencia BF16** custa caro aqui: 42,97 GiB x 2 de commit contra ~98-137 GiB de
   limite com ~70 ja comprometidos. Caminho: GGUF sem perda (`tools/safetensors_to_gguf_bf16.py`),
   que foi escrito para arquivo **so-transformer** e aqui exigiria extrair as 4444 chaves `model.*`
-  primeiro. Alternativa mais barata: comparar contra o
-  **`10Eros_v1.4_DMD_int8_convrot` de terceiro que ja esta no repo do autor** (27,16 GiB) -- nao e o
-  BF16, mas e um braco int8 do mesmo modelo, e esta bancada ja mediu quatro vezes que o int8 ganha
-  do 4-bit em fidelidade, entao a comparacao tem direcao esperada.
+  primeiro.
+
+### O braco de comparacao JA ESTA EM DISCO, e foi validado
+
+`P:/ComfyBench/diffusion_models/10Eros_v1.5_INT8_TFO.safetensors` (CornLogic), **25.032.524.432 B**,
+tamanho conferido. `int8_tensorwise` pelo dialeto `comfy_quant` por tensor, **1232 camadas
+quantizadas**, **so-transformer** (6908 tensores, todos sob `model.`, 23,312 GiB -- sem vae, vocoder,
+audio_vae ou projecao). Os 3212 BF16 + 1232 quantizadas = **4444**, exatamente o numero de tensores
+`model.*` da nossa fonte: estrutura identica.
+
+**Validado como MESMA BASE que o nosso W4A8, por dois caminhos.** Primeiro o decisivo:
+`int8_tensorwise` preserva sinal, e a concordancia de sinal com o `10Eros_v1.5_bf16` deu **1,0000 em
+6 de 6** camadas amostradas (blocos 0, 10, 24, 47 e um `embeddings_connector`).
+
+Segundo, e ele corrige uma leitura minha: o `__metadata__` deles traz `blend_base: 10Eros_v1.4_bf16`,
+`blend_source: 10Eros_v1.2_bf16`, `blend_mode slerp`, `blend_alpha 0.7->0.0:linear`,
+`blend_scope attn1,attn2` -- e eu li isso como "eles remesclaram, entao nao e a v1.5 publicada". **A
+nossa propria fonte `10Eros_v1.5_bf16` carrega esses mesmos campos, identicos um por um** (29 chaves
+contra 30; a unica a mais deles e `REFCLPP`). Aquilo e a procedencia que o **TenStrip** gravou de como
+a v1.5 foi construida, repassada verbatim pelo quantizador de terceiro.
+
+**Armadilha geral que vale guardar: metadata que descreve uma mesclagem pode descrever a historia da
+FONTE, nao a producao daquele arquivo.** Um campo `blend_base` nao diz que quem escreveu o arquivo
+mesclou nada.
+
+Entao o A/B limpo e **W4A8 nosso (4 bits, ativacao 8) contra INT8 de terceiro (8 bits)**, mesmos pesos
+de partida, e esta bancada ja mediu quatro vezes em quatro familias que o int8 ganha em fidelidade --
+direcao esperada, e um resultado invertido seria motivo para conferir a medicao, nao para celebrar.
+Ressalva: o deles e so-transformer, entao o VAE, o vocoder e a projecao tem de vir de outro lugar no
+workflow; o nosso ja os traz dentro.
+
+**E NAO usar o `fp8mixed_experimental_learned` do LokkenJP como braco**, apesar de ser da mesma fonte
+v1.5: ele carrega parametros de quantizacao ajustados por camada contra um objetivo ponderado por
+canal ([10eros_fp8_terceiro_promocao_medida.md](10eros_fp8_terceiro_promocao_medida.md)), entao a
+comparacao mediria **formato + criterio de ajuste**, nao formato.
 
 ---
 
