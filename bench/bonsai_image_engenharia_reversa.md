@@ -220,6 +220,56 @@ binario que no ternario** -- quantizacao mais dura, compensacao maior. As duas e
 `time_guidance_embed.linear_1` e `single_stream_modulation.linear`, que se movem menos. Com n=8 isso e
 um indicio, nao um resultado.
 
+### Tentei DERRUBAR esta leitura, e o resultado foi PARCIAL -- vai registrado assim
+
+Se as 9 puladas fossem justamente as mais sensiveis a quantizacao, a lista deles coincidiria com um
+criterio mensuravel e "capacidade de adaptacao" ficaria indistinguivel de "eles escolheram as
+fragis". `tools/probe_bonsai_puladas_sao_as_piores.py` mede, **sobre o original** e com o mesmo
+procedimento para todas as 109 (ternario absmean g128 no eixo K, escala otima por minimo L2):
+
+    posto  grupo        err      params      camada
+        1  PULADA    0,6505     393.216      proj_out                              <- o PIOR de 109
+        2  PULADA    0,6492  28.311.552      single_stream_modulation.linear
+        3  quantiz.  0,5616  84.934.656      single_transformer_blocks.19.attn.to_qkv_mlp_proj
+        4  PULADA    0,5524   9.437.184      time_guidance_embed...linear_2
+        8  PULADA    0,4984     786.432      time_guidance_embed...linear_1
+       10  PULADA    0,4858  18.874.368      norm_out.linear
+       13  PULADA    0,4828  56.623.104      double_stream_modulation_img.linear
+      101  PULADA    0,4510  56.623.104      double_stream_modulation_txt.linear
+      108  PULADA    0,4074     393.216      x_embedder
+      109  PULADA    0,3745  23.592.960      context_embedder                      <- o MELHOR de 109
+
+    postos das puladas: [1, 2, 4, 8, 10, 13, 101, 108, 109]
+    se fossem as mais sensiveis:  [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    dentro do top 9: 4/9      erro mediano: pulada 0,4858  quantizada 0,4663
+
+**O conjunto pulado contem os dois extremos**: o pior de todos os 109 e o melhor de todos os 109. Seis
+dos nove estao no top 13, o que e bem acima do acaso -- entao a lista **nao e cega** a sensibilidade.
+Mas ela **nao e um ranking** dela: `context_embedder` e a camada mais facil de todas e esta fora da
+grade, enquanto `single_transformer_blocks.19.attn.to_qkv_mlp_proj`, no posto 3, foi quantizada.
+
+**E o par que decide esta na mesma familia.** `double_stream_modulation_img` (posto 13) e
+`double_stream_modulation_txt` (posto **101**) -- mesmo tipo de camada, mesmo tamanho exato
+(56.623.104 params), pontas opostas do ranking, **as duas puladas**. Um criterio por erro as teria
+separado; um padrao de NOME nao pode. E exatamente o que `skip_patterns` sendo uma lista de nomes
+prediz.
+
+Dois controles fecham as explicacoes alternativas. **Divisibilidade:** 0 das 9 tem K nao divisivel por
+128, entao nenhuma exclusao e mecanica. **Tamanho:** as 9 somam 195.035.136 params = **5,03%** dos
+3.875.536.896 candidatos -- o README deles diz "menos de 5%", entao esta pela margem do lado errado, e
+`double_stream_modulation_txt` sozinha custa 56,6 M params para ficar fora da grade sendo a 101a mais
+difficil de 109.
+
+**Como isso muda a afirmacao:** a escolha e **por nome e por posicao no grafo** -- o esqueleto de
+entrada, saida, tempo e modulacao -- e esse esqueleto por acaso contem varias camadas de erro alto,
+porque entrada e saida sao genuinamente duras. Nao e um criterio de sensibilidade, e provado pelo par
+de mesma familia nos postos 13 e 101. Mas dizer "nao tem nada a ver com sensibilidade" seria
+arredondar para o outro lado, e nao e o que o numero diz.
+
+Nao coberto aqui: erro em espaco de PESO, que esta bancada registra que ordena formatos e nao decide
+qualidade -- "nao sao as piores em peso" **nao** fecha a possibilidade de serem as piores em ATIVACAO,
+que exigiria calibracao na GPU. E uma unica receita ternaria; outro limiar reordenaria a lista.
+
 ### O que isso significa para esta bancada
 
 Todo o esforco daqui -- `quant_mixed.py`, erro por camada em ativacao real, `--promote-error`, os
