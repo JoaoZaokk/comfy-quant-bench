@@ -245,3 +245,90 @@ Nenhuma imagem, nenhum audio, nenhum latente. Nenhuma medicao de tempo por passo
 da barra de progresso do sampler, nunca do JSON do `ltx_video.py`). P4 nao rodou. O `10S-Comfy-nodes`
 nao foi conferido. A LoRA DMD nao foi baixada nem aplicada. O braco BF16 nao existe. E **nada foi
 publicado**.
+
+---
+
+## Anexo 2026-09-22: os nos instalados e o workflow reapontado
+
+Pedido dele: "coloca o node e deixa o comfy preparado". Servidor nao foi subido e a GPU nao foi
+tocada em nenhum passo.
+
+### O workflow declara quatro packs, tres faltavam
+
+Lidos do proprio JSON (`aux_id` / `cnr_id`), nao adivinhados pelo nome:
+
+    TenStrip/10S-Comfy-nodes      FALTAVA   LTXReferenceConditioning, LTXReferenceEnable,
+                                            LTXVLatentUpsamplerTiled
+    Smirnov75/ComfyUI-mxToolkit   FALTAVA   mxSlider
+    gseth/ControlAltAI-Nodes      FALTAVA   TwoWaySwitch
+    kijai/ComfyUI-KJNodes         presente
+    rgthree-comfy                 presente
+    Kosinkadink/...VideoHelperSuite presente
+    evanspearman/ComfyMath        presente
+
+Clonados os tres em `--depth 1`. **Nenhum pip.** O `requirements.txt` do 10S nao tem uma linha
+efetiva -- tudo comentario, `mediapipe` opcional -- e os outros dois nao tem arquivo. A pilha fixada
+nao foi tocada, nem com `-c constraints.txt`.
+
+### O upscaler que faltava existe e foi baixado
+
+`ltx-2.3-spatial-upscaler-x2-1.1.safetensors` nao estava em nenhum root. Nao esta em
+`Lightricks/LTX-2` (la so existe o `ltx-2-spatial-upscaler-x2-1.0`); esta em **`Lightricks/LTX-2.3`**,
+achado varrendo 44 repos candidatos. Baixado para `ComfyUI/models/upscale_models`,
+**995.743.560 B**.
+
+### O workflow do autor pede arquivos da v1.3 -- copia reapontada
+
+`ComfyUI/user/default/workflows/10Eros_v1.5_W4A8_I2V_DMD.json`, 4 trocas, o original intacto:
+
+    #616 LTXAVTextEncoderLoader.text_encoder  gemma-3-12b-it-ablit-norms-biproj-fp8mixed
+                                           -> gemma_3_12B_it_heretic_w4a8
+    #616 LTXAVTextEncoderLoader.ckpt_name     10Eros_v1.3_fp8mixed_learned
+    #646 CheckpointLoaderSimple               10Eros_v1.3_fp8mixed_learned
+    #617 LTXVAudioVAELoader                   10Eros_v1.3_fp8mixed_learned
+                                           -> 10Eros_v1.5_bf16_w4a8   (os tres)
+
+O gemma abliterado W4A8 foi escolhido por dois motivos: e o mais perto do que o autor pos (`ablit`) e
+e um dos que esta bancada ja mediu como encoder de LTX 2.3 (rodada de 2026-09-14, item D -- o W4A8
+heretic mantem a cena a 5,45 MAE, o W4A4 troca a cena). **Se voce preferir outro, ha 13 gemmas na
+lista.** Os tres loaders podem apontar para o nosso arquivo porque ele carrega `vae` (170 tensores),
+`audio_vae` (102), `vocoder` (1227) e `text_embedding_projection` (4) -- lido do header. Ele **nao**
+carrega peso de text encoder, e nem precisa: `LTXAVTextEncoderLoader` pega o gemma de
+`text_encoders` e so a projecao do `ckpt_name`.
+
+**A seu cargo:** o `LoadImage #837` aponta para `pasted/image (151).png`, imagem do autor, que nao
+existe aqui. Troque pela sua antes de enfileirar.
+
+### `tools/checa_workflow.py`, e os DOIS erros do meu proprio instrumento que o pariram
+
+Veredito final: **0 itens bloqueiam a fila** no workflow reapontado, e **4 bloqueiam** no original --
+o controle que tinha de falhar, falhou (saida 1).
+
+Chegar nisso custou duas leituras erradas minhas, as duas do tipo que esta bancada ja registra:
+
+1. **"6 tipos de no faltando", e 4 eram meus.** A primeira versao chamava `init_extra_nodes` sem
+   criar o `server.PromptServer(loop)` que o `main.py:525` cria ANTES (`:531`). Todo pack com rota web
+   morre com `type object 'PromptServer' has no attribute 'instance'`: **2349 tipos registrados sem
+   ele contra 3350 com ele, 1001 nos a menos**, e KJNodes, rgthree e VideoHelperSuite entre os
+   mortos. Eu quase reinstalei tres packs que estavam sadios.
+
+2. **"2 arquivos faltando", e os dois eram meus.** A segunda versao tinha um mapa escrito a mao de
+   tipo-de-no -> pasta do `folder_paths`. Errado em dois lugares: `LTXVAudioVAELoader` le
+   **`checkpoints`**, nao `vae` (`comfy_extras/nodes_lt_audio.py:19`, lido), e o segundo widget do
+   `LTXAVTextEncoderLoader` tambem e `ckpt_name` (`:183`). O conserto nao foi arrumar o mapa: foi
+   **apagar o conceito de pasta** e perguntar ao no quais opcoes ele oferece, que e a pergunta que
+   importa e nao pode errar de pasta.
+
+E sobram `SetNode`/`GetNode`, que o teste reporta como **FRONTEND** em vez de falta: eles sao
+registrados em JS (`ComfyUI-KJNodes/web/js/setgetnodes.js:901` e `:1213`,
+`LiteGraph.registerNodeType`) e nao existe classe Python nenhuma -- prova positiva, nao ausencia de
+grep. Um teste que os chamasse de "faltando" mandaria alguem reinstalar o KJNodes para sempre.
+
+### Nao coberto
+
+- **Nenhum render. Nenhum peso carregado. GPU nunca tocada.** Tudo aqui e registro de no e nome de
+  arquivo conferido contra a lista que o proprio no oferece.
+- O 10S-Comfy-nodes trouxe **muito mais no que os tres usados** (amplificadores de latente, detector
+  de face, sampler DMD proprio). Nada disso foi olhado, e nenhum foi executado.
+- `mediapipe` nao foi instalado: os nos de face do 10S cairao no Haar do OpenCV se voce usa-los.
+- A licenca do 10Eros (LTX-2 Community License) segue **sem decisao** e nada foi publicado.
