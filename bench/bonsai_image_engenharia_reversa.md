@@ -159,7 +159,47 @@ profundos foram movidos mais.
 
 **Treinado, partindo deste original, com a grade dentro do laco.** Tres caminhos independentes, todos
 na mesma direcao: as inversoes de sinal (impossiveis sob PTQ), o braco binario (onde PTQ e *definido*
-como `sign(w)`), e a derrota unanime para um PTQ ingenuo na metrica de peso. Nao e PTQ (ha inversoes de sinal,
+como `sign(w)`), e a derrota unanime para um PTQ ingenuo na metrica de peso.
+
+### O que o treino comprou: estruturado, sim; nos canais importantes, NAO MEDIDO
+
+`tools/probe_bonsai_desvio_por_canal.py`. A hipotese vinha do fp8 de terceiro do 10Eros
+([10eros_fp8_terceiro_promocao_medida.md](10eros_fp8_terceiro_promocao_medida.md)), que escolhe de
+proposito um candidato com erro de peso PIOR porque o erro nos 40% de canais mais importantes e menor.
+Se o treino do Bonsai fizesse a mesma troca por gradiente, as duas escolas convergiriam no criterio.
+
+**O fato que sobreviveu, e ele e real:** o Bonsai troca **7,42%** dos codigos em relacao ao PTQ
+absmean, e trocar a **mesma quantidade** de codigos em posicoes **sorteadas** custa rel-L2 **0,61569**
+contra os **0,47520** dele -- **1,2956x mais caro**. Orcamento identico, resultado 30% pior. As
+mudancas do treino nao sao aleatorias: ele encontrou uma direcao barata.
+
+**A hipotese do canal, porem, morreu no controle.** Vantagem do Bonsai sobre o PTQ por quartil de
+importancia do canal de entrada (norma da coluna), mediana sobre 100 camadas:
+
+    quartil    importancia   erro bonsai   erro ptq    vantagem   CONTROLE casado
+    Q1 fraco       1,4080       0,47648    0,46084     -0,01142      -0,15202
+    Q2             1,4548       0,46783    0,45908     -0,00911      -0,15138
+    Q3             1,4960       0,46873    0,46228     -0,00806      -0,15031
+    Q4 forte       1,6421       0,47842    0,47198     -0,00684      -0,14531
+
+    assimetria Q4 - Q1:   Bonsai +0,004585    CONTROLE aleatorio casado +0,006705
+    camadas com Q4 > Q1:  Bonsai 98/100       CONTROLE 98/100
+
+**A assimetria do controle e MAIOR que a do efeito, e o placar de 98/100 e identico nos dois.** Uma
+perturbacao com o mesmo numero de trocas e posicoes sorteadas -- que por construcao nao tem preferencia
+por canal -- produz o mesmo padrao de quartil. Entao o padrao vem da decomposicao por canal, nao do
+Bonsai, e **nada se conclui sobre ponderacao por canal a partir daqui**.
+
+Vale registrar que o controle salvou isto **duas vezes**. A primeira versao do probe usava
+`w_ptq * 1,02` como controle "uniforme": ele deu +0,003042, dois tercos do efeito, e ja bastava para
+invalidar. Trocado pelo controle de **orcamento casado** -- mesma quantidade de codigos, posicoes
+sorteadas -- ele passou o efeito inteiro. Sem esses dois controles eu teria publicado "98 de 100
+camadas confirmam que treinar compra precisao nos canais importantes", com 100% de artefato.
+
+Onde a estrutura das trocas do Bonsai realmente mora fica **aberto**. O proxy que eu usei -- norma da
+coluna do peso -- nao a ve, e esta bancada ja mediu que importancia derivada de peso nao prediz o que
+importa (crest de ativacao contra erro W4A4: Spearman +0,096). A versao com ativacao real exigiria
+calibrar o Klein 4B na GPU. Nao e PTQ (ha inversoes de sinal,
 impossiveis sob quantizacao) e nao e treino do zero (sinal 0,94 a 0,9999 contra 0,50 de um treino sem
 essa inicializacao; cosseno 0,77 a 0,88). E **QAT com peso latente**, que e exatamente o que o
 `manifest.json` deles diz em uma linha: `"model_version": "ternary g128 (bf16 master)"`. O
