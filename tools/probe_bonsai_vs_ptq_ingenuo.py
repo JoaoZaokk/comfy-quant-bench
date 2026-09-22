@@ -147,7 +147,7 @@ def main() -> int:
     print(f"  codigo do Bonsai igual ao do absmax: {med('codigo_igual_ao_absmax'):.3f}"
           f"   ao do bitnet: {med('codigo_igual_ao_bitnet'):.3f}")
 
-    mb, mbo = med("rel_l2_bonsai"), med("rel_l2_bonsai_escala_otima")
+    mbo = med("rel_l2_bonsai_escala_otima")
     mam, mbn = med("rel_l2_ptq_absmax"), med("rel_l2_ptq_bitnet")
     melhor_ptq = min(mam, mbn)
     perde_am = sum(1 for x in linhas if x["rel_l2_bonsai_escala_otima"] > x["rel_l2_ptq_absmax"])
