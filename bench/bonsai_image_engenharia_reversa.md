@@ -122,9 +122,44 @@ do formato.** Medido **0,9394**: cerca de **6,06% dos 3,68 bilhoes de pesos tive
 trocado** em relacao ao original. Nenhuma quantizacao pos-treino pode fazer isso. **Os pesos foram
 treinados.**
 
+### Terceiro caminho, independente dos dois primeiros: eles PERDEM de um PTQ ingenuo
+
+`tools/probe_bonsai_vs_ptq_ingenuo.py`. Pergunta de OTIMIZACAO, nao de formato: **um quantizador nao
+pode perder de um quantizador mais simples na metrica que ele minimiza.** Se o Bonsai fosse PTQ, os
+pesos dele seriam a melhor aproximacao ternaria do original que a receita escolhida alcanca, e um PTQ
+ingenuo meu no maximo empataria. Medianas sobre as 100 camadas, tudo g128 no eixo K:
+
+    rel-L2 do Bonsai contra o original, com a escala DELE          0,5347
+    rel-L2 do Bonsai com a escala OTIMA recalculada (min L2)       0,4752
+    rel-L2 de um PTQ absmax ingenuo (limiar 0,5*max)               0,6837
+    rel-L2 de um PTQ estilo BitNet b1.58 (d = mean|w|)             0,4663   <- MAIS PERTO
+    fracao de zeros:  bonsai 0,332   absmax 0,848   bitnet 0,312
+    codigo do Bonsai identico ao do bitnet                          0,926
+    codigo do Bonsai identico ao do absmax                          0,488
+
+    camadas em que o Bonsai fica mais longe que o absmax:            0/100
+    camadas em que fica mais longe que o bitnet:                   100/100
+
+**100 de 100.** Unanime, e com a escala recalculada por minimo erro quadratico -- entao a folga nao e
+escolha ruim de escala, esta no **codigo**, que e onde o treino agiria. A folga e pequena (1,019x) e
+isso e coerente: o treino moveu pouco.
+
+E o codigo deles e **92,6% identico** ao de um PTQ absmean estilo BitNet, com fracao de zeros quase
+igual (0,332 contra 0,312). Isso identifica a familia da receita de partida e fecha a historia:
+**inicializaram com algo praticamente identico a um PTQ absmean do original, e treinaram a partir
+dali** -- o que piorou marginalmente a aproximacao do peso e melhorou a tarefa. O `absmax` com limiar
+em metade do maximo serve de controle do quanto a escolha de limiar importa: zera 84,8% dos pesos e
+fica 1,47x mais longe.
+
+A concordancia com o BitNet tambem **decai com a profundidade** -- 0,950 no `transformer_blocks.0` e
+0,874 no `single_transformer_blocks.11` -- a mesma direcao do decaimento de sinal e AUC. Os blocos
+profundos foram movidos mais.
+
 ### Veredito
 
-**Treinado, partindo deste original, com a grade dentro do laco.** Nao e PTQ (ha inversoes de sinal,
+**Treinado, partindo deste original, com a grade dentro do laco.** Tres caminhos independentes, todos
+na mesma direcao: as inversoes de sinal (impossiveis sob PTQ), o braco binario (onde PTQ e *definido*
+como `sign(w)`), e a derrota unanime para um PTQ ingenuo na metrica de peso. Nao e PTQ (ha inversoes de sinal,
 impossiveis sob quantizacao) e nao e treino do zero (sinal 0,94 a 0,9999 contra 0,50 de um treino sem
 essa inicializacao; cosseno 0,77 a 0,88). E **QAT com peso latente**, que e exatamente o que o
 `manifest.json` deles diz em uma linha: `"model_version": "ternary g128 (bf16 master)"`. O
