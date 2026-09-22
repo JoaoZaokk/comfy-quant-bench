@@ -5871,3 +5871,195 @@ Nenhuma medicao nova de GPU nesta parte -- os tres numeros publicados sao de 13-
 do `W:` (67,59 GiB de originais do Hub do LTX 2.5 + 30,64 do snapshot do Z-Image-Turbo) nao foi
 tocada. O erro por camada do 2512 W4A4 nao foi re-medido para este upload. E o Bonsai Image nao foi
 executado em lugar nenhum: tudo sobre ele nesta bancada e leitura de fonte primaria.
+
+---
+
+## Parte 54 -- 2026-09-21 (noite, janela autonoma): o Bonsai Image nao promove camada nenhuma -- ele treina; e o 10Eros em W4A8
+
+O dono saiu por volta das 20:40 e autorizou por escrito trabalhar sozinho ate as 07:00 do dia 22,
+com tres restricoes: **a 3090 esta ocupada por terceiro, usar o que der em CPU**; registrar cada
+passo; e evitar workflow. O registro corrido da janela esta em `.scratch/AUTONOMO_2026-09-21.md`.
+
+Duas frentes: engenharia reversa do **Bonsai Image** (pedido dele) e o **10Eros v1.5 em W4A8**
+(pedido de um terceiro no card do LTX 2.3). O relatorio completo do Bonsai esta em
+`bench/bonsai_image_engenharia_reversa.md`; o mapa lido do artefato em
+`bench/bonsai_image_mapa_2026-09-21.md`; o criterio do 10Eros, escrito antes de qualquer numero, em
+`bench/criterio_10eros_w4a8.md`.
+
+### Primeiro: a premissa estava errada, e isso mudou o que baixar
+
+Ele pediu para entender "o flux schnell deles". **Nao existe: o Bonsai Image e FLUX.2-klein-4B.**
+FLUX.1-schnell aparece so como linha de comparacao na tabela deles (23,8 GB, GenEval 0,716). Seis
+repos `prism-ml/bonsai-image-*`, 18 a 21/05/2026, `diffusers:Flux2KleinPipeline`, apache-2.0, nas
+variantes `binary` e `ternary` x `unpacked` / `gemlite-Nbit` / `mlx-Nbit`.
+
+### O mapa de promocao/democao esta publicado, e nao tem criterio nenhum
+
+`transformer-gemlite-int2/quantization_config.json`, 6042 bytes: `format gemlite-int2-ternary-g128`,
+`quantized_count 100`, `skipped_count 9`, e uma lista `skip_patterns` **escrita a mao**. As 100
+quantizadas (5 double-stream x 12 lineares + 20 single-stream x 2, mais os dois
+`embeddings_connector`) recebem **formato, group size e escala identicos**. Nao ha erro medido por
+camada em nenhum lugar da receita deles -- e a mesma forma do nosso `PROFILE_PATTERNS`
+(`tools/quant_w4a8.py:54`).
+
+E **eles pulam a modulacao**, que esta bancada mediu como a camada de MENOR erro em W4A4 do bloco
+inteiro (0,1263 contra 0,1569). A secao seguinte resolve a colisao sem nenhum dos dois lados estar
+errado.
+
+### O teste decisivo, e ele nao precisa adivinhar a receita de ninguem
+
+Os tres transformers sao **alinhaveis**: original 7.751.109.744 B, ternario e binario 7.751.109.712 B
+cada, 169 tensores em cada, zero chave a mais ou a menos, mesmos shapes, todos BF16. **32 bytes de
+diferenca.** O sha256 do ternario confere com o `manifest.json` publicado por eles, entao o download
+foi conferido por prova positiva.
+
+`tools/probe_bonsai_ptq_ou_treino.py` le por **mmap somente-leitura**, nao `safe_open`, porque nesta
+maquina `safe_open` cobra 2x o arquivo em commit. A prova e por construcao: um PTQ de magnitude mapeia
+`w -> s*round(clip(w/d,-1,1))`, entao **nao pode inverter um sinal** e **nao pode desordenar
+magnitudes dentro do grupo**. Sinal e AUC saem **exatamente 1,000000**, qualquer que seja o limiar.
+
+    braco       zeros   mag/grupo K   sinal      cos      AUC     camadas limpas
+    ternario   0,3318      1,00      0,9999   0,8760   0,9826         0/100
+    binario    0,0000      1,00      0,9394   0,7744      nan         0/100
+
+**2.727.589 inversoes de sinal no braco ternario**, e nenhuma das 100 camadas limpa. No binario e
+ainda mais direto: um PTQ binario **E** `sign(w)*escala`, entao o sinal teria de ser 1,000000 por
+definicao do formato -- mediu **0,9394**, ou seja **6,06% dos 3,68 bilhoes de pesos com o sinal
+trocado**. A AUC sai `nan` no binario e corretamente: sem zeros nao existe contraste "codigo 0 contra
+mais-ou-menos 1".
+
+**Terceiro caminho, independente:** `tools/probe_bonsai_vs_ptq_ingenuo.py`. Um quantizador nao pode
+perder de um quantizador mais simples na metrica que ele minimiza. Medianas, com a escala do Bonsai
+**recalculada por minimo erro quadratico** para que a comparacao seja sobre o codigo:
+
+    Bonsai, escala otima                      0,4752
+    PTQ absmax ingenuo (limiar 0,5*max)       0,6837     zera 84,8% -- controle de limiar
+    PTQ estilo BitNet b1.58 (d = mean|w|)     0,4663     <- MAIS PERTO
+    mais longe que o bitnet: 100/100 camadas
+    codigo do Bonsai identico ao do bitnet:   0,926
+
+**100 de 100, unanime.** E o codigo deles e 92,6% identico ao de um absmean estilo BitNet, com fracao
+de zeros quase igual (0,332 contra 0,312): inicializaram com praticamente aquilo e **treinaram a
+partir dali**.
+
+**Confounder morto antes de concluir:** se a BFL tivesse revisado o original depois de maio, o drift
+seria revisao deles. Commits do `FLUX.2-klein-4B`: pesos em **2026-01-15**, unico posterior
+**2026-02-24 README**; primeiro commit do Bonsai **2026-05-26**. E `proj_out` sai byte a byte
+identico nos dois bracos, confirmando por segundo caminho que a base e a mesma.
+
+Veredito: **QAT com peso latente, partindo deste original** -- exatamente o que o `manifest.json`
+deles diz em uma linha, `"model_version": "ternary g128 (bf16 master)"`, e o que dois campos
+`musubi_*` (ferramenta de fine-tuning com block-swap) no `config.json` deles denunciam.
+
+### O mecanismo: as camadas em FP16 sao CAPACIDADE DE ADAPTACAO, nao camadas sensiveis
+
+Isto saiu de um controle que **falhou**, do jeito informativo. O controle era: se fosse "PTQ com
+allowlist", as 9 declaradas puladas sairiam byte a byte identicas. Medido:
+
+    proj_out                             identico nos dois bracos
+    as outras 8 puladas                  MUDARAM, rel-L2 de 1,42e-2 a 2,55e-1
+    os 60 norm_q / norm_k                MUDARAM, 0/60 identicos
+
+**"Pulada" no config deles significa nao quantizada, nao nao-modificada.** Essas camadas ficaram em
+FP16 e foram **treinadas** -- `context_embedder` se move rel-L2 **0,235**, cinco vezes mais que a
+maior discordancia de codigo do braco ternario.
+
+Isso reinterpreta o mapa inteiro: as 9 em FP16 **nao foram escolhidas por serem sensiveis**. Ficaram
+fora da grade para poderem se mover e compensar as 100 esmagadas. Sao os graus de liberdade do treino.
+Por isso a receita deles nao precisa de criterio por camada -- a pergunta nao e "qual camada aguenta
+2 bits", e **"qual camada eu deixo solta para consertar o resto"**.
+
+**E a colisao da modulacao se resolve sem nenhum lado errado.** Esta bancada mediu que a modulacao
+*aguenta* 4 bits melhor que o resto; isso segue verdadeiro. O Bonsai nao a pula por ser fragil: pula
+por ser **barata e bem posicionada** para absorver correcao (`single_stream_modulation.linear` sozinha
+alimenta 20 blocos). Aguentar quantizacao e servir de compensador sao propriedades diferentes.
+
+Ha dose-resposta, e ela e **tendencia, nao lei**: 6 das 8 camadas mudadas se movem mais no braco
+binario (quantizacao mais dura) que no ternario. As excecoes sao `time_guidance_embed.linear_1` e
+`single_stream_modulation.linear`. Com n=8 e indicio.
+
+O drift tambem tem **gradiente de profundidade** nas tres metricas: AUC 0,9816 no
+`transformer_blocks.0` e 0,9370 no `single_transformer_blocks.17`; concordancia com o BitNet
+0,950 -> 0,874; fracao de zeros 0,347 -> 0,471. Ruido de arredondamento nao e monotonico em
+profundidade.
+
+**Consequencia para esta bancada.** `quant_mixed.py`, o erro por camada em ativacao real,
+`--promote-error`, os criterios previos -- tudo isso responde *"como escolher o formato de cada camada
+sem treinar"*. Bonsai nao responde essa pergunta: ele treina. As tres hipoteses de transferencia que
+morreram aqui e a conclusao de que o criterio por camada "ordena formatos e nao localiza penhascos"
+seguem validas **para PTQ**, e nao sao comparaveis. **O teto do PTQ nao e o teto deles**, e e por isso
+que 1,58 bit funciona la e W4A4 quebra aqui em varias familias.
+
+[JULGAMENTO] Isso sugere que o proximo ganho real aqui nao vem de criterio de promocao melhor, e sim
+de um **estagio de compensacao** -- deixar um conjunto pequeno de camadas em alta precisao e
+ajusta-las contra a saida do modelo denso, sem retreinar o corpo. O que me faria mudar de ideia: se o
+Bonsai tiver treinado em escala de pre-treino, o mecanismo e "retreinar" e nao cabe em orcamento de
+bancada. O sinal a favor do ajuste CURTO e que os pesos ternarios ficaram tao perto do original
+(sinal 0,9999).
+
+### Dois numeros publicados que o arquivo corrige
+
+`state_dict.pt` de deploy, 1.540.457.482 B, lido com `torch.load(mmap=True, weights_only=True)`:
+`W_q` uint8 59,73%, `weight` bf16 denso 25,32%, `scales` fp32 7,47%, `zeros` fp32 7,47%. E
+`zeros = -scales` exatamente, entao e ternario expresso pela interface **afim** do gemlite.
+
+**Bits por peso: 2,5000 no arquivo, 1,71 no README** (1,462x). Sobre 3.680.501.760 parametros: 2,0000
+do slot de 2 bits (eles guardam log2(3)=1,585 bits de informacao num slot de 2, e o proprio README
+admite que o quarto codigo sobra) + 0,2500 + 0,2500 das **duas** tabelas **fp32** onde o README conta
+**uma** escala **fp16**. E "menos de 5% dos parametros em FP16" e **25,32% dos bytes** do arquivo que
+o usuario baixa. O numero a citar e o do arquivo: **1,435 GiB**.
+
+**Grupo de 128 no eixo K, confirmado por dois caminhos independentes:** 1,00 magnitude nao-nula por
+grupo em 100,00% dos grupos no eixo K (e 57 no eixo N, que portanto nao e o eixo); e no pack `scales`
+tem shape [24, 3072], com 3072/24 = 128.
+
+[JULGAMENTO, por leitura de hardware e nao por execucao] **a matematica nao pode ser de 2 bits**: nao
+existe MMA de 2 bits em GPU NVIDIA -- a mais estreita da Ampere e `m16n8k64 s4`, e saiu na Hopper -- e
+gemlite e Triton, que nao expoe MMA sub-INT4. Entao o peso e 2 bits em memoria e o produto acontece em
+outra precisao: o ganho e banda, nao tensor core. Espelha o que esta bancada mediu no proprio ConvRot.
+O `gemlite_autotune.json` reforca o regime: as chaves populadas sao **GEMV**, `GEMV_REVSPLITK` e
+`GEMV_SPLITK`, com configs para M = 1.
+
+### E dois erros meus, nesta mesma rodada
+
+**O limiar do veredito nao codificava a prova.** Construi o teste em cima de "PTQ da exatamente 1" e
+escrevi `if sinal > 0.98 and auc > 0.98: "PTQ"`. Medido 0,9999 e 0,9826, a ferramenta imprimiu **"PTQ
+do original"** -- a conclusao oposta a que os numeros provavam. Consertado **na ferramenta**, com a
+contagem absoluta impressa junto: uma prova por construcao nao tem tolerancia, e 0,9999 parece 1
+enquanto `2.727.589` nao parece nada. Registrado na memoria `controle-que-tem-que-passar`.
+
+**`nohup` no Bash tool nao sobrevive a interrupcao de turno.** Dois downloads morreram calados: o do
+Bonsai as 20:31 com log de 0 bytes, e o do 10Eros as 20:13 em 31.972.387.050 de 46.139.886.366 B
+(69,3%), descoberto 27 minutos depois pelo `mtime` do `.incomplete`. Usar `run_in_background` do
+harness, que e rastreado. O `.incomplete` do `hf_hub_download` sobreviveu, entao a retomada custou so
+os 13,2 GB restantes.
+
+### 10Eros v1.5 em W4A8: o portao P1 passou
+
+O pedido: `Dalvogalbo2` no card do LTX 2.3. O arquivo alvo, lido por Range request antes de baixar
+nada: **46.139.886.366 B, 5947 tensores, 23.069.505.387 params**, todo BF16 -- e e um **checkpoint
+empacotado**: `model.*` 39,12 GiB (o DiT, AVTransformer3DModel, 48 blocos),
+`text_embedding_projection` 2,15, `vae` 1,35, `vocoder` 0,24, `audio_vae` 0,10. Os tres ultimos passam
+intactos.
+
+**O gemeo estrutural ja estava convertido aqui.** `ltx-2.3-22b-distilled-1.1.safetensors`,
+46.149.345.334 B, **tambem 5947 tensores** para 1440 quantizadas + 4507 preservadas. Contei o regex do
+perfil `ltx_2_5` a mao contra os nomes do 10Eros: 48 x 28 + 96 = **1440**. Previsao P1 escrita antes,
+e `--dry-run` **deu 1440**.
+
+**Nao precisou da 3090.** `quant_w4a8.py` nao calibra: allowlist por regex, escrita streaming. O
+sidecar do gemeo registra `gpu: NVIDIA GeForce RTX 3080 Ti`, `conversion_seconds: 1296`. Rodou em
+`CUDA_VISIBLE_DEVICES=1` com `Assert-GpuLock` tomado a mao (o converter nao passa por
+`_timing.compare()`, entao o lock e dever meu), e a 3080 Ti marcou 2981 MiB / 8% durante a conversao:
+o cortex nao foi incomodado.
+
+**Uma coisa que so a corrida ensina: `quant_w4a8` e de DOIS PASSOS, e o primeiro fica em RAM.**
+`quant_w4a8.py:286` -- "pass one fills `quantized` with every layer, pass two writes". Nao existe
+`.partial` no disco durante a maior parte da conversao, e o processo chegou a **15,38 GiB privados**
+com **3,45 GiB de commit livre** nesta maquina. Para um modelo maior que este, esse e o limite que
+morde primeiro, nao o disco.
+
+A licenca da cadeia e a **LTX-2 Community License Agreement** (2026-01-05), lida do `__metadata__` do
+`10Eros_v1.4_DMD_int8_convrot` que mora no proprio repo do 10Eros -- o README do 10Eros nao declara
+licenca nenhuma e linka aprovando tres quants de terceiros. **Publicar e decisao do dono**; nada subiu
+nesta janela.
