@@ -155,7 +155,42 @@ print("RESULT " + json.dumps({
 '''
 
 
+YAML_BOOT = """
+import os.path as _op
+import sys as _sys
+try:
+    import utils.extra_config
+    _y = _op.join("ComfyUI", "extra_model_paths.yaml")
+    if _op.isfile(_y):
+        utils.extra_config.load_extra_path_config(_y)
+    else:
+        _sys.stderr.write("AVISO: extra_model_paths.yaml ausente; roots montados invisiveis\\n")
+except Exception as _e:
+    _sys.stderr.write("AVISO: extra_model_paths.yaml nao carregou: " + repr(_e) + "\\n")
+"""
+
+MARCA_BOOT = "import comfy.options; comfy.options.enable_args_parsing()"
+
+
+def injeta_yaml(src: str) -> str:
+    """Carrega o `extra_model_paths.yaml` DENTRO do subprocesso do braco.
+
+    Sem isso o subprocesso ve so `ComfyUI/models` e um checkpoint que existe em qualquer root
+    montado da `FileNotFoundError`. Terceiro tool desta bancada com o mesmo buraco: o
+    `probe_quant_dispatch.py` foi consertado em 2026-09-21 e estes dois ficaram.
+
+    A injecao acontece DEPOIS do `%`-format do template, nunca dentro dele. Duas tentativas minhas
+    de embutir no proprio template quebraram, e as duas do mesmo jeito: os templates passam por
+    formatacao printf, entao qualquer caractere de porcentagem no texto inserido vira
+    especificador. A segunda quebrou no comentario em que eu explicava a primeira.
+    """
+    if MARCA_BOOT not in src:
+        raise ValueError("template sem a marca de boot; injecao do yaml nao pode ser verificada")
+    return src.replace(MARCA_BOOT, MARCA_BOOT + YAML_BOOT, 1)
+
+
 def rodar(src, env_extra=None, timeout=3600):
+    src = injeta_yaml(src)
     env = dict(os.environ)
     env["CUDA_VISIBLE_DEVICES"] = str(ARGS.device)
     env.pop("COMFY_KITCHEN_FORCE_INT4_INT8_FALLBACK", None)

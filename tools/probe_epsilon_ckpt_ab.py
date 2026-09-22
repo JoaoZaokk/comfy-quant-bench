@@ -28,13 +28,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
-from probe_epsilon_per_step import QUANT_ARM, REF_ARM  # noqa: E402
+from probe_epsilon_per_step import QUANT_ARM, REF_ARM, injeta_yaml  # noqa: E402
 
 OUT = ROOT / "bench" / "epsilon_ckpt_ab"
 
 
 def rodar(src, device, timeout=3600):
     import os
+    src = injeta_yaml(src)          # sem isto o subprocesso ve so `ComfyUI/models`
     env = dict(os.environ)
     env["CUDA_VISIBLE_DEVICES"] = str(device)
     env.pop("COMFY_KITCHEN_FORCE_INT4_INT8_FALLBACK", None)
