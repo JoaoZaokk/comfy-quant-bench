@@ -532,15 +532,43 @@ def checar_backend(ck: Checkpoint) -> Iterator[Achado]:
     """
     if not ck.formatos:
         return
-    backend = ck.sidecar.get("backend")
-    if not isinstance(backend, dict) or not backend:
-        motivo = ("sem sidecar `.quant.json` -- provavelmente de terceiros"
-                  if not ck.sidecar else
-                  "sidecar presente e SEM campo `backend` -- conversao nossa sem registro")
+
+    # O campo `backend` tem DUAS formas, e ler so uma delas produzia um falso negativo com a
+    # mensagem errada. Medido 2026-09-21: dos 46 sidecars nos quatro roots, **14 trazem `backend`
+    # como string** e 32 como dicionario, porque quatro dos cinco escritores gravam a string
+    # (`quant_w4a4.py:480`, `quant_w4a8.py:366`, `quant_int8.py:239`,
+    # `quant_w4a4_smooth.py:330` -- todos `backend["resolved"][<um op>]`) e so `quant_mixed.py:946`
+    # grava o dicionario `{op: impl}`. Antes disso, todo build de quatro conversores recebia
+    # `backend_sem_registro` dizendo "sidecar presente e SEM campo `backend`" -- afirmacao FALSA
+    # sobre o arquivo, que e o defeito pior: o veredito contradizia a evidencia que estava la.
+    # Entre os afetados havia builds publicados (`capybara_v0.1_w4a8`,
+    # `gemma_3_12B_it_heretic_w4a8`, `hv15_w4a8`).
+    #
+    # `quant_w4a4_smooth` grava tambem `backend_linear`, entao as duas strings entram.
+    # `quant_int8 --no-convrot` grava `None` DE PROPOSITO (o caminho e isento e diz por que),
+    # e isso merece mensagem propria em vez de virar "sem campo".
+    bruto = ck.sidecar.get("backend")
+    backend: dict = {}
+    if isinstance(bruto, dict):
+        backend = dict(bruto)
+    elif isinstance(bruto, str) and bruto:
+        backend = {"backend": bruto}
+        if isinstance(ck.sidecar.get("backend_linear"), str) and ck.sidecar["backend_linear"]:
+            backend["backend_linear"] = ck.sidecar["backend_linear"]
+
+    if not backend:
+        if not ck.sidecar:
+            motivo = "sem sidecar `.quant.json` -- provavelmente de terceiros"
+        elif "backend" in ck.sidecar:
+            motivo = (f"sidecar presente e `backend` gravado como {type(bruto).__name__} vazio ou "
+                      f"nulo -- o conversor declarou isencao em vez de registrar o preflight")
+        else:
+            motivo = "sidecar presente e SEM a chave `backend` -- conversao nossa sem registro"
         yield Achado(OLHAR, "backend_sem_registro",
                      f"nada registra que o preflight nativo passou ({motivo}); o backend eager "
                      f"declara as mesmas capacidades e roda matematica dequantizada",
-                     {"tem_sidecar": bool(ck.sidecar)})
+                     {"tem_sidecar": bool(ck.sidecar), "chave_backend_presente": "backend" in ck.sidecar,
+                      "tipo_do_campo": type(bruto).__name__})
         return
     fora = {op: impl for op, impl in backend.items() if not str(impl).startswith(BACKEND_NATIVO)}
     if fora:
