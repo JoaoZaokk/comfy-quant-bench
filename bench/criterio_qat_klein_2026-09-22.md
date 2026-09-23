@@ -42,3 +42,14 @@ Lote decidido pelo smoke.
 
 Não coberto, já sabido: uma noite, uma configuração, um lr, sem repetição; o professor grava na
 trajetória dele, não na do aluno; BF16 é o alvo, não a verdade.
+
+## Desvios, com a hora
+
+- **22:08 — S1 REFUTADA para `adamw8bit-sr`, lote 1.** Pico alocado 23,47 GiB; a placa em 24.312/24.576
+  MiB a 190-230 W e 20-26 s/passo: WDDM paginando (memória `reference-windows-sysmem-fallback` do
+  frankestein: estourar a VRAM aqui não dá OOM, dá lentidão). Pelo critério, este braço vai para a
+  A100 do Colab amanhã. Perda de treino no passo 5: 0,824 (holdout do passo 0: 1,358).
+- **22:12 — braço NOVO testado localmente, fora da configuração acima:** `adamw4bit-sr` (AdamW4bit do
+  torchao com arredondamento estocástico), ~3,6 GiB a menos. É o eixo 8×4 bits que o dono perguntou
+  mais cedo. Mesmos S1/S2 e, se couber, mesmos Q1-Q4 — mas comparado ao 8-bit da A100 só depois, e
+  não é a configuração que o critério escreveu.

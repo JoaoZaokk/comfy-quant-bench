@@ -39,9 +39,21 @@ raiz = snapshot_download("black-forest-labs/FLUX.2-klein-4B", token=False,
                              "vae/*", "transformer/*"])
 prof = Path(raiz) / "transformer" / "diffusion_pytorch_model.safetensors"
 print("snapshot", raiz, "professor", prof.stat().st_size)
+extra = []
+if cfg.get("inicio_arquivo_local") and Path(cfg["inicio_arquivo_local"]).is_file():
+    # Relancamento: o checkpoint de PARTIDA ja esta no disco. Baixar de novo do HF traria o que o
+    # repo tiver AGORA (outra corrida sobrescreve o mesmo caminho) e trocaria a origem calado.
+    extra = ["--inicia-de", cfg["inicio_arquivo_local"]]
+    print("inicio (local, sem baixar)", cfg["inicio_arquivo_local"])
+elif cfg.get("inicio_hf"):
+    # checkpoint de partida de um repo PUBLICO: nao precisa de token nesta VM
+    from huggingface_hub import hf_hub_download
+    ini = hf_hub_download(cfg["inicio_hf"], "ckpt/ultimo.pt", local_dir="/content/inicio", token=False)
+    print("inicio", ini, Path(ini).stat().st_size)
+    extra = ["--inicia-de", ini]
 cmd = [sys.executable, "-u", str(Q / "qat_ternario_klein.py"), "--raiz", raiz, "--professor", str(prof),
        "--prompts", str(Q / "prompts_treino.txt"), "--prompts-holdout", str(Q / "prompts_holdout.txt"),
-       "--dir", str(d), *cfg["args"]]
+       "--dir", str(d), *cfg["args"], *extra]
 print("CMD", " ".join(cmd))
 log = open(d / "qat.log", "ab")
 p = subprocess.Popen(["setsid", "nohup", *cmd], stdout=log, stderr=subprocess.STDOUT, cwd=str(Q),
