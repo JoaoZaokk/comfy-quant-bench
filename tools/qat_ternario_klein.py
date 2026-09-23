@@ -223,6 +223,73 @@ class Exemplos:
         return sh["comum"], ps["kw"], ps["out"]
 
 
+# ------------------------------------------------------------------------- condicao cruzada (fase 2)
+# O aluno so' via o professor NA TRAJETORIA DELE: x_t do prompt i sempre com a condicao do prompt i.
+# Nada ensinava "se a condicao mudar, a saida muda assim" -- e o colapso medido e' exatamente o aluno
+# deixar de responder ao prompt (sens 0,54-0,62 contra 1,0 do BF16). A condicao cruzada grava, para o
+# MESMO (x_t, t) do shard i, a saida do professor com a condicao do shard vizinho j (mesma semente,
+# indice seguinte, circular -- o mesmo par da guarda `sens`). Arquivo separado: os shards originais
+# podem estar sendo lidos por outra corrida e nao se reescrevem.
+
+def pares_vizinhos(arqs: list[Path]) -> dict[Path, Path]:
+    por_semente: dict[int, list[Path]] = {}
+    for arq in arqs:
+        por_semente.setdefault(int(arq.stem.rsplit("_s", 1)[1]), []).append(arq)
+    return {L[i]: L[(i + 1) % len(L)] for L in por_semente.values() if len(L) >= 2 for i in range(len(L))}
+
+
+def grava_cruzado(a, raiz: Path, origem: Path, destino: Path, dev) -> None:
+    arqs = sorted(x for x in origem.glob("p*_s*.pt") if int(x.stem.rsplit("_s", 1)[1]) in set(a.sementes))
+    par = pares_vizinhos(arqs)
+    destino.mkdir(parents=True, exist_ok=True)
+    faltam = [x for x in arqs if x in par and not (destino / x.name).is_file()]
+    if not faltam:
+        log(f"cruzado: {destino.name} completo")
+        return
+    from contextlib import nullcontext
+    from ajusta_denso_diffusers import carrega_transformer
+    tr = carrega_transformer(Path(a.professor), raiz / "transformer" / "config.json",
+                             torch.bfloat16, torch.device("cpu")).to(dev).eval()
+    log(f"cruzado: {len(faltam)} shards em {destino}")
+    t0 = time.perf_counter()
+    for n, x in enumerate(faltam):
+        shi = torch.load(x, map_location="cpu", weights_only=False)
+        shj = torch.load(par[x], map_location="cpu", weights_only=False)
+        with torch.no_grad():
+            outs = [forward_aluno(tr, shj["comum"], ps["kw"], dev, nullcontext()).detach().to("cpu").clone()
+                    for ps in shi["passos"]]
+        tmp = destino / (x.name + ".partial")
+        torch.save({"par": par[x].name, "outs": outs}, tmp)
+        os.replace(tmp, destino / x.name)
+        if n == 0 or (n + 1) % 64 == 0 or n == len(faltam) - 1:
+            log(f"  cruzado {n + 1}/{len(faltam)}  {(time.perf_counter() - t0) / (n + 1):.2f} s/shard")
+    tr.to("cpu")
+    del tr
+    torch.cuda.empty_cache()
+
+
+class ExemplosCruzados:
+    """(comum DO VIZINHO, kw do passo do shard i, saida cruzada do professor). So' shards com arquivo cruzado."""
+
+    def __init__(self, base: Exemplos, d: Path, passos_sel: list[int] | None = None):
+        self.base, self.d = base, d
+        self.arqs = [x for x in base.arqs if (d / x.name).is_file()]
+        self.passos = passos_sel if passos_sel is not None else list(range(base.passos))
+        from functools import lru_cache
+        self._le = lru_cache(maxsize=64)(lambda p: torch.load(p, map_location="cpu", weights_only=False))
+
+    def __len__(self):
+        return len(self.arqs) * len(self.passos)
+
+    def __getitem__(self, i):
+        x = self.arqs[i // len(self.passos)]
+        pj = self.passos[i % len(self.passos)]
+        cz = self._le(self.d / x.name)
+        shi = self.base._le(x)
+        shj = self.base._le(x.parent / cz["par"])
+        return shj["comum"], shi["passos"][pj]["kw"], cz["outs"][pj]
+
+
 # --------------------------------------------------------------------------------------------- aluno
 
 def junta_lote(itens: list[tuple[dict, dict, torch.Tensor]]) -> tuple[dict, torch.Tensor]:
@@ -483,6 +550,10 @@ def main() -> int:
                    help="piso RELATIVO: sens >= (1 - tol) * maior sens ja' visto no braco")
     p.add_argument("--parada-paciencia", type=int, default=0,
                    help="para o braco se holdout_rel piorar N avaliacoes seguidas (0 = nunca)")
+    p.add_argument("--cruzado", action="store_true",
+                   help="grava a saida do professor com a condicao do prompt vizinho (fase 2; ver grava_cruzado)")
+    p.add_argument("--cruzado-frac", type=float, default=0.0,
+                   help="fracao dos passos que treina num exemplo cruzado em vez de um normal")
     p.add_argument("--avalia-ckpt", type=Path, nargs="+", default=None,
                    help="so' mede holdout, holdout_rel e sens destes checkpoints e sai (calibracao)")
     p.add_argument("--device", type=int, default=0)
@@ -507,13 +578,25 @@ def main() -> int:
 
     grava_professor(a, raiz, tr_p, a.dir / "professor", dev)
     grava_professor(a, raiz, ho_p, a.dir / "professor_holdout", dev)
+    if a.cruzado:
+        # o holdout primeiro: e' pequeno e da' a metrica holdout_cruz_rel mesmo se o treino nao terminar
+        grava_cruzado(a, raiz, a.dir / "professor_holdout", a.dir / "professor_holdout_cruzado", dev)
+        if not a.avalia_ckpt:  # a calibracao so' precisa do cruzado do holdout
+            grava_cruzado(a, raiz, a.dir / "professor", a.dir / "professor_cruzado", dev)
     if a.so_professor:
         log("FIM " + time.strftime("%H:%M:%S"))
         return 0
 
     treino = Exemplos(a.dir / "professor", a.sementes, a.passos)
     holdout = Exemplos(a.dir / "professor_holdout", a.sementes, a.passos, cache=32)
-    log(f"exemplos: {len(treino)} treino, {len(holdout)} holdout")
+    sens_sel = [int(x) for x in a.sens_passos.split(",") if x.strip()]
+    ho_cruz = ExemplosCruzados(holdout, a.dir / "professor_holdout_cruzado", sens_sel)
+    tr_cruz = ExemplosCruzados(treino, a.dir / "professor_cruzado")
+    if a.cruzado_frac > 0 and len(tr_cruz) == 0:
+        print("RECUSADO: --cruzado-frac > 0 sem shards cruzados de treino (rodar com --cruzado)", file=sys.stderr)
+        return 2
+    log(f"exemplos: {len(treino)} treino, {len(holdout)} holdout; cruzados {len(tr_cruz)} treino, "
+        f"{len(ho_cruz)} holdout")
 
     # ---------------------------------------------------------------- aluno, do BF16 original
     from ajusta_denso_diffusers import carrega_transformer
@@ -570,6 +653,17 @@ def main() -> int:
                     ds.append(float((sii - sij).norm() / sii.norm().clamp(min=1e-12)))
         return sum(ds) / len(ds)
 
+    def erro_rel(conj) -> float:
+        """Erro relativo medio do aluno contra o professor num conjunto (usado no cruzado do holdout:
+        mede se o aluno responde a TROCA de condicao como o professor responde)."""
+        rs = []
+        with torch.no_grad():
+            for comum, kw, alvo in conj:
+                s = forward_aluno(aluno, comum, kw, dev, contexto).float()
+                al = alvo.to(dev, torch.float32)
+                rs.append(float((s - al).norm() / al.norm().clamp(min=1e-12)))
+        return sum(rs) / len(rs)
+
     ref_arq = a.dir / "ref_sens.json"
     if ref_arq.is_file():
         d_ref = json.loads(ref_arq.read_text(encoding="utf-8"))["d_ref"]
@@ -598,6 +692,8 @@ def main() -> int:
                     rs.append(float((s - al).norm() / al.norm().clamp(min=1e-12)))
             linha = {"ckpt": str(cp), "passo": est["passo"], "holdout": sum(vs) / len(vs),
                      "holdout_rel": sum(rs) / len(rs), "sens": mede_d() / d_ref}
+            if len(ho_cruz):
+                linha["holdout_cruz_rel"] = erro_rel(ho_cruz)
             log("AVALIA " + json.dumps(linha))
             with (a.dir / "avalia_ckpt.jsonl").open("a", encoding="utf-8") as f:
                 f.write(json.dumps(linha) + "\n")
@@ -668,6 +764,8 @@ def main() -> int:
         sens = mede_d() / d_ref
         r = {"holdout": h, "holdout_rel": hr, "sens": sens,
              **estatistica_codigos(aluno, corpo_mods, cod0, cod_ant, a.grupo)}
+        if len(ho_cruz):
+            r["holdout_cruz_rel"] = erro_rel(ho_cruz)
         # Limiar RELATIVO ao maior sens ja' visto: o ternario ingenuo mede sens 0,156 (smoke 2026-09-23),
         # entao um piso absoluto de 0,8 pararia todo braco antes de ele ter chance de subir. O que marca
         # o colapso e' o sens CAIR enquanto o holdout melhora.
@@ -709,11 +807,24 @@ def main() -> int:
         log(f"passo 0  holdout {linha['holdout']:.5e}  holdout_rel {linha['holdout_rel']:.4f}  "
             f"sens {linha['sens']:.3f}  (ternario ingenuo a partir do BF16, antes de treinar)")
     parou = False
+    # Sorteio do cruzado num gerador PROPRIO: com --cruzado-frac 0 a ordem dos exemplos normais e' a
+    # mesma do controle (A100 #1); com frac > 0 cada passo troca o exemplo normal por um cruzado com
+    # probabilidade frac, e a sequencia normal so' avanca nos passos normais. [retomada: este gerador
+    # recomeca do zero; aceito, afeta so' quais passos sao cruzados]
+    rng_cruz = random.Random(20260923)
+    ordem_cruz: list[int] = []
     while passo < a.max_passos and not parou:
-        if len(ordem) < a.lote:
-            ordem = list(range(len(treino)))
-            random.shuffle(ordem)
-        kw, alvo = junta_lote([treino[ordem.pop()] for _ in range(a.lote)])
+        if a.cruzado_frac > 0 and rng_cruz.random() < a.cruzado_frac:
+            if len(ordem_cruz) < a.lote:
+                ordem_cruz = list(range(len(tr_cruz)))
+                rng_cruz.shuffle(ordem_cruz)
+            fonte, ordem_da_vez = tr_cruz, ordem_cruz
+        else:
+            if len(ordem) < a.lote:
+                ordem = list(range(len(treino)))
+                random.shuffle(ordem)
+            fonte, ordem_da_vez = treino, ordem
+        kw, alvo = junta_lote([fonte[ordem_da_vez.pop()] for _ in range(a.lote)])
         s = forward_aluno(aluno, {}, kw, dev, contexto)
         perda = F.mse_loss(s.float(), alvo.to(dev, torch.float32))
         opt.zero_grad(set_to_none=True)

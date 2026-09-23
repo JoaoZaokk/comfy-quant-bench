@@ -134,3 +134,15 @@ Horários: o log da VM é UTC; a máquina local é UTC−3. Abaixo, hora LOCAL.
   cada etapa espera o artefato no HF. Logs `.scratch/avalia_*.log`, renders `bench/qat_klein/render_<b>`.
 - Previsão de horário (local): replay termina ~21:15; b1 ~22:45; b2 ~00:15; b3 ~01:50; b4 ~03:20
   (sem parada antecipada). Fim da fila → `colab stop qat-a100b`.
+- 20:35 FASE 2 implementada (não roda na fila atual): **condição cruzada** (`--cruzado`,
+  `--cruzado-frac`). O professor grava, no mesmo (x_t, t) do shard i, a saída com a condição do
+  vizinho j; o aluno treina uma fração dos passos nesses exemplos. Métrica nova `holdout_cruz_rel`
+  (erro relativo do aluno contra o professor nos cruzados do holdout, passos {0,3,6}).
+  PREVISÃO antes de calibrar: ordena como o render (4-bit < replay ≈ p3024 < p9191) e separa
+  p3024 × p9191 por ≥ 3% relativo (o sens separou por 1,1%). Refutada se p9191 não for o pior.
+- 20:41 CALIBRAÇÃO do `holdout_cruz_rel` (`F:/qat_klein/calib_sens/avalia_ckpt.jsonl`):
+  4-bit 0,556 < p3024 0,572 < replay 0,581 < p9191 0,587. **p9191 é o pior: confirmado.
+  Separação p3024 × p9191 = 2,6% relativo, abaixo dos 3% previstos: essa parte REFUTADA.** Ordem
+  idêntica à do `holdout_rel` (0,525 / 0,551 / 0,558 / 0,577) — a métrica cruzada, como MÉTRICA,
+  quase não acrescenta informação ao erro relativo comum. Ela continua valendo como SINAL DE TREINO
+  (é o que a fase 2 testa), não como instrumento de parada.
