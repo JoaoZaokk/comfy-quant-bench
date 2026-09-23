@@ -162,8 +162,15 @@ def grava_professor(raiz: Path, ref_transformer: Path, n_prompts, sementes, pass
             print(f"    prompt {i} semente {s}: {len(capt) - antes} chamadas", flush=True)
     tr.forward = orig
 
+    # `.to("cpu")` ANTES do `del`: `del` so devolve VRAM se nao sobrar referencia nenhuma, e o
+    # professor (transformer 7,2 GiB + text encoder 8 GiB) ficava na placa. O braco 1 coube por
+    # pouco; o mestre fp32 (+~2 GiB de peso, grad e Adam) levou a 3090 a 24.254/24.576 MiB e o WDDM
+    # paginou: 41 min sem fechar a primeira epoca, contra 25 min do ajuste inteiro. 2026-09-22.
+    pipe.to("cpu")
     del pipe, tr
     torch.cuda.empty_cache()
+    print(f"  VRAM alocada depois de soltar o professor: "
+          f"{torch.cuda.memory_allocated(dev) / 2**30:.2f} GiB", flush=True)
     custo = sum(t.numel() * t.element_size()
                 for ex in capt
                 for t in [ex["out"], *[v for v in ex["kw"].values() if torch.is_tensor(v)]])

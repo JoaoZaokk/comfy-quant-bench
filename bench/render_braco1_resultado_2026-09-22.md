@@ -79,3 +79,30 @@ Critério do A/B em `bench/criterio_mestre_dtype_2026-09-22.md`.
 
 Uma placa; 2 sementes por prompt; julgamento de "reconhecível" meu; LPIPS não medido (VGG fora do
 cache); nenhuma métrica perceptual validada nesta bancada.
+
+## 7. A/B do peso mestre (critério `criterio_mestre_dtype_2026-09-22.md`), mesma noite
+
+Um eixo: o dtype do mestre no ajuste do braço 1. Dados, épocas, lr e tensores idênticos ao b1.
+
+    M1  elementos mudados >= 95%              CONFIRMADA  fp32 96,13%  sr 97,04%  (b1: 36,59%)
+    M2  b1f >= 10% abaixo do b1 (epsilon)     REFUTADA    6,1%  (0,677 -> 0,636), mas 8/8 e 15,6x o ep
+    M3  sr dentro de 10% do fp32              CONFIRMADA  0,5%  (0,639 contra 0,636)
+    M4  perda final < 0,3688                  CONFIRMADA  fp32 0,1996  sr 0,2011
+    M5  render fora: mais reconheciveis que b1 CONFIRMADA ~4/8 contra 1/8
+
+Fração da distância b0→b2 fora da amostra: b1 54,17% → b1f 60,04% / b1s 59,57%.
+Grade: `render_braco1_2026-09-22/grade_mestre.png`.
+
+**O mecanismo era o arredondamento**, e bf16 + arredondamento estocástico vale o fp32 (perda 0,7%,
+epsilon 0,5%). Consequência prática: o QAT inteiro cabe em ~21,7 GiB de peso+grad+estado.
+
+**A imagem mudou muito mais que o epsilon.** O b1 era um borrão cinza; b1f/b1s são nítidos, com cor
+e estrutura: vila ao anoitecer com janelas acesas nas duas sementes, placa de madeira com letras
+ilegíveis, maçã vermelha nítida. Filhote e bule ainda não: fragmentos laranja, folhas soltas.
+
+**E a divergência de latente PIOROU enquanto a imagem melhorou** (0,905 → 0,926, decisão dividida
+2/10). Borrão é mudança pequena de latente: a métrica elogia a falha macia. É a regra do Wan 2.2
+deste repo, agora vista pelo outro lado — um build nítido e errado é penalizado contra um borrado.
+
+A perda do ajuste caiu 1,84x e o epsilon só 6%: os 9 densos estão perto do teto deles. O que falta
+está no corpo — QAT, `bench/criterio_qat_klein_2026-09-22.md`.
