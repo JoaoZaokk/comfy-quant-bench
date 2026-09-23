@@ -1,0 +1,13 @@
+# QAT klein: holdout. As 4 primeiras sao F0-F3 do criterio_render_braco1 (a avaliacao); as outras 8 sao extra.
+a golden retriever puppy sleeping on a blue knitted blanket
+a hand-painted wooden sign reading OPEN above a bakery door, morning sun
+a snowy mountain village at dusk, warm lights in the windows
+a glass teapot with green tea leaves unfurling, studio photo, white background
+a heron standing in a misty marsh, photograph
+a bookshop window reading SALE in gold letters
+a bowl of tomato soup with basil, top view
+a teenager playing electric guitar on a small stage
+a canal in Venice at noon
+a ceramic mug on a wooden table, studio photo
+a zebra drinking at a watering hole
+a tram crossing a snowy city street at night
