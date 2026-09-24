@@ -16,7 +16,9 @@ from pathlib import Path
 Q = Path("/content/qat")
 cfg = json.loads((Q / "fila.json").read_text())
 # VM nova (professor_de null): cada braco grava o proprio professor; so' o pipeline e o tool precisam existir
-exig = [cfg["raiz"], cfg["professor"], str(Q / "qat_ternario_klein.py"), str(Q / "prompts_holdout.txt"),
+# ajusta_denso_diffusers.py: o grava_professor importa dele (24/09 a fila nova morreu em 3 s sem ele)
+exig = [cfg["raiz"], cfg["professor"], str(Q / "qat_ternario_klein.py"), str(Q / "ajusta_denso_diffusers.py"),
+        str(Q / "prompts_holdout.txt"),
         *[str(Q / b.get("prompts", "prompts_treino.txt")) for b in cfg["bracos"]]]
 if cfg.get("professor_de"):
     exig += [cfg["professor_de"] + "/professor", cfg["professor_de"] + "/professor_holdout"]
