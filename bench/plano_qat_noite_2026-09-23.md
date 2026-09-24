@@ -160,3 +160,29 @@ Horários: o log da VM é UTC; a máquina local é UTC−3. Abaixo, hora LOCAL.
   com 3e-5/3e-6). Fila parada (b2 já tinha começado), dirs sem checkpoint limpos, relançada 21:36.
   Replay terminou: passo 6000, holdout 0,2768. Novo horário previsto: b1 ~23:05, b2 ~00:35,
   b3 ~02:10, b4 ~03:40.
+- 21:49 b1 p500: holdout 0,403, holdout_rel 0,584, sens 0,407, códigos mudados 1,46% (controle: 1,01% em p1000, 1,84% em p3000). melhor exportado.
+- 21:52 replay p6000 renderizado: ganho do +893 NÃO se sustentou (ver criterio_repeticao, seção final). R1 fechado.
+- 22:05 b1 p1000: holdout 0,377 (CONTROLE p1000: 0,350 — b1 PIOR no MSE), holdout_rel 0,563, sens 0,391 (caindo de 0,407; piso 0,386), códigos 2,10%. Nota: sens da VM (0,39-0,41) não compara com a calibração local (0,54-0,62): holdouts com ruído diferente.
+- 22:20 b1 p1500: holdout 0,374, holdout_rel 0,559, sens 0,518 (SUBIU de 0,391 — sens oscila ±30% entre avaliações; o piso relativo passa a 0,492), códigos 2,65%.
+- 22:35 b1 p2000: holdout 0,357 (controle p2000 0,322), holdout_rel 0,548 (melhor até aqui), sens 0,437 < piso 0,492 -> melhor NÃO exportado, 1ª avaliação ruim. Códigos 3,12% (controle p3000: 1,84%). O piso relativo bloqueou o melhor holdout_rel por causa do pico ruidoso de sens em p1500 — defeito da guarda, registrado.
+- 22:37 DESVIO do plano (antes de ver b2-b4): `--sens-tol` 0,05 -> 0,3 para b2-b4. Motivo medido em
+  b1: o sens oscila ±30% entre avaliações (0,407 / 0,391 / 0,518 / 0,437) com 12 pares × 3 passos,
+  e o piso relativo de 5% bloqueou o `melhor` em p2000 (holdout_rel 0,548, o melhor do braço). A fila
+  será relançada na troca b1->b2 só com b2-b4. b1 fica como rodou (tol 0,05).
+- 22:50 b1 p2500: holdout 0,335, holdout_rel 0,529 (segue melhorando), sens 0,407 (<piso 0,492, 2ª ruim; melhor bloqueado de novo), códigos 3,50%.
+- 23:05 b1 p3000 (fim): holdout 0,347 (controle p3000 0,319), holdout_rel 0,537 (pior que p2500 0,529), sens 0,403, códigos 3,90% (2,1x o controle — P1 parte 1 CONFIRMADA: >=2x). melhor = p1500 (0,559); final = p3000. MSE de holdout do b1 fica ACIMA do controle em todos os pontos pareados.
+- 23:20 b1 terminou rc=0 (100 min; ckpt+exportado no HF, cópias locais apagadas, VM com 100 GiB livres). Fila trocada: b2-b4 com sens-tol 0,3 (pid 93239), supervisor brzrzyfq4. Previsão: b2 ~00:55, b3 ~02:30, b4 ~04:05. Cadeia local deve estar avaliando b1 agora.
+- 23:32 b2 p500: holdout 0,425 (b1 0,403), holdout_rel 0,600 (b1 0,584), sens 0,576 (b1 0,407 — P2 1/6 a favor), códigos 1,49%.
+- 23:40 RENDER b1 (`render_b1/grade_b1.png`): b1 p1500 = colagem turva com rastro do prompt; b1 p3000
+  = colagem marrom genérica, igual para todo prompt. **Pior que o controle p3024 e muito pior que o
+  QAT local.** P1 parte 2 CONFIRMADA: lr 3x colapsa ANTES. O MSE do b1 também ficou acima do controle.
+- 23:42 CONFUNDIDOR identificado olhando a grade: o único QAT bom (local 4-bit) treinou nos 124
+  prompts curados × 2 sementes; TODOS os da A100 (controle, replay, b1) treinaram nos 1.756 PartiPrompts
+  — e também em outro otimizador (8-bit) e outra versão do diffusers. Os 5 prompts de avaliação são
+  fotográficos e descritivos, como os 124.
+  DESVIO (antes de rodar): **b4 (lr 1e-4) sai** — b1 já mostrou que lr maior colapsa mais cedo, então
+  b4 seria colapso mais rápido, pouca informação. Entra **b4d = eixo DADOS**: receita do controle
+  (lr 1e-5 corpo e denso, 8-bit-sr) na VM com os 124 prompts × sementes 1 2, 4000 passos (= o
+  checkpoint local p4000). Professor gravado pela própria corrida (248 shards, ~8 min).
+  Previsão P5: se b4d renderizar perto do QAT local (prompt reconhecível na maioria das células), o
+  eixo é o DADO; se ficar como o controle, é otimizador/versão/ruído. Relançamento na troca b2->b3.

@@ -62,16 +62,18 @@ diz("GPU livre, comecando")
 for b in CFG["bracos"]:
     d = Path(b["dir"])
     d.mkdir(parents=True, exist_ok=True)
+    # professor compartilhado por symlink, salvo se o braco pedir o proprio ("professor_de": null):
+    # entao a corrida grava o professor dela (outro conjunto de prompts ou de sementes).
+    prof_de = b.get("professor_de", CFG["professor_de"])
     for sub in ("professor", "professor_holdout"):
-        alvo = Path(CFG["professor_de"]) / sub
-        if not (d / sub).exists():
-            (d / sub).symlink_to(alvo, target_is_directory=True)
+        if prof_de and not (d / sub).exists():
+            (d / sub).symlink_to(Path(prof_de) / sub, target_is_directory=True)
     jl = D / "journal.jsonl"
     if jl.is_symlink() or jl.exists():
         jl.unlink()
     jl.symlink_to(d / "journal.jsonl")
     cmd = [sys.executable, "-u", str(Q / "qat_ternario_klein.py"), "--raiz", CFG["raiz"],
-           "--professor", CFG["professor"], "--prompts", str(Q / "prompts_treino.txt"),
+           "--professor", CFG["professor"], "--prompts", str(Q / b.get("prompts", "prompts_treino.txt")),
            "--prompts-holdout", str(Q / "prompts_holdout.txt"), "--dir", str(d), *b["args"]]
     diz(f"== braco {b['nome']} ==  {' '.join(b['args'])}")
     t0 = time.time()
