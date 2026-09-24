@@ -224,7 +224,7 @@ Horários: o log da VM é UTC; a máquina local é UTC−3. Abaixo, hora LOCAL.
 - 04:48 b4d p3000: holdout 0,338, holdout_rel 0,533, sens 0,577, códigos 1,84% (controle p3000: 1,84% — idêntico).
 - 05:29 b4d p4000 (fim): holdout 0,330, holdout_rel 0,526, sens 0,598, códigos 2,16%. Fila acabou (FIM); supervisor saiu DONE.
 - 05:34 b5 (cruzado) lançado na mesma VM (pid 195898), supervisor br0s0qxz1, avaliador local b549b7d90. Previsão de fim ~07:40 (7 min de cruzado + 4000 passos). Avaliador local do b4d rodando.
-- 05:50 **RENDER b4d — RESULTADO DA NOITE** (`render_b4d/grade_b4d.png`): 10/10 células com o prompt
+- 05:50 [LEITURA CORRIGIDA ÀS 08:05, ver abaixo] **RENDER b4d — RESULTADO DA NOITE** (`render_b4d/grade_b4d.png`): 10/10 células com o prompt
   reconhecível e cena coerente — filhote no cobertor azul, placa quase legível (OPAL/ONAL), vila na
   neve com montanhas, vidro com folhas verdes, maçã vermelha na mesa de madeira. **Melhor que o QAT
   local p4000 e muito acima do controle A100 p3024.** melhor = final (p4000).
@@ -239,3 +239,82 @@ Horários: o log da VM é UTC; a máquina local é UTC−3. Abaixo, hora LOCAL.
   em 4 prompts fora da amostra, do mesmo estilo. O teste de OUTRO estilo está rodando:
   `bench/qat_klein/generaliza/` (6 do holdout curado + 4 PartiPrompts curtos/abstratos, semente 11,
   b4d × QAT local × controle), depois do epsilon do b4d.
+- 06:00 [CORRIGIDO 08:05] EPSILON b4d: 0,551 — **igual ao controle (0,557) e ao QAT local (0,551)**. O epsilon por passo
+  (entrada casada na trajetória do BF16) NÃO separa o b4d, que reconstrói as cenas, do controle, que
+  faz colagem. Terceiro instrumento cego ao colapso depois do MSE do holdout e da divergência de
+  latente. O que separou foi o RENDER (e, fracamente, o sens: b4d subiu 0,51->0,61 enquanto b1-b3
+  oscilavam/caíam). Regra para daqui em diante: nenhum braço de QAT se aceita ou recusa sem render.
+- 06:05 [CORRIGIDO 08:05] **GENERALIZAÇÃO do b4d** (`generaliza/grade_generaliza.png`, 10 prompts nunca vistos, semente 11):
+  b4d reconhecível em ~4/10 (sopa na tigela, bonde na neve, vitrine com letreiro "SAL…", pintura a
+  óleo com torre), parcial em 3 (garça virou pessoa no brejo, olho sem planeta, quadrados só nas
+  cores), falha em 3 (zebra, coração verde, guitarrista). **O QAT local fica no mesmo nível; o controle
+  falha em quase todas.** Os três compartilham os MESMOS artefatos recorrentes (a forma branca curva,
+  montes de neve/tecido) — um atrator comum a todo QAT desta família, mais fraco no b4d.
+  Leitura corrigida: o dado curado tira o modelo do colapso (b4d ≫ controle, aqui também), mas o
+  resultado dos 5 prompts da grade principal SUPERESTIMA a qualidade: fora do estilo dos 124, b4d ≈
+  QAT local, e ainda longe do BF16. O próximo eixo é cobertura de dados COM qualidade (mais prompts
+  curados e variados, várias sementes), não mais passos em PartiPrompts.
+- 06:05 b5 p500: holdout 0,372 (b4d 0,400), holdout_rel 0,563 (b4d 0,582), sens 0,468 (b4d 0,506 — P6 1 contra), holdout_cruz_rel 0,577, códigos 0,62% (b4d 0,70%).
+- 06:23 b5 p1000: holdout 0,363 (b4d 0,358), holdout_rel 0,555 (b4d 0,551), sens 0,464 (b4d 0,532 — P6 2 contra), holdout_cruz_rel 0,574, códigos 0,90% (b4d 1,00%).
+- 06:40 b5 p1500: holdout 0,352 (b4d 0,351), holdout_rel 0,546 (b4d 0,545), sens 0,461 (b4d 0,575 — P6 3 contra), holdout_cruz_rel 0,568, códigos 1,15%.
+- 06:57 b5 p2000: holdout 0,343 (b4d 0,345), holdout_rel 0,538 (b4d 0,539), sens 0,525 (b4d 0,607 — P6 4 contra: REFUTADA em sens, >=5/8 a favor já impossível), holdout_cruz_rel 0,560, códigos 1,37%.
+- 07:15 b5 p2500: holdout 0,342 (b4d 0,341), holdout_rel 0,536 (b4d 0,536), sens 0,441 (b4d 0,604), holdout_cruz_rel 0,560.
+- 07:25 [CORRIGIDO 08:05] PESOS DA NOITE × BONSAI (`codigos_noite_vs_bonsai.log`, `mudancas_noite_vs_bonsai.log`):
+  | braço | render | mudou vs ingênuo | acerto da mudança | recall Bonsai | concorda Bonsai | rebaixa/promove | mudanças perto do limiar |
+  | Bonsai | — | 10,77% | 100% | 100% | 100% | 2,5 | 69-75% |
+  | ingênuo | destruído | 0 | — | 0 | 89,23% | — | — |
+  | QAT local p4000 | bom | 2,07% | 46,1% | 8,8% | 89,07% | 1,05 | 99,3% |
+  | b1 | colagem | 3,90% | 41,6% | 15,1% | 88,58% | 1,06 | 94% |
+  | b2 | colagem | 3,89% | 41,6% | 15,0% | 88,58% | 1,06 | 94% |
+  | b3 (L1) | colagem | 4,63% | 47,7% | 20,5% | 89,02% | 4,0 | 92-95% |
+  | b4d | cenas | 2,16% | 46,1% | 9,3% | 89,06% | 1,05 | 99,5% |
+  **Achado: o braço que renderiza (b4d) é o que MENOS mexeu nos códigos, gêmeo do QAT local; o que
+  mais se aproximou do Bonsai (b3: recall 20,5%, rebaixa/promove 4,0) faz colagem.** Chegar perto dos
+  códigos do Bonsai NÃO é o que produz imagem — o que separou foi o dado. E nenhum braço passou a
+  concordância do ingênuo com o Bonsai (89,23%): b1/b2 ficam ABAIXO dele (88,58%). Perfil por
+  profundidade plano em todos (o Bonsai sobe até 19,9% nos single profundos).
+- 07:31 b5 p3000: holdout 0,333 (b4d 0,338), holdout_rel 0,530 (b4d 0,533), sens 0,523 (b4d 0,577), holdout_cruz_rel 0,552, códigos 1,73%.
+- 08:05 **VERIFICAÇÃO INDEPENDENTE (agente verificador, só CPU, fontes primárias).** Os NÚMEROS batem
+  (>100 valores do diário contra o log da VM, os agregados de epsilon e os JSON do HF). A LEITURA não.
+  Correções, cada uma conferida na fonte:
+  1. **O "dado Parti" CONTÉM os 124 curados** — `prompts_treino_parti.txt` começa pelos mesmos 124, na
+     mesma ordem (cabeçalho do arquivo; `cmp` das 124 primeiras linhas: idênticas). Então b4d × controle
+     NÃO é "mesma receita, só o dado muda". Diferem em QUATRO eixos ao mesmo tempo: conteúdo (124 × 1.756),
+     repetição (b4d ~2 épocas, cada prompt ~32 vezes; controle ~0,2 época, cada prompt ~1,7 vez),
+     passos (4000 × 3024) e professor (gravado pelo próprio b4d × o do controle). **P5 fica
+     "b4d ≫ controle no render, causa NÃO isolada"**, não "o eixo é o dado". A leitura de 05:50 e a do
+     commit a99091c estão erradas nesse ponto.
+  2. **A maçã (D0) não está em NENHUM treino** (grep exato: 0 nos 124 e nos 1.756). "Só a maçã está no
+     treino" (05:50) vinha do critério de 22/09, que é de outro treino. As 10 células da grade são fora
+     da amostra para todos os braços.
+  3. **A grade de generalização não é "10 nunca vistos, de outro estilo"**: 6 são do holdout curado
+     (mesmo estilo) e os 4 PartiPrompts ESTÃO no treino do controle (linhas 1093, 1244, 1539, 1599 de
+     `prompts_treino_parti.txt`). O controle falhar neles é pior para o controle, não melhor.
+  4. **b4d "10/10" exagera.** Julgado célula a célula contra o BF16: 4 nítidas (filhote ×2, vila ×2),
+     5 parciais (placa s11 "OPYAL", bule virou jarro de vidro ×2, maçã como objeto vermelho deformado ×2),
+     1 fraca (placa s12). O QAT local na MESMA grade fica quase no mesmo nível — o "~6/8" era outra amostra.
+  5. **sens do b4d não foi monotônico**: 0,506 → 0,532 → 0,575 → 0,607 → 0,604 → 0,577 → 0,590 → 0,598.
+     Subiu nas 4 primeiras e oscilou depois. No b4d/b5 o sens usa 24 pares, não 12.
+  6. **Tabela de pesos (07:25) omitia o controle p3024**, que faz colagem: mudou 1,85%, acerto 46,55%,
+     recall 7,99%, concorda 89,10% (`codigos_vs_bonsai.log:14`) — gêmeo do b4d e do QAT local nos
+     códigos. **Os códigos não separam o render** (colagem e cenas com a mesma assinatura). "b4d é o que
+     menos mexeu" é falso: o QAT local mexeu 2,07%, o b4d 2,16%, o controle 1,85%.
+  7. **P1 tinha uma cláusula refutada que o resumo omitiu**: previa holdout do b1 abaixo do controle; o
+     MSE do b1 ficou ACIMA em todos os pontos pareados (0,377/0,350; 0,357/0,322; 0,347/0,319) e o
+     epsilon também (0,615 × 0,557). O "1,84%" da P1 é o controle em p3000.
+  8. **holdout_rel do b4d (0,526) não se compara com b1-b3 (0,533-0,537)**: outro holdout (sementes 1+2,
+     professor próprio, 24 pares) e outro passo (4000 × 3000). Em p3000 o b4d dá 0,533.
+     Pelo mesmo motivo, "MSE de holdout cego ao colapso" NÃO foi medido no par b4d × controle.
+  9. **"sens ordena como o render" não está demonstrado**: p3024 × p9191 separam por 0,006 (1,1%), bem
+     abaixo da oscilação de 1,3-1,4x (máx/mín) medida depois. P2 5/6 é sinal fraco (teste de sinal
+     p≈0,11). O epsilon não é cego a b1-b3: põe os três pior que o controle, como o render.
+  Continua de pé: epsilon b4d = controle = QAT local (diferença pareada −1%, amostra equivalente: 4
+  prompts × 2 sementes, trajetória BF16 imposta, fora de ambos os treinos); lr 3e-5 nos dados Parti piora
+  (b1-b3 < controle no render e no epsilon); L1 corrige a direção das mudanças (P3) e não a imagem;
+  nenhum braço passa a concordância do ingênuo com o Bonsai; controle rodou em `qat-a100`, não na `qat-a100b`.
+  Não verificável sem GPU: ComfyUI × local 1,36% e × VM 1,48% (saída não gravada); VM × local 1,12%
+  reproduzido na CPU.
+  **Braço que separa os eixos (proposto, NÃO lançado — o dono pediu parada):** receita do b4d
+  (124 prompts × 2 sementes, 4000 passos, lr 1e-5, professor próprio) com 124 PartiPrompts SORTEADOS
+  (fora do holdout e da grade) no lugar dos curados. Renderiza como b4d ⇒ o eixo é repetição/épocas;
+  colagem ⇒ o eixo é conteúdo. Um segundo, mais caro: os 1.756 com 2 sementes até ~2 épocas (~56 mil passos).
