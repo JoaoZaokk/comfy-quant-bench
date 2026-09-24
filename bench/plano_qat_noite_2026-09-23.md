@@ -146,3 +146,17 @@ Horários: o log da VM é UTC; a máquina local é UTC−3. Abaixo, hora LOCAL.
   idêntica à do `holdout_rel` (0,525 / 0,551 / 0,558 / 0,577) — a métrica cruzada, como MÉTRICA,
   quase não acrescenta informação ao erro relativo comum. Ela continua valendo como SINAL DE TREINO
   (é o que a fase 2 testa), não como instrumento de parada.
+- 20:47 smoke da fase 2 passou (3090, 4 passos, frac 0,5; 32 exemplos cruzados indexados; gravar
+  cruzado custa 5,2 s/shard na 3090). Commit e3dc928.
+- DECISÃO PENDENTE (~03:20, quando a fila acabar): braço b5 = melhor config de lr entre b1-b4 +
+  `--cruzado --cruzado-frac 0.5`, na mesma VM, se ainda houver tempo antes das ~07:00. Gravar o
+  cruzado dos 1.756 shards na A100 estimado em ~50 min [ESTIMATIVA: 3x mais rápido que a 3090].
+  Previsão para b5: sens e holdout_cruz_rel melhores que o mesmo lr sem cruzado, holdout_rel igual
+  ou pior (±2%).
+- 21:29 b1 MORREU logo após o passo 0: `RuntimeError: lr was changed to a non-Tensor object` no
+  `step()` do torchao. O torchao da VM não converte o lr de grupo passado em dict (o 0.18 local
+  converte, por isso o smoke local passou — mesmo eixo que o smoke segurou fixo: a versão da lib).
+  Conserto: lr como tensor no grupo (micro-teste: corpo andou 9e-5 e denso 1,5e-5 em 3 passos, bate
+  com 3e-5/3e-6). Fila parada (b2 já tinha começado), dirs sem checkpoint limpos, relançada 21:36.
+  Replay terminou: passo 6000, holdout 0,2768. Novo horário previsto: b1 ~23:05, b2 ~00:35,
+  b3 ~02:10, b4 ~03:40.

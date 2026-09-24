@@ -703,8 +703,12 @@ def main() -> int:
 
     denso_params = [v for k, v in treinaveis if k not in corpo]
     corpo_params = [v for k, v in treinaveis if k in corpo]
-    opt = cria_otimizador(a.otim, [{"params": corpo_params, "lr": a.lr},
-                                   {"params": denso_params, "lr": a.lr_denso}], a.lr)
+    # lr como TENSOR no grupo: o torchao da VM (2026-09-24) nao converte o lr de um grupo passado em
+    # dict e o `step()` morre com "lr was changed to a non-Tensor object"; o 0.18 local converte em
+    # `add_param_group`, por isso o smoke local passou. Tensor funciona nos dois.
+    opt = cria_otimizador(a.otim, [{"params": corpo_params, "lr": torch.tensor(a.lr, dtype=torch.float32)},
+                                   {"params": denso_params, "lr": torch.tensor(a.lr_denso, dtype=torch.float32)}],
+                          a.lr)
     log(f"lr corpo {a.lr:g}, lr denso {a.lr_denso:g}, L1 corpo lambda {a.l1_corpo:g}")
     passo = 0
     ck = a.dir / "ckpt" / "ultimo.pt"
