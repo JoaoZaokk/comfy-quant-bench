@@ -40,3 +40,16 @@ professor, não imagem.
 - Leitura: o MSE nao separa os ramos e a imagem separa -- mais uma vez o MSE do holdout e cego ao
   colapso de condicionamento. Nao muda o veredito do criterio (R1), que foi escrito sobre o MSE.
   Uma semente de embaralhamento; o replay segue ate 6.000.
+
+## Resultado final do ramo REPETE (p6000, 2026-09-23 21:38 local)
+
+- Holdout MSE em p6000: 0,2768. O ramo NOVO parou em p10224 (origem + 2.065), então não há ponto
+  pareado em k = 3.000..6.000; nos pontos pareados (k ≈ 1.000 e 2.000) a diferença foi 0,4% e 1,3%
+  -> **R1** (dado novo ou repetido dá no mesmo, na métrica do critério).
+- Render (`render_replay1/grade_repeticao_final.png`): o ganho visto em +893 **não se sustentou**.
+  Em p6000 as células voltam a ficar acinzentadas e genéricas, perdem a maçã vermelha e o telhado da
+  vila, e ficam mais perto da origem 8159 e do p9191 do que do +893. Leitura: repetir os exemplos
+  deu uma melhora TRANSITÓRIA (primeiros ~900 passos), não consolidação; o lr constante 1e-5 leva o
+  modelo de volta para a mesma bacia colapsada.
+- Consequência para o plano: a proposta "repetir para consolidar" sai; o problema é o objetivo/lr
+  (colapso de condicionamento), que é o que os braços b1-b4 e a fase 2 (condição cruzada) atacam.

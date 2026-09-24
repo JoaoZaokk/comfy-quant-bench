@@ -4,42 +4,9 @@
  "professor_de": "/content/qat_run",
  "bracos": [
   {
-   "nome": "b3",
-   "dir": "/content/qat_b3",
-   "args": [
-    "--sementes",
-    "1",
-    "--otim",
-    "adamw8bit-sr",
-    "--max-passos",
-    "3000",
-    "--lote",
-    "1",
-    "--log-cada",
-    "50",
-    "--holdout-cada",
-    "500",
-    "--ckpt-min",
-    "25",
-    "--lr",
-    "3e-5",
-    "--lr-denso",
-    "3e-6",
-    "--l1-corpo",
-    "1.0",
-    "--sens-tol",
-    "0.3",
-    "--parada-paciencia",
-    "3",
-    "--push-hf",
-    "JoaoZaokk/klein4b-qat-b3",
-    "--hf-publico"
-   ]
-  },
-  {
-   "nome": "b4d",
-   "dir": "/content/qat_b4d",
-   "professor_de": null,
+   "nome": "b5",
+   "dir": "/content/qat_b5",
+   "professor_de": "/content/qat_b4d",
    "prompts": "prompts_treino_124.txt",
    "args": [
     "--sementes",
@@ -61,12 +28,15 @@
     "1e-5",
     "--lr-denso",
     "1e-5",
+    "--cruzado",
+    "--cruzado-frac",
+    "0.5",
     "--sens-tol",
     "0.3",
     "--parada-paciencia",
     "3",
     "--push-hf",
-    "JoaoZaokk/klein4b-qat-b4d",
+    "JoaoZaokk/klein4b-qat-b5",
     "--hf-publico"
    ]
   }

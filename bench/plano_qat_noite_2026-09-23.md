@@ -186,3 +186,56 @@ Horários: o log da VM é UTC; a máquina local é UTC−3. Abaixo, hora LOCAL.
   checkpoint local p4000). Professor gravado pela própria corrida (248 shards, ~8 min).
   Previsão P5: se b4d renderizar perto do QAT local (prompt reconhecível na maioria das células), o
   eixo é o DADO; se ficar como o controle, é otimizador/versão/ruído. Relançamento na troca b2->b3.
+- 23:48 b2 p1000: holdout 0,378 (b1 0,377), holdout_rel 0,564 (b1 0,563), sens 0,469 (b1 0,391 — P2 2/2 a favor), códigos 2,11% (b1 2,10%). Prender o denso não muda o corpo; muda o sens.
+- 23:50 EPSILON b1 (8 sementes, ComfyUI, fora da amostra): melhor 0,613, final 0,615, controle p3024 0,557, ptq 1,059. b1 PIOR que o controle no epsilon também — epsilon, MSE e render concordam.
+- 00:03 b2 p1500: holdout 0,373 (b1 0,374), holdout_rel 0,559 (b1 0,559), sens 0,422 (b1 0,518 — P2 1 contra), códigos 2,61%.
+- 00:18 b2 p2000: holdout 0,352 (b1 0,357), holdout_rel 0,543 (b1 0,548), sens 0,501 (b1 0,437 — P2 3/4 a favor), códigos 3,07%.
+- 00:33 b2 p2500: holdout 0,342 (b1 0,335), holdout_rel 0,535 (b1 0,529), sens 0,456 (b1 0,407 — P2 4/5 a favor), códigos 3,47%.
+- 00:50 b2 p3000 (fim): holdout 0,344 (b1 0,347), holdout_rel 0,536 (b1 0,537), sens 0,478 (b1 0,403 — P2 5/6 a favor: CONFIRMADA), códigos 3,89% (= b1). melhor = p2500 (0,535).
+- 00:55 fila relançada com b3 + b4d (pid 120895), supervisor b7k2le9sf, avaliador local do b4d b7nh68hjs (a cadeia avalia_noite trava esperando 'b4', que não existe — matar quando chegar lá). Previsão: b3 ~02:30, b4d ~04:40.
+- 01:05 b3 com L1 roda a 1,81 s/passo (b1/b2 1,53: L1 custa +18% na A100). b3 termina ~02:40, b4d ~04:55.
+- 01:10 RENDER b2 (`render_b2/grade_b2.png`): um pouco melhor que o b1 (volta o azul do cobertor e o cachorro, a maçã vermelha), mas ainda é colagem genérica, pior que o controle p3024 e muito pior que o QAT local. Prender o denso ajuda de leve (sens e imagem concordam) e NÃO evita o colapso com lr 3e-5. Conclusão parcial: lr maior acelera o colapso nos dados Parti; a esperança fica no eixo dados (b4d).
+- 01:16 b3 p500: holdout 0,405 (b2 0,425), holdout_rel 0,586 (b2 0,600), sens 0,476 (b2 0,576), códigos 1,57% (b2 1,49%).
+- 01:34 b3 p1000: holdout 0,382 (b2 0,378), holdout_rel 0,566 (b2 0,564), sens 0,455 (b2 0,469), códigos 2,31% (b2 2,11%: L1 +0,2 pp).
+- 01:35 EPSILON b2: melhor 0,611, final 0,615 (b1 0,613/0,615; controle 0,557). Epsilon não separa b1 de b2; a imagem separou de leve.
+- 01:54 b3 p1500: holdout 0,372 (b2 0,373), holdout_rel 0,558 (b2 0,559), sens 0,488 (b2 0,422), códigos 2,92% (b2 2,61%). (3,06 s/passo naquela janela = salvamento síncrono do ckpt de 54 s; voltou a 1,85.)
+- 02:11 b3 p2000: holdout 0,351 (b2 0,352), holdout_rel 0,542 (b2 0,543), sens 0,484 (b2 0,501), códigos 3,52% (b2 3,07%).
+- 02:29 b3 p2500: holdout 0,344 (b2 0,342), holdout_rel 0,536 (b2 0,535), sens 0,479 (b2 0,456), códigos 4,08% (b2 3,47%).
+- 02:48 b3 p3000 (fim): holdout 0,340 (b2 0,344), holdout_rel 0,533 (b2 0,536 — o melhor dos 3 braços em p3000), sens 0,430, códigos 4,63% (b2 3,89%). P3 (razão rebaixa/promove) a medir no exportado.
+- 03:00 F: chegou a 46 GB livres com 3 downloads simultâneos; apagados BFL do b1 (melhor/final), do replay p6000 e o ckpt local do replay p6000 (todos refazíveis do HF, renders e epsilon já feitos).
+- 03:05 **P3 CONFIRMADA** (`bench/qat_klein/mudancas_b2_b3.log`): b3 (L1 λ=1) rebaixa 3,70% e promove
+  0,93% -> razão **4,0** (b2 sem L1: 2,00/1,89 = 1,06; Bonsai 7,70/3,06 = 2,5). O L1 corrige a
+  DIREÇÃO da mudança (esparsifica, até mais que o Bonsai). NÃO corrige as outras duas assinaturas:
+  (a) distância do limiar — 92-95% das mudanças do b3 têm r em [0,35; 0,65] contra 69-75% do Bonsai,
+  que mexe em peso longe do limiar; (b) profundidade — b3 plano (4,3-5,0% em todas as camadas),
+  Bonsai sobe de 7,9% a 19,9% nos single profundos. Essas duas são as que ainda faltam na receita.
+- 03:25 b4d p500: holdout 0,400, holdout_rel 0,582, sens 0,506, códigos 0,70% (lr 1e-5: metade dos braços 3e-5, como esperado). Holdout do b4d é OUTRO conjunto (sementes 1+2, professor próprio): não comparar número a número com b1-b3.
+- 03:28 RENDER b3 (`render_b3/grade_b3.png`): melhor = final (p3000, o melhor foi o último). Colagem genérica como b2, sem ganho visível — perde até a maçã vermelha que o b2 mantinha. O L1 muda a assinatura dos pesos (P3) e NÃO muda a imagem em 3000 passos nestes dados. Até aqui, nenhum braço da noite ficou melhor que o controle p3024; todos pioram com lr 3e-5 nos Parti.
+- 03:35 PREPARADO b5 = receita do b4d (124 prompts × sementes 1 2, lr 1e-5, 4000 passos) +
+  `--cruzado --cruzado-frac 0.5`, professor do b4d por symlink (cruzado gravado no dir do b5, ~7 min).
+  Um eixo contra o b4d. Entra na troca b4d->b5 (~05:05), termina ~07:00.
+  Previsão P6 (escrita antes): b5 com sens ≥ b4d em ≥ 5 de 8 avaliações e holdout_cruz_rel menor;
+  holdout_rel dentro de ±2% do b4d; render com o prompt reconhecível em ≥ tantas células quanto o b4d.
+- 03:42 b4d p1000: holdout 0,358, holdout_rel 0,551, sens 0,532 (subindo), códigos 1,00% (controle p1000: 1,01% — mesmo lr, mesmo ritmo de códigos).
+- 03:45 cadeia avalia_noite parada (chegou em 'b4', que não existe). EPSILON b3:  media 1.0592e+00 6.0589e-01 6.0589e-01 5.5669e-01 (ordem: ptq, b3 melhor, b3 final, controle).
+- 03:58 b4d p1500: holdout 0,351, holdout_rel 0,545, sens 0,575 (subindo 3 avaliações seguidas: 0,506/0,532/0,575 — diferente de b1-b3, onde oscilou/caiu), códigos 1,25%.
+- 04:15 b4d p2000: holdout 0,345, holdout_rel 0,539, sens 0,607 (4ª alta seguida), códigos 1,47%.
+- 04:32 b4d p2500: holdout 0,341, holdout_rel 0,536, sens 0,604 (estável), códigos 1,66%.
+- 04:48 b4d p3000: holdout 0,338, holdout_rel 0,533, sens 0,577, códigos 1,84% (controle p3000: 1,84% — idêntico).
+- 05:29 b4d p4000 (fim): holdout 0,330, holdout_rel 0,526, sens 0,598, códigos 2,16%. Fila acabou (FIM); supervisor saiu DONE.
+- 05:34 b5 (cruzado) lançado na mesma VM (pid 195898), supervisor br0s0qxz1, avaliador local b549b7d90. Previsão de fim ~07:40 (7 min de cruzado + 4000 passos). Avaliador local do b4d rodando.
+- 05:50 **RENDER b4d — RESULTADO DA NOITE** (`render_b4d/grade_b4d.png`): 10/10 células com o prompt
+  reconhecível e cena coerente — filhote no cobertor azul, placa quase legível (OPAL/ONAL), vila na
+  neve com montanhas, vidro com folhas verdes, maçã vermelha na mesa de madeira. **Melhor que o QAT
+  local p4000 e muito acima do controle A100 p3024.** melhor = final (p4000).
+  **P5 CONFIRMADA: o eixo é o DADO.** Mesma receita (lr 1e-5, 8-bit-sr), mesma VM, mesmo diffusers:
+  1.756 PartiPrompts × 1 semente colapsa; 124 prompts curados × 2 sementes não. O "colapso de
+  condicionamento" que atribuí ao lr/objetivo era, antes de tudo, o conjunto de treino. b1-b3 (lr,
+  denso, L1) testaram eixos secundários em cima de um dado que já colapsava.
+  Ressalva: os 5 prompts de avaliação são do mesmo estilo dos 124 (fotográficos e descritivos). Falta
+  medir num conjunto de avaliação de OUTRO estilo antes de dizer que generaliza.
+  Correção da ressalva acima: dos 5 prompts da grade, F0-F3 (filhote, placa, vila, bule) são do
+  HOLDOUT — o b4d nunca os viu; só a maçã (D0) está no treino. Então a grade já mostra generalização
+  em 4 prompts fora da amostra, do mesmo estilo. O teste de OUTRO estilo está rodando:
+  `bench/qat_klein/generaliza/` (6 do holdout curado + 4 PartiPrompts curtos/abstratos, semente 11,
+  b4d × QAT local × controle), depois do epsilon do b4d.
