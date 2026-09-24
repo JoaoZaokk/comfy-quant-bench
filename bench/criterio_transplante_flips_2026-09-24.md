@@ -85,3 +85,36 @@ fora da amostra (4 prompts × 2 sementes, trajetória BF16 imposta).
 - **R3:** T3 (corpo b4d + resto original) ≤ 2/10 e epsilon > 0,9 (perto do PTQ, 1,059).
 - **R4 (off-genre):** se R1 valer, T1/T2 repetem o vazamento do atrator do b4d nos prompts fora do gênero.
 Leitura se R1 cair e R3 também: interação — nem corpo nem resto sozinhos carregam a cena.
+
+## Resultado do passo 2 (12:45; `render_transp/grade_transp.png`, `generaliza_transp/grade_generaliza_transp.png`, `agrega_eps_transp.txt`)
+
+    epsilon fora da amostra (8 sementes)   PTQ 1,059   T1 1,027   T2 1,008   T3 0,619   b4d 0,551
+    fração da distância PTQ→Bonsai           0%        4,6%       7,3%      62,5%      72,1%
+
+- **R1 REFUTADA:** T1 (corpo PTQ + resto b4d) = bege liso em 10/10, como o PTQ.
+- **R2 REFUTADA:** T2 (+ escalas do b4d) = bege liso em 10/10; epsilon 7% do caminho. As escalas do b4d
+  sozinhas não fazem nada.
+- **R3 REFUTADA, na direção oposta:** T3 (corpo b4d + 69 ORIGINAIS) faz cena em 10/10 da grade principal
+  (filhote, placa com letras, vila, jarro de vidro com folhas, maçã vermelha), com uma textura de mosaico
+  granulada que o b4d não tem.
+- **R4 não se aplica (R1 caiu); o achado off-genre é outro:** na grade de 10 prompts o T3 **não tem o
+  atrator** (forma branca curva, tecido, tigela) que domina o b4d. Leitura minha, célula a célula contra o
+  BF16: T3 reconhecível em SALE, sopa, bonde, quadrados, olho, torre (6) e parcial em garça, guitarrista,
+  "zebra" que virou felino pintado bebendo, coração (4); o b4d fica em ~2 + 2. Tudo com o grão de mosaico.
+- **Epsilon errou de novo:** T3 tem epsilon PIOR que o b4d (0,619 × 0,551) e imagem melhor fora do gênero.
+
+**Leitura.** A recuperação mora no CORPO TERNÁRIO (os ~2% de flips junto com as escalas; escalas sozinhas
+não bastam), não nos contínuos — o oposto da hipótese de consenso das leituras externas e da minha
+previsão. E o **atrator mora no RESTO treinado** (9 densos + norms): tirando-o (voltando aos originais) o
+atrator some. Os flips parecem ruído de fronteira pela estatística de posição (A1/B1), mas coletivamente
+carregam a cena — conjuntos diferentes de flips (b4d × b5, Jaccard 0,24) funcionam igual.
+Não coberto: um único braço doador (b4d), 2 sementes na grade principal, 1 na de generalização; julgamento
+de "reconhecível" meu.
+
+## Passo 3 — T3 do controle (escrito às 12:50, antes de rodar)
+
+Se o atrator mora no resto treinado, a colagem do controle (dado Parti) também pode morar lá.
+T3_ctrl = corpo do controle p3024 + resto original; T3_p9191 = idem com o p9191 (colapso).
+- **S1 [JULGAMENTO]:** T3_ctrl faz cena em ≥ 5/10 células da grade principal. Refutada se ≤ 2/10 —
+  aí o dado Parti estragou o CORPO também, e "o eixo é o dado" volta a valer para o corpo.
+- **S2:** T3_p9191 ≤ T3_ctrl (mais passos no dado Parti não melhora o corpo).

@@ -64,6 +64,7 @@ def main() -> int:
     p.add_argument("--b", required=True, help="braço treinado")
     p.add_argument("--rotulo-b", required=True)
     p.add_argument("--dir", type=Path, required=True)
+    p.add_argument("--variantes", nargs="+", default=["T1", "T2", "T3"], choices=["T1", "T2", "T3"])
     a = p.parse_args()
     A, B = Leitor(a.a), Leitor(a.b)
     assert set(A.h) == set(B.h), "nomes diferentes entre A e B"
@@ -104,6 +105,7 @@ def main() -> int:
                lambda k, xa, xb: b16(cod_esc(xa, xb)[0]) if k in corpo else bruto(B, k)),
         "T3": (f"corpo do {a.rotulo_b} + resto do PTQ (originais)", lambda k, xa, xb: bruto(B, k) if k in corpo else bruto(A, k)),
     }
+    saidas = {t: v for t, v in saidas.items() if t in a.variantes}
     ordem = sorted(B.h, key=lambda k: B.h[k]["data_offsets"][0])
     arqs = {}
     for t, (desc, _) in saidas.items():
