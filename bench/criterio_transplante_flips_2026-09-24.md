@@ -73,3 +73,15 @@ PTQ do arquivo = receita absmean em 100,0000% das posições. Bonsai: 396 M flip
   (time_in e modulação img ~8,7%, txt_in 5,6%). Se a recuperação é contínua, ela mora quase toda nos 9
   densos e nas escalas — e o braço antigo "só densos" (9 densos, sem norms, só 4 prompts) já tinha dado
   borrão/nítido-errado, então T1 é o teste que diz se o b4d achou densos diferentes daqueles.
+
+## Previsões do passo 2 (render), escritas às 11:20, antes de qualquer imagem dos transplantes
+
+Base: A1/B1/B2 dizem que os flips são ruído de fronteira; as escalas do b4d mudaram ~1% e os 9 densos 3–9%.
+Protocolo: 5 prompts × sementes 11 12 (mesmo das grades), 10 prompts de generalização (semente 11), epsilon
+fora da amostra (4 prompts × 2 sementes, trajetória BF16 imposta).
+- **R1 [JULGAMENTO]:** T1 (corpo PTQ + resto b4d) faz cena reconhecível em ≥ 6/10 células, com as mesmas
+  composições do b4d. Refutada se ≤ 2/10.
+- **R2:** T2 (códigos PTQ × escalas b4d + resto b4d) ≥ T1 no render, e epsilon a ≤ 5% do b4d.
+- **R3:** T3 (corpo b4d + resto original) ≤ 2/10 e epsilon > 0,9 (perto do PTQ, 1,059).
+- **R4 (off-genre):** se R1 valer, T1/T2 repetem o vazamento do atrator do b4d nos prompts fora do gênero.
+Leitura se R1 cair e R3 também: interação — nem corpo nem resto sozinhos carregam a cena.
