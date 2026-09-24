@@ -29,7 +29,7 @@ O braço que separa os dois primeiros está proposto no fim.
 | b3 p3000 | 1.756 × 1 | 3e-5 / 3e-6 | L1 λ=1 | colagem como b2 | 0,606 |
 | **b4d p4000** | **124 × 2** | 1e-5 / 1e-5 | — | 4 nítidas, 5 parciais, 1 fraca | 0,551 |
 | QAT local p4000 (referência) | 124 × 2 | 1e-5 (4-bit Adam, 3090) | — | quase o nível do b4d na mesma grade | 0,551 |
-| b5 | 124 × 2 | 1e-5 / 1e-5 | condição cruzada 0,5 | (treino terminando; render depois) | — |
+| b5 p4000 | 124 × 2 | 1e-5 / 1e-5 | condição cruzada 0,5 | empata com o b4d, mesmas composições (`render_b5/grade_b5.png`) | 0,544 |
 
 Nenhum dos 5 prompts da grade está em treino algum (conferido por grep exato). Grades:
 `bench/qat_klein/render_b1/`, `render_b2/`, `render_b3/`, `render_b4d/grade_b4d.png`.
@@ -63,8 +63,10 @@ Nenhum dos 5 prompts da grade está em treino algum (conferido por grep exato). 
 - P4 (lr 1e-4 colapsa antes de 2000): **não testada** — trocada pelo b4d, desvio registrado antes de rodar.
 - P5 (b4d perto do QAT local ⇒ o eixo é o dado): a condição se cumpriu (b4d ≈ QAT local), mas a conclusão
   não segue, porque b4d e controle diferem em quatro eixos (tabela acima). **Causa não isolada.**
-- P6 (b5 cruzado: sens ≥ b4d em ≥ 5 de 8): **refutada no sens** — abaixo do b4d nas 6 avaliações até p3000.
-  Render pendente.
+- P6 (b5 cruzado: sens ≥ b4d em ≥ 5 de 8, holdout_cruz_rel menor, holdout_rel ±2%, render ≥ b4d): **refutada
+  no sens** (abaixo do b4d nas 8 avaliações); holdout_rel igual (0,526 × 0,526); render **empata** (mesmas
+  composições; placa um pouco pior, filhote um pouco melhor); epsilon 0,544 × 0,551 (−1,3%, b5 menor em 5 de 8,
+  dentro do ruído — o par b4d × controle deu −1%). A condição cruzada não muda o resultado.
 - Repetição (critério de 23/09): R1 no MSE; o ganho visual do replay em +893 não durou até p6000.
 
 ## Instrumentos novos (commitados)
