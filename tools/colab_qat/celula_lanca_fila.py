@@ -15,13 +15,18 @@ from pathlib import Path
 
 Q = Path("/content/qat")
 cfg = json.loads((Q / "fila.json").read_text())
-for p in (cfg["raiz"], cfg["professor"], cfg["professor_de"] + "/professor",
-          cfg["professor_de"] + "/professor_holdout", str(Q / "qat_ternario_klein.py")):
+# VM nova (professor_de null): cada braco grava o proprio professor; so' o pipeline e o tool precisam existir
+exig = [cfg["raiz"], cfg["professor"], str(Q / "qat_ternario_klein.py"), str(Q / "prompts_holdout.txt"),
+        *[str(Q / b.get("prompts", "prompts_treino.txt")) for b in cfg["bracos"]]]
+if cfg.get("professor_de"):
+    exig += [cfg["professor_de"] + "/professor", cfg["professor_de"] + "/professor_holdout"]
+for p in exig:
     if not Path(p).exists():
         print(f"FALTA {p}")
         raise SystemExit(1)
-n = len(list(Path(cfg["professor_de"], "professor").glob("p*_s1.pt")))
-print(f"shards do professor (semente 1): {n}")
+if cfg.get("professor_de"):
+    n = len(list(Path(cfg["professor_de"], "professor").glob("p*_s1.pt")))
+    print(f"shards do professor (semente 1): {n}")
 src = (Q / "qat_ternario_klein.py").read_text()
 print("tool novo:", "prox_l1_relativo" in src and "mede_d" in src)
 import shutil

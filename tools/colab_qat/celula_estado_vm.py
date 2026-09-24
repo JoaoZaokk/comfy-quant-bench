@@ -13,7 +13,8 @@ for sub in ("professor", "professor_holdout"):
 jr = Path("/content/qat_run/journal.jsonl")
 if jr.is_file():
     print("replay ultimo:", jr.read_text().strip().splitlines()[-1][:200])
-print("config atual:", Path("/content/qat/config.json").read_text())
+cf = Path("/content/qat/config.json")
+print("config atual:", cf.read_text() if cf.is_file() else "(nenhum -- VM nova)")
 print("klein:", Path("/content/klein4b/transformer/diffusion_pytorch_model.safetensors").is_file())
 tok = Path("/root/.cache/huggingface/token")
 print("token de escrita presente:", tok.is_file())

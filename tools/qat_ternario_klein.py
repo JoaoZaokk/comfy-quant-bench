@@ -537,6 +537,8 @@ def main() -> int:
                    help="checkpoint de OUTRA corrida: carrega mestre + estado do otimizador, mas zera o "
                         "contador de passos e a ordem dos exemplos (mesma semente de embaralhamento). "
                         "Serve para REPETIR a mesma sequencia de exemplos a partir de pesos ja treinados.")
+    p.add_argument("--congela-resto", action="store_true",
+                   help="treina SO o corpo ternario; os tensores fora dele (densos, norms) ficam os do professor")
     p.add_argument("--lr-denso", type=float, default=None,
                    help="lr dos tensores FORA do corpo ternario (modulacao, embedders, normas); padrao = --lr")
     p.add_argument("--l1-corpo", type=float, default=0.0,
@@ -706,10 +708,17 @@ def main() -> int:
     # lr como TENSOR no grupo: o torchao da VM (2026-09-24) nao converte o lr de um grupo passado em
     # dict e o `step()` morre com "lr was changed to a non-Tensor object"; o 0.18 local converte em
     # `add_param_group`, por isso o smoke local passou. Tensor funciona nos dois.
-    opt = cria_otimizador(a.otim, [{"params": corpo_params, "lr": torch.tensor(a.lr, dtype=torch.float32)},
-                                   {"params": denso_params, "lr": torch.tensor(a.lr_denso, dtype=torch.float32)}],
-                          a.lr)
-    log(f"lr corpo {a.lr:g}, lr denso {a.lr_denso:g}, L1 corpo lambda {a.l1_corpo:g}")
+    grupos = [{"params": corpo_params, "lr": torch.tensor(a.lr, dtype=torch.float32)}]
+    if a.congela_resto:
+        # Transplantes de 24/09: corpo do b4d + resto ORIGINAL faz cena sem o atrator, e o atrator mora no
+        # resto treinado. Aqui o resto nem entra no otimizador: fica byte a byte o do professor.
+        for v in denso_params:
+            v.requires_grad_(False)
+    else:
+        grupos.append({"params": denso_params, "lr": torch.tensor(a.lr_denso, dtype=torch.float32)})
+    opt = cria_otimizador(a.otim, grupos, a.lr)
+    log(f"lr corpo {a.lr:g}, lr denso {'CONGELADO' if a.congela_resto else f'{a.lr_denso:g}'}, "
+        f"L1 corpo lambda {a.l1_corpo:g}")
     passo = 0
     ck = a.dir / "ckpt" / "ultimo.pt"
     if hf is not None:
@@ -875,7 +884,7 @@ def main() -> int:
     final = a.dir / "aluno_ternario_diffusers.safetensors"
     exporta(aluno, corpo, a.grupo, final,
             {"quantizado_por": "tools/qat_ternario_klein.py", "otim": a.otim, "passos": passo,
-             "grupo": a.grupo, "lr": a.lr, "lr_denso": a.lr_denso, "l1_corpo": a.l1_corpo,
+             "grupo": a.grupo, "lr": a.lr, "lr_denso": a.lr_denso, "congela_resto": a.congela_resto, "l1_corpo": a.l1_corpo,
              "format": "pt"})
     if hf is not None:
         hf.avulso(final, "final/aluno_ternario_diffusers.safetensors")
