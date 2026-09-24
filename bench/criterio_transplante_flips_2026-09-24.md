@@ -118,3 +118,21 @@ T3_ctrl = corpo do controle p3024 + resto original; T3_p9191 = idem com o p9191 
 - **S1 [JULGAMENTO]:** T3_ctrl faz cena em ≥ 5/10 células da grade principal. Refutada se ≤ 2/10 —
   aí o dado Parti estragou o CORPO também, e "o eixo é o dado" volta a valer para o corpo.
 - **S2:** T3_p9191 ≤ T3_ctrl (mais passos no dado Parti não melhora o corpo).
+
+## Resultado do passo 3 (13:20; `render_transp_ctrl/`, `generaliza_transp_ctrl/`; C0 ok nos dois)
+
+Escala por grupo quase parada também no controle (mediana 1,0000 no p3024, 1,0041 no p9191).
+Julgamento meu, célula a célula contra o BF16:
+- **T3_ctrl (corpo do controle p3024 + resto original):** a colagem SOME e a cena aparece por baixo, com um
+  estilhaçado de mosaico muito mais forte que o do T3_b4d. Grade principal: vila ×2, jarro de vidro com
+  chá ×2, maçã ×2 reconhecíveis; filhote s11 fraco, s12 não; placa não → **6/10 com defeito pesado.**
+  **S1 confirmada no limite** (≥ 5/10), mas a qualidade é muito abaixo do T3_b4d. Generalização: sopa e olho
+  reconhecíveis, garça (brejo), bonde (estação) e quadrados parciais; o resto é estilhaço (controle inteiro: ~0).
+- **T3_p9191:** estilhaço quase puro, 0–1/10 (vila com luzes, textura de folhas). **S2 confirmada.**
+
+**Leitura.** O dado Parti mexe nas duas partes, de formas diferentes: (1) o RESTO treinado aprende o
+atrator (a colagem do controle some quando ele sai — a mesma coisa que no b4d, só que mais forte); (2) o
+CORPO do controle carrega cena, mas pior que o do b4d, e piora com mais passos no Parti (p9191 quase só
+estilhaço). O "colapso" do controle é, na maior parte, o resto; a degradação lenta é o corpo.
+Consequência de desenho: treinar o corpo com o resto CONGELADO (lr_denso = 0) — no dado curado e no Parti —
+é o braço que separa as duas coisas durante o treino, e o T3 prevê que o curado dá cena sem atrator.
