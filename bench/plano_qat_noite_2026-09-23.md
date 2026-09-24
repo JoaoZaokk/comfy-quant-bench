@@ -318,3 +318,4 @@ Horários: o log da VM é UTC; a máquina local é UTC−3. Abaixo, hora LOCAL.
   (124 prompts × 2 sementes, 4000 passos, lr 1e-5, professor próprio) com 124 PartiPrompts SORTEADOS
   (fora do holdout e da grade) no lugar dos curados. Renderiza como b4d ⇒ o eixo é repetição/épocas;
   colagem ⇒ o eixo é conteúdo. Um segundo, mais caro: os 1.756 com 2 sementes até ~2 épocas (~56 mil passos).
+- 08:30 b5 p4000 (fim): holdout 0,331 (b4d 0,330), holdout_rel 0,526 (b4d 0,526, mesmo holdout), sens 0,562 (b4d 0,598 — abaixo nas 8 de 8 avaliações), holdout_cruz_rel 0,548, códigos 2,05%. Fila FIM 11:22 UTC; final e melhor confirmados no HF; `colab stop -s qat-a100b` e `colab sessions` vazio. Render/epsilon do b5 esperam a 3090 (o dono está testando outros modelos; gate `.scratch/gpu_livre`). Relatório 22→24/09: https://claude.ai/artifact/JXVGDMQcRSB4ED6SJWeoVM
