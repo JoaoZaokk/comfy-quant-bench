@@ -32,6 +32,8 @@ BRACOS = {
     "base2": ("gemma_3_12B_it_heretic_w4a8.safetensors", "ltx-2.3_text_projection_bf16.safetensors"),
     "int8": ("gemma_3_12B_it_heretic_w4a8_embint8.safetensors", "ltx-2.3_text_projection_int8.safetensors"),
     "fp8": ("gemma_3_12B_it_heretic_w4a8_embfp8.safetensors", "ltx-2.3_text_projection_fp8.safetensors"),
+    # referencia de verdade: o Gemma BF16 de onde o W4A8 saiu (23,5 GB; nao cabe inteiro na 3090 com a projecao)
+    "bf16": ("gemma_3_12B_it_heretic.safetensors", "ltx-2.3_text_projection_bf16.safetensors"),
     # decomposicao: uma peca quantizada de cada vez
     "emb_int8": ("gemma_3_12B_it_heretic_w4a8_embint8.safetensors", "ltx-2.3_text_projection_bf16.safetensors"),
     "proj_int8": ("gemma_3_12B_it_heretic_w4a8.safetensors", "ltx-2.3_text_projection_int8.safetensors"),
@@ -101,6 +103,7 @@ def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--device", default="1", help="indice fisico da placa (CUDA_VISIBLE_DEVICES)")
     p.add_argument("--bracos", nargs="+", default=None, help="subconjunto (base e sempre incluido)")
+    p.add_argument("--ref", default="base", help="braco contra o qual comparar (base = producao, bf16 = original)")
     p.add_argument("--out-dir", type=Path, default=ROOT / "bench" / "te_residuos")
     p.add_argument("--teto-gib", type=float, default=None,
                    help="teto de ocupacao do BenchGuard (padrao dele: 2 GiB por placa). Subir so' quando a "
@@ -117,7 +120,7 @@ def main() -> int:
         if guarda.refused:
             print("recusado:", guarda.refused)
             return 1
-        escolhidos = ["base"] + [b for b in (args.bracos or BRACOS) if b != "base"]
+        escolhidos = list(dict.fromkeys([args.ref, "base"] + [b for b in (args.bracos or BRACOS)]))
         for braco in escolhidos:
             g, pj = BRACOS[braco]
             out = str(args.out_dir / braco)
@@ -131,13 +134,13 @@ def main() -> int:
             rel[braco] = json.loads(linha[-1])
 
     import torch
-    base = torch.load(args.out_dir / "base.pt")
+    ref = torch.load(args.out_dir / f"{args.ref}.pt")
     for braco in BRACOS:
-        if braco == "base" or braco not in rel:
+        if braco == args.ref or braco not in rel:
             continue
-        rel[braco]["vs_base"] = compara(torch.load(args.out_dir / f"{braco}.pt"), base)
-        print(braco, "vs base", rel[braco]["vs_base"])
-    (args.out_dir / ("resumo.json" if args.bracos is None else f"resumo_{'_'.join(args.bracos)}.json")).write_text(json.dumps(rel, indent=2), encoding="utf-8")
+        rel[braco][f"vs_{args.ref}"] = compara(torch.load(args.out_dir / f"{braco}.pt"), ref)
+        print(braco, f"vs {args.ref}", rel[braco][f"vs_{args.ref}"])
+    (args.out_dir / ("resumo.json" if args.bracos is None else f"resumo_{'_'.join(args.bracos)}_ref-{args.ref}.json")).write_text(json.dumps(rel, indent=2), encoding="utf-8")
     return 0
 
 

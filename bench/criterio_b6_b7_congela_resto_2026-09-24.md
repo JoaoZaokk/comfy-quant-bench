@@ -59,3 +59,26 @@ grao e epsilon pior), nao de remover a sede do atrator. K2 (b7) segue valendo co
 
 Nao coberto: uma semente de embaralhamento; atrator contado por mim nas folhas; b6 x b4d nao sao
 renders pareados de mesma execucao (b4d vem de `render_b4d`, mesmo protocolo e sementes).
+
+## Resultado b7 — medido 24/09 20:58 (`.scratch/render_b7.sh`)
+
+K0 passou (69/69 do resto identicos ao BF16). Folhas: `bench/qat_klein/render_b7/folha_grade.png` e
+`bench/qat_klein/avaliacao_fixa/render_b7/folha_fixa.png` (BF16 | b7 | controle p3024 | T3_ctrl | b6;
+o controle da grade vem de `render_dois`, mesmo protocolo e sementes).
+
+- **K2 confirmada [JULGAMENTO meu].** O b7 fica acima do controle p3024: a colagem grande (bone,
+  forma curva de madeira/branca) domina quase toda celula do controle e aparece menos no b7, que
+  tem cenas reconhecivel na grade (filhote, vila a noite 2/2, maca 2/2; ~7/10 contra ~4/10 do
+  controle). E fica abaixo do b6 (sopa, guitarrista, raposa, navio legiveis no b6, colados no b7).
+  O atrator branco ainda aparece no b7. Nenhuma das duas refutacoes vale: b7 nao empata com o b6, e
+  nao faz colagem em <= 2/10.
+- **Epsilon mente de novo.** 8 sementes: b7 0,5397 (o MELHOR de todos), b6 0,5516, controle 0,5567,
+  T3_ctrl 0,6150, braco0_ptq 1,0592. O b7 vence o b6 no epsilon e perde no render.
+
+**Leitura das duas rodadas juntas.** Congelar o resto nao remove o atrator (b6 = b4d); trocar o dado
+para Parti com o resto congelado fica entre os dois (b7 entre controle e b6). O dado Parti degrada
+o corpo mesmo sem o resto treinado; o resto treinado piora mais (controle abaixo do b7). Nada disto e
+separavel pelo epsilon ou pelo holdout_rel (b7 0,516 e o melhor holdout da noite).
+
+Nao coberto: uma semente de embaralhamento por braco; contagens feitas por mim nas folhas; controle
+p3024 e b7 diferem em passos de treino so' por coincidencia de receita (3000 cada).

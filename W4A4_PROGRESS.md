@@ -6104,3 +6104,23 @@ entrada da projecao; qualidade de render (so' condicionamento); prompts neutros.
 
 **Recomendacao:** projecao FP8 + embedding INT8 ou FP8 (empatam, 1,0%). Par `fp8` pronto: 7,68 GiB,
 -2,0 GiB. Render para julgamento do dono: pendente.
+
+**Render do Eros (mesmo grafo e seed do ultimo I2V do dono, so' os dois arquivos do TE trocados; saidas
+`Eros/teste_te_{base,fp8,int8}`), comparado numericamente sem exibir quadro nem audio**
+(`.scratch/teste_te_eros_mede.py`, 361 quadros a 256 px; log-mel 64 bandas a 16 kHz):
+
+```
+par                    PSNR medio  1o quarto  ultimo quarto  min    log-mel L1   rms audio
+base x render anterior   138 (identico, pipeline deterministico: piso = 0)
+fp8  x base              28,5       34,9        28,7          19,0     0,116     0,0122 x 0,0101
+int8 x base              20,6       27,4        19,3          13,1     0,344     0,0085 x 0,0101
+(dois videos de prompts diferentes: PSNR 12,2, log-mel 0,69 -- a escala de "nada a ver")
+```
+
+O TE FP8/INT8 coube inteiro na 3080 Ti (`loaded completely; 7855 MB`, contra 8377 + 1540 em offload
+do par de producao). O FP8 nao reproduz o video: diverge devagar ao longo do tempo (34,9 -> 28,7 dB),
+e uma amostra vizinha, nao a mesma. O INT8 diverge o triplo no audio, coerente com os 16% no
+condicionamento. **Qualidade (qual dos tres e melhor ou pior) e julgamento do dono, olhando.**
+Tempo nao comparavel: 16:44 / 11:32 / 14:50 em ordem, com o primeiro pagando carga fria, e o contador
+`lowvram patches` do descarregamento parcial CRESCE 1599 -> 3198 -> 4797 a cada execucao -- hipotese a
+conferir: acumulo de patches (LoRA) entre execucoes, que tornaria a terceira mais lenta por si so'.
