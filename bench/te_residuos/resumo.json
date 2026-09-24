@@ -1,0 +1,94 @@
+{
+  "_teto_gib": 3.5,
+  "_placa": "0",
+  "base": {
+    "model_size_gib": 9.693617198616266,
+    "camadas": {
+      "gemma3_12b.transformer.model.embed_tokens": "Parameter",
+      "text_embedding_projection.audio_aggregate_embed": "Parameter",
+      "text_embedding_projection.video_aggregate_embed": "Parameter"
+    },
+    "tempo_ms": [
+      555.4599000024609,
+      511.07990000309655,
+      515.6317999935709
+    ],
+    "pico_vram_gib": 11.190871238708496,
+    "carregado_gib": 9.693617198616266
+  },
+  "base2": {
+    "model_size_gib": 9.693617198616266,
+    "camadas": {
+      "gemma3_12b.transformer.model.embed_tokens": "Parameter",
+      "text_embedding_projection.audio_aggregate_embed": "Parameter",
+      "text_embedding_projection.video_aggregate_embed": "Parameter"
+    },
+    "tempo_ms": [
+      546.5853999994579,
+      509.03660000039963,
+      519.7007999959169
+    ],
+    "pico_vram_gib": 11.190871238708496,
+    "carregado_gib": 9.693617198616266,
+    "vs_base": {
+      "video": {
+        "rel": 0.0,
+        "cos_min_token": 0.9999997615814209
+      },
+      "audio": {
+        "rel": 0.0,
+        "cos_min_token": 1.0000001192092896
+      }
+    }
+  },
+  "int8": {
+    "model_size_gib": 7.680227930657566,
+    "camadas": {
+      "gemma3_12b.transformer.model.embed_tokens": "QuantizedTensor",
+      "text_embedding_projection.audio_aggregate_embed": "QuantizedTensor",
+      "text_embedding_projection.video_aggregate_embed": "QuantizedTensor"
+    },
+    "tempo_ms": [
+      526.737599997432,
+      485.83810000127414,
+      491.207500002929
+    ],
+    "pico_vram_gib": 9.178214073181152,
+    "carregado_gib": 7.680227930657566,
+    "vs_base": {
+      "video": {
+        "rel": 0.16292503304368122,
+        "cos_min_token": 0.9758837223052979
+      },
+      "audio": {
+        "rel": 0.1639110248473266,
+        "cos_min_token": 0.9750916361808777
+      }
+    }
+  },
+  "fp8": {
+    "model_size_gib": 7.679228247143328,
+    "camadas": {
+      "gemma3_12b.transformer.model.embed_tokens": "QuantizedTensor",
+      "text_embedding_projection.audio_aggregate_embed": "QuantizedTensor",
+      "text_embedding_projection.video_aggregate_embed": "QuantizedTensor"
+    },
+    "tempo_ms": [
+      616.8270999987726,
+      575.5722999965656,
+      578.4646999964025
+    ],
+    "pico_vram_gib": 9.977334022521973,
+    "carregado_gib": 7.679228247143328,
+    "vs_base": {
+      "video": {
+        "rel": 0.01725968036820911,
+        "cos_min_token": 0.9984297752380371
+      },
+      "audio": {
+        "rel": 0.021113734967136547,
+        "cos_min_token": 0.9987679123878479
+      }
+    }
+  }
+}

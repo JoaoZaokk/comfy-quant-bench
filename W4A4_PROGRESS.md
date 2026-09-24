@@ -6063,3 +6063,44 @@ A licenca da cadeia e a **LTX-2 Community License Agreement** (2026-01-05), lida
 `10Eros_v1.4_DMD_int8_convrot` que mora no proprio repo do 10Eros -- o README do 10Eros nao declara
 licenca nenhuma e linka aprovando tres quants de terceiros. **Publicar e decisao do dono**; nada subiu
 nesta janela.
+
+## Parte 55 -- 2026-09-24 (noite): residuos BF16 do text encoder LTX em INT8/FP8 -- a projecao INT8 falha so' no encode real
+
+**Pedido do dono:** quantizar o que ainda estava em BF16 no text encoder do Eros (Gemma W4A8 + projecao)
+para caber inteiro na 3080 Ti. Medido no cabecalho: Gemma W4A8 7,53 GiB, dos quais **1,88 GiB sao a
+embedding BF16**; projecao `ltx-2.3_text_projection_bf16` **2,15 GiB BF16** (video 4096x188160, audio
+2048x188160). Total carregado 9,69 GiB -- casa com os 9.917 MB do log do ComfyUI.
+
+Ferramentas novas: `tools/quant_te_residuos.py` (so' embedding/projecao, resto copiado byte a byte,
+contrato de `_conversion.py`), `tools/probe_te_residuos.py` (carga CPU pelos ops reais),
+`tools/probe_te_residuos_encode.py` (encode real, `load_clip([gemma, projecao], LTXV)`, um processo por
+braco, base rodado duas vezes). Saidas ao lado das fontes, com sidecar: `gemma_..._w4a8_emb{int8,fp8}`
+em `text_encoders`, `ltx-2.3_text_projection_{int8,fp8}` em `P:/ComfyBench/checkpoints` (e de la' que o
+no le; as duas copias BF16 tem o mesmo SHA-256).
+
+**Armadilha pega antes de gravar:** `_conversion.header_dtype` grava fp8 como U8 (certo para escalas,
+que `pop_scale` faz `.view`), mas o PESO passa por `weight.to(float8)` no loader -- um U8 viraria
+conversao numerica. O peso fp8 sai com `F8_E4M3` no header.
+
+Encode real, 3090, 3 prompts (um longo com fala), contra o par de producao; base x base2 = **0,0** (piso):
+
+```
+braco        carregado  pico VRAM  tempo(ms)   erro video  erro audio  cos min/token
+base          9,69 GiB  11,19 GiB   511-555        --          --          --
+int8          7,68      9,18        486-527      16,3%       16,4%       0,975
+fp8           7,68      9,98        576-617       1,7%        2,1%       0,998
+emb_int8      (so' embedding)                     1,0%        1,2%       0,999
+emb_fp8       (so' embedding)                     1,0%        1,2%       0,999
+proj_int8     (so' projecao)                     16,3%       16,4%       0,975
+proj_fp8      (so' projecao)                      1,5%        1,8%       1,000
+```
+
+**A projecao INT8 e a culpada, e so' com entrada real.** Com entrada gaussiana na CUDA, pelos mesmos
+ops, a INT8 e MAIS fiel que a FP8 (1,3-1,7% contra 2,7-3,8%), e o kernel INT8 com escala por linha da'
+o mesmo erro em CPU e CUDA (0,8%). Hipotese (nao medida aqui): a entrada real sao 49 camadas do Gemma
+normalizadas, com canais de valor enorme; o INT8 por linha tem erro ABSOLUTO uniforme na linha, que
+esses canais multiplicam, e o FP8 tem erro RELATIVO por elemento. Nao coberto: distribuicao real da
+entrada da projecao; qualidade de render (so' condicionamento); prompts neutros.
+
+**Recomendacao:** projecao FP8 + embedding INT8 ou FP8 (empatam, 1,0%). Par `fp8` pronto: 7,68 GiB,
+-2,0 GiB. Render para julgamento do dono: pendente.
