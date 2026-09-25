@@ -67,3 +67,44 @@ Consequência para o QAT: candidato a precisão mista é fluxo txt dos double (6
 single 10-19 (1.227 M, 33%). Não medido: H1+H4 juntos, e esses grupos em 4 bits em vez de BF16.
 
 Não coberto: uma semente na fixa; julgamento meu; um grupo por vez; attn x MLP não separados.
+
+## Rodada 2 — H1+H4 juntos, em BF16 e em 4 bits (escrito 25/09, antes de montar)
+
+- **H14:** b6 com fluxo txt dos double + single 10-19 devolvidos ao BF16 (40 matrizes, 1.840 M, ~50% do corpo).
+- **H14q4:** os mesmos 40 grupos em 4 bits RTN simulado: absmax simétrico, grupo 32 no eixo K, níveis
+  -7..7, dequantizado para BF16 no arquivo (mede qualidade, não tamanho; sem calibração, sem treino).
+  O resto continua o ternário do b6.
+
+Previsões:
+- **Q1:** H14 junta os ganhos de H1 (identidade/atributo) e H4 (desenho, letras, menos atrator):
+  zebra listrada E coerente, navio monocromático E sem respingo. Refutada se H14 ficar igual ao
+  melhor dos dois sozinho.
+- **Q2:** H14q4 fica perto de H14 (4 bits RTN g32 costuma custar pouco em peso de difusão). Refutada
+  se H14q4 perder a identidade/atributo que H14 ganhou (volta a leão/colorido) em ≥ 3 das 4 células
+  marcadas (zebra, navio, pavão, moinho).
+
+Tamanho se valer, estimado: 40 grupos a 4,5 bits efetivos ~1,0 GB + 60 ternários a ~2 bits ~0,5 GB +
+resto BF16, contra 7,75 GB do BF16 do transformer. Estimativa, não medida.
+
+### Resultado rodada 2 — renderizado 25/09 11:09-11:18 (`.scratch/restauracao_r2.sh`)
+
+Folhas: `bench/qat_klein/avaliacao_fixa/render_rest2/folha_fixa.png` e `bench/qat_klein/render_rest2/folha_grade.png`
+(BF16 | b6 | H1 | H4 | H14 | H14q4).
+
+- **Q1 confirmada, e acima da soma.** H14 não é "H1 + H4": é outro patamar. Garça é garça, sopa de tomate
+  vista de cima com manjericão (a composição do BF16), guitarrista com guitarra coerente, raposa em
+  aquarela limpa, navio a lápis monocromático e sem respingo, moinho low-poly com pás, bonde na rua,
+  filhote e bule de vidro na grade, maçã vermelha. O que sobra: zebra listrada mas ainda com uma forma
+  branca atrás (atrator residual), letras quase certas ("SAALE", "ORANK"), pavão branco, maçã duplicada
+  numa semente.
+- **Q2 confirmada.** H14q4 (40 matrizes em 4 bits RTN g32, sem calibração) é praticamente indistinguível
+  do H14 em todas as 20 células: nenhuma célula perde identidade ou atributo.
+
+Tamanho estimado do misto (não medido, não empacotado): 1.840 M em 4 bits a ~4,5 bits efetivos ≈ 1,03 GB;
+1.840 M ternários a ~2,1 bits empacotados ≈ 0,49 GB; resto BF16 (~0,19 B params) ≈ 0,39 GB; **≈ 1,9 GB**
+contra 7,75 GB do BF16. Um corpo inteiro em 4 bits RTN daria ≈ 2,5 GB -- o ternário da metade economiza
+~0,55 GB a mais, e ainda não se sabe se o corpo todo em 4 bits já fica igual (controle C1 pendente).
+
+Controles pendentes para a conclusão valer: **C1** corpo inteiro em 4 bits RTN g32 (sem ternário);
+**C2** H14q4 com a metade ternária vinda do PTQ ingênuo (braco0) em vez do b6 -- diz se o QAT da
+metade ternária importa.

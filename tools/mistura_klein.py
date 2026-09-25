@@ -15,6 +15,20 @@ import struct
 from pathlib import Path
 
 BLOCO = 64 << 20
+DT = {"BF16": "bfloat16", "F16": "float16", "F32": "float32"}
+
+
+def rtn4(raw: bytes, dtype: str, shape: list[int], grupo: int) -> bytes:
+    import torch
+    t = torch.frombuffer(bytearray(raw), dtype=getattr(torch, DT[dtype])).reshape(shape).float()
+    n, k = t.shape
+    if k % grupo:
+        raise SystemExit(f"K={k} nao divisivel pelo grupo {grupo}")
+    g = t.reshape(n, k // grupo, grupo)
+    s = g.abs().amax(dim=-1, keepdim=True).clamp_min(1e-12) / 7
+    q = (g / s).round().clamp(-7, 7) * s
+    out = q.reshape(n, k).to(getattr(torch, DT[dtype])).contiguous()
+    return out.view(torch.uint8).numpy().tobytes() if dtype != "F32" else out.numpy().tobytes()
 
 
 def cabecalho(p: Path):
@@ -32,6 +46,9 @@ def main() -> int:
     a.add_argument("--regex", required=True)
     a.add_argument("--saida", type=Path, required=True)
     a.add_argument("--esperadas", type=int, help="recusa se o regex casar outro numero de tensores")
+    a.add_argument("--rtn4", type=int, metavar="GRUPO",
+                   help="quantiza os tensores do doador em 4 bits RTN simulado (absmax simetrico, -7..7, "
+                        "grupo no eixo K) e grava dequantizado no dtype original")
     args = a.parse_args()
 
     hb, meta, base_b = cabecalho(args.base)
@@ -51,7 +68,8 @@ def main() -> int:
     ordem = sorted(hb, key=lambda k: hb[k]["data_offsets"][0])
     novo, off = {}, 0
     if meta is not None:
-        novo["__metadata__"] = dict(meta, mistura_doador=args.doador.name, mistura_regex=args.regex)
+        novo["__metadata__"] = dict(meta, mistura_doador=args.doador.name, mistura_regex=args.regex,
+                                    **({"mistura_rtn4_grupo": str(args.rtn4)} if args.rtn4 else {}))
     for k in ordem:
         tam = hb[k]["data_offsets"][1] - hb[k]["data_offsets"][0]
         novo[k] = {"dtype": hb[k]["dtype"], "shape": hb[k]["shape"], "data_offsets": [off, off + tam]}
@@ -69,6 +87,11 @@ def main() -> int:
                 ini, fim = h[k]["data_offsets"]
                 fonte.seek(base + ini)
                 resta = fim - ini
+                if args.rtn4 and k in do_doador:
+                    dados = rtn4(fonte.read(resta), h[k]["dtype"], h[k]["shape"], args.rtn4)
+                    assert len(dados) == resta, k
+                    out.write(dados)
+                    continue
                 while resta:
                     pedaco = fonte.read(min(BLOCO, resta))
                     if not pedaco:
