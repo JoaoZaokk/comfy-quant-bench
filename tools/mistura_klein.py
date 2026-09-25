@@ -18,15 +18,16 @@ BLOCO = 64 << 20
 DT = {"BF16": "bfloat16", "F16": "float16", "F32": "float32"}
 
 
-def rtn4(raw: bytes, dtype: str, shape: list[int], grupo: int) -> bytes:
+def rtn4(raw: bytes, dtype: str, shape: list[int], grupo: int, bits: int = 4) -> bytes:
     import torch
     t = torch.frombuffer(bytearray(raw), dtype=getattr(torch, DT[dtype])).reshape(shape).float()
     n, k = t.shape
     if k % grupo:
         raise SystemExit(f"K={k} nao divisivel pelo grupo {grupo}")
     g = t.reshape(n, k // grupo, grupo)
-    s = g.abs().amax(dim=-1, keepdim=True).clamp_min(1e-12) / 7
-    q = (g / s).round().clamp(-7, 7) * s
+    lv = 2 ** (bits - 1) - 1  # 4 bits -> -7..7, 3 bits -> -3..3, 2 bits -> -1..1
+    s = g.abs().amax(dim=-1, keepdim=True).clamp_min(1e-12) / lv
+    q = (g / s).round().clamp(-lv, lv) * s
     out = q.reshape(n, k).to(getattr(torch, DT[dtype])).contiguous()
     return out.view(torch.uint8).numpy().tobytes() if dtype != "F32" else out.numpy().tobytes()
 
@@ -49,6 +50,8 @@ def main() -> int:
     a.add_argument("--rtn4", type=int, metavar="GRUPO",
                    help="quantiza os tensores do doador em 4 bits RTN simulado (absmax simetrico, -7..7, "
                         "grupo no eixo K) e grava dequantizado no dtype original")
+    a.add_argument("--bits", type=int, default=4, choices=(2, 3, 4, 5, 6, 8),
+                   help="bits do RTN simulado de --rtn4 (niveis simetricos +-(2^(b-1)-1))")
     args = a.parse_args()
 
     hb, meta, base_b = cabecalho(args.base)
@@ -69,7 +72,7 @@ def main() -> int:
     novo, off = {}, 0
     if meta is not None:
         novo["__metadata__"] = dict(meta, mistura_doador=args.doador.name, mistura_regex=args.regex,
-                                    **({"mistura_rtn4_grupo": str(args.rtn4)} if args.rtn4 else {}))
+                                    **({"mistura_rtn_grupo": str(args.rtn4), "mistura_rtn_bits": str(args.bits)} if args.rtn4 else {}))
     for k in ordem:
         tam = hb[k]["data_offsets"][1] - hb[k]["data_offsets"][0]
         novo[k] = {"dtype": hb[k]["dtype"], "shape": hb[k]["shape"], "data_offsets": [off, off + tam]}
@@ -88,7 +91,7 @@ def main() -> int:
                 fonte.seek(base + ini)
                 resta = fim - ini
                 if args.rtn4 and k in do_doador:
-                    dados = rtn4(fonte.read(resta), h[k]["dtype"], h[k]["shape"], args.rtn4)
+                    dados = rtn4(fonte.read(resta), h[k]["dtype"], h[k]["shape"], args.rtn4, args.bits)
                     assert len(dados) == resta, k
                     out.write(dados)
                     continue
