@@ -1,24 +1,10 @@
-"""Celula (colab exec): para a fila e o braco em curso, e mostra o fim do log de cada braco que ja' rodou.
-Usa pgrep + os.kill (um `pkill -f` dentro de `bash -lc` mata o proprio shell -- registrado)."""
-import os
-import signal
+"""Celula (colab exec): para a fila de QAT e o braco em curso (SIGTERM, depois SIGKILL), sem apagar nada."""
 import subprocess
 import time
-from pathlib import Path
-
-r = subprocess.run(["pgrep", "-f", "qat_ternario_klein.py"], capture_output=True, text=True)
-pids = [int(x) for x in r.stdout.split() if int(x) != os.getpid()]
-for p in pids:
-    try:
-        os.kill(p, signal.SIGTERM)
-    except ProcessLookupError:
-        pass
-time.sleep(5)
-vivos = subprocess.run(["pgrep", "-f", "qat_ternario_klein.py"], capture_output=True, text=True).stdout.split()
-print(f"parados {pids}; ainda vivos {vivos}")
-for d in sorted(Path("/content").glob("qat_b*")):
-    log = d / "qat.log"
-    if log.is_file():
-        linhas = log.read_text(errors="replace").splitlines()
-        print(f"===== {log} ({len(linhas)} linhas) =====")
-        print("\n".join(linhas[-45:]))
+for sinal in ("-TERM", "-KILL"):
+    for padrao in ("fila_qat_ternario_klein.py", "qat_ternario_klein.py"):
+        subprocess.run(["pkill", sinal, "-f", padrao])
+    time.sleep(8)
+vivos = subprocess.run(["pgrep", "-af", "qat_ternario_klein"], capture_output=True, text=True).stdout.strip()
+print("vivos:", vivos or "nenhum")
+print(subprocess.run(["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader"], capture_output=True, text=True).stdout.strip())

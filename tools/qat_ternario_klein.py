@@ -172,8 +172,30 @@ def le_prompts(p: Path) -> list[str]:
             if ln.strip() and not ln.startswith("#")]
 
 
+def _ganchos_estat(tr, por_passo: list) -> list:
+    """Pre-hooks em todo nn.Linear do transformer: a cada chamada (passo) anota, por camada, mínimo, média,
+    máximo e mediana da ENTRADA. Mediana de uma amostra fixa de ~1M valores (a exata custaria mais que o
+    próprio passo); mín/média/máx exatos. Os valores ficam em tensores até o fim do shard (sem .item())."""
+    alcas = []
+
+    def fab(nome):
+        def gancho(_m, args):
+            x = args[0].detach()
+            v = x.reshape(-1)
+            passo_ = max(1, v.numel() // 1_000_000)
+            amostra = v[::passo_].float()
+            por_passo[-1][nome] = torch.stack([v.min().float(), v.float().mean(), v.max().float(),
+                                               amostra.median()])
+        return gancho
+
+    for nome, m in tr.named_modules():
+        if isinstance(m, torch.nn.Linear):
+            alcas.append(m.register_forward_pre_hook(fab(nome)))
+    return alcas
+
+
 def grava_professor(a, raiz: Path, prompts: list[str], destino: Path, dev, imagens: bool = False,
-                    ao_gravar=None) -> None:
+                    ao_gravar=None, estat: bool = False) -> None:
     """Um shard por (prompt, semente): {"comum": kw que não muda entre passos, "passos": [...]}.
 
     `imagens=True` também decodifica a imagem final e grava `p####_s#.png` ao lado (o transformer é
@@ -198,7 +220,11 @@ def grava_professor(a, raiz: Path, prompts: list[str], destino: Path, dev, image
     orig = tr.forward
     atual: list = []
 
+    por_passo: list = []
+    alcas = _ganchos_estat(tr, por_passo) if estat else []
+
     def espia(*args, **kw):
+        por_passo.append({})
         out = orig(*args, **kw)
         saida = out[0] if isinstance(out, tuple) else getattr(out, "sample", out)
         atual.append(({k: v for k, v in kw.items()}, saida.detach().to("cpu").clone()))
@@ -208,6 +234,7 @@ def grava_professor(a, raiz: Path, prompts: list[str], destino: Path, dev, image
     t0 = time.perf_counter()
     for j, (i, p, s) in enumerate(faltam):
         atual.clear()
+        por_passo.clear()
         with torch.no_grad():
             res = pipe(prompt=p, height=a.size, width=a.size, num_inference_steps=a.passos,
                        guidance_scale=1.0, generator=torch.Generator(device="cpu").manual_seed(s),
@@ -225,16 +252,22 @@ def grava_professor(a, raiz: Path, prompts: list[str], destino: Path, dev, image
             passos.append({"kw": varia, "out": out})
         arq = destino / f"p{i:04d}_s{s}.pt"
         tmp = arq.with_suffix(".pt.partial")
-        torch.save({"prompt": p, "semente": s, "comum": comum, "passos": passos}, tmp)
+        extra = {}
+        if estat:
+            # [passo][camada] -> [minimo, medio, maximo, mediana] da entrada da camada
+            extra["estat"] = [{k: [round(float(x), 6) for x in v.cpu()] for k, v in d.items()} for d in por_passo]
+        torch.save({"prompt": p, "semente": s, "comum": comum, "passos": passos, **extra}, tmp)
         os.replace(tmp, arq)
         if imagens:
             res.images[0].save(arq.with_suffix(".png"))
         if ao_gravar is not None:
-            ao_gravar(i, p, s, arq)
+            ao_gravar(i, p, s, arq, extra.get("estat"))
         if j == 0 or (j + 1) % 16 == 0 or j == len(faltam) - 1:
             log(f"  professor {j + 1}/{len(faltam)}  {len(atual)} chamadas  "
                 f"{(time.perf_counter() - t0) / (j + 1):.1f} s/shard")
     tr.forward = orig
+    for h in alcas:
+        h.remove()
     pipe.to("cpu")
     del pipe, tr
     torch.cuda.empty_cache()

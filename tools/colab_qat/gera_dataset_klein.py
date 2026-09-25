@@ -5,7 +5,10 @@ baixar (ou streamar) em vez de regravar a cada VM. Por amostra (prompt, semente)
 
     professor/<chave>.pt   o shard do professor (o mesmo formato de `grava_professor`: comum + 8 passos)
     images/<chave>.png     a imagem final do professor (diffusers, 8 passos, guidance 1)
-    metadata.jsonl         uma linha por amostra: chave, prompt, semente, passos, size, lista, arquivos
+    metadata.jsonl         uma linha por amostra: chave, prompt, semente, passos, size, lista, arquivos e
+                           `camadas`: por nn.Linear, mínimo / médio / máximo / mediana da ENTRADA nos 8 passos
+                           (mínimo e máximo dos 8, médio = média das médias, mediana = mediana das medianas;
+                           cada mediana vem de uma amostra fixa de ~1M valores). Por passo, no shard (`estat`).
 
 `<chave>` = sha1(prompt)[:16] + `_s<semente>_n<passos>_<size>` -- a MESMA de `cache_professor` do
 `qat_ternario_klein.py --professor-hf`, então o QAT reaproveita direto.
@@ -117,23 +120,30 @@ def main() -> None:
     for lst in cfg["listas"]:
         prompts = qk.le_prompts(Q / lst["arquivo"])
         for s in lst["sementes"]:
-            faltam = [p for p in prompts if chave(p, s) not in remotos and chave(p, s) not in meta]
+            # sem a coluna `camadas` conta como faltando (amostras gravadas antes das estatísticas)
+            faltam = [p for p in prompts if "camadas" not in meta.get(chave(p, s), {})]
             qk.log(f"lista {lst['nome']} semente {s}: {len(prompts)} prompts, {len(faltam)} a gravar")
             if not faltam:
                 continue
             a.sementes = [s]
             destino = BASE / f"{lst['nome']}_s{s}"
 
-            def ao_gravar(i, p, sem, arq, _lst=lst["nome"]):
+            def ao_gravar(i, p, sem, arq, estat, _lst=lst["nome"]):
                 c = chave(p, sem)
+                camadas = {}
+                for nome in (estat[0] if estat else {}):
+                    vals = [e[nome] for e in estat if nome in e]
+                    meds = sorted(v[3] for v in vals)
+                    camadas[nome] = {"minimo": min(v[0] for v in vals), "medio": sum(v[1] for v in vals) / len(vals),
+                                     "maximo": max(v[2] for v in vals), "mediana": meds[len(meds) // 2]}
                 lote.append((c, arq, {"chave": c, "prompt": p, "semente": sem, "passos": PASSOS, "size": SIZE,
                                       "lista": _lst, "file_name": f"images/{c}.png",
-                                      "shard": f"professor/{c}.pt"}))
+                                      "shard": f"professor/{c}.pt", "camadas": camadas}))
                 if len(lote) >= 64:
                     fila.put(list(lote))
                     lote.clear()
 
-            qk.grava_professor(a, raiz, faltam, destino, dev, imagens=True, ao_gravar=ao_gravar)
+            qk.grava_professor(a, raiz, faltam, destino, dev, imagens=True, ao_gravar=ao_gravar, estat=True)
     if lote:
         fila.put(list(lote))
         lote.clear()

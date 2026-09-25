@@ -29,3 +29,25 @@ Avaliação: K0; render da avaliação fixa (10) e da grade (5 x 11 12) contra B
 
 Não coberto: uma semente de embaralhamento por braço; julgamento meu; o formato continua simulado
 (BF16 com valores de 4 bits), sem arquivo 4 bits nativo.
+
+## Desvio 25/09 ~14:45 local — b8 parado no passo 1000; fila trocada (escrito antes dos novos braços)
+
+b8 (int4, pesos inteiros, lr 1e-5, 124 x 2): passo 0 holdout_rel 0,2315 / sens 0,990; passo 500 0,3897 /
+0,641; passo 1000 0,3795 / 0,703; perda de treino 0,15-0,22 contra 0,067 de holdout no passo 0. **Z1
+refutada**: o treino afasta o aluno do professor, inclusive nos exemplos de treino (não é overfit, é o
+otimizador). Hipóteses: escala por absmax do grupo move os 32 valores quando o maior peso se mexe; Adam com
+lr 1e-5 e lote 1 anda ~lr por peso por passo mesmo com gradiente ruidoso; o ponto de partida já é quase
+ótimo. O "melhor" da ferramenta ignora o passo 0 (regra do ternário) -- aqui o melhor é o passo 0.
+
+Fila nova, professor reaproveitado de /content/qat_b8 (mesmo dado 124 x 2 + holdout), 2000 passos, holdout
+a cada 250, resto congelado:
+
+| braço | o que treina | lr | pergunta |
+|---|---|---|---|
+| b10 | int4 g32, SÓ as escalas (`--so-escalas`, códigos do RTN congelados) | 1e-6 | refino sem mexer na grade melhora o int4? |
+| b11 | ternário g128, SÓ as escalas (códigos do PTQ ingênuo congelados) | 1e-5 | só escala conserta o ternário? |
+| b9 | int4 g32, pesos inteiros | 1e-6 | lr 10x menor ainda estraga? |
+
+Previsões: **Z3:** b10 fica com holdout_rel ≤ 0,2315 em todo holdout (não piora) e cai um pouco. **Z4:** b11
+não sai do ruído no render (só 29 M escalas contra código errado), mesmo que o holdout_rel caia.
+**Z5:** b9 piora menos que o b8, mas ainda sobe acima de 0,2315.
