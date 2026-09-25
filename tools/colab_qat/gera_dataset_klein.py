@@ -49,18 +49,29 @@ def chave(p: str, s: int) -> str:
 remotos = {f.split("/", 1)[1].rsplit(".", 1)[0] for f in api.list_repo_files(REPO, repo_type="dataset")
            if f.startswith("professor/")}
 meta: dict[str, dict] = {}
-try:
-    for ln in Path(hf_hub_download(REPO, "metadata.jsonl", repo_type="dataset")).read_text().splitlines():
-        if ln.strip():
-            r = json.loads(ln)
-            meta[r["chave"]] = r
-except Exception:  # noqa: BLE001 -- repo novo
-    pass
+
+
+def rele_meta() -> None:
+    """Junta o metadata do repo ao local. Chamado antes de cada lista: outra VM pode estar gerando em
+    paralelo (dividindo as sementes), e o que ela já subiu não deve ser gravado de novo aqui."""
+    try:
+        txt = Path(hf_hub_download(REPO, "metadata.jsonl", repo_type="dataset", force_download=True)).read_text()
+    except Exception:  # noqa: BLE001 -- repo novo
+        return
+    with trava:
+        for ln in txt.splitlines():
+            if ln.strip():
+                r = json.loads(ln)
+                if "camadas" in r or r["chave"] not in meta:
+                    meta[r["chave"]] = r
+
+
+trava = threading.Lock()
+rele_meta()
 qk.log(f"dataset {REPO}: {len(remotos)} amostras ja no repo, {len(meta)} linhas de metadata")
 
 fila: queue.Queue = queue.Queue()
 lote: list = []
-trava = threading.Lock()
 
 
 def sobe_lote(itens) -> None:
@@ -72,6 +83,7 @@ def sobe_lote(itens) -> None:
         os.link(arq, stg / "professor" / f"{c}.pt")
         if arq.with_suffix(".png").is_file():
             os.link(arq.with_suffix(".png"), stg / "images" / f"{c}.png")
+    rele_meta()  # nao apagar do metadata o que a outra VM subiu desde a ultima leitura
     with trava:
         for c, _, linha in itens:
             meta[c] = linha
@@ -120,6 +132,7 @@ def main() -> None:
     for lst in cfg["listas"]:
         prompts = qk.le_prompts(Q / lst["arquivo"])
         for s in lst["sementes"]:
+            rele_meta()
             # sem a coluna `camadas` conta como faltando (amostras gravadas antes das estatísticas)
             faltam = [p for p in prompts if "camadas" not in meta.get(chave(p, s), {})]
             qk.log(f"lista {lst['nome']} semente {s}: {len(prompts)} prompts, {len(faltam)} a gravar")
