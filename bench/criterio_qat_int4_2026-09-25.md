@@ -67,3 +67,21 @@ exigidas para "melhora".
 - **Z3 confirmada:** só escalas não piora e melhora um pouco o número (holdout e epsilon).
 - **Z2 confirmada:** no render, o professor-aluno em 4 bits não muda nada que se veja; o C1 já estava no teto.
   Resposta ao dono: com só as escalas, melhora o número (~10%) e não a imagem; com os pesos inteiros (b8), piora.
+
+## Resultado b11 (ternário PTQ, SÓ escalas, lr 1e-5) — 25/09 ~16:49 local
+
+K0 passou (69/69). Holdout: passo 0 1,0951 / sens 0,157 -> 250 0,751 -> 500 0,650 -> 1000 0,590 -> 1500 0,569 ->
+2000 **0,557 / sens 0,681** (ainda caindo no fim). Epsilon fora da amostra, 8 sementes: **b11 0,549, b6 0,552**,
+braco0_ptq 1,059.
+
+Render (`bench/qat_klein/avaliacao_fixa/render_b11/folha_fixa.png`, `bench/qat_klein/render_b11/folha_grade.png`,
+colunas BF16 | b11 | b6): **mesmo patamar do b6**, com o mesmo tipo de defeito (zebra, pavão e moinho
+quiméricos), e melhor em algumas células: navio a lápis monocromático (o b6 colore), maçã única (o b6 faz
+quimera), sopa mais perto do BF16, menos do respingo branco do atrator.
+
+- **Z4 refutada.** Eu previ que só escala (29 M parâmetros, 1 por grupo de 128) não tiraria o PTQ do ruído.
+  Tirou, e chegou onde o b6 chegou treinando os 3,68 B pesos -- sem trocar um código.
+- **O que isso muda.** O Bonsai troca 2,7 M sinais, e a leitura de 21/09 foi "treinaram os códigos". Aqui, com
+  os códigos do PTQ intactos, a escala sozinha já faz o trabalho que os braços com código treinado faziam. O
+  transplante T1/T2 (códigos do PTQ + escalas do b4d = bege) não contradiz: aquelas escalas eram de outro código.
+- **Pendente:** o b11 ainda melhorava no passo 2000; escala + H14q4 (os 2 grupos em 4 bits) é o misto óbvio.
