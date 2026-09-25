@@ -6124,3 +6124,20 @@ condicionamento. **Qualidade (qual dos tres e melhor ou pior) e julgamento do do
 Tempo nao comparavel: 16:44 / 11:32 / 14:50 em ordem, com o primeiro pagando carga fria, e o contador
 `lowvram patches` do descarregamento parcial CRESCE 1599 -> 3198 -> 4797 a cada execucao -- hipotese a
 conferir: acumulo de patches (LoRA) entre execucoes, que tornaria a terceira mais lenta por si so'.
+
+**Contra o Gemma BF16 original** (`gemma_3_12B_it_heretic.safetensors` + projecao BF16; 24,85 GiB,
+parte em offload na 3090, 1,9 s por encode), mesmos 3 prompts, `--ref bf16`:
+
+```
+braco                        video    audio    cos min/token
+producao (W4A8 + proj BF16)  4,9 %    5,5 %    0,987
+FP8 (emb FP8 + proj FP8)     5,1 %    5,9 %    0,988
+so' embedding FP8            4,9 %    5,5 %    0,988
+so' projecao FP8             5,1 %    5,8 %    0,987
+INT8 (emb + proj INT8)      16,8 %   17,1 %    0,972
+```
+
+O custo esta no corpo W4A8 (4,9 %); o residuo FP8 soma ~0,3 ponto por cima (erros quase
+independentes: raiz(4,9^2 + 1,7^2) = 5,2). Promover camadas do W4A8 para 8 bits so' pode mexer nesses
+4,9 %, a um custo de ate +4,4 GiB (tudo em 8 bits); por tipo: MLP +1,15 GiB por matriz, q/o +0,31,
+k/v +0,15. Qual camada rende mais e medicao por camada, ainda nao feita.

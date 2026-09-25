@@ -25,8 +25,6 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-TE = ROOT / "ComfyUI" / "models" / "text_encoders"
-CK = Path("P:/ComfyBench/checkpoints")
 BRACOS = {
     "base": ("gemma_3_12B_it_heretic_w4a8.safetensors", "ltx-2.3_text_projection_bf16.safetensors"),
     "base2": ("gemma_3_12B_it_heretic_w4a8.safetensors", "ltx-2.3_text_projection_bf16.safetensors"),
@@ -54,9 +52,13 @@ FILHO = r'''
 import json, statistics, sys, time
 sys.path.insert(0, "ComfyUI"); sys.argv = ["main.py"]
 import comfy.options; comfy.options.enable_args_parsing()
-import torch, comfy.sd
+import torch, comfy.sd, folder_paths, utils.extra_config
 from comfy_kitchen.tensor.base import QuantizedTensor
+utils.extra_config.load_extra_path_config("ComfyUI/extra_model_paths.yaml")
 G, P, PROMPTS, OUT = %(G)r, %(P)r, json.loads(%(PROMPTS)r), %(OUT)r
+# resolvidos como o no resolve: text_encoder em text_encoders, projecao em checkpoints
+G = folder_paths.get_full_path_or_raise("text_encoders", G)
+P = folder_paths.get_full_path_or_raise("checkpoints", P)
 clip = comfy.sd.load_clip(ckpt_paths=[G, P], clip_type=comfy.sd.CLIPType.LTXV)
 rep = {"model_size_gib": clip.patcher.model_size() / 2**30}
 alvo = {n: type(m.weight).__name__ for n, m in clip.cond_stage_model.named_modules()
@@ -124,7 +126,7 @@ def main() -> int:
         for braco in escolhidos:
             g, pj = BRACOS[braco]
             out = str(args.out_dir / braco)
-            src = FILHO % {"G": str(TE / g), "P": str(CK / pj), "PROMPTS": json.dumps(PROMPTS), "OUT": out}
+            src = FILHO % {"G": g, "P": pj, "PROMPTS": json.dumps(PROMPTS), "OUT": out}
             r = subprocess.run([sys.executable, "-s", "-c", src], cwd=ROOT, env=env,
                                capture_output=True, text=True)
             linha = [x for x in r.stdout.splitlines() if x.startswith("{")]
