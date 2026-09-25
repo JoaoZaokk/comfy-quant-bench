@@ -51,3 +51,19 @@ a cada 250, resto congelado:
 Previsões: **Z3:** b10 fica com holdout_rel ≤ 0,2315 em todo holdout (não piora) e cai um pouco. **Z4:** b11
 não sai do ruído no render (só 29 M escalas contra código errado), mesmo que o holdout_rel caia.
 **Z5:** b9 piora menos que o b8, mas ainda sobe acima de 0,2315.
+
+## Resultado b10 (int4, só escalas, lr 1e-6) — 25/09 ~16:08 local
+
+K0 passou (69/69). Holdout: passo 0 0,2315 -> passo 250 **0,2098** (melhor) -> 500 0,2103 -> 750 0,2119 -> 1000
+0,2140, parada antecipada no 1000 (3 avaliações sem melhorar); sens 0,99 -> 0,93-0,96. Exportado o do passo 250.
+Epsilon fora da amostra, 8 sementes, pareado contra o C1 (o mesmo int4 sem treino): **b10 0,1989 contra 0,2207,
+10% menor, vence 8/8, 7,2x o erro-padrão.**
+
+Render (`bench/qat_klein/avaliacao_fixa/render_b10/folha_fixa.png`, `bench/qat_klein/render_b10/folha_grade.png`,
+colunas BF16 | C1 | b10): **indistinguíveis** a olho. b10 um pouco mais perto do BF16 no bonde (tamanho) e no
+filhote s12 (pose); mais longe no "OPEN" s12 (letras brancas em vez de coloridas). Bem abaixo das 3/10 células
+exigidas para "melhora".
+
+- **Z3 confirmada:** só escalas não piora e melhora um pouco o número (holdout e epsilon).
+- **Z2 confirmada:** no render, o professor-aluno em 4 bits não muda nada que se veja; o C1 já estava no teto.
+  Resposta ao dono: com só as escalas, melhora o número (~10%) e não a imagem; com os pesos inteiros (b8), piora.
