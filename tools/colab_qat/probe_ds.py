@@ -1,4 +1,4 @@
-"""Probe do supervisor para o QAT do klein (contrato do `probe_background_job.py` do frankestein).
+"""Probe do supervisor para o GERADOR DO DATASET do klein (contrato do `probe_background_job.py` do frankestein).
 
 Executado por `colab exec` a cada 4 min pelo `colab_job_supervisor.py`: alem de observar, e' a
 execucao REAL de kernel que impede o Colab de podar a VM ociosa. Fail-closed: processo morto sem
@@ -12,14 +12,14 @@ FALHA = re.compile(r"Traceback|CUDA (?:error|out of memory)|OutOfMemory|Killed|M
                    r"ABORTANDO|FALHOU|AssertionError|RuntimeError|RECUSADO|pip rc=[1-9]", re.I)
 FIM = re.compile(r"FIM\s+\d{2}:\d{2}:\d{2}\b")
 
-d = Path(json.loads(Path("/content/qat/config.json").read_text())["dir"])
-log = d / "qat.log"
+d = Path("/content/ds")
+log = d / "ds.log"
 tail = ""
 if log.is_file():
     with log.open("rb") as h:
         h.seek(0, 2); n = h.tell(); h.seek(max(0, n - 32768))
         tail = h.read().decode("utf-8", "replace")
-vivo = subprocess.run(["pgrep", "-f", "[q]at_ternario_klein.py"], stdout=subprocess.DEVNULL).returncode == 0
+vivo = subprocess.run(["pgrep", "-f", "[g]era_dataset_klein.py"], stdout=subprocess.DEVNULL).returncode == 0
 jr = d / "journal.jsonl"
 ult = jr.read_text().strip().splitlines()[-1] if jr.is_file() and jr.stat().st_size else ""
 p = {"alive": vivo, "ultimo_journal": ult, "log_tail": "\n".join(tail.splitlines()[-15:])}

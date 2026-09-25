@@ -137,6 +137,34 @@ def instala_ste(modelo: torch.nn.Module, corpo: set[str], grupo: int, dtype_calc
     return n
 
 
+def instala_escalas(modelo: torch.nn.Module, corpo: set[str], grupo: int, dtype_calc) -> int:
+    """Modo `--so-escalas`: congela o código de cada Linear do corpo no arredondamento do BF16 e treina SÓ
+    uma escala por grupo (parâmetro `_esc`, inicializado na escala ótima L2). O peso original fica
+    congelado e só é usado com STE_LIGADO=False (referência BF16 do sens). Refino pós-quantização: a grade
+    não se move, só o tamanho do degrau de cada grupo."""
+    n = 0
+    for nome, m in modelo.named_modules():
+        if isinstance(m, torch.nn.Linear) and f"{nome}.weight" in corpo:
+            with torch.no_grad():
+                cod, esc = codigo_e_escala(m.weight, grupo)
+            m.register_buffer("_cod", cod, persistent=False)
+            m._esc = torch.nn.Parameter(esc.float())
+            m.weight.requires_grad_(False)
+
+            def fwd(x, _m=m):
+                if STE_LIGADO:
+                    nn_, kk = _m._cod.shape
+                    w = (_m._cod.float().view(nn_, kk // grupo, grupo) * _m._esc).view(nn_, kk)
+                else:
+                    w = _m.weight
+                w = w.to(dtype_calc)
+                b = None if _m.bias is None else _m.bias.to(dtype_calc)
+                return F.linear(x.to(dtype_calc), w, b)
+            m.forward = fwd
+            n += 1
+    return n
+
+
 # ----------------------------------------------------------------------------------------- professor
 
 def le_prompts(p: Path) -> list[str]:
@@ -144,8 +172,13 @@ def le_prompts(p: Path) -> list[str]:
             if ln.strip() and not ln.startswith("#")]
 
 
-def grava_professor(a, raiz: Path, prompts: list[str], destino: Path, dev) -> None:
+def grava_professor(a, raiz: Path, prompts: list[str], destino: Path, dev, imagens: bool = False,
+                    ao_gravar=None) -> None:
     """Um shard por (prompt, semente): {"comum": kw que não muda entre passos, "passos": [...]}.
+
+    `imagens=True` também decodifica a imagem final e grava `p####_s#.png` ao lado (o transformer é
+    chamado igual; só o VAE roda a mais). `ao_gravar(i, prompt, semente, arq_pt)` é chamado depois de
+    cada shard (o gerador do dataset usa para subir em lotes).
 
     O `encoder_hidden_states` do klein é um tap de 3 camadas do Qwen3 (7680 de largura) e é o MESMO
     tensor nos 8 passos de uma chamada: guardar uma vez por chamada corta ~7x o disco."""
@@ -176,9 +209,9 @@ def grava_professor(a, raiz: Path, prompts: list[str], destino: Path, dev) -> No
     for j, (i, p, s) in enumerate(faltam):
         atual.clear()
         with torch.no_grad():
-            pipe(prompt=p, height=a.size, width=a.size, num_inference_steps=a.passos,
-                 guidance_scale=1.0, generator=torch.Generator(device="cpu").manual_seed(s),
-                 output_type="latent")
+            res = pipe(prompt=p, height=a.size, width=a.size, num_inference_steps=a.passos,
+                       guidance_scale=1.0, generator=torch.Generator(device="cpu").manual_seed(s),
+                       output_type="pil" if imagens else "latent")
         kw0 = atual[0][0]
         comum = {k: (v.detach().to("cpu").clone() if torch.is_tensor(v) else v)
                  for k, v in kw0.items()
@@ -194,6 +227,10 @@ def grava_professor(a, raiz: Path, prompts: list[str], destino: Path, dev) -> No
         tmp = arq.with_suffix(".pt.partial")
         torch.save({"prompt": p, "semente": s, "comum": comum, "passos": passos}, tmp)
         os.replace(tmp, arq)
+        if imagens:
+            res.images[0].save(arq.with_suffix(".png"))
+        if ao_gravar is not None:
+            ao_gravar(i, p, s, arq)
         if j == 0 or (j + 1) % 16 == 0 or j == len(faltam) - 1:
             log(f"  professor {j + 1}/{len(faltam)}  {len(atual)} chamadas  "
                 f"{(time.perf_counter() - t0) / (j + 1):.1f} s/shard")
@@ -553,14 +590,22 @@ def salva_ckpt(pasta: Path, aluno, treinaveis, opt, passo: int, extra: dict) -> 
         f"{time.perf_counter() - t0:.0f} s")
 
 
-def exporta(aluno, corpo: set[str], grupo: int, saida: Path, meta: dict) -> None:
-    """safetensors em nomenclatura diffusers: corpo = ternário desempacotado bf16, resto = mestre bf16."""
+def exporta(aluno, corpo: set[str], grupo: int, saida: Path, meta: dict, escalas: bool = False) -> None:
+    """safetensors em nomenclatura diffusers: corpo = ternário desempacotado bf16, resto = mestre bf16.
+    Com `escalas` (modo --so-escalas) o corpo é código congelado x escala aprendida."""
     from safetensors.torch import save_file
     sd = {}
+    mods = dict(aluno.named_modules()) if escalas else {}
     with torch.no_grad():
         for k, v in aluno.state_dict().items():
+            if k.endswith("._esc"):
+                continue
             v = v.detach()
-            if k in corpo:
+            if k in corpo and escalas:
+                m = mods[k[:-len(".weight")]]
+                nn_, kk = m._cod.shape
+                v = (m._cod.float().view(nn_, kk // grupo, grupo) * m._esc).view(nn_, kk)
+            elif k in corpo:
                 v = ternariza(v.float(), grupo)
             sd[k] = v.to("cpu", torch.bfloat16).contiguous()
     tmp = saida.with_suffix(saida.suffix + ".partial")
@@ -587,6 +632,9 @@ def main() -> int:
                    help="exemplos por passo, concatenados (nao acumulacao): mesmo ruido de gradiente "
                         "de acumular, mas usa a placa melhor se couber")
     p.add_argument("--grupo", type=int, default=128)
+    p.add_argument("--so-escalas", action="store_true",
+                   help="congela o codigo do corpo no arredondamento do BF16 e treina SO uma escala por grupo "
+                        "(implica --congela-resto)")
     p.add_argument("--professor-hf", default=None, metavar="REPO",
                    help="repo de DADOS no HF que guarda os shards do professor entre VMs (baixa antes, sobe depois)")
     p.add_argument("--formato", choices=["ternario", "int4"], default="ternario",
@@ -687,10 +735,14 @@ def main() -> int:
         print(f"RECUSADO: {len(corpo)} pesos de corpo e {n_ste} Linear trocados -- algum peso de "
               f"corpo nao e nn.Linear.", file=sys.stderr)
         return 2
+    if a.so_escalas:
+        instala_escalas(aluno, corpo, a.grupo, torch.bfloat16)
+        a.congela_resto = True
     if not a.sem_grad_ckpt:
         aluno.enable_gradient_checkpointing()
     aluno.train()
-    treinaveis = list(aluno.named_parameters())
+    treinaveis = ([(k, v) for k, v in aluno.named_parameters() if k.endswith("._esc")] if a.so_escalas
+                  else list(aluno.named_parameters()))
     n_par = sum(v.numel() for _, v in treinaveis)
     n_corpo = sum(v.numel() for k, v in treinaveis if k in corpo)
     log(f"aluno: {n_par:,} params treinaveis, corpo ternario {n_corpo:,} em {n_ste} Linear, "
@@ -777,6 +829,12 @@ def main() -> int:
 
     denso_params = [v for k, v in treinaveis if k not in corpo]
     corpo_params = [v for k, v in treinaveis if k in corpo]
+    if a.so_escalas:
+        # o "corpo" treinavel sao as escalas; todo o resto (inclusive os pesos originais) fica congelado
+        corpo_params, denso_params = [v for _, v in treinaveis], []
+        for k, v in aluno.named_parameters():
+            if not k.endswith("._esc"):
+                v.requires_grad_(False)
     # lr como TENSOR no grupo: o torchao da VM (2026-09-24) nao converte o lr de um grupo passado em
     # dict e o `step()` morre com "lr was changed to a non-Tensor object"; o 0.18 local converte em
     # `add_param_group`, por isso o smoke local passou. Tensor funciona nos dois.
@@ -862,7 +920,7 @@ def main() -> int:
         r["sens_piso"] = piso
         if passo_atual > 0 and hr < melhor["holdout_rel"] and sens >= piso:
             saida = a.dir / f"melhor_p{passo_atual}.safetensors"
-            exporta(aluno, corpo, a.grupo, saida,
+            exporta(aluno, corpo, a.grupo, saida, escalas=a.so_escalas, meta=
                     {"quantizado_por": "tools/qat_ternario_klein.py", "formato": a.formato, "passo": passo_atual,
                      "holdout_rel": hr, "sens": sens, "lr": a.lr, "lr_denso": a.lr_denso,
                      "l1_corpo": a.l1_corpo, "format": "pt"})
@@ -954,9 +1012,9 @@ def main() -> int:
         hf.t.join()
     aluno.eval()
     final = a.dir / "aluno_ternario_diffusers.safetensors"
-    exporta(aluno, corpo, a.grupo, final,
+    exporta(aluno, corpo, a.grupo, final, escalas=a.so_escalas, meta=
             {"quantizado_por": "tools/qat_ternario_klein.py", "formato": a.formato, "otim": a.otim, "passos": passo,
-             "grupo": a.grupo, "lr": a.lr, "lr_denso": a.lr_denso, "congela_resto": a.congela_resto, "l1_corpo": a.l1_corpo,
+             "grupo": a.grupo, "lr": a.lr, "lr_denso": a.lr_denso, "congela_resto": a.congela_resto, "so_escalas": a.so_escalas, "l1_corpo": a.l1_corpo,
              "format": "pt"})
     if hf is not None:
         hf.avulso(final, "final/aluno_ternario_diffusers.safetensors")
