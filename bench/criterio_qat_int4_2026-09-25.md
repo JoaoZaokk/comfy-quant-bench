@@ -85,3 +85,14 @@ quimera), sopa mais perto do BF16, menos do respingo branco do atrator.
   os códigos do PTQ intactos, a escala sozinha já faz o trabalho que os braços com código treinado faziam. O
   transplante T1/T2 (códigos do PTQ + escalas do b4d = bege) não contradiz: aquelas escalas eram de outro código.
 - **Pendente:** o b11 ainda melhorava no passo 2000; escala + H14q4 (os 2 grupos em 4 bits) é o misto óbvio.
+
+## Resultado b9 (int4, pesos inteiros, lr 1e-6) — 25/09 ~20:13 VM
+
+Holdout: passo 0 0,2315 -> 250 **0,2188** (melhor) -> 500 0,2214 -> 750 0,2244 -> 1000 0,2241, parada antecipada;
+sens 0,99 -> 0,91-0,94; códigos trocados 0,56% no 250, 1,36% no 1000. **Z5 refutada:** com lr 10x menor os
+pesos inteiros não estragam -- melhoram um pouco no começo e escorregam depois, como o b10, mas o melhor do b9
+(0,2188) fica atrás do melhor do b10 (0,2098). O que estragou o b8 foi o lr, não o professor-aluno. Render não
+feito: no b10, com holdout melhor, o render já saiu indistinguível do C1.
+
+**Fechamento do int4 (b8, b9, b10):** o professor-aluno ajuda o int4 só no número, e só com passo pequeno;
+só escalas é o melhor dos três e o mais barato (13,9 GiB, 1,03 s/passo contra 22,8 GiB e 1,64 s/passo).
