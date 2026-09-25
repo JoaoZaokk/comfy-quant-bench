@@ -80,12 +80,21 @@ def pilhas_reais(nomes) -> set[str]:
     return {n for n, i in ind.items() if len(i) >= 2}
 
 
+# Níveis do código: 1 = ternário (absmean, o do braço 0 e do Bonsai); 7 = INT4 simétrico (absmax/7,
+# o mesmo RTN do controle C1 de 25/09). Definido em main() por --formato; a escala é sempre a ótima L2
+# por grupo dado o código.
+NIVEIS = 1
+
+
 def codigo_e_escala(w: torch.Tensor, grupo: int):
-    """(código int8 [n, k], escala fp32 [n, k//grupo, 1]). Mesma receita do braço 0."""
+    """(código int8 [n, k], escala fp32 [n, k//grupo, 1]). Ternário: mesma receita do braço 0."""
     n, k = w.shape
     g = w.float().reshape(n, k // grupo, grupo)
-    d = g.abs().mean(dim=2, keepdim=True).clamp(min=1e-30)
-    t = (g / d).clamp(-1, 1).round()
+    if NIVEIS == 1:
+        d = g.abs().mean(dim=2, keepdim=True).clamp(min=1e-30)
+    else:
+        d = (g.abs().amax(dim=2, keepdim=True) / NIVEIS).clamp(min=1e-30)
+    t = (g / d).clamp(-NIVEIS, NIVEIS).round()
     num = (g * t).sum(dim=2, keepdim=True)
     den = (t * t).sum(dim=2, keepdim=True)
     s = torch.where(den > 0, num / den, torch.zeros_like(num))
@@ -379,6 +388,61 @@ def estatistica_codigos(aluno, corpo_mods, cod0: dict, cod_ant: dict, grupo: int
             "codigos_total": tot}
 
 
+def cache_professor(a, prompts: list[str], destino: Path, sentido: str) -> None:
+    """Reaproveita shards do professor entre VMs via um repo de DADOS no HF (`--professor-hf`).
+
+    O shard depende so' do professor (o BF16), do prompt, da semente, de --passos e de --size -- nao do
+    aluno nem do formato. No repo a chave e' o CONTEUDO do prompt, nao o indice (o mesmo prompt tem
+    indices diferentes em prompts_treino_124.txt e no Parti): `professor/<sha1[:16]>_s<sem>_n<passos>_<size>.pt`.
+    `sentido="baixa"` traz o que existir antes de gravar; `"sobe"` envia o que o repo ainda nao tem."""
+    if not a.professor_hf:
+        return
+    import hashlib
+    import shutil
+    import tempfile
+    from huggingface_hub import HfApi, snapshot_download
+    api = HfApi()
+    repo = a.professor_hf
+    api.create_repo(repo, repo_type="dataset", private=not a.hf_publico, exist_ok=True)
+    remotos = {f.split("/", 1)[1] for f in api.list_repo_files(repo, repo_type="dataset")
+               if f.startswith("professor/")}
+    chave = {(i, s): f"{hashlib.sha1(p.encode('utf-8')).hexdigest()[:16]}_s{s}_n{a.passos}_{a.size}.pt"
+             for i, p in enumerate(prompts) for s in a.sementes}
+    destino.mkdir(parents=True, exist_ok=True)
+    t0 = time.perf_counter()
+    if sentido == "baixa":
+        falta = {k: c for k, c in chave.items()
+                 if c in remotos and not (destino / f"p{k[0]:04d}_s{k[1]}.pt").is_file()}
+        if not falta:
+            log(f"professor-hf: nada a baixar para {destino.name} ({len(remotos)} no repo)")
+            return
+        tmp = Path(tempfile.mkdtemp(dir=destino.parent))
+        snapshot_download(repo, repo_type="dataset", local_dir=str(tmp), max_workers=16,
+                          allow_patterns=[f"professor/{c}" for c in falta.values()])
+        for (i, s), c in falta.items():
+            os.replace(tmp / "professor" / c, destino / f"p{i:04d}_s{s}.pt")
+        shutil.rmtree(tmp, ignore_errors=True)
+        log(f"professor-hf: {len(falta)} shards baixados para {destino.name} em {time.perf_counter() - t0:.0f} s")
+    else:
+        novos = {k: c for k, c in chave.items()
+                 if c not in remotos and (destino / f"p{k[0]:04d}_s{k[1]}.pt").is_file()}
+        if not novos:
+            return
+        tmp = Path(tempfile.mkdtemp(dir=destino.parent))
+        for (i, s), c in novos.items():
+            os.link(destino / f"p{i:04d}_s{s}.pt", tmp / c)
+        tam = sum((tmp / c).stat().st_size for c in novos.values())
+        try:
+            api.upload_folder(folder_path=str(tmp), path_in_repo="professor", repo_id=repo,
+                              repo_type="dataset", commit_message=f"{len(novos)} shards do professor")
+            log(f"professor-hf: {len(novos)} shards enviados ({tam / 2**30:.2f} GiB, "
+                f"{time.perf_counter() - t0:.0f} s) [MEDIDO]")
+        except Exception as e:  # noqa: BLE001 -- cache falho nao derruba o treino
+            log(f"professor-hf: envio NAO completou ({type(e).__name__}: {str(e)[:500]})")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
 class EmpurraHF:
     """Sobe o checkpoint para um repo PRIVADO do HF, numa thread, sem parar o treino.
 
@@ -523,6 +587,10 @@ def main() -> int:
                    help="exemplos por passo, concatenados (nao acumulacao): mesmo ruido de gradiente "
                         "de acumular, mas usa a placa melhor se couber")
     p.add_argument("--grupo", type=int, default=128)
+    p.add_argument("--professor-hf", default=None, metavar="REPO",
+                   help="repo de DADOS no HF que guarda os shards do professor entre VMs (baixa antes, sobe depois)")
+    p.add_argument("--formato", choices=["ternario", "int4"], default="ternario",
+                   help="codigo do corpo: ternario (absmean, -1..1) ou int4 (absmax/7, -7..7; use --grupo 32)")
     p.add_argument("--ckpt-min", type=float, default=25.0)
     p.add_argument("--log-cada", type=int, default=50)
     p.add_argument("--holdout-cada", type=int, default=500)
@@ -562,6 +630,8 @@ def main() -> int:
     a = p.parse_args()
     if a.lr_denso is None:
         a.lr_denso = a.lr
+    global NIVEIS
+    NIVEIS = 7 if a.formato == "int4" else 1
 
     dev = torch.device(f"cuda:{a.device}")
     raiz = Path(a.raiz)
@@ -578,8 +648,10 @@ def main() -> int:
     log(f"prompts: {len(tr_p)} treino, {len(ho_p)} holdout; sementes {a.sementes}; "
         f"{a.passos} passos a {a.size} px")
 
-    grava_professor(a, raiz, tr_p, a.dir / "professor", dev)
-    grava_professor(a, raiz, ho_p, a.dir / "professor_holdout", dev)
+    for lista, sub in ((tr_p, "professor"), (ho_p, "professor_holdout")):
+        cache_professor(a, lista, a.dir / sub, "baixa")
+        grava_professor(a, raiz, lista, a.dir / sub, dev)
+        cache_professor(a, lista, a.dir / sub, "sobe")
     if a.cruzado:
         # o holdout primeiro: e' pequeno e da' a metrica holdout_cruz_rel mesmo se o treino nao terminar
         grava_cruzado(a, raiz, a.dir / "professor_holdout", a.dir / "professor_holdout_cruzado", dev)
@@ -791,7 +863,7 @@ def main() -> int:
         if passo_atual > 0 and hr < melhor["holdout_rel"] and sens >= piso:
             saida = a.dir / f"melhor_p{passo_atual}.safetensors"
             exporta(aluno, corpo, a.grupo, saida,
-                    {"quantizado_por": "tools/qat_ternario_klein.py", "passo": passo_atual,
+                    {"quantizado_por": "tools/qat_ternario_klein.py", "formato": a.formato, "passo": passo_atual,
                      "holdout_rel": hr, "sens": sens, "lr": a.lr, "lr_denso": a.lr_denso,
                      "l1_corpo": a.l1_corpo, "format": "pt"})
             if hf is None:
@@ -883,7 +955,7 @@ def main() -> int:
     aluno.eval()
     final = a.dir / "aluno_ternario_diffusers.safetensors"
     exporta(aluno, corpo, a.grupo, final,
-            {"quantizado_por": "tools/qat_ternario_klein.py", "otim": a.otim, "passos": passo,
+            {"quantizado_por": "tools/qat_ternario_klein.py", "formato": a.formato, "otim": a.otim, "passos": passo,
              "grupo": a.grupo, "lr": a.lr, "lr_denso": a.lr_denso, "congela_resto": a.congela_resto, "l1_corpo": a.l1_corpo,
              "format": "pt"})
     if hf is not None:

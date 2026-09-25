@@ -4,8 +4,8 @@
  "professor_de": null,
  "bracos": [
   {
-   "nome": "b6",
-   "dir": "/content/qat_b6",
+   "nome": "b8",
+   "dir": "/content/qat_b8",
    "professor_de": null,
    "prompts": "prompts_treino_124.txt",
    "args": [
@@ -13,7 +13,7 @@
     "1",
     "2",
     "--max-passos",
-    "4000",
+    "2000",
     "--otim",
     "adamw8bit-sr",
     "--lote",
@@ -27,25 +27,31 @@
     "--lr",
     "1e-5",
     "--congela-resto",
+    "--formato",
+    "int4",
+    "--grupo",
+    "32",
     "--sens-tol",
     "0.3",
     "--parada-paciencia",
     "3",
+    "--hf-publico",
     "--push-hf",
-    "JoaoZaokk/klein4b-qat-b6",
-    "--hf-publico"
+    "JoaoZaokk/klein4b-qat-b8",
+    "--professor-hf",
+    "JoaoZaokk/klein4b-professor"
    ]
   },
   {
-   "nome": "b7",
-   "dir": "/content/qat_b7",
+   "nome": "b9",
+   "dir": "/content/qat_b9",
    "professor_de": null,
    "prompts": "prompts_treino.txt",
    "args": [
     "--sementes",
     "1",
     "--max-passos",
-    "3000",
+    "2000",
     "--otim",
     "adamw8bit-sr",
     "--lote",
@@ -59,13 +65,19 @@
     "--lr",
     "1e-5",
     "--congela-resto",
+    "--formato",
+    "int4",
+    "--grupo",
+    "32",
     "--sens-tol",
     "0.3",
     "--parada-paciencia",
     "3",
+    "--hf-publico",
     "--push-hf",
-    "JoaoZaokk/klein4b-qat-b7",
-    "--hf-publico"
+    "JoaoZaokk/klein4b-qat-b9",
+    "--professor-hf",
+    "JoaoZaokk/klein4b-professor"
    ]
   }
  ]
