@@ -6210,3 +6210,39 @@ agora grava RSS e memoria privada do processo do ComfyUI.
   RAM max 56,8 GiB, 13 min 41 s (era 18 min 37 s; uma amostra cada).
 - Workflow: `10Eros_v1.5_W4A8audioINT8_I2V_DMD_2gpu_semoffload_stream.json` (arquivo de UI nao aberto no navegador).
 - **Resta:** ~64 GB de memoria privada do ComfyUI fora do decode (pesos e copias na CPU); nao investigado.
+
+## Parte 59 -- 2026-09-26: ComfyUI 0.33.0 -> 0.37.4 e Qwen-Image-2.1 rodando (int8, W4A8 mixed, INT4 Nunchaku)
+
+Pedido do dono: backup, atualizar a instalacao principal, testar e consertar, baixar o Qwen-Image-2.1.
+- **Backup** `D:\COMFY_PORTABLE_BACKUP_2026-09-26_pre_v0.37.4`: bundle git com todas as refs (95,6 MB, verificado),
+  patch local (6.695 B, igual ao de 22/09), tar dos 59 nao rastreados, pip freeze, inventario dos 95 custom nodes.
+  Stash `locais_pre_v0.37.4_2026-09-26` mantido no checkout.
+- **Atualizacao:** fast-forward de `v0.33.0-19-gc1739380` para a tag **v0.37.4** (release estavel de 25/09, tem o
+  suporte ao 2.1 `6bfaacc6` e o conserto `4d7e61b7`; nao tem as otimizacoes posteriores da master). Pacotes:
+  comfy-kitchen 0.2.31 -> 0.2.35 (wheel do PyPI; o 0.2.31 instalado tambem era o do PyPI, hash igual), comfy-aimdo
+  0.4.13 -> 0.5.5, frontend 1.49.6 -> 1.52.7, templates 0.11.43 -> 0.11.69 (+4 subpacotes), docs 0.5.10 -> 0.5.12.
+  Dry-run antes: Torch/CUDA/numpy/transformers intocados; `pip check` limpo.
+- **Patches:** cli_args, symmetric_patchifier e sd1_clip reaplicaram limpo; ops.py e sd.py conflitaram (posicao) e
+  foram juntados a mao. O upstream agora libera o kernel quantizado so na geracao de texto (`use_quantized_matmul`,
+  commit `249c5a3b` "not on text enc"), entao o nosso desbloqueio do encoding continua necessario.
+  `patches/comfyui_text_encoder_quantized_math.patch` regenerado sobre a v0.37.4 (reverse-check passa).
+- **Testes:** CPU -- patchifier 2/2, preflight 40/40, proveniencia 9/9, conversores 20. Boot: mesmas 3 falhas de
+  import de antes, nenhuma nova. **Regressao GPU (Eros, grafo r2): saida IDENTICA a pre-atualizacao** (1a passada e
+  final PSNR infinito, audio com hash igual), 2a passada com carga completa, 88 s/passo, pico privado 57,5 GB.
+- **Achado:** do 0.34 em diante o ComfyUI esconde a 3080 Ti no Windows sem `CUDA_VISIBLE_DEVICES=0,1` (os `.bat` ja
+  definem; meus drivers nao definiam). O `roda_eros_2gpu.py` agora falha em erro de validacao em vez de marcar sucesso.
+- **Qwen-Image-2.1** (DiT 7,1 B, encoder Qwen3-VL-8B -- nao Qwen2.5-VL como dizia a nota de 22/09): baixados da
+  Comfy-Org VAE, encoder W4A8 e DiT int8_convrot (tamanhos conferidos). Template oficial, 1024^2, 25 passos, seed 42,
+  prompt do letreiro neon. `.scratch/qwen21_2026-09-26/`.
+
+      DiT                                  na placa   it/s   observacao (uma seed, olho)
+      int8_convrot (Comfy-Org)             6.921 MB   2,35   texto correto; referencia
+      mixed_balanced W4A8 (NidAll)         4.009 MB   2,05   texto correto; trajetoria diverge (gato/banco movidos)
+      int4 r128 SVDQuant (mesmertech)      ~4,6 GB    2,44   mesma composicao do int8; neon com contorno duplicado
+                                                             e franjas -- artefato visivel de 4 bits
+
+  O INT4 usa o formato proprio `qwen21-nunchaku-svdq-int4-v1`, cujo runtime publicado e uma imagem Docker. Novo no
+  `custom_nodes/comfy-qwen21-nunchaku` (stub em `ComfyUI/custom_nodes/`): monta o modelo NATIVO do ComfyUI em meta,
+  troca as 224 lineares pelo `SVDQW4A4Linear` do Nunchaku 1.2.1 instalado e carrega com strict; patcher move o
+  modelo inteiro. Funcionou na primeira execucao. Sem metrica contra BF16 ainda (o BF16 no disco esta em 2 shards
+  diffusers). O seu `.bat` de 8190 roda sem `--disable-dynamic-vram`; os testes daqui usaram a flag.

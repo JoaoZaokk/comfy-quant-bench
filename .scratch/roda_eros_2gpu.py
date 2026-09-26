@@ -58,7 +58,11 @@ def main():
         except Exception:
             time.sleep(5)
     t0 = time.time()
-    pid = req("/prompt", {"prompt": g})["prompt_id"]
+    resp = req("/prompt", {"prompt": g})
+    if resp.get("node_errors"):  # saida com erro de validacao e ignorada e o prompt "passa" sem rodar (26/09)
+        print("ERRO de validacao:", json.dumps(resp["node_errors"])[:3000], flush=True)
+        sys.exit(1)
+    pid = resp["prompt_id"]
     print(f"enviado {pid}", flush=True)
     with open(sys.argv[2], "w", newline="") as f:
         w = csv.writer(f); w.writerow(["t", "g0_mib", "g0_util", "g1_mib", "g1_util", "ram_gib", "commit_gib", "comfy_rss_gib", "comfy_priv_gib"])

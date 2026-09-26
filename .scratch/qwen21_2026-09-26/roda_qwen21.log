@@ -1,0 +1,18 @@
+lock TAKEN by comfy:qwen21_primeiro_render (heartbeat pid 78856)
+=== int8_s42 inicio 05:47:06 PM
+enviado 762ad89e-85ad-4e65-88ea-3709139e2cf0
+success em 185 s
+FIM
+=== int8_s42 fim 05:51:15 PM rc=0
+=== mixed_s42 inicio 05:51:15 PM
+enviado ab0680ea-a16b-429b-a10c-553411ee2aee
+success em 72 s
+FIM
+=== mixed_s42 fim 05:52:27 PM rc=0
+=== int4_s42 inicio 05:52:27 PM
+enviado 08e2c05c-ff03-4909-8bcc-5ec2a323f960
+success em 71 s
+FIM
+=== int4_s42 fim 05:53:39 PM rc=0
+lock RELEASED
+=== FIM qwen21 05:53:40 PM

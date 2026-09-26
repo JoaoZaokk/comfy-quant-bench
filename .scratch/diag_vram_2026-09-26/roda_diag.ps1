@@ -9,6 +9,7 @@ try {
     foreach ($v in $Variantes) {
         Write-Host "=== $v inicio $(Get-Date -Format T)"
         $env:COMFYUI_MGPU_DISABLED = '1'
+        $env:CUDA_VISIBLE_DEVICES = '0,1'  # ComfyUI 0.34+ esconde a 3080 Ti no Windows sem isto (26/09)
         $a = @('-s', "$D\lanca_comfy_diag.py", "$D\vram_$v.jsonl", '--', '--windows-standalone-build',
                '--use-sage-attention', '--disable-dynamic-vram', '--listen', '127.0.0.1', '--port', '8190')
         if ($v -match 'fp16') { $a += '--fp16-intermediates' }

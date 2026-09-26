@@ -1,5 +1,5 @@
 diff --git a/comfy/cli_args.py b/comfy/cli_args.py
-index c6660846..39df48ab 100644
+index ba89699d..cec3473c 100644
 --- a/comfy/cli_args.py
 +++ b/comfy/cli_args.py
 @@ -108,6 +108,8 @@ fpte_group.add_argument("--fp16-text-enc", action="store_true", help="Store text
@@ -12,10 +12,10 @@ index c6660846..39df48ab 100644
  
  parser.add_argument("--force-channels-last", action="store_true", help="Force channels last format when inferencing the models.")
 diff --git a/comfy/ops.py b/comfy/ops.py
-index ff64aad5..6e8f024c 100644
+index f4ac760c..5688384a 100644
 --- a/comfy/ops.py
 +++ b/comfy/ops.py
-@@ -1287,6 +1287,28 @@ def _quantized_weight_state_dict(module, sd, prefix, extra_quant_conf=None, extr
+@@ -1334,6 +1334,28 @@ def _quantized_weight_state_dict(module, sd, prefix, extra_quant_conf=None, extr
      return sd
  
  
@@ -41,17 +41,17 @@ index ff64aad5..6e8f024c 100644
 +    return False
 +
 +
- def mixed_precision_ops(quant_config={}, compute_dtype=torch.bfloat16, full_precision_mm=False, disabled=[]):
-     class MixedPrecisionOps(manual_cast):
-         _quant_config = quant_config
+ class MixedPrecisionOp(CastWeightBiasOp):
+     quant_format = None
+ 
 diff --git a/comfy/sd.py b/comfy/sd.py
-index 4bdaa978..25f41fa2 100644
+index 32d9f12c..817e8336 100644
 --- a/comfy/sd.py
 +++ b/comfy/sd.py
-@@ -265,8 +265,10 @@ class CLIP:
+@@ -270,8 +270,10 @@ class CLIP:
          te_disable_dynamic = disable_dynamic or getattr(self.cond_stage_model, "disable_offload", False)
          ModelPatcher = comfy.model_patcher.ModelPatcher if te_disable_dynamic else comfy.model_patcher.CoreModelPatcher
-         self.patcher = ModelPatcher(self.cond_stage_model, load_device=load_device, offload_device=offload_device)
+         self.patcher = ModelPatcher(self.cond_stage_model, load_device=load_device, offload_device=offload_device, fast_disk=comfy.storage.state_dict_fast_disk(state_dict))
 -        #Match torch.float32 hardcode upcast in TE implemention
 -        self.patcher.set_model_compute_dtype(torch.float32)
 +        #Match torch.float32 hardcode upcast in TE implemention. A quantized text encoder is the
@@ -62,7 +62,7 @@ index 4bdaa978..25f41fa2 100644
          self.patcher.is_clip = True
          self.apply_hooks_to_conds = None
 diff --git a/comfy/sd1_clip.py b/comfy/sd1_clip.py
-index f0fdf1aa..a9bce433 100644
+index 01651bd2..68c21529 100644
 --- a/comfy/sd1_clip.py
 +++ b/comfy/sd1_clip.py
 @@ -111,8 +111,9 @@ class SDClipModel(torch.nn.Module, ClipTokenWeightEncoder):
