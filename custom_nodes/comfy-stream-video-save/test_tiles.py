@@ -13,7 +13,11 @@ import torch
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, AQUI)
-sys.path.insert(0, os.path.join(AQUI, "..", "..", "ComfyUI"))
+# o ComfyUI e `../..` quando instalado em ComfyUI/custom_nodes/; `../../ComfyUI` na bancada de origem
+for raiz in (os.path.join(AQUI, "..", ".."), os.path.join(AQUI, "..", "..", "ComfyUI")):
+    if os.path.isfile(os.path.join(raiz, "comfy", "utils.py")):
+        sys.path.insert(0, raiz)
+        break
 
 import comfy.utils  # noqa: E402
 from tiles import quadros_em_tiles  # noqa: E402

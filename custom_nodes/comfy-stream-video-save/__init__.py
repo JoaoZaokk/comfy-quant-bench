@@ -11,10 +11,10 @@ Pico de RAM: uma janela temporal de tiles (~57 quadros no LTX com temporal_size 
 """
 import logging
 
-import comfy.model_management as mm
-import nodes
-
-from .tiles import _escalas, quadros_em_tiles
+try:
+    from .tiles import _escalas, quadros_em_tiles
+except ImportError:  # importado fora do pacote (pytest na raiz do repositorio)
+    from tiles import _escalas, quadros_em_tiles
 
 logger = logging.getLogger("comfy-stream-video-save")
 
@@ -85,6 +85,8 @@ class StreamingTiledDecodeVideoCombine:
 
     def run(self, samples, vae, tile_size, overlap, temporal_size, temporal_overlap, frame_rate, filename_prefix,
             pix_fmt, crf, save_metadata, save_output, audio=None, prompt=None, extra_pnginfo=None, unique_id=None):
+        import comfy.model_management as mm  # aqui, para o modulo importar sem o ComfyUI (teste de CPU)
+        import nodes
         vhs = nodes.NODE_CLASS_MAPPINGS.get("VHS_VideoCombine")
         if vhs is None:
             raise RuntimeError("VHS_VideoCombine (ComfyUI-VideoHelperSuite) nao esta instalado")

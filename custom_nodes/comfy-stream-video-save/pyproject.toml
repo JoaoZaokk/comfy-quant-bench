@@ -1,0 +1,9 @@
+[project]
+name = "comfy-stream-video-save"
+description = "Tiled video VAE decode that streams frames into VHS Video Combine instead of holding the whole video in RAM. Output identical to VAEDecodeTiled."
+version = "0.1.0"
+license = { file = "LICENSE" }
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/JoaoZaokk/comfy-stream-video-save"
