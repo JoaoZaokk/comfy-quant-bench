@@ -96,3 +96,29 @@ feito: no b10, com holdout melhor, o render já saiu indistinguível do C1.
 
 **Fechamento do int4 (b8, b9, b10):** o professor-aluno ajuda o int4 só no número, e só com passo pequeno;
 só escalas é o melhor dos três e o mais barato (13,9 GiB, 1,03 s/passo contra 22,8 GiB e 1,64 s/passo).
+
+## b11L — continuação do b11 (25/09 ~21:50–23:03 VM UTC, A100 qat-a100c)
+Mesmos argumentos do b11, `--inicia-de` o `ckpt/ultimo.pt` do b11 (passo 2000 conferido no arquivo), repo novo
+`JoaoZaokk/klein4b-qat-b11L` (o b11 fica intacto). Passo 0 reproduziu o fim do b11 (holdout_rel 0,5572, sens 0,681).
+Parado pelo dono no passo 2000 da continuação (4000 no total) por cota do Colab; ainda caindo.
+
+| passo (cont.) | holdout_rel | sens |
+|---|---|---|
+| 0 | 0,5572 | 0,681 |
+| 500 | 0,5493 | 0,704 |
+| 1000 | 0,5405 | 0,717 |
+| 1250 | 0,5411 | 0,706 |
+| 1500 | 0,5385 | 0,725 |
+| 1750 | 0,5349 | 0,737 |
+| 2000 | **0,5339** | **0,737** |
+
+Melhor = p2000, exportado e no HF (`melhor/aluno_ternario_diffusers.safetensors`). −4,2% no holdout_rel e +8% no sens
+sobre o b11; 0 códigos mudados (só escalas). Sem render nem epsilon ainda — holdout_rel já se mostrou pouco confiável.
+Dataset do professor `JoaoZaokk/klein4b-bf16` completo: 3556 amostras (holdout 24, fixa 10, grade 10, Parti 1756×2).
+
+### b11L — render e epsilon (25/09 ~20:35 local, 3090)
+Epsilon fora da amostra, 8 sementes (`bench/qat_klein/agrega_eps_b11L.txt`): **b11L 0,5305**, b11 0,5491, b6 0,5516,
+PTQ 1,0592. b11L abaixo do b11 nas 8/8 sementes (−3,4% na média) e abaixo do b6 nas 8/8. Folhas
+`bench/qat_klein/avaliacao_fixa/render_b11L/folha_fixa.png` e `bench/qat_klein/render_b11L/folha_grade.png`
+(BF16 | b11 | b11L | b6): mesmas composições do b11, um pouco mais limpo no bonde, letreiro SALE, garça, maçã s11 e
+vila s11 (leitura visual minha; julgamento do dono pendente). Zebra continua errada.

@@ -6141,3 +6141,25 @@ O custo esta no corpo W4A8 (4,9 %); o residuo FP8 soma ~0,3 ponto por cima (erro
 independentes: raiz(4,9^2 + 1,7^2) = 5,2). Promover camadas do W4A8 para 8 bits so' pode mexer nesses
 4,9 %, a um custo de ate +4,4 GiB (tudo em 8 bits); por tipo: MLP +1,15 GiB por matriz, q/o +0,31,
 k/v +0,15. Qual camada rende mais e medicao por camada, ainda nao feita.
+
+## Parte 56 -- 2026-09-25: 10Eros v1.5 -- o chiado do audio e o W4A8; misto com o audio em INT8 publicado
+
+**Duas placas sem encher a RAM** (`.scratch/criterio_eros_2gpu_2026-09-25.md`). Tentativa com DisTorch2 +
+`VRAM_Debug(unload_all_models)` abandonada: o DisTorch2 estima o W4A8 em 39,11 GB (real 11,9) e deixa tudo em
+cuda:0; o `unload_all_models` jogou ~20 GB para a RAM e a 2a tentativa caiu com access violation lendo a LoRA do
+P: com RAM 63,4/63,6 GB. O que funcionou: text encoder FP8 (7,86 GB) inteiro na 3080 Ti e **decode em tiles
+tambem na 1a passada** -- o `VAEDecode` comum obrigava o ComfyUI a tirar o LTXAV inteiro (11,9 GB) da 3090 entre
+as passadas. Frio contra frio, uma rodada cada: 1090 s -> 1034 s, RAM na transicao 62,9 -> 49,4 GB. O pico final
+(decode de 361 quadros ~1024x1376 em float32 + VHS) continua enchendo a RAM, que ja parte de 29-42 GB ocupados
+por outros programas. Workflow: `ComfyUI/user/default/workflows/10Eros_v1.5_W4A8_I2V_DMD_2gpu.json`.
+
+**Audio.** DMD com os grupos de audio/v2a em 0.5 (`LTX2 LoRA Loader Advanced`) = audio muito pior (dono);
+sliders voltaram a 1.0. BF16 original renderizado no Colab (notebook `tools/colab_eros/Eros_BF16_I2V_DMD.ipynb`,
+text encoder heretic BF16): **sem o chiado metalico** (dono). Misto novo, `tools/quant_misto_w4a8_int8.py`:
+864 camadas de audio + atencao cruzada (audio_attn1/2, audio_ff, a2v, v2a) em `int8_tensorwise` ConvRot 256
+quantizadas da fonte BF16 dentro do laco de escrita; 576 de video copiadas byte a byte do W4A8. Erro INT8 vs BF16
+(dequantizador do ComfyUI): mediana 0,93 %, max 1,13 %. 19.107.895.342 B (W4A8 16.641.963.302); LTXAV na 3090
+14.273 MB vs 11.921; 1119 s vs 1060 s no mesmo grafo/seed. **Dono: audio definitivamente melhor no misto** (um
+prompt, uma seed). Publicado com o W4A8 em https://huggingface.co/JoaoZaokk/10Eros-v1.5-W4A8-ConvRot (publico,
+`not-for-all-audiences`, README so com dados). Nao coberto: nenhuma metrica de imagem/audio contra BF16; ID-LoRA
+(`_idlora.json`, com `LTXVReferenceAudio`) e NovaSR (`tools/novasr_remux.py`; dono nao notou diferenca) sem teste.
