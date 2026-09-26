@@ -62,3 +62,39 @@ Estimativa mínima 7.325 MiB; 2ª passada "loaded completely; 14273 MB"; pico 20
 88,6 s/passo; prompt 17 min 23 s. 1ª passada base vs final/chunk4: PSNR infinito (idênticas). 2ª passada base vs
 final: PSNR médio 44,2 dB, mín 38,5. RAM: pico 63,6 GiB, commit 193 GiB no decode final (problema à parte).
 **Aceito** pelo critério. Workflow: `ComfyUI/user/default/workflows/10Eros_v1.5_W4A8audioINT8_I2V_DMD_2gpu_semoffload.json`.
+
+# RAM no decode final (26/09, pedido do dono: testar `--fp16-intermediates` e escrever o decode em streaming)
+
+Escrito antes de medir.
+- **r1** = `final` + `SaveLatent` dos latentes de vídeo e áudio da 2ª passada. Serve de referência de ponta a
+  ponta e alimenta os testes só de decode. O amostrador agora grava também RSS e memória privada do processo do
+  ComfyUI (psutil, porta 8190).
+- **d_base / d_fp16 / d_stream**: só decode, a partir dos latentes da r1 (VAE avulso idêntico, mesmos
+  parâmetros 512/64/64/8, mesmo VHS h264 crf 24). O `d_fp16` usa o mesmo grafo do `d_base`, com o servidor em
+  `--fp16-intermediates`.
+- **Previsão lida no código:** o fp16 ajuda pouco no caminho em tiles, porque `tiled_scale_multidim` cria o buffer
+  de saída com `torch.empty` sem dtype (float32). O streaming deve tirar o vídeo inteiro da RAM (pico de uma
+  janela de ~57 quadros).
+- **Métricas:** pico de memória privada do ComfyUI durante o decode, contra o patamar logo antes; pico do
+  commit do sistema; tempo do prompt. Saída: PSNR contra o `d_base` (e `d_base` contra a r1).
+- **Aceitação do streaming:** PSNR infinito contra o `d_base` (o teste de CPU já prova a igualdade bit a bit da
+  conta) e pico de memória privada durante o decode pelo menos 8 GB abaixo do `d_base`.
+- **fp16:** registrar o número; só recomendar se a queda de pico for real e o PSNR contra o `d_base` ≥ 45 dB.
+
+## Resultado dos testes de decode (medido) e critério da `r2`
+- `d_base`: memória privada do ComfyUI 16,1 → **65,5 GB** no decode (+49,5 GB); RAM da máquina 63,6 GiB; 134 s.
+  Bem acima da minha conta (~14 GB); a subida é um degrau de ~44 GB em ~10 s. A causa exata não foi atribuída.
+- `d_fp16`: mesmo pico (65,5 GB), 143 s; vídeo idêntico, **áudio diferente** (hash das amostras). Rejeitado.
+- `d_stream`: pico **13,2 GB** (máx. RAM 28,5 GiB), 60 s. Vídeo PSNR infinito e áudio com hash idêntico ao
+  `d_base`. O `d_base` (a partir do latente salvo) é idêntico à r1. **Aceito.**
+- `r2` = `final` com os dois pares VAEDecodeTiled→VHS (1ª passada e final) trocados pelo nó de streaming. Aceita
+  se as duas saídas forem idênticas às da r1 (PSNR infinito e áudio com mesmo hash) e o pico de memória privada no
+  decode final cair pelo menos 30 GB contra a r1 (116,8 GB).
+
+## Resultado `r2` (medido)
+Saídas idênticas às da r1: 1ª passada e final com PSNR infinito, áudio com hash igual. Pico de memória privada do
+ComfyUI **63,6 GB** (r1: 116,8); RAM da máquina máx. 56,8 GiB (r1: 63,6, no teto); commit 145,9 GiB (r1: 195,2);
+RSS sem colapso (r1 caiu para 0,1 GB, processo inteiro no pagefile). Prompt 13 min 41 s (r1: 18 min 37 s; uma
+amostra cada). **Aceito.** Os 63,6 GB que sobram são do resto do ComfyUI (patamar já antes do decode na r1: 64,9).
+Workflow: `ComfyUI/user/default/workflows/10Eros_v1.5_W4A8audioINT8_I2V_DMD_2gpu_semoffload_stream.json`
+(arquivo de UI não aberto no navegador; o grafo de API equivalente foi o executado).

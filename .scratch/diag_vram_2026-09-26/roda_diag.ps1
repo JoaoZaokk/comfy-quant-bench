@@ -11,6 +11,7 @@ try {
         $env:COMFYUI_MGPU_DISABLED = '1'
         $a = @('-s', "$D\lanca_comfy_diag.py", "$D\vram_$v.jsonl", '--', '--windows-standalone-build',
                '--use-sage-attention', '--disable-dynamic-vram', '--listen', '127.0.0.1', '--port', '8190')
+        if ($v -match 'fp16') { $a += '--fp16-intermediates' }
         $p = Start-Process -FilePath .\python_embeded\python.exe -ArgumentList $a -PassThru -NoNewWindow `
              -RedirectStandardOutput "$D\comfy_$v.out.log" -RedirectStandardError "$D\comfy_$v.log"
         try {

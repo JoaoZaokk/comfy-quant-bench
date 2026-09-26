@@ -32,6 +32,24 @@ def gpus():
         return [["", ""], ["", ""]]
 
 
+_proc = [None]
+
+
+def comfy_mem():
+    """RSS e memoria privada (commit) do processo que escuta a 8190, em GiB. Vazio se nao achar."""
+    try:
+        import psutil
+        p = _proc[0]
+        if p is None or not p.is_running():
+            pid = next(c.pid for c in psutil.net_connections("tcp")
+                       if c.laddr and c.laddr.port == 8190 and c.status == psutil.CONN_LISTEN)
+            p = _proc[0] = psutil.Process(pid)
+        m = p.memory_info()
+        return f"{m.rss / 2**30:.1f}", f"{m.private / 2**30:.1f}"
+    except Exception:
+        return "", ""
+
+
 def main():
     g = json.load(open(sys.argv[1]))
     while True:
@@ -43,11 +61,11 @@ def main():
     pid = req("/prompt", {"prompt": g})["prompt_id"]
     print(f"enviado {pid}", flush=True)
     with open(sys.argv[2], "w", newline="") as f:
-        w = csv.writer(f); w.writerow(["t", "g0_mib", "g0_util", "g1_mib", "g1_util", "ram_gib", "commit_gib"])
+        w = csv.writer(f); w.writerow(["t", "g0_mib", "g0_util", "g1_mib", "g1_util", "ram_gib", "commit_gib", "comfy_rss_gib", "comfy_priv_gib"])
         while True:
             (a, b), (c, d) = gpus()[:2]
             r, cm = ram()
-            w.writerow([round(time.time() - t0), a, b, c, d, f"{r:.1f}", f"{cm:.1f}"]); f.flush()
+            w.writerow([round(time.time() - t0), a, b, c, d, f"{r:.1f}", f"{cm:.1f}", *comfy_mem()]); f.flush()
             h = req(f"/history/{pid}")
             if pid in h:
                 st = h[pid]["status"]

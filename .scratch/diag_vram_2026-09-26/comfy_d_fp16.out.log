@@ -1,0 +1,145 @@
+[START] Security scan
+[DONE] Security scan
+## ComfyUI-Manager: installing dependencies done.
+** ComfyUI startup time: 2026-09-26 16:11:31.092
+** Platform: Windows
+** Python version: 3.13.12 (tags/v3.13.12:1cbe481, Feb  3 2026, 18:22:25) [MSC v.1944 64 bit (AMD64)]
+** Python executable: F:\COMFY_PORTABLE\python_embeded\python.exe
+** ComfyUI Path: F:\COMFY_PORTABLE\ComfyUI
+** ComfyUI Base Folder Path: F:\COMFY_PORTABLE\ComfyUI
+** User directory: F:\COMFY_PORTABLE\ComfyUI\user
+** ComfyUI-Manager config path: F:\COMFY_PORTABLE\ComfyUI\user\__manager\config.ini
+** Log path: F:\COMFY_PORTABLE\ComfyUI\user\comfyui.log
+
+#######################################################################
+[ComfyUI-Manager] Starting dependency installation/(de)activation for the extension
+
+Install: pip packages for 'F:\COMFY_PORTABLE\ComfyUI\custom_nodes\comfyui_controlnet_aux'
+             [SKIP] Downgrading pip package isn't allowed: mediapipe (cur=0.10.35)
+                                          Install: pip packages for 'F:\COMFY_PORTABLE\ComfyUI\custom_nodes\ComfyUI-Manager'
+                                     Install: pip packages for 'F:\COMFY_PORTABLE\ComfyUI\custom_nodes\ComfyUI-VideoHelperSuite'
+   Install: pip packages for 'F:\COMFY_PORTABLE\ComfyUI\custom_nodes\ComfyUI-KJNodes'
+[SKIP] Downgrading pip package isn't allowed: pillow (cur=12.3.0)
+                 Install: pip packages for 'F:\COMFY_PORTABLE\ComfyUI\custom_nodes\ComfyUI-LTXVideo'
+[SKIP] Downgrading pip package isn't allowed: huggingface_hub (cur=0.36.2)
+                            Install: pip packages for 'F:\COMFY_PORTABLE\ComfyUI\custom_nodes\RES4LYF'
+  [SKIP] Downgrading pip package isn't allowed: numpy (cur=2.4.6)
+Install: pip packages for 'F:\COMFY_PORTABLE\ComfyUI\custom_nodes\ComfyUI-nunchaku'
+[SKIP] Downgrading pip package isn't allowed: diffusers (cur=0.38.0)
+[SKIP] Downgrading pip package isn't allowed: transformers (cur=4.57.6)
+[SKIP] Downgrading pip package isn't allowed: huggingface_hub (cur=0.36.2)
+[SKIP] Downgrading pip package isn't allowed: peft (cur=0.19.1)
+[SKIP] Downgrading pip package isn't allowed: accelerate (cur=1.14.0)
+  Install: pip packages for 'F:\COMFY_PORTABLE\ComfyUI\custom_nodes\ComfyUI-QwenVL-Mod'
+               
+[ComfyUI-Manager] Startup script completed.
+#######################################################################
+
+[ComfyUI-Manager] Restarting to reapply dependency installation.
+Command: ['"F:\\COMFY_PORTABLE\\python_embeded\\python.exe"', '"F:\\COMFY_PORTABLE\\ComfyUI\\main.py"', '--windows-standalone-build', '--use-sage-attention', '--disable-dynamic-vram', '--listen', '127.0.0.1', '--port', '8190', '--fp16-intermediates']
+--------------------------------------------------------------------------
+
+[START] Security scan
+[DONE] Security scan
+## ComfyUI-Manager: installing dependencies done.
+** ComfyUI startup time: 2026-09-26 16:12:00.077
+** Platform: Windows
+** Python version: 3.13.12 (tags/v3.13.12:1cbe481, Feb  3 2026, 18:22:25) [MSC v.1944 64 bit (AMD64)]
+** Python executable: F:\COMFY_PORTABLE\python_embeded\python.exe
+** ComfyUI Path: F:\COMFY_PORTABLE\ComfyUI
+** ComfyUI Base Folder Path: F:\COMFY_PORTABLE\ComfyUI
+** User directory: F:\COMFY_PORTABLE\ComfyUI\user
+** ComfyUI-Manager config path: F:\COMFY_PORTABLE\ComfyUI\user\__manager\config.ini
+** Log path: F:\COMFY_PORTABLE\ComfyUI\user\comfyui.log
+[ComfyUI-Nuvu] Checking 3 critical packages...
+[ComfyUI-Nuvu] Checking huggingface_hub: installed=0.36.2, constraint=<1.0, conflicts=False
+[ComfyUI-Nuvu] huggingface_hub version OK
+[ComfyUI-Nuvu] Checking diffusers: installed=0.38.0, constraint=>=0.33.0, conflicts=False
+[ComfyUI-Nuvu] diffusers version OK
+[ComfyUI-Nuvu] Verifying ComfyUI requirements...
+[ComfyUI-Nuvu] All ComfyUI requirements satisfied
+[AnimateDiffEvo] - [0;31mERROR[0m - No motion models found. Please download one and place in: ['F:\\COMFY_PORTABLE\\ComfyUI\\custom_nodes\\ComfyUI-AnimateDiff-Evolved\\models', 'F:\\COMFY_PORTABLE\\ComfyUI\\models\\animatediff_models']
+[AutoModelDownloader] Linked and Loaded!
+--------------------------------------
+--- ComfyUI-BETA-Helpernodes ---
+--- Version: 1.3.0 ---
+--------------------------------------
+Nodes loaded (10): Video Crop 📼 🅑🅔🅣🅐, Video Stitch 📼 🅑🅔🅣🅐, Save Audio Advanced 🔊 🅑🅔🅣🅐, Text line count 🅑🅔🅣🅐, Clip to Sharpest Frame ✂️ 🅑🅔🅣🅐, Select Sharpest Frames 🎯 🅑🅔🅣🅐, Load Text from index 📼 🅑🅔🅣🅐, Indexed LoRA Loader 🎯 🅑🅔🅣🅐, WAN Resolution Calculator 📏 🅑🅔🅣🅐, Scene detect & split 🎥 🅑🅔🅣🅐
+--------------------------------------
+[MEC] Loading MaskEditControl node pack …
+[MEC] Parameter Memory server route registered.
+[MEC.VideoMaskEditor] routes registered (/mec/video_mask_editor/*)
+[MEC] mec_diagnostics sidebar API registered.
+[MEC] node_explain routes registered.
+[MEC] error_translator routes registered.
+[MEC] flamegraph routes registered.
+[MEC] tensor_inspector routes registered.
+[MEC] token_counter routes registered.
+[MEC] group_presets routes registered.
+[MEC] cost_estimator routes registered.
+[MEC] wizard routes registered.
+[MEC] NukeNodeMax routes + hooks registered.
+[MEC] Loaded 16 MaskEditControl nodes.
+[38;5;136m[DaSiWa Nodes][0m Loaded 22 extraordinarily overengineered nodes. 🐈
+[38;5;136m[DaSiWa Nodes][0m By using this you agree that cat ears improve everything, SlimeGirls deserve rights, Dragoniods need more screen time, darkness is the correct light source, and "too many toggles" is a phrase invented by cowards.
+[34m[ComfyUI-Easy-Use] server: [0mv1.3.6 [92mLoaded[0m
+[34m[ComfyUI-Easy-Use] web root: [0mF:\COMFY_PORTABLE\ComfyUI\custom_nodes\comfyui-easy-use\web_version/v2 [92mLoaded[0m
+
+[FlashVSR] Loading nodes...
+[FlashVSR] ✓ SageAttention detected (~20-30% speedup enabled)
+[FlashVSR] ✓ Loaded 2 node(s)
+
+[krea2edit] nodes v1.2.5 loaded
+'nunchaku_versions.json' not found. Node will start in minimal mode. Use 'update node' to fetch versions.
+Error loading module AILab_QwenVL_GGUF: No module named 'llama_cpp'
+Error loading module AILab_QwenVL_GGUF_PromptEnhancer: No module named 'llama_cpp'
+
+[0;33m[ReActor][0m - [38;5;173mSTATUS[0m - [0;32mRunning v0.7.0-a2 in ComfyUI[0m
+Torch version: 2.13.0+cu130
+[34m[ComfyUI-RMBG][0m v[93m3.1.0[0m | [93m43 nodes[0m [92mLoaded[0m
+[rogala] API routes registered.
+⚡ SeedVR2 optimizations check: SageAttention ✅ | Flash Attention ✅ | Triton ✅
+🔧 Conv3d workaround active: PyTorch 2.13.0, cuDNN 92000 (fixing VAE 3x memory bug)
+📊 Initial CUDA memory: 22.72GB free / 24.00GB total
+-------------------------------------------------
+  Node 'Pipeline SuperScaler' chargé avec succès  
+-------------------------------------------------
+no module 'xformers'. Processing without...
+no module 'xformers'. Processing without...
+[TINT4] device=cuda
+------------------------------------------
+[34mComfyroll Studio v1.76 : [92m 175 Nodes Loaded[0m
+------------------------------------------
+** For changes, please see patch notes at https://github.com/Suzie1/ComfyUI_Comfyroll_CustomNodes/blob/main/Patch_Notes.md
+** For help, please see the wiki at https://github.com/Suzie1/ComfyUI_Comfyroll_CustomNodes/wiki
+------------------------------------------
+Warning: Perth watermarking not available. Audio will be generated without watermarking.
+Warning: Perth watermarking not available. Audio will be generated without watermarking.
+Warning: Perth watermarking not available. Audio will be generated without watermarking.
+Warning: Perth watermarking not available. Audio will be generated without watermarking.
+[35m
+⣏⡉ ⡇    ⡎⠑ ⣇⡀ ⢀⣀ ⣰⡀ ⣰⡀ ⢀⡀ ⡀⣀ ⣏⡱ ⢀⡀ ⡀⢀
+⠇  ⠧⠤   ⠣⠔ ⠇⠸ ⠣⠼ ⠘⠤ ⠘⠤ ⠣⠭ ⠏  ⠧⠜ ⠣⠜ ⠜⠣
+[0m
+FL ChatterBox Custom Nodes Loaded
+[92m[tinyterraNodes] [32mLoaded[0m
+
+[32mInitializing ControlAltAI Nodes[0m
+
+[92m[rgthree-comfy] Loaded 48 epic nodes. 🎉[0m
+
+[33m[rgthree-comfy] ComfyUI's new Node 2.0 rendering may be incompatible with some rgthree-comfy nodes and features, breaking some rendering as well as losing the ability to access a node's properties (a vital part of many nodes). It also appears to run MUCH more slowly spiking CPU usage and causing jankiness and unresponsiveness, especially with large workflows. Personally I am not planning to use the new Nodes 2.0 and, unfortunately, am not able to invest the time to investigate and overhaul rgthree-comfy where needed. If you have issues when Nodes 2.0 is enabled, I'd urge you to switch it off as well and join me in hoping ComfyUI is not planning to deprecate the existing, stable canvas rendering all together.
+[0m
+[NovaSR] Checking path: F:\COMFY_PORTABLE\ComfyUI\models\NovaSR
+[NovaSR] Looking for models in: F:\COMFY_PORTABLE\ComfyUI\models\NovaSR
+[NovaSR] Model directory exists!
+[NovaSR] Found model: NovaSR.safetensors
+[NovaSR] Total models found: 1
+[NovaSR] Checking path: F:\COMFY_PORTABLE\ComfyUI\models\NovaSR
+[AdvancedStyleSelector] Loaded 1099 styles + 0 my styles.
+FETCH DATA from: https://raw.githubusercontent.com/ltdrdata/ComfyUI-Manager/main/extension-node-map.json [DONE]
+[ComfyUI-Manager] The ComfyRegistry cache update is still in progress, so an outdated cache is being used.
+FETCH DATA from: F:\COMFY_PORTABLE\ComfyUI\custom_nodes\ComfyUI-Manager\custom-node-list.json [DONE]
+FETCH DATA from: F:\COMFY_PORTABLE\ComfyUI\custom_nodes\ComfyUI-Manager\github-stats.json [DONE]
+FETCH DATA from: F:\COMFY_PORTABLE\ComfyUI\custom_nodes\ComfyUI-Manager\extras.json [DONE]
+Start fetching...[2KFetching: F:\COMFY_PORTABLE\ComfyUI\custom_nodes\ComfyUI-Manager[2KFetching: F:\COMFY_PORTABLE\ComfyUI\custom_nodes\comfyui_controlnet_aux[2KFetching: F:\COMFY_PORTABLE\ComfyUI\custom_nodes\ComfyUI-GGUF[2KFetching: F:\COMFY_PORTABLE\ComfyUI\custom_nodes\ComfyUI_Comfyroll_CustomNodes[2KFetching: F:\COMFY_PORTABLE\ComfyUI\custom_nodes\ComfyMath[2KFetching: F:\COMFY_PORTABLE\ComfyUI\custom_nodes\wlsh_nodes[2KFetching: F:\COMFY_PORTABLE\ComfyUI\custom_nodes\ComfyUI-AnimateDiff-Evolved[2KFetching: F:\COMFY_PORTABLE\ComfyUI\custom_nodes\ComfyUI-VideoHelperSuite[2KFetching: F:\COMFY_PORTABLE\ComfyUI\custom_nodes\ComfyUI-Image-Filters[2KFetching: F:\COMFY_PORTABLE\ComfyUI\custom_nodes\ComfyUI-KJNodes[2KFetching: F:\COMFY_PORTABLE\ComfyUI\custom_nodes\ComfyUI-Whisper[2KFetching: F:\COMFY_PORTABLE\ComfyUI\custom_nodes\ComfyUI-RMBG[2KFetching: F:\COMFY_PORTABLE\ComfyUI\custom_nodes\ComfyUI_DiffuEraser[2KFetching: F:\COMFY_PORTABLE\ComfyUI\custom_nodes\ComfyUI_yanc[2KFetching: F:\COMFY_PORTABLE\ComfyUI\custom_nodes\ComfyUI-mxToolkit[2KFetching: F:\COMFY_PORTABLE\ComfyUI\custom_nodes\ComfyUI-mem-safe-wrapper[2KFetching: F:\COMFY_PORTABLE\ComfyUI\custom_nodes\ControlAltAI-Nodes[2KFetching: F:\COMFY_PORTABLE\ComfyUI\custom_nodes\ComfyUI-SeedVR2_VideoUpscaler[2KFetching: F:\COMFY_PORTABLE\ComfyUI\custom_nodes\ComfyUI-Detail-Daemon[2KFetching: F:\COMFY_PORTABLE\ComfyUI\custom_nodes\ComfyUI-LTXVideo[2KFetching: F:\COMFY_PORTABLE\ComfyUI\custom_nodes\RES4LYF[2KFetching: F:\COMFY_PORTABLE\ComfyUI\custom_nodes\ComfyUI-nunchaku[2KFetching: F:\COMFY_PORTABLE\ComfyUI\custom_nodes\ComfyUI-QwenImageLoraLoader[2KFetching: F:\COMFY_PORTABLE\ComfyUI\custom_nodes\ComfyUI-QwenVL-Mod[2KFetching: F:\COMFY_PORTABLE\ComfyUI\custom_nodes\comfyui-krea2edit[2KFetching done.

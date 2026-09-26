@@ -6189,3 +6189,24 @@ residentes). Misto audioint8, grafo/seed de 25/09, 1024x1376, 361 quadros, servi
   na `chunk4` (WinError 1455). O fator 0,046 foi calibrado para esta resolucao/duracao; margem de 598 MiB no pico.
 - **Achado lateral:** o ComfyUI-Manager reenfileira `#LAZY-INSTALL-SCRIPT` de 9 nos a cada boot e se relanca com
   `os.execv` (sem `-s`). Nenhum pacote mudou (site-packages sem alteracao desde 19/09). Nao mexi no Manager.
+
+## Parte 58 -- 2026-09-26: decode do video em streaming -- a RAM do decode final caiu 52 GB, saida identica
+
+Pedido do dono: testar `--fp16-intermediates` e escrever um decode que nao monte o video inteiro na RAM.
+Criterio e dados em `.scratch/diag_vram_2026-09-26/criterio.md` (secao "RAM no decode final"); o amostrador
+agora grava RSS e memoria privada do processo do ComfyUI.
+- **Medido:** so o decode atual (`VAEDecodeTiled` 512/64/64/8 -> `VHS_VideoCombine`, 361 quadros 1024x1376) leva
+  a memoria privada do ComfyUI de 16 para 65,5 GB (+49,5 GB, um degrau de ~44 GB em ~10 s). No pipeline inteiro
+  (r1): 64,9 -> 116,8 GB, RAM da maquina no teto (63,6 GiB) e o processo inteiro no pagefile (RSS 0,1 GB). Minha
+  conta de antes (~14 GB) subestimou; a origem exata do degrau nao foi atribuida.
+- **`--fp16-intermediates`: rejeitado.** Mesmo pico; o buffer do `tiled_scale_multidim` e float32 fixo. Video
+  identico, audio diferente.
+- **No novo `custom_nodes/comfy-stream-video-save`** (fonte rastreada; stub de carga em `ComfyUI/custom_nodes/`, no
+  padrao do quant-preflight): `StreamingTiledDecodeVideoCombine` faz a conta do `tiled_scale_multidim` com o tempo
+  por fora e solta cada trecho de quadros quando nenhum tile futuro soma mais nele; os quadros vao um a um para o
+  proprio `VHS_VideoCombine` (mesmo ffmpeg, metadados e audio). Teste de CPU `test_tiles.py` (5 casos): igual bit a
+  bit ao `tiled_scale_multidim`. So decode: pico 13,2 GB (era 65,5), 60 s (era 134), video PSNR infinito e audio
+  com hash identico. Ponta a ponta (r2, os dois decodes trocados): saidas identicas a r1, pico 63,6 GB (era 116,8),
+  RAM max 56,8 GiB, 13 min 41 s (era 18 min 37 s; uma amostra cada).
+- Workflow: `10Eros_v1.5_W4A8audioINT8_I2V_DMD_2gpu_semoffload_stream.json` (arquivo de UI nao aberto no navegador).
+- **Resta:** ~64 GB de memoria privada do ComfyUI fora do decode (pesos e copias na CPU); nao investigado.
