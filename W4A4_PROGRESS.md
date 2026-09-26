@@ -6163,3 +6163,29 @@ quantizadas da fonte BF16 dentro do laco de escrita; 576 de video copiadas byte 
 prompt, uma seed). Publicado com o W4A8 em https://huggingface.co/JoaoZaokk/10Eros-v1.5-W4A8-ConvRot (publico,
 `not-for-all-audiences`, README so com dados). Nao coberto: nenhuma metrica de imagem/audio contra BF16; ID-LoRA
 (`_idlora.json`, com `LTXVReferenceAudio`) e NovaSR (`tools/novasr_remux.py`; dono nao notou diferenca) sem teste.
+
+## Parte 57 -- 2026-09-26: offload da 2a passada do 10Eros -- era a estimativa do ComfyUI, nao o decode
+
+Pedido do dono. Criterio e dados: `.scratch/diag_vram_2026-09-26/` (`criterio.md` com adendos escritos antes de
+cada rodada; `lanca_comfy_diag.py` registra cada `load_models_gpu`/`free_memory` com VRAM por placa e modelos
+residentes). Misto audioint8, grafo/seed de 25/09, 1024x1376, 361 quadros, servidor reiniciado por variante,
+1 amostra cada.
+- **Causa medida:** no pedido do LTXAV da 2a passada o ComfyUI estima `memory_required` 24.522 MiB, minimo
+  12.261 MiB (fator `memory_usage_factor` 0,077 do LTXAV, `# TODO` em `supported_models.py`); o pico real de
+  ativacoes foi ~8,7 GB. O modelo recebe livre - (minimo + 700) = 10.138 MiB; 4.146 MiB rodam da RAM. A frase
+  "a reserva do decode enche a placa" (README do HF de 25/09) estava errada; o upscaler (`free_memory` de ~9 GB)
+  tambem nao era: tirou 248 MiB. Minha conta de cabeca antes de medir (0,2-1,5 GB de estimativa) estava errada.
+- **VAE e VAE de audio na 3080 Ti (`vae1`): rejeitado.** 2a passada igual; decode final na 3080 Ti com ~1,7 GB
+  livres (text encoder + area de trabalho) passou de 39 min (base 165 s), abortado.
+- **Correcao (`final`):** KJNodes `ModelMemoryUsageFactorOverride` 0,046 + `LTXVChunkFeedForward` 4 fatias.
+  2a passada "loaded completely; 14273 MB" (zero offload), pico 20.765 MiB com 598 MiB livres, 88,6 s/passo
+  (base 96-101; `chunk4` com fator 0,059: 13.041 MiB na placa, 89 s/passo, pico de ativacoes 6,5 GB). O chunk e
+  exato: 1a passada base vs final com PSNR infinito (ativacao do W4A8 quantizada por linha). 2a passada base vs
+  final: PSNR medio 44,2 dB (min 38,5) -- a base rodava 4 GB de camadas pelo caminho lowvram. Ganho real ~10 % no
+  passo da 2a passada (~30 s por video); o tempo total e dominado pela leitura do checkpoint do P: (5-10 min).
+  Workflow novo ao lado do original: `10Eros_v1.5_W4A8audioINT8_I2V_DMD_2gpu_semoffload.json` (grafo de API
+  equivalente executado; o arquivo de UI em si nao foi aberto no navegador).
+- **Nao resolvido:** o pico de RAM no decode final (63,6 GiB, commit 193 GiB) continua; derrubou meu amostrador
+  na `chunk4` (WinError 1455). O fator 0,046 foi calibrado para esta resolucao/duracao; margem de 598 MiB no pico.
+- **Achado lateral:** o ComfyUI-Manager reenfileira `#LAZY-INSTALL-SCRIPT` de 9 nos a cada boot e se relanca com
+  `os.execv` (sem `-s`). Nenhum pacote mudou (site-packages sem alteracao desde 19/09). Nao mexi no Manager.

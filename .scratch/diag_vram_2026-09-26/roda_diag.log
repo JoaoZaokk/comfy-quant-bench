@@ -1,0 +1,41 @@
+lock TAKEN by comfy:diag_vram_eros_2a_passada (heartbeat pid 47800)
+=== base inicio 01:31:13 PM
+enviado 41ba1660-bec4-45aa-9839-feeaf1302773
+success em 1535 s
+FIM
+=== base fim 01:58:14 PM
+=== vae1 inicio 01:58:14 PM
+enviado c8075a53-e510-4511-8da2-2aeda329a197
+Traceback (most recent call last):
+  File "urllib\request.py", line 1319, in do_open
+  File "http\client.py", line 1358, in request
+  File "http\client.py", line 1404, in _send_request
+  File "http\client.py", line 1353, in endheaders
+  File "http\client.py", line 1113, in _send_output
+  File "http\client.py", line 1057, in send
+  File "http\client.py", line 1023, in connect
+  File "socket.py", line 864, in create_connection
+  File "socket.py", line 849, in create_connection
+ConnectionRefusedError: [WinError 10061] No connection could be made because the target machine actively refused it
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "F:\COMFY_PORTABLE\.scratch\roda_eros_2gpu.py", line 59, in <module>
+    main()
+    ~~~~^^
+  File "F:\COMFY_PORTABLE\.scratch\roda_eros_2gpu.py", line 47, in main
+    h = req(f"/history/{pid}")
+  File "F:\COMFY_PORTABLE\.scratch\roda_eros_2gpu.py", line 11, in req
+    return json.loads(urllib.request.urlopen(r, timeout=60).read())
+                      ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "urllib\request.py", line 189, in urlopen
+  File "urllib\request.py", line 489, in open
+  File "urllib\request.py", line 506, in _open
+  File "urllib\request.py", line 466, in _call_chain
+  File "urllib\request.py", line 1348, in http_open
+  File "urllib\request.py", line 1322, in do_open
+urllib.error.URLError: <urlopen error [WinError 10061] No connection could be made because the target machine actively refused it>
+=== vae1 fim 03:01:33 PM
+lock RELEASED
+=== FIM diag 03:01:34 PM

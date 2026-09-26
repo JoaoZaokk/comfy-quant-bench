@@ -1,0 +1,63 @@
+"""Enfileira um grafo de API no ComfyUI 8190 e amostra as duas placas e a RAM a cada 5 s ate terminar.
+Nao abre video nem audio. Uso: python -s .scratch/roda_eros_2gpu.py <grafo_api.json> <saida.csv>"""
+import csv, ctypes, json, subprocess, sys, time, urllib.request
+
+BASE = "http://127.0.0.1:8190"
+
+
+def req(path, data=None):
+    r = urllib.request.Request(BASE + path, data=json.dumps(data).encode() if data else None,
+                               headers={"Content-Type": "application/json"})
+    return json.loads(urllib.request.urlopen(r, timeout=60).read())
+
+
+class MS(ctypes.Structure):
+    _fields_ = [("l", ctypes.c_ulong), ("load", ctypes.c_ulong), ("tot", ctypes.c_ulonglong), ("avail", ctypes.c_ulonglong),
+                ("totpf", ctypes.c_ulonglong), ("availpf", ctypes.c_ulonglong), ("tv", ctypes.c_ulonglong),
+                ("av", ctypes.c_ulonglong), ("ae", ctypes.c_ulonglong)]
+
+
+def ram():
+    m = MS(); m.l = ctypes.sizeof(MS); ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m))
+    return (m.tot - m.avail) / 2**30, (m.totpf - m.availpf) / 2**30
+
+
+def gpus():
+    # com o commit do Windows no limite o CreateProcess falha (WinError 1455, 26/09); amostra perdida, run segue
+    try:
+        o = subprocess.run(["nvidia-smi", "--query-gpu=memory.used,utilization.gpu", "--format=csv,noheader,nounits"],
+                           capture_output=True, text=True).stdout.strip().splitlines()
+        return [x.split(", ") for x in o]
+    except OSError:
+        return [["", ""], ["", ""]]
+
+
+def main():
+    g = json.load(open(sys.argv[1]))
+    while True:
+        try:
+            req("/queue"); break
+        except Exception:
+            time.sleep(5)
+    t0 = time.time()
+    pid = req("/prompt", {"prompt": g})["prompt_id"]
+    print(f"enviado {pid}", flush=True)
+    with open(sys.argv[2], "w", newline="") as f:
+        w = csv.writer(f); w.writerow(["t", "g0_mib", "g0_util", "g1_mib", "g1_util", "ram_gib", "commit_gib"])
+        while True:
+            (a, b), (c, d) = gpus()[:2]
+            r, cm = ram()
+            w.writerow([round(time.time() - t0), a, b, c, d, f"{r:.1f}", f"{cm:.1f}"]); f.flush()
+            h = req(f"/history/{pid}")
+            if pid in h:
+                st = h[pid]["status"]
+                print(f"{st.get('status_str')} em {time.time() - t0:.0f} s", flush=True)
+                if st.get("status_str") != "success":
+                    print(json.dumps(st.get("messages", []))[-3000:], flush=True)
+                break
+            time.sleep(5)
+    print("FIM", flush=True)
+
+
+if __name__ == "__main__":
+    main()
