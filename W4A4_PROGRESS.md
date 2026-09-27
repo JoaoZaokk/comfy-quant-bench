@@ -6322,3 +6322,36 @@ igual ao de 26/09.
   comparativos, antes/depois do QAT, gráfico). MiMo cego não rodado nesses três.
 - Correções de ferramenta: `metricas_bateria.py` lê "Prompt executed in hh:mm:ss"; `roda_bateria.ps1` não deixa mais o
   servidor vivo quando o taskkill falha sob Windows PowerShell 5.
+
+## Parte 63 -- 2026-09-27 (tarde): W8A16 e W4A16 NATIVOS no ComfyUI (goal do dono)
+
+Pedido: "faz o patch, quero o w4a16 e o w8a16 nativos. isso é um goal". Critério antes em
+`.scratch/pesos_so_2026-09-27/criterio.md` (Parte 2).
+- **Sem patch no core.** O ComfyUI 0.37.4 já honra `"full_precision_matrix_mult": true` por camada (`comfy/ops.py`):
+  peso quantizado na VRAM, `weight.dequantize()` pelo kernel CUDA do layout no comfy-kitchen, matmul BF16 (cuBLAS).
+  `tools/quant_weight_only.py` (novo) copia o safetensors byte a byte e só liga a flag em todas as camadas.
+  W8A16 = pesos da int8 ConvRot; W4A16 = pesos da W4A8.
+- **Patch no comfy-kitchen 0.2.35** (`patches/comfy_kitchen_w4a8_dequant_fused.patch`, aplicado em
+  `python_embeded/Lib/site-packages`): `dequantize_w4a8_int8_weight` (CUDA) decodificava int4->int8 em CUDA e depois
+  escalava e des-rotacionava a matriz inteira com ops torch em fp32 (3,01 ms na gate_up [24576,4096]). O int8
+  decodificado com a escala por linha JÁ é o layout int8 ConvRot: sem `correction`, entrega ao kernel fundido
+  existente -> 0,64 ms; saída = arredondamento BF16 da referência fp32 (rel 0,00166 = o próprio BF16). REAPLICAR
+  depois de atualizar o comfy-kitchen.
+- Bateria (3090, 12 imagens, contra BF16 de 26/09):
+
+| build | it/s | MS-SSIM (mín) | PSNR | VRAM pesos |
+|---|---|---|---|---|
+| BF16 | 1,05 | 1 | — | 13,6 GB |
+| W8A16 nativo | 1,01 | 0,993 (0,973) | 38,1 | 6,9 GB |
+| W8A16 GGUF Q8_0 | 0,94 | 0,987 (0,896) | 38,4 | 7,5 GB |
+| W4A16 nativo, ck como veio | 0,84 | 0,935 (0,839) | 25,2 | 4,0 GB |
+| W4A16 nativo, ck com patch | 0,99 | 0,933 (0,840) | 25,1 | 4,0 GB |
+| W4A16 GGUF Q4_1 | 0,83 | 0,912 (0,817) | 23,6 | 4,5 GB |
+
+- Meta atingida: os dois carregam pelo UNETLoader padrão e ganham do GGUF em velocidade E fidelidade; ~96%/94% da
+  velocidade do BF16 com metade/30% da VRAM. Com/sem patch a W4A16 não é bit a bit igual (um arredondamento a menos),
+  qualidade igual dentro do piso.
+- Visual: W4A16 nativo ≈ W4A8 (mesmos pesos; a ativação de 8 bits quase não perdia); sem traço duplo em nenhum A16.
+  Não é mais rápido que o BF16 e não pode ser (a conta é BF16); vale pela VRAM e por não quantizar ativação.
+- HF: `qwen_image_2.1_w8a16.safetensors`, `qwen_image_2.1_w4a16.safetensors` + card atualizado (10 builds, o patch do
+  comfy-kitchen descrito no card).

@@ -33,6 +33,15 @@ if sys.argv[1:] == ["pesos_so"]:  # 27/09: W8A8 sem rotacao e os weight-only GGU
         ("qwen_image_2.1_bf16_Q8_0.quant.json", "qwen_image_2.1_w8a16_Q8_0.quant.json"),
     ]
 
+
+if sys.argv[1:] == ["nativo_a16"]:  # 27/09: W8A16/W4A16 nativos (full_precision_matrix_mult)
+    ARQUIVOS = [
+        ("qwen_image_2.1_bf16_w4a8_f32_a16.safetensors", "qwen_image_2.1_w4a16.safetensors"),
+        ("qwen_image_2.1_bf16_w4a8_f32_a16.quant.json", "qwen_image_2.1_w4a16.quant.json"),
+        ("qwen_image_2.1_bf16_int8_convrot_f32_a16.safetensors", "qwen_image_2.1_w8a16.safetensors"),
+        ("qwen_image_2.1_bf16_int8_convrot_f32_a16.quant.json", "qwen_image_2.1_w8a16.quant.json"),
+    ]
+
 api = HfApi()
 no_repo = {f.path: getattr(f, "size", None) for f in api.list_repo_tree(REPO, recursive=True)}
 for local, remoto in ARQUIVOS:

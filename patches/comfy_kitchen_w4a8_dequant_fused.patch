@@ -1,0 +1,18 @@
+# comfy-kitchen 0.2.35: fused dequant for W4A8 weights (used by ComfyUI's full_precision_matrix_mult / W4A16 path).
+# Apply from python_embeded\Lib\site-packages:  git apply -p1 <this file>   (check first with --check)
+# Measured 2026-09-27, RTX 3090, gate_up [24576, 4096]: 3.01 ms -> 0.64 ms; output = BF16 rounding of the fp32 reference.
+diff --git a/comfy_kitchen/backends/cuda/__init__.py b/comfy_kitchen/backends/cuda/__init__.py
+index 990dead..dcb0118 100644
+--- a/comfy_kitchen/backends/cuda/__init__.py
++++ b/comfy_kitchen/backends/cuda/__init__.py
+@@ -2264,6 +2264,10 @@ def dequantize_w4a8_int8_weight(
+             group_size,
+             stream_ptr,
+         )
++    if correction is None and _should_use_convrot_dequant_kernel(int8_weight, int8_weight.shape[-1], convrot_groupsize):
++        # Decoded W4A8 is a ConvRot INT8 weight with a per-row scale: finish in the fused dequant kernel
++        # instead of scaling and rotating the whole [N, K] matrix in fp32 torch ops.
++        return dequantize_int8_convrot_weight_dtype(int8_weight, s_channel, convrot_groupsize, DTYPE_TO_CODE[output_dtype])
+     weight_rotated = _dequantize_w4a8_int8_weight_from_int8(
+         int8_weight,
+         s_channel,

@@ -1,0 +1,99 @@
+lock TAKEN by comfy:qwen21_nativo_a16_bateria (heartbeat pid 41056)
+=== bateria/w8a16_nativo_p0_s42.json 03:38:08 PM
+enviado c969da58-2082-4b1e-b099-4e42277b05f8
+success em 196 s
+FIM
+=== bateria/w8a16_nativo_p0_s7.json 03:42:49 PM
+enviado 6f8ebd3b-e468-4fb5-9f5f-9f4a7f990ca1
+success em 31 s
+FIM
+=== bateria/w8a16_nativo_p1_s42.json 03:43:20 PM
+enviado f28de02b-d365-40b6-bfa2-9c268f3088af
+success em 31 s
+FIM
+=== bateria/w8a16_nativo_p1_s7.json 03:43:51 PM
+enviado 066f5e94-c191-486e-a3ac-97481d6c5dc6
+success em 31 s
+FIM
+=== bateria/w8a16_nativo_p2_s42.json 03:44:22 PM
+enviado 8262fc11-2529-447e-8dd1-225e77f04277
+success em 31 s
+FIM
+=== bateria/w8a16_nativo_p2_s7.json 03:44:52 PM
+enviado ab5e2c85-b0ae-4bef-8ca9-e46dc5a244d1
+success em 31 s
+FIM
+=== bateria/w8a16_nativo_p3_s42.json 03:45:23 PM
+enviado b704b789-5764-4aed-af63-5ddbcdba458d
+success em 31 s
+FIM
+=== bateria/w8a16_nativo_p3_s7.json 03:45:54 PM
+enviado 769b16d6-7660-4d0d-a696-75c6fcb8cb8c
+success em 31 s
+FIM
+=== bateria/w8a16_nativo_p4_s42.json 03:46:25 PM
+enviado 439a3f12-0c3f-456a-883a-2029cce319ed
+success em 31 s
+FIM
+=== bateria/w8a16_nativo_p4_s7.json 03:46:56 PM
+enviado 7968261d-22a9-45f5-9631-7d914d408d9e
+success em 31 s
+FIM
+=== bateria/w8a16_nativo_p5_s42.json 03:47:27 PM
+enviado 5cd46721-9b0a-4edf-9e87-a51e6f13bec0
+success em 31 s
+FIM
+=== bateria/w8a16_nativo_p5_s7.json 03:47:57 PM
+enviado 3e4e5b3a-10a3-428f-b963-1305e41662c0
+success em 31 s
+FIM
+=== bateria/w4a16_nativo_p0_s42.json 03:48:28 PM
+enviado 055d9b06-fd1c-4049-9486-22a384b87708
+success em 97 s
+FIM
+=== bateria/w4a16_nativo_p0_s7.json 03:50:05 PM
+enviado 89cb090b-f123-44d0-8776-6d809c68f520
+success em 36 s
+FIM
+=== bateria/w4a16_nativo_p1_s42.json 03:50:41 PM
+enviado 4046e61b-4aae-42ce-af7d-691f7fe9c653
+success em 36 s
+FIM
+=== bateria/w4a16_nativo_p1_s7.json 03:51:17 PM
+enviado 62d98f5f-b812-4185-9f16-af7d8197b63f
+success em 36 s
+FIM
+=== bateria/w4a16_nativo_p2_s42.json 03:51:53 PM
+enviado e2034730-57ee-49d5-9413-80d9822f6a26
+success em 36 s
+FIM
+=== bateria/w4a16_nativo_p2_s7.json 03:52:29 PM
+enviado b216df54-13db-49db-9ff4-45296b2e0589
+success em 36 s
+FIM
+=== bateria/w4a16_nativo_p3_s42.json 03:53:05 PM
+enviado ee72cd30-eea9-4430-b65f-913d137e9497
+success em 36 s
+FIM
+=== bateria/w4a16_nativo_p3_s7.json 03:53:41 PM
+enviado acd1ff31-7bfb-4d21-8a98-c6f0d968b94a
+success em 36 s
+FIM
+=== bateria/w4a16_nativo_p4_s42.json 03:54:17 PM
+enviado 35939a41-fd41-4d4c-945d-f420b4b36ea2
+success em 36 s
+FIM
+=== bateria/w4a16_nativo_p4_s7.json 03:54:53 PM
+enviado 93dd7805-7651-456c-9820-44f71878e372
+success em 36 s
+FIM
+=== bateria/w4a16_nativo_p5_s42.json 03:55:29 PM
+enviado e5f3719b-8c87-4f13-8990-098c8555f5d9
+success em 36 s
+FIM
+=== bateria/w4a16_nativo_p5_s7.json 03:56:05 PM
+enviado 83174c85-7ff0-4174-891f-71d7a8cb0ca2
+success em 36 s
+FIM
+lock RELEASED
+=== FIM bateria 03:56:42 PM

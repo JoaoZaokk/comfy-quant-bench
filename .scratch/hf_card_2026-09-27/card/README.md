@@ -17,10 +17,10 @@ tags:
   - gguf
 ---
 
-# Qwen-Image-2.1 DiT: quantizations for ComfyUI (ConvRot W8A8 / W4A8 / W4A4, GGUF W8A16 / W4A16)
+# Qwen-Image-2.1 DiT: quantizations for ComfyUI (W8A8, W8A16, W4A8, W4A16, W4A4)
 
 These are quantized versions of the Qwen-Image-2.1 diffusion transformer (DiT only; the text encoder and VAE are
-unchanged). The repo has eight builds:
+unchanged). The repo has ten builds:
 
 | Build | Format | Size | Speed vs BF16 (1024²) | Fidelity to BF16 | Pick it when |
 |---|---|---|---|---|---|
@@ -29,16 +29,21 @@ unchanged). The repo has eight builds:
 | **mixed 0.10** | W4A4 on Q/K + W4A8 elsewhere | 3.83 GiB | 2.1× | same visual quality as W4A8 (0.917) | You need about 4 GB and want ~10% more speed than W4A8. |
 | **W4A4 QAT** | W4A4 | 3.51 GiB | **3.1×** (same kernels as RTN) | lower (0.843); skin OK, text and neon damaged | Fastest option. Not for images with lettering. |
 | W4A4 RTN | W4A4 | 3.51 GiB | 3.1× | lowest (0.821) | Reference only: the W4A4 build before QAT. |
-| **W8A16 Q8_0** (GGUF) | weight-only 8-bit | 7.16 GiB | 0.9× (slower than BF16) | ≈ BF16 (0.987) | You want BF16-level output in half the VRAM and don't need speed. |
-| **W4A16 Q4_1** (GGUF) | weight-only 4-bit | 4.32 GiB | 0.8× (slower than BF16) | like mixed 0.10 (0.912), clean text and neon | You need about 4 GB on a GPU without int4/int8 kernels. |
+| **W8A16** (native) | 8-bit weights, BF16 activations | 6.76 GiB | ≈ 1× (1.01 vs 1.05 it/s) | ≈ BF16 (0.993) | You want near-BF16 output in half the VRAM, with no activation quantization at all. |
+| **W4A16** (native) | 4-bit weights, BF16 activations | 3.91 GiB | ≈ 0.95× (0.99 it/s) § | like W4A8 (0.933), clean text and neon | You need about 4 GB and want activations untouched. |
+| W8A16 Q8_0 (GGUF) | weight-only 8-bit | 7.16 GiB | 0.9× | ≈ BF16 (0.987) | You already use ComfyUI-GGUF. The native W8A16 is faster and slightly closer. |
+| W4A16 Q4_1 (GGUF) | weight-only 4-bit | 4.32 GiB | 0.8× | 0.912, clean text and neon | You already use ComfyUI-GGUF. The native W4A16 is faster and closer. |
 | W8A8 rowwise | W8A8, no rotation | 6.76 GiB | 2.2× | 0.976 | Reference only: shows what the ConvRot rotation adds. |
 
 The quality numbers are measured against BF16 renders with the same seed and prompt. The full protocol and every
 number are below.
 
-The two GGUF builds are weight-only: ComfyUI-GGUF turns each weight back into BF16 right before every matmul. That
-saves VRAM, but on the RTX 3090 they run slower than BF16. Every other build also quantizes the activations and
-runs on int8/int4 tensor cores, which is what makes them faster.
+§ The native W4A16 speed needs a small comfy-kitchen fix (see [How to use](#how-to-use)). Without it, it runs at
+0.84 it/s.
+
+**A16 vs A8/A4.** The W8A16 and W4A16 builds keep the activations in BF16. The weight is stored quantized and turned
+back into BF16 right before each matmul, so they save VRAM but cannot be faster than BF16: the math is BF16. The
+A8/A4 builds also quantize the activations and run on int8/int4 tensor cores, which is what makes them 2–3× faster.
 
 ![Overview, seed 42](images/overview_seed42.jpg)
 *Same prompt and seed across all builds, 1024², 25 steps. Columns marked \* were rendered on the RTX 3080 Ti, the
@@ -58,6 +63,8 @@ rest on the RTX 3090 (see [Hardware](#evaluation-protocol)).*
 | `qwen_image_2.1_mixed_p010.safetensors` | 68 × ConvRot W4A4 (Q/K) + 124 × W4A8 | 3.83 GiB |
 | `qwen_image_2.1_w4a4_qat.safetensors` | 192 × ConvRot W4A4, block-wise QAT | 3.51 GiB |
 | `qwen_image_2.1_w4a4_convrot_rtn.safetensors` | 192 × ConvRot W4A4, round-to-nearest (before QAT) | 3.51 GiB |
+| `qwen_image_2.1_w8a16.safetensors` | 192 × int8 ConvRot weights, `full_precision_matrix_mult` (BF16 activations) | 6.76 GiB |
+| `qwen_image_2.1_w4a16.safetensors` | 192 × W4A8 weights, `full_precision_matrix_mult` (BF16 activations) | 3.91 GiB |
 | `qwen_image_2.1_w8a16_Q8_0.gguf` | 192 × GGUF Q8_0 (int8, one fp16 scale per 32 weights) | 7.16 GiB |
 | `qwen_image_2.1_w4a16_Q4_1.gguf` | 192 × GGUF Q4_1 (uint4, fp16 scale and min per 32 weights) | 4.32 GiB |
 | `qwen_image_2.1_w8a8_rowwise.safetensors` | 192 × int8 per row, weights and activations, no rotation | 6.76 GiB |
@@ -75,6 +82,25 @@ ComfyUI's native quantized layout and need no custom node. The `.gguf` builds ne
    **Unet Loader (GGUF)** from ComfyUI-GGUF instead (tested at commit `6ea2651`).
 3. Use the standard Qwen-Image-2.1 text encoder and VAE from
    [Comfy-Org/Qwen-Image-2.1](https://huggingface.co/Comfy-Org/Qwen-Image-2.1).
+
+**Native W8A16 / W4A16.** These need no ComfyUI patch. ComfyUI already honors a per-layer
+`"full_precision_matrix_mult": true` in the quantization metadata:
+- the weight stays quantized in VRAM;
+- `comfy/ops.py` dequantizes it with comfy-kitchen's CUDA kernel;
+- the matmul then runs in BF16.
+
+The files carry exactly the same tensors as `int8_convrot` and `w4a8`; only that flag differs.
+
+In comfy-kitchen 0.2.35 the W4A8 dequantization finishes with fp32 PyTorch ops over the whole matrix: 3.0 ms on the
+largest layer. That makes the native W4A16 run at 0.84 it/s. The fix: the decoded weight already has the int8
+ConvRot layout, so hand it to the existing fused kernel (0.64 ms, output identical to the fp32 reference rounded to
+BF16). Add this in `comfy_kitchen/backends/cuda/__init__.py`, inside `dequantize_w4a8_int8_weight`, right after the
+int4→int8 decode:
+
+```python
+    if correction is None and _should_use_convrot_dequant_kernel(int8_weight, int8_weight.shape[-1], convrot_groupsize):
+        return dequantize_int8_convrot_weight_dtype(int8_weight, s_channel, convrot_groupsize, DTYPE_TO_CODE[output_dtype])
+```
 
 Tested with:
 - ComfyUI 0.37.4
@@ -119,6 +145,8 @@ Protocol for this table:
 | mixed 0.10 | 2.21 | 12.5 | 2.78 | 0.917 (0.854) | 0.894 | 24.1 dB |
 | W4A4 RTN | **3.26** | **8.7** | **2.13** | 0.821 (0.695) | 0.725 | 20.2 dB |
 | W4A4 QAT ‡ | same kernels as RTN | — | — | 0.843 (0.740) | 0.791 | 20.2 dB |
+| W8A16 native | 1.01 | 26.6 | — | 0.993 (0.973) | 0.989 | 38.1 dB |
+| W4A16 native § | 0.99 | 27.0 | — | 0.933 (0.840) | 0.919 | 25.1 dB |
 | W8A16 Q8_0 (GGUF) | 0.94 | 28.4 | — | 0.987 (0.896) | 0.985 | 38.4 dB |
 | W4A16 Q4_1 (GGUF) | 0.83 | 31.1 | — | 0.912 (0.817) | 0.899 | 23.6 dB |
 | W8A8 rowwise | 2.35 | 11.9 | — | 0.976 (0.927) | 0.960 | 30.3 dB |
@@ -129,6 +157,7 @@ Notes on the table:
 - **‡** QAT fidelity comes from renders on the RTX 3080 Ti. As a control, the RTN build on the same card scored
   MS-SSIM 0.818, against 0.821 on the 3090. The QAT build uses the same format and kernels as RTN; its speed on
   the 3090 was not measured separately.
+- **§** With the small comfy-kitchen fix described in [How to use](#how-to-use); 0.84 it/s without it.
 - At 2048², the unquantized attention takes a larger share of the step time. Speed-ups shrink there: int8 goes
   from 2.3× to 1.7×.
 - **Noise floor:** diffusion trajectories are chaotic, so a 1-ulp difference in weights moves the mean MS-SSIM by up
@@ -194,15 +223,28 @@ row is seed 42 and the bottom row is seed 7.
 ![Weight-only overview, seed 7](images/weightonly_overview_seed7.jpg)
 </details>
 
+| Build | it/s | MS-SSIM vs BF16 (min) | PSNR | VRAM (weights) |
+|---|---|---|---|---|
+| BF16 | 1.05 | 1 | — | 13.6 GB |
+| **W8A16 native** | **1.01** | **0.993 (0.973)** | 38.1 dB | 6.9 GB |
+| W8A16 GGUF Q8_0 | 0.94 | 0.987 (0.896) | 38.4 dB | 7.5 GB |
+| **W4A16 native** (with the comfy-kitchen fix) | **0.99** | **0.933 (0.840)** | 25.1 dB | 4.0 GB |
+| W4A16 native (comfy-kitchen 0.2.35 as shipped) | 0.84 | 0.935 (0.839) | 25.2 dB | 4.0 GB |
+| W4A16 GGUF Q4_1 | 0.83 | 0.912 (0.817) | 23.6 dB | 4.5 GB |
+
 What this adds:
-- **W4A16 has no doubled neon stroke.** Its weights are 4-bit like W4A8 and W4A4, but its activations stay BF16.
-  This confirms that the neon artifact comes from 4-bit *activations*, not 4-bit weights.
-- **W4A16 is not more faithful than W4A8.** MS-SSIM is 0.912 against 0.932. The composition drifts more, for
-  example a different face on the portrait with seed 42, but there are no visible artifacts and text is correct.
-  For the same ~4 GB, W4A8 and mixed 0.10 are closer to BF16 and 2.4–2.7× faster.
-- **W8A16 is as faithful as W8A8 ConvRot on most images** (7 of 12 at MS-SSIM ≥ 0.995, 9 of 12 ≥ 0.988). One portrait seed drifted
-  to a different expression (0.896). That looks like trajectory divergence, not an artifact. W8A8 ConvRot has no
-  such outlier and runs 2.6× faster.
+- **Native beats GGUF on both axes.** W8A16 native runs at 96% of BF16 speed, against 90% for Q8_0. W4A16 native
+  runs at 94% of BF16 speed, against 79% for Q4_1. Both native builds are also closer to BF16.
+  - The difference is the kernel. ComfyUI-GGUF dequantizes with a chain of PyTorch ops. comfy-kitchen dequantizes
+    in one fused CUDA kernel, which costs about 4–6% of a BF16 matmul on the largest layer.
+- **No doubled neon stroke in any A16 build.** The weights are 4-bit like W4A8 and W4A4, but the activations stay
+  BF16. This confirms that the neon artifact comes from 4-bit *activations*, not 4-bit weights.
+- **W4A16 native looks like W4A8.** They share the weights, and 8-bit activations were already nearly lossless.
+  Compared with W4A8, it keeps activations untouched at half the speed.
+  - Q4_1 has different weights and drifts differently: a different face on the portrait with seed 42. It shows no
+    visible artifacts, but it is farther from BF16 (0.912).
+- **W8A16 native ≈ W8A8 ConvRot in fidelity** (0.993 against 0.995, within the noise floor). The native build's
+  worst image is 0.973, against Q8_0's one drifted portrait at 0.896.
 - **The ConvRot rotation is worth it.** W8A8 without rotation runs at the same speed (2.35 against 2.40 it/s)
   but lands at 0.976 / 30.3 dB against 0.995 / 38.8 dB. Without rotation, a few activation channels with large
   outliers set the int8 scale for every token.
@@ -323,7 +365,8 @@ K-quants such as Q4_K_M are not implemented in gguf-py, so they were not produce
 - Metrics against BF16 measure faithfulness, not beauty. A build can differ from BF16 and still look fine, as
   W4A8 often does.
 - Only Ampere GPUs were tested.
-- The GGUF builds and W8A8 rowwise were not scored by the blind judge, and their speed was not measured at 2048².
+- The A16 builds and W8A8 rowwise were not scored by the blind judge, and their speed was not measured at 2048².
+- The native W4A16 speed depends on a local comfy-kitchen fix that is not upstream yet.
 
 ## License
 

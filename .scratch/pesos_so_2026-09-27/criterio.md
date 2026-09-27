@@ -36,3 +36,19 @@ do BF16 é aceitável para weight-only (o ganho é VRAM), mas tem de ser declara
 
 ## Resultado (27/09 ~14:45)
 Ver W4A4_PROGRESS Parte 62 e `qwen21_2026-09-26/fase_pesos_so_metricas.json`. Previsões: W8A16 ≥ int8 ConvRot — NÃO (0,987 × 0,995, um outlier de trajetória); W4A16 entre W4A8 e int8 — NÃO (0,912, abaixo da W4A8), mas sem traço duplo — SIM; W8A8 rowwise pior que ConvRot — SIM (0,976). Velocidades: GGUF abaixo do BF16 (0,94/0,83 it/s), W8A8 rowwise 2,35.
+
+## Parte 2 — W8A16/W4A16 NATIVOS (critério escrito antes da bateria, 27/09 ~15:10)
+Pedido do dono: "faz o patch, quero o w4a16 e o w8a16 nativos. isso é um goal".
+Achado: não precisa de patch no core. O ComfyUI 0.37.4 já lê `full_precision_matrix_mult: true` por camada
+(`comfy/ops.py`): o peso fica quantizado na VRAM, `weight.dequantize()` usa o kernel CUDA do comfy-kitchen do layout, e
+a matmul é BF16 (cuBLAS). `tools/quant_weight_only.py` (novo) copia byte a byte e só liga a flag:
+- W8A16 nativo = pesos da int8 ConvRot (`..._int8_convrot_f32_a16.safetensors`, 6,76 GiB)
+- W4A16 nativo = pesos da W4A8 (`..._w4a8_f32_a16.safetensors`, 3,91 GiB)
+Previsões: fidelidade W8A16 ≥ W8A8 ConvRot (mesmos pesos, sem erro de ativação) → MS-SSIM ≥ 0,995; W4A16 > W4A8
+(0,932) e > Q4_1 (0,912), sem traço duplo. Velocidade: entre GGUF e BF16 — alvo ≥ 0,95 it/s (BF16 1,05); a
+desquantização com des-rotação Hadamard custa algo por matmul. VRAM igual à dos arquivos (6,9 / 4,0 GB).
+Sucesso do goal: ambos carregam pelo UNETLoader padrão, imagens corretas, it/s ≥ GGUF equivalente (0,94 / 0,83) e
+fidelidade ≥ GGUF equivalente.
+
+### Resultado da Parte 2 (27/09 ~16:15)
+Ver W4A4_PROGRESS Parte 63. W8A16 nativo 1,01 it/s / 0,993 — previsões OK (fidelidade 0,993 ≈ 0,995 dentro do piso, não ≥). W4A16 nativo: 0,84 it/s sem patch (abaixo do alvo 0,95) → patch no comfy-kitchen → 0,99 it/s; fidelidade 0,933 ≈ W4A8 0,932 (previsão '> W4A8' só empata), > Q4_1 0,912. Sucesso do goal: sim (carrega nativo, ganha do GGUF nos dois eixos).

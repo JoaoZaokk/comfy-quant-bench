@@ -35,6 +35,13 @@ if sys.argv[1:] == ["pesos_so"]:  # 27/09: W8A8 sem rotacao e os weight-only GGU
             "w8a16_q8_0": "qwen_image_2.1_bf16_Q8_0.gguf",
             "w4a16_q4_1": "qwen_image_2.1_bf16_Q4_1.gguf"}
     ORDEM = "bateria/ordem_pesos_so.txt"
+if sys.argv[1:] == ["nativo_a16"]:  # 27/09: W8A16/W4A16 nativos (full_precision_matrix_mult sobre int8 ConvRot e W4A8)
+    DITS = {"w8a16_nativo": "qwen_image_2.1_bf16_int8_convrot_f32_a16.safetensors",
+            "w4a16_nativo": "qwen_image_2.1_bf16_w4a8_f32_a16.safetensors"}
+    ORDEM = "bateria/ordem_nativo_a16.txt"
+if sys.argv[1:] == ["nativo_a16_ck"]:  # 27/09: W4A16 nativa com o patch do comfy-kitchen (dequant W4A8 fundida)
+    DITS = {"w4a16_nativo_ck": "qwen_image_2.1_bf16_w4a8_f32_a16.safetensors"}
+    ORDEM = "bateria/ordem_nativo_a16_ck.txt"
 lista = []
 for nome, arquivo in DITS.items():
     for i, p in enumerate(PROMPTS):

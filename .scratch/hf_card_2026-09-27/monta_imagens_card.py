@@ -91,8 +91,9 @@ for nome, (p, corte) in {"qat_skin.jpg": (1, (0.25, 0.2, 0.75, 0.7)),
     empilha([linha(QAT, p, 42, 560, corte), linha(QAT, p, 7, 560, corte)], nome)
 
 # 27/09: W8A8 sem rotacao e weight-only (GGUF), contra BF16, int8 ConvRot e W4A8 (tudo na RTX 3090)
-PESOS = [("bf16", "BF16 (reference)"), ("nosso_int8", "W8A8 ConvRot"), ("w8a8_rowwise", "W8A8 rowwise"),
-         ("w8a16_q8_0", "W8A16 Q8_0"), ("nosso_w4a8", "W4A8"), ("w4a16_q4_1", "W4A16 Q4_1")]
+PESOS = [("bf16", "BF16 (reference)"), ("nosso_int8", "W8A8 ConvRot"), ("w8a16_nativo", "W8A16 native"),
+         ("w8a16_q8_0", "W8A16 GGUF Q8_0"), ("nosso_w4a8", "W4A8"), ("w4a16_nativo_ck", "W4A16 native"),
+         ("w4a16_q4_1", "W4A16 GGUF Q4_1")]
 grade(PESOS, 42, 320, "weightonly_overview_seed42.jpg")
 grade(PESOS, 7, 320, "weightonly_overview_seed7.jpg")
 empilha([linha(PESOS, 0, 42, 320, (0.05, 0.12, 0.75, 0.62)), linha(PESOS, 0, 7, 320, (0.05, 0.12, 0.75, 0.62)),
@@ -116,7 +117,7 @@ if plt is not None:
     ax.set_ylabel("MS-SSIM vs BF16 (mean of 12 images)")
     ax.set_title("Qwen-Image-2.1 DiT: speed vs fidelity (bubble = weight size)")
     ax.grid(alpha=0.3)
-    ax.set_xlim(0.6, 3.7)
+    ax.set_xlim(0.45, 3.7)
     ax.set_ylim(0.78, 1.02)
     fig.tight_layout()
     fig.savefig(SAIDA / "speed_vs_fidelity.png")
