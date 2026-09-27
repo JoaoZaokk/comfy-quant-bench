@@ -199,3 +199,19 @@ metade (held-out). "Só escalas" do QAT klein resolvido camada a camada, sem gra
 | int4 SVDQ | 2,68 | 1,68 | 142 |
 - A 2048² a atenção (não quantizada) pesa mais: o ganho de 1024² (int8 2,3×) cai para 1,7×, e o mixed 0,10 deixa de
   ganhar da int8 (2,78 × 2,66 s/it). A W4A4 segue a mais rápida, mas com os artefatos já descritos.
+
+## 27/09 — QAT por bloco (Colab G4) e o crash do dynamic VRAM
+Detalhes: `.scratch/qat_qwen21_2026-09-27/criterio.md` (critério antes, resultado depois) e
+`.scratch/diag_aimdo_2026-09-27/`.
+- **QAT W4A4** (reconstrução bloco a bloco, W4A4 simulado em peso e ativação, 48 prompts, G4 ~45 min): 32/32 blocos
+  aceitos, validação −8,5%. Render na 3080 Ti contra a mesma W4A4 sem treino: MS-SSIM 0,818 → 0,843, SSIM
+  0,722 → 0,791, grão 1,02 → 0,93, vence 7/12; MiMo artefatos 6,67 → 7,67, **texto 6,5 → 4,5**. Pele e textura
+  consertadas, neon/texto não. Mesmo formato e velocidade da W4A4. HF privado `JoaoZaokk/qwen21-w4a4-qat`.
+- **Crash do dynamic VRAM pelo NAS**: `cuMemcpyHtoDAsync` devolve CUDA_ERROR_OUT_OF_MEMORY no caminho do host buffer
+  pinado → `RuntimeError` sem tratamento em `read_tensor_file_slice_into` → o sampler desenrola → abort no cleanup
+  (`reset_prefix_cache`) → no Windows o processo fica preso no kernel, com 17,8 GB da 3090 e a porta 8190 presos por
+  3 h+ (taskkill: "no running instance"). Contorno: `--disable-pinned-memory` (confirmado). Conserto local:
+  `patches/comfyui_aimdo_hostbuf_fallback.patch` (captura, limpa o erro CUDA, cai na cópia normal) — validado por
+  injeção de falha: completa, saída idêntica. Causa do OOM em si: em aberto (15,7 GB pinados, 6,5 GB de RAM livre,
+  6,4 GB de VRAM livre na última leitura). Observação não confirmada: 1 de 4 execuções do caminho pinado saiu
+  diferente (22 dB) sem falha — possível corrida no reaproveitamento de pins. Comentado na issue #16223.

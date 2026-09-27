@@ -1,0 +1,21 @@
+{
+ "tipo": "nota",
+ "imagem": "ac0640012969",
+ "resposta": {
+  "prompt_adherence": 6,
+  "text_accuracy": null,
+  "artifacts": 6,
+  "anatomy": 7,
+  "detail_realism": 6,
+  "overall": 6,
+  "defects": [
+   "no visible water droplets on glass",
+   "surface reads as dark speckled stone, not clearly marble",
+   "smearing/warped reflections inside glass",
+   "cap texture irregular and lumpy",
+   "overall softness, slightly out of focus",
+   "weak reflection on supporting surface"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 6, \"text_accuracy\": null, \"artifacts\": 6, \"anatomy\": 7, \"detail_realism\": 6, \"overall\": 6, \"defects\": [\"no visible water droplets on glass\", \"surface reads as dark speckled stone, not clearly marble\", \"smearing/warped reflections inside glass\", \"cap texture irregular and lumpy\", \"overall softness, slightly out of focus\", \"weak reflection on supporting surface\"]}\n"
+}

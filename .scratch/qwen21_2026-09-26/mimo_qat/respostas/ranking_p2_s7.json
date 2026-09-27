@@ -1,0 +1,39 @@
+{
+ "tipo": "ranking",
+ "prompt": 2,
+ "seed": 7,
+ "ordem": [
+  "850e88e460d8",
+  "e57cb5d82270",
+  "d20a26c7dc2f"
+ ],
+ "resposta": {
+  "ranking": [
+   1,
+   2,
+   3
+  ],
+  "scores": {
+   "1": 9,
+   "2": 7,
+   "3": 5
+  },
+  "identical_pairs": [],
+  "defects": {
+   "1": [
+    "cup saucer sketch slightly loose but acceptable"
+   ],
+   "2": [
+    "headline font is handwritten/marker style, not bold serif as prompted",
+    "cup drawing rougher with stray ink dots and smudges near saucer"
+   ],
+   "3": [
+    "headline misspelled as 'MORINNGS'",
+    "font is rounded sans-serif, not bold serif",
+    "cup outline fainter and less defined"
+   ]
+  },
+  "reason": "Image 1 nails the bold-serif headline, correct spelling and clean minimal composition; Image 2 spells correctly but uses the wrong handwritten font with sketchy artifacts; Image 3 misses both the serif style and the correct spelling of the headline."
+ },
+ "bruto": "{\"ranking\": [1, 2, 3], \"scores\": {\"1\": 9, \"2\": 7, \"3\": 5}, \"identical_pairs\": [], \"defects\": {\"1\": [\"cup saucer sketch slightly loose but acceptable\"], \"2\": [\"headline font is handwritten/marker style, not bold serif as prompted\", \"cup drawing rougher with stray ink dots and smudges near saucer\"], \"3\": [\"headline misspelled as 'MORINNGS'\", \"font is rounded sans-serif, not bold serif\", \"cup outline fainter and less defined\"]}, \"reason\": \"Image 1 nails the bold-serif headline, correct spelling and clean minimal composition; Image 2 spells correctly but uses the wrong handwritten font with sketchy artifacts; Image 3 misses both the serif style and the correct spelling of the headline.\"}\n"
+}

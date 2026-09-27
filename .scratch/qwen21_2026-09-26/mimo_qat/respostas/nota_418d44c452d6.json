@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "418d44c452d6",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": null,
+  "artifacts": 8,
+  "anatomy": 8,
+  "detail_realism": 8,
+  "overall": 8,
+  "defects": [
+   "skin texture slightly overdone/leathery",
+   "fisherman identity not clearly conveyed",
+   "ear shape subtly asymmetrical",
+   "beard edge smudged near collar",
+   "minor waxy sheen on forehead"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": null, \"artifacts\": 8, \"anatomy\": 8, \"detail_realism\": 8, \"overall\": 8, \"defects\": [\"skin texture slightly overdone/leathery\", \"fisherman identity not clearly conveyed\", \"ear shape subtly asymmetrical\", \"beard edge smudged near collar\", \"minor waxy sheen on forehead\"]}\n"
+}

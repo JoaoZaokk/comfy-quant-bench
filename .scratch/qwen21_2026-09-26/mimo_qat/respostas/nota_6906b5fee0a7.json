@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "6906b5fee0a7",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": null,
+  "artifacts": 9,
+  "anatomy": 8,
+  "detail_realism": 9,
+  "overall": 8,
+  "defects": [
+   "no visual cue that he is a fisherman",
+   "background window panes slightly smeared",
+   "subtle asymmetry in eyelids",
+   "forehead wrinkles slightly repetitive",
+   "beard edge blends softly into shadow"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": null, \"artifacts\": 9, \"anatomy\": 8, \"detail_realism\": 9, \"overall\": 8, \"defects\": [\"no visual cue that he is a fisherman\", \"background window panes slightly smeared\", \"subtle asymmetry in eyelids\", \"forehead wrinkles slightly repetitive\", \"beard edge blends softly into shadow\"]}\n"
+}

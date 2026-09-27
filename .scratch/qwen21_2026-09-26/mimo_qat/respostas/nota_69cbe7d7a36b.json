@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "69cbe7d7a36b",
+ "resposta": {
+  "prompt_adherence": 7,
+  "text_accuracy": null,
+  "artifacts": 5,
+  "anatomy": null,
+  "detail_realism": 6,
+  "overall": 6,
+  "defects": [
+   "cap top is rough and slightly distorted",
+   "droplets read as internal bubbles/grime rather than surface water droplets",
+   "black marble surface not clearly legible, looks like dark granite",
+   "smudged noise texture across glass body",
+   "weak reflection on base, studio realism limited"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 7, \"text_accuracy\": null, \"artifacts\": 5, \"anatomy\": null, \"detail_realism\": 6, \"overall\": 6, \"defects\": [\"cap top is rough and slightly distorted\", \"droplets read as internal bubbles/grime rather than surface water droplets\", \"black marble surface not clearly legible, looks like dark granite\", \"smudged noise texture across glass body\", \"weak reflection on base, studio realism limited\"]}\n"
+}

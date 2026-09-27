@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "aad5174cf5eb",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": 10,
+  "artifacts": 9,
+  "anatomy": 8,
+  "detail_realism": 7,
+  "overall": 8,
+  "defects": [
+   "headline is light serif, not bold",
+   "cup line art wobbly and sketchy",
+   "saucer strokes uneven and doubled",
+   "top-heavy layout with large empty lower half",
+   "wide letter spacing weakens headline impact"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": 10, \"artifacts\": 9, \"anatomy\": 8, \"detail_realism\": 7, \"overall\": 8, \"defects\": [\"headline is light serif, not bold\", \"cup line art wobbly and sketchy\", \"saucer strokes uneven and doubled\", \"top-heavy layout with large empty lower half\", \"wide letter spacing weakens headline impact\"]}\n"
+}

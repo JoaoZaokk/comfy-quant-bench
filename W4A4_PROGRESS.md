@@ -6280,3 +6280,20 @@ Tudo em `.scratch/qwen21_2026-09-26/resultados.md` (numeros, tabelas, arquivos).
 - **Treino**: QAT nao rodou -- 3090 vetada; a ferramenta do klein e diffusers e do Qwen 2.1 so ha o transformer;
   um QAT nativo do ComfyUI com STE de ativacao e projeto de horas + Colab sem orcamento combinado. O "so escalas"
   local (minimos quadrados) foi feito e deu negativo no render. Proposta no relatorio.
+
+## Parte 61 -- 2026-09-27: QAT por bloco do Qwen 2.1 no Colab, e o crash do dynamic VRAM com modelo em rede
+
+- **QAT** (`tools/colab_qat_qwen21/`): reconstrucao bloco a bloco com W4A4 ConvRot simulado em peso E ativacao
+  (espelha o kernel eager: rotacao Hadamard 256, absmax/7 por linha, ativacao em bf16), professor = o BF16, peso
+  mestre FP32, codigos exportados direto no formato nativo. Smoke na CPU (local e VM): codigos iguais ao
+  quantizador do ck. Colab G4, ~45 min. 32/32 blocos aceitos (validacao -8,5%); fim a fim no holdout -1,2% (ruido de
+  trajetoria). Render (3080 Ti, contra a mesma W4A4 sem treino): MS-SSIM 0,818 -> 0,843, SSIM 0,722 -> 0,791,
+  MiMo artefatos 6,67 -> 7,67 mas texto 6,5 -> 4,5. Conserta pele/textura, nao conserta neon/texto. Checkpoint
+  privado HF `JoaoZaokk/qwen21-w4a4-qat`. Criterio e resultado: `.scratch/qat_qwen21_2026-09-27/criterio.md`.
+- **Crash do dynamic VRAM pelo NAS**: cadeia medida -- `cuMemcpyHtoDAsync` = CUDA_ERROR_OUT_OF_MEMORY no host buffer
+  pinado (aimdo 0.5.5 `hostbuf.c:283`), RuntimeError nao tratado em `comfy/memory_management.py`, abort no cleanup, e
+  no Windows o processo abortado fica preso (17,8 GB da 3090 e a porta 8190 presos 3 h+, nao mata). Contorno
+  `--disable-pinned-memory` (confirmado). Conserto local `patches/comfyui_aimdo_hostbuf_fallback.patch`, aplicado no
+  checkout: validado por injecao de falha (completa, saida identica). Por que o driver da OOM ali: em aberto.
+  1/4 execucoes do caminho pinado deu imagem diferente sem falha (corrida? nao confirmado). Issue #16223 comentada
+  duas vezes. `.scratch/roda_eros_2gpu.py` e os drivers ganharam porta configuravel (a 8190 ficou presa).

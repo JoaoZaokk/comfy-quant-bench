@@ -1,0 +1,21 @@
+{
+ "tipo": "nota",
+ "imagem": "5469c4a21f53",
+ "resposta": {
+  "prompt_adherence": 4,
+  "text_accuracy": null,
+  "artifacts": 6,
+  "anatomy": 6,
+  "detail_realism": 6,
+  "overall": 5,
+  "defects": [
+   "5 apples instead of 3",
+   "3 pears instead of 2",
+   "pale blotchy patches on apple skin",
+   "fingertips/thumb slightly malformed",
+   "blurred smeared background banding at top",
+   "extra unrequested pear lying sideways"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 4, \"text_accuracy\": null, \"artifacts\": 6, \"anatomy\": 6, \"detail_realism\": 6, \"overall\": 5, \"defects\": [\"5 apples instead of 3\", \"3 pears instead of 2\", \"pale blotchy patches on apple skin\", \"fingertips/thumb slightly malformed\", \"blurred smeared background banding at top\", \"extra unrequested pear lying sideways\"]}\n"
+}

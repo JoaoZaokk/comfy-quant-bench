@@ -2,7 +2,7 @@
 Nao abre video nem audio. Uso: python -s .scratch/roda_eros_2gpu.py <grafo_api.json> <saida.csv>"""
 import csv, ctypes, json, os, subprocess, sys, time, urllib.request
 
-BASE = "http://127.0.0.1:8190"
+BASE = f"http://127.0.0.1:{os.environ.get('COMFY_PORT', '8190')}"  # porta configuravel: um processo zumbi prendeu a 8190 (27/09)
 
 
 def req(path, data=None):
@@ -42,7 +42,7 @@ def comfy_mem():
         p = _proc[0]
         if p is None or not p.is_running():
             pid = next(c.pid for c in psutil.net_connections("tcp")
-                       if c.laddr and c.laddr.port == 8190 and c.status == psutil.CONN_LISTEN)
+                       if c.laddr and c.laddr.port == int(os.environ.get("COMFY_PORT", "8190")) and c.status == psutil.CONN_LISTEN)
             p = _proc[0] = psutil.Process(pid)
         m = p.memory_info()
         return f"{m.rss / 2**30:.1f}", f"{m.private / 2**30:.1f}"

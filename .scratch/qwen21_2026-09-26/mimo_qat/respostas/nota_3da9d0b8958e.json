@@ -1,0 +1,21 @@
+{
+ "tipo": "nota",
+ "imagem": "3da9d0b8958e",
+ "resposta": {
+  "prompt_adherence": 6,
+  "text_accuracy": null,
+  "artifacts": 5,
+  "anatomy": 7,
+  "detail_realism": 5,
+  "overall": 6,
+  "defects": [
+   "glass texture reads as cracked ice, not tiny water droplets",
+   "noisy crackle pattern covers entire bottle body",
+   "spray nozzle/cap top slightly malformed",
+   "inner rectangular panel looks odd and artificial",
+   "marble surface texture barely discernible",
+   "glass appears frosted rather than translucent"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 6, \"text_accuracy\": null, \"artifacts\": 5, \"anatomy\": 7, \"detail_realism\": 5, \"overall\": 6, \"defects\": [\"glass texture reads as cracked ice, not tiny water droplets\", \"noisy crackle pattern covers entire bottle body\", \"spray nozzle/cap top slightly malformed\", \"inner rectangular panel looks odd and artificial\", \"marble surface texture barely discernible\", \"glass appears frosted rather than translucent\"]}\n"
+}

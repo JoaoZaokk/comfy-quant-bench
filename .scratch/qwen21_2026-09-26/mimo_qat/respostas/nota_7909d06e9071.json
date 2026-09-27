@@ -1,0 +1,19 @@
+{
+ "tipo": "nota",
+ "imagem": "7909d06e9071",
+ "resposta": {
+  "prompt_adherence": 6,
+  "text_accuracy": null,
+  "artifacts": 9,
+  "anatomy": 8,
+  "detail_realism": 9,
+  "overall": 7,
+  "defects": [
+   "only two red apples, prompt asks three",
+   "hand grips apple rather than reaching",
+   "thumb proportion slightly large",
+   "pear stem oddly shriveled"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 6, \"text_accuracy\": null, \"artifacts\": 9, \"anatomy\": 8, \"detail_realism\": 9, \"overall\": 7, \"defects\": [\"only two red apples, prompt asks three\", \"hand grips apple rather than reaching\", \"thumb proportion slightly large\", \"pear stem oddly shriveled\"]}\n"
+}

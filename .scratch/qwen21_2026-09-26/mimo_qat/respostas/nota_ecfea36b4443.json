@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "ecfea36b4443",
+ "resposta": {
+  "prompt_adherence": 9,
+  "text_accuracy": null,
+  "artifacts": 9,
+  "anatomy": null,
+  "detail_realism": 9,
+  "overall": 9,
+  "defects": [
+   "sun itself not visible on horizon",
+   "repetitive tree canopy texture in mid-frame",
+   "slight smearing/softness in fog areas",
+   "minor color uniformity in autumn foliage",
+   "some flat areas on far right treeline"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 9, \"text_accuracy\": null, \"artifacts\": 9, \"anatomy\": null, \"detail_realism\": 9, \"overall\": 9, \"defects\": [\"sun itself not visible on horizon\", \"repetitive tree canopy texture in mid-frame\", \"slight smearing/softness in fog areas\", \"minor color uniformity in autumn foliage\", \"some flat areas on far right treeline\"]}\n"
+}

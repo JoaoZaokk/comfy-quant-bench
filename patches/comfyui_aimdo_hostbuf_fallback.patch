@@ -1,0 +1,39 @@
+diff --git a/comfy/memory_management.py b/comfy/memory_management.py
+index e032b7dc..b5a81b60 100644
+--- a/comfy/memory_management.py
++++ b/comfy/memory_management.py
+@@ -1,6 +1,7 @@
+ import math
+ import ctypes
+ import dataclasses
++import logging
+ import torch
+ from typing import NamedTuple
+ 
+@@ -67,11 +68,21 @@ def read_tensor_file_slice_into(tensor, destination, stream=None, destination2=N
+         stream_ptr = getattr(stream, "cuda_stream", 0) if stream is not None else 0
+         device_ptr = destination2.data_ptr() if destination2 is not None else 0
+         with info.lock:
+-            hostbuf.read_file_slice(file_obj, info.offset, info.size,
+-                                    offset=destination.data_ptr() - hostbuf.get_raw_address(),
+-                                    stream=stream_ptr,
+-                                    device_ptr=device_ptr,
+-                                    device=None if destination2 is None else destination2.device.index)
++            try:
++                hostbuf.read_file_slice(file_obj, info.offset, info.size,
++                                        offset=destination.data_ptr() - hostbuf.get_raw_address(),
++                                        stream=stream_ptr,
++                                        device_ptr=device_ptr,
++                                        device=None if destination2 is None else destination2.device.index)
++            except RuntimeError:
++                # aimdo gives up on the whole slice when one window fails (seen as CUDA_ERROR_OUT_OF_MEMORY from
++                # cuMemcpyHtoDAsync while loading a 14 GB model from a network share). Clear the CUDA error and
++                # let cast_to_gathered copy this tensor the regular way, instead of unwinding the sampler with
++                # the error still pending, which aborted the process during cleanup.
++                import comfy.model_management
++                comfy.model_management.discard_cuda_async_error()
++                logging.warning("aimdo host buffer read failed for a %d byte slice; using the regular copy", info.size)
++                return False
+         return True
+ 
+     if not hasattr(file_obj, "seek") or not hasattr(file_obj, "readinto"):

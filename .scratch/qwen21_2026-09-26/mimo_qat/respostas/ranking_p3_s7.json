@@ -1,0 +1,41 @@
+{
+ "tipo": "ranking",
+ "prompt": 3,
+ "seed": 7,
+ "ordem": [
+  "635eff233a90",
+  "bf79f1096d5a",
+  "b3f6c6458b5c"
+ ],
+ "resposta": {
+  "ranking": [
+   2,
+   3,
+   1
+  ],
+  "scores": {
+   "1": 6,
+   "2": 9,
+   "3": 7
+  },
+  "identical_pairs": [],
+  "defects": {
+   "1": [
+    "excessive mist obscures river detail and lowers contrast",
+    "desaturated murky brown-green foliage lacks autumn color",
+    "soft fine detail in canopy texture"
+   ],
+   "2": [
+    "slight haze in far background",
+    "minor color saturation push in golden foliage"
+   ],
+   "3": [
+    "heavy mist blurring river surface",
+    "muted washed-out palette in mid-ground forest",
+    "soft canopy detail compared to image 2"
+   ]
+  },
+  "reason": "Image 2 has the sharpest detail, richest autumn color, and cleanest river rendering, while Images 1 and 3 are murkier, low-contrast variants with mist over-artifacting (not pixel-identical), Image 3 slightly cleaner than Image 1."
+ },
+ "bruto": "{\"ranking\": [2, 3, 1], \"scores\": {\"1\": 6, \"2\": 9, \"3\": 7}, \"identical_pairs\": [], \"defects\": {\"1\": [\"excessive mist obscures river detail and lowers contrast\", \"desaturated murky brown-green foliage lacks autumn color\", \"soft fine detail in canopy texture\"], \"2\": [\"slight haze in far background\", \"minor color saturation push in golden foliage\"], \"3\": [\"heavy mist blurring river surface\", \"muted washed-out palette in mid-ground forest\", \"soft canopy detail compared to image 2\"]}, \"reason\": \"Image 2 has the sharpest detail, richest autumn color, and cleanest river rendering, while Images 1 and 3 are murkier, low-contrast variants with mist over-artifacting (not pixel-identical), Image 3 slightly cleaner than Image 1.\"}\n"
+}

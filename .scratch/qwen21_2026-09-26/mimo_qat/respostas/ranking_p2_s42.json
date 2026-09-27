@@ -1,0 +1,40 @@
+{
+ "tipo": "ranking",
+ "prompt": 2,
+ "seed": 42,
+ "ordem": [
+  "aad5174cf5eb",
+  "caf4711c7654",
+  "d2f3742cfea9"
+ ],
+ "resposta": {
+  "ranking": [
+   1,
+   3,
+   2
+  ],
+  "scores": {
+   "1": 8,
+   "2": 6,
+   "3": 7
+  },
+  "identical_pairs": [],
+  "defects": {
+   "1": [
+    "serif strokes lighter than the requested bold weight",
+    "cup drawing slightly sparse"
+   ],
+   "2": [
+    "scratchy scribble marks under the cup",
+    "wavy artifact squiggle at bottom center",
+    "rough/irregular letterforms"
+   ],
+   "3": [
+    "wavy artifact squiggle at bottom center",
+    "serif weight only medium, not fully bold"
+   ]
+  },
+  "reason": "Image 1 is artifact-free with correct spelling and clean minimalism (only slightly light serif), Image 3 has a nice cup with steam but a bottom squiggle artifact, and Image 2 best matches bold weight but suffers scribble artifacts and rough letters."
+ },
+ "bruto": "{\"ranking\": [1, 3, 2], \"scores\": {\"1\": 8, \"2\": 6, \"3\": 7}, \"identical_pairs\": [], \"defects\": {\"1\": [\"serif strokes lighter than the requested bold weight\", \"cup drawing slightly sparse\"], \"2\": [\"scratchy scribble marks under the cup\", \"wavy artifact squiggle at bottom center\", \"rough/irregular letterforms\"], \"3\": [\"wavy artifact squiggle at bottom center\", \"serif weight only medium, not fully bold\"]}, \"reason\": \"Image 1 is artifact-free with correct spelling and clean minimalism (only slightly light serif), Image 3 has a nice cup with steam but a bottom squiggle artifact, and Image 2 best matches bold weight but suffers scribble artifacts and rough letters.\"}\n"
+}

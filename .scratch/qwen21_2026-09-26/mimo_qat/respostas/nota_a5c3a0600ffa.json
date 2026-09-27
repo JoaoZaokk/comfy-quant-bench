@@ -1,0 +1,21 @@
+{
+ "tipo": "nota",
+ "imagem": "a5c3a0600ffa",
+ "resposta": {
+  "prompt_adherence": 6,
+  "text_accuracy": 2,
+  "artifacts": 6,
+  "anatomy": 7,
+  "detail_realism": 7,
+  "overall": 6,
+  "defects": [
+   "text reads 'OWEN' not 'QWEN'",
+   "number '2.1' is garbled and broken",
+   "neon characters glitchy and malformed",
+   "cat is small and indistinct",
+   "wall texture behind sign is noisy",
+   "sign text partially cut off at left edge"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 6, \"text_accuracy\": 2, \"artifacts\": 6, \"anatomy\": 7, \"detail_realism\": 7, \"overall\": 6, \"defects\": [\"text reads 'OWEN' not 'QWEN'\", \"number '2.1' is garbled and broken\", \"neon characters glitchy and malformed\", \"cat is small and indistinct\", \"wall texture behind sign is noisy\", \"sign text partially cut off at left edge\"]}\n"
+}

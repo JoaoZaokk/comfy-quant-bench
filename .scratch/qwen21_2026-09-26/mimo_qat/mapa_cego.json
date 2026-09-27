@@ -1,0 +1,182 @@
+{
+ "d46719adbb54": {
+  "dit": "bf16",
+  "prompt": 0,
+  "seed": 42
+ },
+ "38b7934207d4": {
+  "dit": "bf16",
+  "prompt": 0,
+  "seed": 7
+ },
+ "266d336eb2a8": {
+  "dit": "bf16",
+  "prompt": 1,
+  "seed": 42
+ },
+ "418d44c452d6": {
+  "dit": "bf16",
+  "prompt": 1,
+  "seed": 7
+ },
+ "d2f3742cfea9": {
+  "dit": "bf16",
+  "prompt": 2,
+  "seed": 42
+ },
+ "850e88e460d8": {
+  "dit": "bf16",
+  "prompt": 2,
+  "seed": 7
+ },
+ "ecfea36b4443": {
+  "dit": "bf16",
+  "prompt": 3,
+  "seed": 42
+ },
+ "bf79f1096d5a": {
+  "dit": "bf16",
+  "prompt": 3,
+  "seed": 7
+ },
+ "5f1e60d6298b": {
+  "dit": "bf16",
+  "prompt": 4,
+  "seed": 42
+ },
+ "73c655b345bc": {
+  "dit": "bf16",
+  "prompt": 4,
+  "seed": 7
+ },
+ "1346912b7bf4": {
+  "dit": "bf16",
+  "prompt": 5,
+  "seed": 42
+ },
+ "8e942c9fd137": {
+  "dit": "bf16",
+  "prompt": 5,
+  "seed": 7
+ },
+ "8496ac8e51f0": {
+  "dit": "w4a4_rtn_3080",
+  "prompt": 0,
+  "seed": 42
+ },
+ "fd3d7d5056db": {
+  "dit": "w4a4_rtn_3080",
+  "prompt": 0,
+  "seed": 7
+ },
+ "ea99f43a4224": {
+  "dit": "w4a4_rtn_3080",
+  "prompt": 1,
+  "seed": 42
+ },
+ "e7fc3ec9edcf": {
+  "dit": "w4a4_rtn_3080",
+  "prompt": 1,
+  "seed": 7
+ },
+ "caf4711c7654": {
+  "dit": "w4a4_rtn_3080",
+  "prompt": 2,
+  "seed": 42
+ },
+ "e57cb5d82270": {
+  "dit": "w4a4_rtn_3080",
+  "prompt": 2,
+  "seed": 7
+ },
+ "587b859251f7": {
+  "dit": "w4a4_rtn_3080",
+  "prompt": 3,
+  "seed": 42
+ },
+ "b3f6c6458b5c": {
+  "dit": "w4a4_rtn_3080",
+  "prompt": 3,
+  "seed": 7
+ },
+ "3da9d0b8958e": {
+  "dit": "w4a4_rtn_3080",
+  "prompt": 4,
+  "seed": 42
+ },
+ "69cbe7d7a36b": {
+  "dit": "w4a4_rtn_3080",
+  "prompt": 4,
+  "seed": 7
+ },
+ "5469c4a21f53": {
+  "dit": "w4a4_rtn_3080",
+  "prompt": 5,
+  "seed": 42
+ },
+ "95e7dc4e8d2b": {
+  "dit": "w4a4_rtn_3080",
+  "prompt": 5,
+  "seed": 7
+ },
+ "a5c3a0600ffa": {
+  "dit": "w4a4_qat_3080",
+  "prompt": 0,
+  "seed": 42
+ },
+ "f4b957e27c85": {
+  "dit": "w4a4_qat_3080",
+  "prompt": 0,
+  "seed": 7
+ },
+ "9b213ebb8b07": {
+  "dit": "w4a4_qat_3080",
+  "prompt": 1,
+  "seed": 42
+ },
+ "6906b5fee0a7": {
+  "dit": "w4a4_qat_3080",
+  "prompt": 1,
+  "seed": 7
+ },
+ "aad5174cf5eb": {
+  "dit": "w4a4_qat_3080",
+  "prompt": 2,
+  "seed": 42
+ },
+ "d20a26c7dc2f": {
+  "dit": "w4a4_qat_3080",
+  "prompt": 2,
+  "seed": 7
+ },
+ "5beb262c4c66": {
+  "dit": "w4a4_qat_3080",
+  "prompt": 3,
+  "seed": 42
+ },
+ "635eff233a90": {
+  "dit": "w4a4_qat_3080",
+  "prompt": 3,
+  "seed": 7
+ },
+ "9e2267f2a9a1": {
+  "dit": "w4a4_qat_3080",
+  "prompt": 4,
+  "seed": 42
+ },
+ "ac0640012969": {
+  "dit": "w4a4_qat_3080",
+  "prompt": 4,
+  "seed": 7
+ },
+ "9018c9aa841a": {
+  "dit": "w4a4_qat_3080",
+  "prompt": 5,
+  "seed": 42
+ },
+ "7909d06e9071": {
+  "dit": "w4a4_qat_3080",
+  "prompt": 5,
+  "seed": 7
+ }
+}

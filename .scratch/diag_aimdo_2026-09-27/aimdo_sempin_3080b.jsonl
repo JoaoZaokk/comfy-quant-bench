@@ -1,0 +1,1 @@
+{"ev": "instalado", "conserta": false, "args": ["--windows-standalone-build", "--use-sage-attention", "--listen", "127.0.0.1", "--port", "8191", "--disable-pinned-memory"], "t": 1790490800.97}

@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "9e2267f2a9a1",
+ "resposta": {
+  "prompt_adherence": 7,
+  "text_accuracy": null,
+  "artifacts": 7,
+  "anatomy": 8,
+  "detail_realism": 6,
+  "overall": 7,
+  "defects": [
+   "droplets read as scratches/cracked-ice texture rather than water droplets",
+   "noisy smeary texture in glass interior",
+   "marble veining barely visible under bottle",
+   "cap atomizer button slightly odd/undefined",
+   "overall very dark, low contrast with background"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 7, \"text_accuracy\": null, \"artifacts\": 7, \"anatomy\": 8, \"detail_realism\": 6, \"overall\": 7, \"defects\": [\"droplets read as scratches/cracked-ice texture rather than water droplets\", \"noisy smeary texture in glass interior\", \"marble veining barely visible under bottle\", \"cap atomizer button slightly odd/undefined\", \"overall very dark, low contrast with background\"]}\n"
+}

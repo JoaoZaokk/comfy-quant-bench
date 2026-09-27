@@ -1,0 +1,42 @@
+{
+ "tipo": "ranking",
+ "prompt": 0,
+ "seed": 7,
+ "ordem": [
+  "f4b957e27c85",
+  "fd3d7d5056db",
+  "38b7934207d4"
+ ],
+ "resposta": {
+  "ranking": [
+   2,
+   1,
+   3
+  ],
+  "scores": {
+   "1": 5,
+   "2": 8,
+   "3": 3
+  },
+  "identical_pairs": [],
+  "defects": {
+   "1": [
+    "neon text distorted, letters wavy and only partially legible",
+    "very dark exposure, crushed shadows",
+    "cat shape barely distinguishable"
+   ],
+   "2": [
+    "slight neon bloom on letters",
+    "minor dark underexposure at edges"
+   ],
+   "3": [
+    "severe text misspelling, garbled 'IQWAIEN' across two lines",
+    "orange/purple color blotching in neon",
+    "washed painterly noise and smearing",
+    "cat nearly invisible"
+   ]
+  },
+  "reason": "Image 2 has correct readable text, clear cat, and cleanest detail; Image 1 has distorted but mostly readable text; Image 3 is garbled and noisy."
+ },
+ "bruto": "{\"ranking\": [2, 1, 3], \"scores\": {\"1\": 5, \"2\": 8, \"3\": 3}, \"identical_pairs\": [], \"defects\": {\"1\": [\"neon text distorted, letters wavy and only partially legible\", \"very dark exposure, crushed shadows\", \"cat shape barely distinguishable\"], \"2\": [\"slight neon bloom on letters\", \"minor dark underexposure at edges\"], \"3\": [\"severe text misspelling, garbled 'IQWAIEN' across two lines\", \"orange/purple color blotching in neon\", \"washed painterly noise and smearing\", \"cat nearly invisible\"]}, \"reason\": \"Image 2 has correct readable text, clear cat, and cleanest detail; Image 1 has distorted but mostly readable text; Image 3 is garbled and noisy.\"}\n"
+}

@@ -26,6 +26,10 @@ if sys.argv[1:] == ["escalas"]:  # fase 4: escalas refinadas por minimos quadrad
 if sys.argv[1:] == ["p010"]:  # fase 5: mixed com promote 0,10
     DITS = {"nosso_mixed_p010": "qwen_image_2.1_bf16_mixed_p010.safetensors"}
     ORDEM = "bateria/ordem_p010.txt"
+if sys.argv[1:] == ["qat"]:  # 27/09: W4A4 treinada por bloco (Colab) x a mesma W4A4 sem treino, as duas na 3080 Ti
+    DITS = {"w4a4_rtn_3080": "qwen_image_2.1_bf16_w4a4_convrot_f32.safetensors",
+            "w4a4_qat_3080": "qwen_image_2.1_bf16_w4a4_qat.safetensors"}
+    ORDEM = "bateria/ordem_qat.txt"
 lista = []
 for nome, arquivo in DITS.items():
     for i, p in enumerate(PROMPTS):

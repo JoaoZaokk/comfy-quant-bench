@@ -1,0 +1,21 @@
+{
+ "tipo": "nota",
+ "imagem": "f4b957e27c85",
+ "resposta": {
+  "prompt_adherence": 5,
+  "text_accuracy": 3,
+  "artifacts": 6,
+  "anatomy": 4,
+  "detail_realism": 7,
+  "overall": 5,
+  "defects": [
+   "sign text garbled/misspelled (\"QWEN IMNGE\")",
+   "missing period in \"2.1\" (renders as \"21\" split)",
+   "cat barely visible and structurally unclear",
+   "smeared neon letterforms",
+   "small debris shapes on sidewalk ambiguous",
+   "window interior lacks coherent detail"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 5, \"text_accuracy\": 3, \"artifacts\": 6, \"anatomy\": 4, \"detail_realism\": 7, \"overall\": 5, \"defects\": [\"sign text garbled/misspelled (\\\"QWEN IMNGE\\\")\", \"missing period in \\\"2.1\\\" (renders as \\\"21\\\" split)\", \"cat barely visible and structurally unclear\", \"smeared neon letterforms\", \"small debris shapes on sidewalk ambiguous\", \"window interior lacks coherent detail\"]}\n"
+}

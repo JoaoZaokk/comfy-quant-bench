@@ -1,0 +1,206 @@
+{
+ "cfg": {
+  "image_model": "qwen_image21",
+  "in_channels": 64,
+  "out_channels": 64,
+  "num_layers": 32,
+  "attention_head_dim": 128,
+  "num_attention_heads": 32,
+  "context_in_dim": 4096,
+  "mlp_ratio": 3,
+  "fused_mlp": true
+ },
+ "args": {
+  "comfy": "/content/ComfyUI",
+  "dit": "/content/qwen21/diffusion_models/qwen_image_2.1_bf16.safetensors",
+  "conds": "/content/qatq/conds_qwen21.pt",
+  "out": "/content/qatq/run",
+  "passos_traj": "25",
+  "amostras_por_traj": "4",
+  "passos": "300",
+  "lr": "1e-05",
+  "val_cada": "50",
+  "n_val": "16",
+  "smoke": "False"
+ },
+ "amostras": 192,
+ "rtn_fim_a_fim": [
+  0.24598094820976257,
+  0.3151438236236572,
+  0.2510557174682617,
+  0.30789995193481445,
+  0.2963181436061859,
+  0.44883888959884644
+ ],
+ "blocos": {
+  "0": {
+   "val_rtn": 0.0349123323103413,
+   "val_final": 0.01691932772519067,
+   "aceito": true
+  },
+  "1": {
+   "val_rtn": 0.018245894112624228,
+   "val_final": 0.015227872354444116,
+   "aceito": true
+  },
+  "2": {
+   "val_rtn": 0.019494033884257078,
+   "val_final": 0.018285958969499916,
+   "aceito": true
+  },
+  "3": {
+   "val_rtn": 0.025517553673125803,
+   "val_final": 0.024146643467247486,
+   "aceito": true
+  },
+  "4": {
+   "val_rtn": 0.030881137121468782,
+   "val_final": 0.02923989959526807,
+   "aceito": true
+  },
+  "5": {
+   "val_rtn": 0.05564657272771001,
+   "val_final": 0.039144928101450205,
+   "aceito": true
+  },
+  "6": {
+   "val_rtn": 0.08755716681480408,
+   "val_final": 0.04619804164394736,
+   "aceito": true
+  },
+  "7": {
+   "val_rtn": 0.055950649781152606,
+   "val_final": 0.04504031105898321,
+   "aceito": true
+  },
+  "8": {
+   "val_rtn": 0.0586712178774178,
+   "val_final": 0.05402068397961557,
+   "aceito": true
+  },
+  "9": {
+   "val_rtn": 0.06629437697120011,
+   "val_final": 0.062156624160707,
+   "aceito": true
+  },
+  "10": {
+   "val_rtn": 0.07661100081168115,
+   "val_final": 0.0727209213655442,
+   "aceito": true
+  },
+  "11": {
+   "val_rtn": 0.0857561961747706,
+   "val_final": 0.08065108791925013,
+   "aceito": true
+  },
+  "12": {
+   "val_rtn": 0.09295302350074053,
+   "val_final": 0.0885549015365541,
+   "aceito": true
+  },
+  "13": {
+   "val_rtn": 0.10029154317453504,
+   "val_final": 0.09562679193913937,
+   "aceito": true
+  },
+  "14": {
+   "val_rtn": 0.10473266616463661,
+   "val_final": 0.09960658522322774,
+   "aceito": true
+  },
+  "15": {
+   "val_rtn": 0.09955329308286309,
+   "val_final": 0.0952384453266859,
+   "aceito": true
+  },
+  "16": {
+   "val_rtn": 0.09210101934149861,
+   "val_final": 0.08813641266897321,
+   "aceito": true
+  },
+  "17": {
+   "val_rtn": 0.0894553610123694,
+   "val_final": 0.08602727600373328,
+   "aceito": true
+  },
+  "18": {
+   "val_rtn": 0.09105938440188766,
+   "val_final": 0.08777837036177516,
+   "aceito": true
+  },
+  "19": {
+   "val_rtn": 0.08537136996164918,
+   "val_final": 0.08300655148923397,
+   "aceito": true
+  },
+  "20": {
+   "val_rtn": 0.08262171689420938,
+   "val_final": 0.08012775448150933,
+   "aceito": true
+  },
+  "21": {
+   "val_rtn": 0.08168654656037688,
+   "val_final": 0.07963400497101247,
+   "aceito": true
+  },
+  "22": {
+   "val_rtn": 0.08134674117900431,
+   "val_final": 0.07949680695310235,
+   "aceito": true
+  },
+  "23": {
+   "val_rtn": 0.08351008966565132,
+   "val_final": 0.08191519160754979,
+   "aceito": true
+  },
+  "24": {
+   "val_rtn": 0.08751524146646261,
+   "val_final": 0.08562178909778595,
+   "aceito": true
+  },
+  "25": {
+   "val_rtn": 0.09376596938818693,
+   "val_final": 0.09202458616346121,
+   "aceito": true
+  },
+  "26": {
+   "val_rtn": 0.09947311505675316,
+   "val_final": 0.09739849390462041,
+   "aceito": true
+  },
+  "27": {
+   "val_rtn": 0.11115960590541363,
+   "val_final": 0.10858226614072919,
+   "aceito": true
+  },
+  "28": {
+   "val_rtn": 0.11935837427154183,
+   "val_final": 0.11648010555654764,
+   "aceito": true
+  },
+  "29": {
+   "val_rtn": 0.13596056681126356,
+   "val_final": 0.13132629357278347,
+   "aceito": true
+  },
+  "30": {
+   "val_rtn": 0.14459524769335985,
+   "val_final": 0.13921342696994543,
+   "aceito": true
+  },
+  "31": {
+   "val_rtn": 0.09122649347409606,
+   "val_final": 0.08774105925112963,
+   "aceito": true
+  }
+ },
+ "qat_fim_a_fim": [
+  0.22187647223472595,
+  0.23430438339710236,
+  0.31351375579833984,
+  0.3553117513656616,
+  0.3426937758922577,
+  0.3749084770679474
+ ],
+ "segundos": 2301
+}

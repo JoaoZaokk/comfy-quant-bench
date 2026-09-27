@@ -1,5 +1,5 @@
 # Um boot do ComfyUI e os grafos de bateria/ordem.txt em sequencia (agrupados por DiT). Lock da GPU do inicio ao fim.
-param([string]$Ordem = 'bateria\ordem.txt', [string]$Dono = 'comfy:qwen21_bateria_metricas', [string]$Log = 'bateria_comfy', [switch]$Dinamico, [string[]]$Extra = @())
+param([string]$Ordem = 'bateria\ordem.txt', [string]$Dono = 'comfy:qwen21_bateria_metricas', [string]$Log = 'bateria_comfy', [switch]$Dinamico, [string[]]$Extra = @(), [string]$Porta = '8190', [string]$Cvd = '0,1')
 $ErrorActionPreference = 'Stop'
 Set-Location F:\COMFY_PORTABLE
 $D = '.scratch\qwen21_2026-09-26'
@@ -7,9 +7,10 @@ $D = '.scratch\qwen21_2026-09-26'
 Assert-GpuLock -Owner $Dono
 try {
     $env:COMFYUI_MGPU_DISABLED = '1'
-    $env:CUDA_VISIBLE_DEVICES = '0,1'
+        $env:COMFY_PORT = $Porta
+    $env:CUDA_VISIBLE_DEVICES = $Cvd
     $a = @('-s', '.\ComfyUI\main.py', '--windows-standalone-build', '--use-sage-attention', '--disable-dynamic-vram',
-           '--listen', '127.0.0.1', '--port', '8190')
+           '--listen', '127.0.0.1', '--port', $Porta)
     $a += $Extra
     if ($Dinamico) { $a = $a | ? { $_ -ne '--disable-dynamic-vram' } }  # como o .bat do dono
     $p = Start-Process -FilePath .\python_embeded\python.exe -ArgumentList $a -PassThru -NoNewWindow `
@@ -24,7 +25,7 @@ try {
     } finally {
         & taskkill.exe /PID $p.Id /T /F 2>$null | Out-Null
         Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
-            ? { [string]$_.CommandLine -match 'main\.py.*--port 8190' } |
+            ? { [string]$_.CommandLine -match "main\.py.*--port $Porta" } |
             % { & taskkill.exe /PID $_.ProcessId /T /F 2>$null | Out-Null }
     }
 } finally {
