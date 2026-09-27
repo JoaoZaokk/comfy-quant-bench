@@ -1,6 +1,6 @@
 # comfy-kitchen 0.2.35 (on top of comfy_kitchen_w4a8_dequant_fused.patch): fused Triton dequant for AWQ W4A16 at large M.
 # Measured 2026-09-27, RTX 3090, [24576, 4096] group 32: 5.68 ms -> 0.35 ms; dequant+matmul 3% over BF16 matmul.
-# Apply from python_embeded\Lib\site-packages:  git apply -p1 --check <this file> && git apply -p1 <this file>
+# Apply from the portable root (F:\COMFY_PORTABLE): git apply -p1 --directory=python_embeded/Lib/site-packages --check <this file>, then without --check. Running git apply inside site-packages silently skips the files (it sits inside the root repo).
 diff --git a/comfy_kitchen/backends/cuda/__init__.py b/comfy_kitchen/backends/cuda/__init__.py
 index dcb0118..397b213 100644
 --- a/comfy_kitchen/backends/cuda/__init__.py

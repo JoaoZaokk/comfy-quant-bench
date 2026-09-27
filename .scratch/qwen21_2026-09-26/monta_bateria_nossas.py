@@ -45,6 +45,9 @@ if sys.argv[1:] == ["nativo_a16_ck"]:  # 27/09: W4A16 nativa com o patch do comf
 if sys.argv[1:] == ["q4_1_nativo"]:  # 27/09: codigos Q4_1 no layout AWQ W4A16 (patch local ComfyUI + comfy-kitchen)
     DITS = {"w4a16_q4_1_nativo": "qwen_image_2.1_bf16_q4_1_awq.safetensors"}
     ORDEM = "bateria/ordem_q4_1_nativo.txt"
+if sys.argv[1:] == ["q4_1_nativo_ckstock"]:  # 27/09: o mesmo Q4_1 nativo com o comfy-kitchen 0.2.35 SEM o patch Triton (para o PR)
+    DITS = {"w4a16_q4_1_nativo_ckstock2": "qwen_image_2.1_bf16_q4_1_awq.safetensors"}  # ckstock (1a tentativa) nao reverteu o patch: git apply dentro de site-packages pulava os arquivos
+    ORDEM = "bateria/ordem_q4_1_nativo_ckstock.txt"
 lista = []
 for nome, arquivo in DITS.items():
     for i, p in enumerate(PROMPTS):

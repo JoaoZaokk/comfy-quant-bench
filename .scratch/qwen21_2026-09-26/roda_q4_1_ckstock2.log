@@ -1,0 +1,51 @@
+lock TAKEN by comfy:qwen21_q4_1_ckstock2_bateria (heartbeat pid 49184)
+=== bateria/w4a16_q4_1_nativo_ckstock2_p0_s42.json 05:52:11 PM
+enviado aafdde86-25d8-4c42-82f4-893a7ab2c119
+success em 192 s
+FIM
+=== bateria/w4a16_q4_1_nativo_ckstock2_p0_s7.json 05:56:47 PM
+enviado cb03fb27-5a6a-4ad9-a6ff-f5f1bf4d7b4e
+success em 36 s
+FIM
+=== bateria/w4a16_q4_1_nativo_ckstock2_p1_s42.json 05:57:23 PM
+enviado 4f7cde87-3841-4131-9ece-15bbec7c3c46
+success em 36 s
+FIM
+=== bateria/w4a16_q4_1_nativo_ckstock2_p1_s7.json 05:57:59 PM
+enviado e271db8b-5946-45be-a1b5-6719257a8382
+success em 36 s
+FIM
+=== bateria/w4a16_q4_1_nativo_ckstock2_p2_s42.json 05:58:35 PM
+enviado 4a672e09-f530-42c8-98bc-bb4a2d16ebbe
+success em 36 s
+FIM
+=== bateria/w4a16_q4_1_nativo_ckstock2_p2_s7.json 05:59:11 PM
+enviado 170e925c-13ea-462b-b2f8-61962beefb27
+success em 36 s
+FIM
+=== bateria/w4a16_q4_1_nativo_ckstock2_p3_s42.json 05:59:47 PM
+enviado 6aaae8b0-6fd3-4fea-9c9f-670a2bddd567
+success em 36 s
+FIM
+=== bateria/w4a16_q4_1_nativo_ckstock2_p3_s7.json 06:00:22 PM
+enviado eb4d723a-9392-4c4e-9426-f296973ede01
+success em 36 s
+FIM
+=== bateria/w4a16_q4_1_nativo_ckstock2_p4_s42.json 06:00:58 PM
+enviado 7c15ef57-d5d1-4a2f-b815-0539e7b0175e
+success em 36 s
+FIM
+=== bateria/w4a16_q4_1_nativo_ckstock2_p4_s7.json 06:01:34 PM
+enviado fd146503-fb3c-444c-896f-f20f9f9fcc40
+success em 42 s
+FIM
+=== bateria/w4a16_q4_1_nativo_ckstock2_p5_s42.json 06:02:17 PM
+enviado 6980fcbd-9d6f-4fd6-90f5-8040725721aa
+success em 36 s
+FIM
+=== bateria/w4a16_q4_1_nativo_ckstock2_p5_s7.json 06:02:52 PM
+enviado d5288135-3036-479f-9ab0-9b964c759f24
+success em 36 s
+FIM
+lock RELEASED
+=== FIM bateria 06:03:30 PM

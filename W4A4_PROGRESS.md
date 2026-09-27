@@ -6372,3 +6372,21 @@ que o ComfyUI 0.37.4 carrega, mas o comfy-kitchen já tem o layout AWQ W4A16 com
 - HF: `qwen_image_2.1_w4a16_q4_1.safetensors` + card (11 builds; patches linkados no GitHub).
 - Os patches locais (ComfyUI e comfy-kitchen) têm de ser reaplicados após atualizar; backups pré-patch em
   `.scratch/pesos_so_2026-09-27/antes_q4_1/`.
+
+## Parte 65 -- 2026-09-27 (noite): PR upstream do formato `awq_w4a16`, e a medição honesta do comfy-kitchen original
+
+- PR aberto a pedido do dono: https://github.com/Comfy-Org/ComfyUI/pull/16612 (fork `JoaoZaokk/ComfyUI`, branch
+  `awq-w4a16-format`, worktree `C:\Users\joaoz\src\comfyui-pr-awq` sobre o master 4ef23c34). Inclui o que faltava no
+  patch local: gravar `group_size` ao salvar o state dict (sem isso, recarregar um checkpoint salvo usaria 64). Teste
+  novo `test_awq_w4a16_loads_into_params`; o arquivo passa (11 testes, CPU); ruff limpo. CLA: falhou, o dono
+  precisa assinar. O patch local `patches/comfyui_awq_w4a16_format.patch` foi regenerado com o mesmo ramo de save.
+- **Erro de procedimento achado e corrigido**: `git apply` rodado DENTRO de `python_embeded/Lib/site-packages` pula os
+  arquivos em silêncio com rc=0 (a pasta fica dentro do repo raiz). Os "reverse-check OK" anteriores dos patches do
+  comfy-kitchen e a 1ª bateria "com o kitchen original" (ckstock) foram inválidos — o patch continuava ativo (imagens
+  12/12 idênticas às do patch). Os arquivos em si estavam certos (editados à mão). Forma correta, da raiz:
+  `git apply -p1 --directory=python_embeded/Lib/site-packages [--check] [-R] <patch>`; cabeçalhos corrigidos; os dois
+  patches do kitchen conferidos assim.
+- Medição válida (ckstock2, patch Triton realmente revertido, conferido: awq.py ausente, 0 refs): Q4_1 nativo com o
+  comfy-kitchen 0.2.35 original = **0,75 it/s** (abaixo do GGUF 0,83); com o patch = 1,02. Camada [24576,4096] pelo
+  ops.py: 16,7 ms original x 12,0 ms com patch x 11,6 ms BF16. Qualidade igual (MS-SSIM 0,913). Patch reaplicado e
+  conferido depois.

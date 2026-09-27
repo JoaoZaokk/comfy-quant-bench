@@ -1,5 +1,5 @@
 # comfy-kitchen 0.2.35: fused dequant for W4A8 weights (used by ComfyUI's full_precision_matrix_mult / W4A16 path).
-# Apply from python_embeded\Lib\site-packages:  git apply -p1 <this file>   (check first with --check)
+# Apply from the portable root (F:\COMFY_PORTABLE): git apply -p1 --directory=python_embeded/Lib/site-packages --check <this file>, then without --check. Running git apply inside site-packages silently skips the files (it sits inside the root repo).
 # Measured 2026-09-27, RTX 3090, gate_up [24576, 4096]: 3.01 ms -> 0.64 ms; output = BF16 rounding of the fp32 reference.
 diff --git a/comfy_kitchen/backends/cuda/__init__.py b/comfy_kitchen/backends/cuda/__init__.py
 index 990dead..dcb0118 100644

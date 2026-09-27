@@ -1,5 +1,5 @@
 # ComfyUI 0.37.4: load comfy-kitchen's AWQ W4A16 layout as quant format 'awq_w4a16' (native W4A16, e.g. Q4_1 codes).
-# Apply from ComfyUI/:  git apply --check <this file> && git apply <this file>
+# Upstream PR: see W4A4_PROGRESS Parte 65. Apply from ComfyUI/:  git apply --check <this file> && git apply <this file>
 diff --git a/comfy/quant_ops.py b/comfy/quant_ops.py
 index 01dfff3..126d63f 100644
 --- a/comfy/quant_ops.py
@@ -45,7 +45,7 @@ index 01dfff3..126d63f 100644
  # ==============================================================================
  # Re-exports for backward compatibility
 diff --git a/comfy/ops.py b/comfy/ops.py
-index 5688384..71d9543 100644
+index 5688384..dffce80 100644
 --- a/comfy/ops.py
 +++ b/comfy/ops.py
 @@ -1268,6 +1268,13 @@ def _load_quantized_module(module, super_load, state_dict, prefix, local_metadat
@@ -62,3 +62,12 @@ index 5688384..71d9543 100644
          else:
              raise ValueError(f"Unsupported quantization format: {module.quant_format}")
  
+@@ -1322,6 +1329,8 @@ def _quantized_weight_state_dict(module, sd, prefix, extra_quant_conf=None, extr
+         elif module.quant_format == "asym_w4a8_int8":
+             quant_conf["group_size"] = getattr(params, "group_size", 16)
+             quant_conf["convrot_groupsize"] = getattr(params, "convrot_groupsize", 256)
++        elif module.quant_format == "awq_w4a16":
++            quant_conf["group_size"] = getattr(params, "group_size", 64)
+         if extra_quant_conf:
+             quant_conf.update(extra_quant_conf)
+         sd[f"{prefix}comfy_quant"] = torch.tensor(list(json.dumps(quant_conf).encode("utf-8")), dtype=torch.uint8)
