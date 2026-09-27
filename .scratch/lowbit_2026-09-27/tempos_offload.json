@@ -1,0 +1,74 @@
+[
+ {
+  "s": 25.123,
+  "braco": "ref_bf16_ternario",
+  "prompt": 0,
+  "seed": 11
+ },
+ {
+  "s": 6.05,
+  "braco": "ref_bf16_ternario",
+  "prompt": 0,
+  "seed": 12
+ },
+ {
+  "s": 13.322,
+  "braco": "ref_bf16_ternario",
+  "prompt": 1,
+  "seed": 11
+ },
+ {
+  "s": 6.069,
+  "braco": "ref_bf16_ternario",
+  "prompt": 1,
+  "seed": 12
+ },
+ {
+  "s": 13.863,
+  "braco": "ternario_mlx",
+  "prompt": 0,
+  "seed": 11
+ },
+ {
+  "s": 2.954,
+  "braco": "ternario_mlx",
+  "prompt": 0,
+  "seed": 12
+ },
+ {
+  "s": 9.988,
+  "braco": "ternario_mlx",
+  "prompt": 1,
+  "seed": 11
+ },
+ {
+  "s": 2.963,
+  "braco": "ternario_mlx",
+  "prompt": 1,
+  "seed": 12
+ },
+ {
+  "s": 11.951,
+  "braco": "binario_mlx",
+  "prompt": 0,
+  "seed": 11
+ },
+ {
+  "s": 2.869,
+  "braco": "binario_mlx",
+  "prompt": 0,
+  "seed": 12
+ },
+ {
+  "s": 10.054,
+  "braco": "binario_mlx",
+  "prompt": 1,
+  "seed": 11
+ },
+ {
+  "s": 2.891,
+  "braco": "binario_mlx",
+  "prompt": 1,
+  "seed": 12
+ }
+]

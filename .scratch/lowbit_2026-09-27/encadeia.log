@@ -1,0 +1,19 @@
+lock TAKEN by comfy:lowbit_loader_residente (heartbeat pid 68168)
+{"s": 25.535, "braco": "ref_bf16_ternario", "prompt": 0, "seed": 11}
+{"s": 2.499, "braco": "ref_bf16_ternario", "prompt": 0, "seed": 12}
+{"s": 2.795, "braco": "ref_bf16_ternario", "prompt": 1, "seed": 11}
+{"s": 2.538, "braco": "ref_bf16_ternario", "prompt": 1, "seed": 12}
+VRAM ref_bf16_ternario [('cuda:0 NVIDIA GeForce RT', 16.18), ('cuda:1 NVIDIA GeForce RT', 1.16)]
+{"s": 5.358, "braco": "ternario_mlx", "prompt": 0, "seed": 11}
+{"s": 2.569, "braco": "ternario_mlx", "prompt": 0, "seed": 12}
+{"s": 2.819, "braco": "ternario_mlx", "prompt": 1, "seed": 11}
+{"s": 2.573, "braco": "ternario_mlx", "prompt": 1, "seed": 12}
+VRAM ternario_mlx [('cuda:0 NVIDIA GeForce RT', 10.29), ('cuda:1 NVIDIA GeForce RT', 1.16)]
+{"s": 4.633, "braco": "binario_mlx", "prompt": 0, "seed": 11}
+{"s": 2.585, "braco": "binario_mlx", "prompt": 0, "seed": 12}
+{"s": 2.838, "braco": "binario_mlx", "prompt": 1, "seed": 11}
+{"s": 2.581, "braco": "binario_mlx", "prompt": 1, "seed": 12}
+VRAM binario_mlx [('cuda:0 NVIDIA GeForce RT', 9.86), ('cuda:1 NVIDIA GeForce RT', 1.16)]
+lock RELEASED
+=== FIM residente 07:08:11 PM
+=== FIM ENCADEIA 07:08:11 PM

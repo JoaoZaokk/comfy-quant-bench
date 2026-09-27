@@ -6390,3 +6390,21 @@ que o ComfyUI 0.37.4 carrega, mas o comfy-kitchen já tem o layout AWQ W4A16 com
   comfy-kitchen 0.2.35 original = **0,75 it/s** (abaixo do GGUF 0,83); com o patch = 1,02. Camada [24576,4096] pelo
   ops.py: 16,7 ms original x 12,0 ms com patch x 11,6 ms BF16. Qualidade igual (MS-SSIM 0,913). Patch reaplicado e
   conferido depois.
+
+## Parte 66 -- 2026-09-27 (noite): loader nativo para ternário/binário (Bonsai Image)
+
+Pedido dele: loader nativo para o ternário, o binário e os packs do Bonsai (gemlite/MLX), com offload, dual GPU, CPU,
+kernel e autodetecção. O único loader existente (solai25/ComfyUI-Bonsai-4B-2Bit) roda pipeline próprio fora do
+ModelPatcher e exige hqq/gemlite; foi criado um novo: `custom_nodes/comfy-lowbit-loader` (stub em
+`ComfyUI/custom_nodes/comfy-lowbit-loader`, padrão do preflight). Critério e números: `.scratch/lowbit_2026-09-27/`.
+
+- Sonda: gemlite int2/int1 = `q*s + z`, códigos LSB-first ao longo de K, pack transposto (K/r, N), s/z fp32 --
+  mesma convenção do MLX. Um layout só (`LowBitAffineLayout`, formato `lowbit_affine`), registrado pelo nó; único
+  gancho é um wrapper em `comfy.ops._load_quantized_module`. Nenhum arquivo do core editado.
+- P1: 600/600 camadas (2 modelos x 3 packs) bit a bit ao unpacked; controle falha (0/100). P2: Triton == torch.
+- P4: ternário pelo loader (MLX, gemlite, unpacked) gera imagens **idênticas byte a byte** ao BF16 convertido (braço 2).
+- VRAM do DiT: ternário 1359 MB, binário 920 MB, BF16 7392 MB.
+- it/s (3090, 1024², 4 passos): residente BF16 2,52 x ternário 2,42 (0,96x); padrão do .bat (dynamic VRAM) BF16 2,01 x
+  ternário 2,47; `--novram` BF16 0,93 x ternário 1,59 x binário 1,65; DiT na 3080 Ti 2,07.
+- `--novram` muda a imagem igual para BF16 e ternário (MS-SSIM 0,9974 vs fase principal): efeito do modo.
+- Não coberto: LoRA, render em CPU, Arc A770 (sem placa). Kernel com ativação int8 (ganho real de velocidade) não feito.

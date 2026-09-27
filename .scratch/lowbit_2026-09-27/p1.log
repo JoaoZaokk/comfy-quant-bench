@@ -1,0 +1,7 @@
+ternary  gemlite  bits [2] camadas 100 identicas bit a bit 100  (21 s)
+ternary  mlx      bits [2] camadas 100 identicas bit a bit 100  (12 s)
+CONTROLE ternario mlx vs unpacked BINARIO: identicas 0/100, fracao media identica 0.0137
+binary   gemlite  bits [1] camadas 100 identicas bit a bit 100  (15 s)
+binary   mlx      bits [1] camadas 100 identicas bit a bit 100  (10 s)
+ternary  unpacked bits [2] camadas empacotadas 100 densos 69 identicas 100  (44 s)
+binary   unpacked bits [1] camadas empacotadas 100 densos 69 identicas 100  (30 s)
