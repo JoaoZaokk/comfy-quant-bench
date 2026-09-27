@@ -36,9 +36,11 @@ def tempos(log: Path):
         m = re.search(r"(loaded completely|loaded partially)[^\n]*", linha)
         if m:
             carga = m.group(0)[:200]
-        m = re.search(r"Prompt executed in ([\d.]+) seconds", linha)
+        # acima de um minuto o ComfyUI escreve hh:mm:ss em vez de "N seconds"
+        m = re.search(r"Prompt executed in (?:([\d.]+) seconds|(\d+):(\d+):([\d.]+))", linha)
         if m:
-            out.append({"its": its, "seg": float(m.group(1)), "carga": carga})
+            seg = float(m.group(1)) if m.group(1) else int(m.group(2)) * 3600 + int(m.group(3)) * 60 + float(m.group(4))
+            out.append({"its": its, "seg": seg, "carga": carga})
             its = None
     return out
 
@@ -80,7 +82,7 @@ def main():
                       "grao": grao(x) / g_ref})
         res["por_imagem"][dit] = linhas
         # a 1a imagem de cada DiT inclui a carga do modelo: fica fora da media de tempo
-        quentes = linhas[1:]
+        quentes = linhas[1:] or linhas  # controle de 1 imagem: sem media quente
         r = {"n": len(linhas), "its_mediana": st.median(L["its"] for L in quentes if L["its"]),
              "seg_mediana_quente": st.median(L["seg"] for L in quentes), "seg_primeira": linhas[0]["seg"],
              "carga": linhas[-1]["carga"]}

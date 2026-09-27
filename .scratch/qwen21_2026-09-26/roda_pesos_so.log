@@ -1,0 +1,176 @@
+lock TAKEN by comfy:qwen21_pesos_so_bateria (heartbeat pid 7988)
+=== bateria/w8a8_rowwise_p0_s42.json 02:05:10 PM
+enviado 5b239085-970c-443d-b0b5-3441c2953373
+Traceback (most recent call last):
+  File "F:\COMFY_PORTABLE\.scratch\roda_eros_2gpu.py", line 96, in <module>
+    main()
+    ~~~~^^
+  File "F:\COMFY_PORTABLE\.scratch\roda_eros_2gpu.py", line 84, in main
+    h = req(f"/history/{pid}")
+  File "F:\COMFY_PORTABLE\.scratch\roda_eros_2gpu.py", line 11, in req
+    return json.loads(urllib.request.urlopen(r, timeout=60).read())
+                      ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "urllib\request.py", line 189, in urlopen
+  File "urllib\request.py", line 489, in open
+  File "urllib\request.py", line 506, in _open
+  File "urllib\request.py", line 466, in _call_chain
+  File "urllib\request.py", line 1348, in http_open
+  File "urllib\request.py", line 1323, in do_open
+  File "http\client.py", line 1450, in getresponse
+  File "http\client.py", line 336, in begin
+  File "http\client.py", line 297, in _read_status
+  File "socket.py", line 719, in readinto
+TimeoutError: timed out
+ERRO rc=1 em bateria/w8a8_rowwise_p0_s42.json
+=== bateria/w8a8_rowwise_p0_s7.json 02:13:40 PM
+enviado 1f18c43f-0950-47c1-a907-0ccf461229c1
+success em 251 s
+FIM
+=== bateria/w8a8_rowwise_p1_s42.json 02:22:54 PM
+enviado 8dd22ad1-d1a6-4995-b4f1-94d8a4f744b6
+success em 15 s
+FIM
+=== bateria/w8a8_rowwise_p1_s7.json 02:23:10 PM
+enviado 9ab218be-86da-43a6-97c8-b4d4a2c4c633
+success em 15 s
+FIM
+=== bateria/w8a8_rowwise_p2_s42.json 02:23:25 PM
+enviado aaed1f81-1217-4f2c-a1ed-c530e52604ae
+success em 15 s
+FIM
+=== bateria/w8a8_rowwise_p2_s7.json 02:23:41 PM
+enviado cd10f3a4-3246-4b98-a4a1-fb8824121e34
+success em 15 s
+FIM
+=== bateria/w8a8_rowwise_p3_s42.json 02:23:56 PM
+enviado b42f0dc5-a3a3-4b37-a587-ed6e9be27cd7
+success em 15 s
+FIM
+=== bateria/w8a8_rowwise_p3_s7.json 02:24:12 PM
+enviado 1122dd13-c3d1-4227-b354-e5bfc6418fd7
+success em 15 s
+FIM
+=== bateria/w8a8_rowwise_p4_s42.json 02:24:28 PM
+enviado 9bb2670a-204d-4758-9272-fbf0a88621e5
+success em 15 s
+FIM
+=== bateria/w8a8_rowwise_p4_s7.json 02:24:43 PM
+enviado f13877a8-e2d5-4176-b3d1-d47a8f6506e5
+success em 15 s
+FIM
+=== bateria/w8a8_rowwise_p5_s42.json 02:24:59 PM
+enviado 0beab506-1d20-4d7d-b834-365c1d34c611
+success em 15 s
+FIM
+=== bateria/w8a8_rowwise_p5_s7.json 02:25:14 PM
+enviado b8858343-3636-4b42-8e37-1928e3c96ec0
+success em 15 s
+FIM
+=== bateria/w8a16_q8_0_p0_s42.json 02:25:30 PM
+enviado 483ce1ff-d8c4-42fd-8fee-b30895e6c429
+success em 117 s
+FIM
+=== bateria/w8a16_q8_0_p0_s7.json 02:27:27 PM
+enviado 22b649c2-04fe-41e5-bcec-df11b9d70af7
+success em 31 s
+FIM
+=== bateria/w8a16_q8_0_p1_s42.json 02:27:58 PM
+enviado 39ca4b48-7962-404f-8dc3-0bcef6449a3f
+success em 31 s
+FIM
+=== bateria/w8a16_q8_0_p1_s7.json 02:28:29 PM
+enviado 5566883c-9c16-4e11-b6e4-6610bd4f4499
+success em 31 s
+FIM
+=== bateria/w8a16_q8_0_p2_s42.json 02:28:59 PM
+enviado 6052faed-d12a-447b-879c-eb3f147a755d
+success em 31 s
+FIM
+=== bateria/w8a16_q8_0_p2_s7.json 02:29:30 PM
+enviado b39d49f0-78cf-453b-90ee-a72beb62ab5d
+success em 31 s
+FIM
+=== bateria/w8a16_q8_0_p3_s42.json 02:30:01 PM
+enviado ba0d5a9e-9099-47de-b7e9-7680d280537b
+success em 31 s
+FIM
+=== bateria/w8a16_q8_0_p3_s7.json 02:30:32 PM
+enviado 6589da2b-dc33-4b72-a817-cee800bffbbb
+success em 31 s
+FIM
+=== bateria/w8a16_q8_0_p4_s42.json 02:31:02 PM
+enviado ee66d9e7-2c40-45cc-be65-00a0e1d61f6d
+success em 31 s
+FIM
+=== bateria/w8a16_q8_0_p4_s7.json 02:31:33 PM
+enviado 145fed79-ec81-4d80-a2a4-ceb3ffd84f9d
+success em 31 s
+FIM
+=== bateria/w8a16_q8_0_p5_s42.json 02:32:04 PM
+enviado f5bd9080-79ff-445d-a6f7-e5bc449fe1fb
+success em 31 s
+FIM
+=== bateria/w8a16_q8_0_p5_s7.json 02:32:35 PM
+enviado c4ff3610-60c1-4635-92c8-3dc56dbd63eb
+success em 31 s
+FIM
+=== bateria/w4a16_q4_1_p0_s42.json 02:33:06 PM
+enviado 4d22052e-9c3d-464a-b21b-e1624f5044be
+success em 97 s
+FIM
+=== bateria/w4a16_q4_1_p0_s7.json 02:34:42 PM
+enviado f63d0f11-ba8e-44ed-a671-fcc36d6e446c
+success em 36 s
+FIM
+=== bateria/w4a16_q4_1_p1_s42.json 02:35:18 PM
+enviado d0eee931-0ee2-4811-8e64-aead17609125
+success em 36 s
+FIM
+=== bateria/w4a16_q4_1_p1_s7.json 02:35:54 PM
+enviado ce4922a7-2b67-4395-81ec-17726272001e
+success em 36 s
+FIM
+=== bateria/w4a16_q4_1_p2_s42.json 02:36:30 PM
+enviado afda646d-199f-4670-a37c-768d5ff69bf5
+success em 36 s
+FIM
+=== bateria/w4a16_q4_1_p2_s7.json 02:37:06 PM
+enviado e0911697-0636-492c-938c-b9639c87c463
+success em 36 s
+FIM
+=== bateria/w4a16_q4_1_p3_s42.json 02:37:42 PM
+enviado a0b07857-21b4-4f8d-81dd-d8ee34a5cc6b
+success em 36 s
+FIM
+=== bateria/w4a16_q4_1_p3_s7.json 02:38:17 PM
+enviado ce0583ad-3529-46a9-8c23-fd5d0893e34d
+success em 36 s
+FIM
+=== bateria/w4a16_q4_1_p4_s42.json 02:38:53 PM
+enviado 4921f663-9e7a-495d-bf70-73f11bfe2898
+success em 36 s
+FIM
+=== bateria/w4a16_q4_1_p4_s7.json 02:39:29 PM
+enviado 5b13273c-73cd-4340-8fc7-8ea30a4995fb
+success em 36 s
+FIM
+=== bateria/w4a16_q4_1_p5_s42.json 02:40:05 PM
+enviado 9e585fd8-5463-4f7c-8c5b-e6123031f405
+success em 36 s
+FIM
+=== bateria/w4a16_q4_1_p5_s7.json 02:40:41 PM
+enviado 98f029ff-7d48-49bc-99a0-5dd761326436
+success em 36 s
+FIM
+=== bateria/nosso_int8_p0_s42.json 02:41:17 PM
+enviado c0af8212-4a32-477f-bfbb-f64c10fd21af
+success em 97 s
+FIM
+lock RELEASED
+taskkill.exe : ERROR: The process "8784" not found.
+At F:\COMFY_PORTABLE\.scratch\qwen21_2026-09-26\roda_bateria.ps1:26 char:9
++         & taskkill.exe /PID $p.Id /T /F 2>$null | Out-Null
++         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ERROR: The process "8784" not found.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 

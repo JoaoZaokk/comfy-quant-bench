@@ -1,0 +1,11 @@
+[
+  {"nome": "BF16", "its": 1.05, "msssim": 1.0, "gb": 13.3, "cor": "#888888"},
+  {"nome": "W8A8 ConvRot", "its": 2.40, "msssim": 0.995, "gb": 6.8, "cor": "#2a7ab9"},
+  {"nome": "W8A8 rowwise", "dx": 10, "dy": -14, "its": 2.35, "msssim": 0.976, "gb": 6.8, "cor": "#7fb3d9"},
+  {"nome": "W8A16 Q8_0", "dx": -80, "dy": -24, "its": 0.94, "msssim": 0.987, "gb": 7.2, "cor": "#2a9bb9"},
+  {"nome": "W4A8", "its": 2.01, "msssim": 0.932, "gb": 3.9, "cor": "#3a9b5c"},
+  {"nome": "mixed 0.10", "its": 2.21, "msssim": 0.917, "gb": 3.8, "cor": "#8a6fc2"},
+  {"nome": "W4A16 Q4_1", "dx": 10, "dy": -10, "its": 0.83, "msssim": 0.912, "gb": 4.3, "cor": "#b99a2a"},
+  {"nome": "W4A4 RTN", "dx": 10, "dy": -18, "its": 3.26, "msssim": 0.821, "gb": 3.5, "cor": "#d06a3a"},
+  {"nome": "W4A4 QAT (speed = RTN kernels)", "dx": -150, "dy": 8, "its": 3.26, "msssim": 0.843, "gb": 3.5, "cor": "#c43a6a", "vazio": true}
+]

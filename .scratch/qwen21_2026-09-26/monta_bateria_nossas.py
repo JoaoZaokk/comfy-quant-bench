@@ -30,6 +30,11 @@ if sys.argv[1:] == ["qat"]:  # 27/09: W4A4 treinada por bloco (Colab) x a mesma 
     DITS = {"w4a4_rtn_3080": "qwen_image_2.1_bf16_w4a4_convrot_f32.safetensors",
             "w4a4_qat_3080": "qwen_image_2.1_bf16_w4a4_qat.safetensors"}
     ORDEM = "bateria/ordem_qat.txt"
+if sys.argv[1:] == ["pesos_so"]:  # 27/09: W8A8 sem rotacao e os weight-only GGUF (W8A16 Q8_0, W4A16 Q4_1)
+    DITS = {"w8a8_rowwise": "qwen_image_2.1_bf16_int8.safetensors",
+            "w8a16_q8_0": "qwen_image_2.1_bf16_Q8_0.gguf",
+            "w4a16_q4_1": "qwen_image_2.1_bf16_Q4_1.gguf"}
+    ORDEM = "bateria/ordem_pesos_so.txt"
 lista = []
 for nome, arquivo in DITS.items():
     for i, p in enumerate(PROMPTS):
@@ -45,6 +50,8 @@ for nome, arquivo in DITS.items():
                 "7": {"class_type": "VAEDecode", "inputs": {"samples": ["6", 0], "vae": ["3", 0]}},
                 "8": {"class_type": "SaveImage", "inputs": {"images": ["7", 0], "filename_prefix": f"qwen21_bateria/{nome}/p{i}_s{s}"}},
             }
+            if arquivo.endswith(".gguf"):  # ComfyUI-GGUF: desquantiza o peso para BF16 antes de cada matmul
+                g["1"] = {"class_type": "UnetLoaderGGUF", "inputs": {"unet_name": arquivo}}
             f = f"bateria/{nome}_p{i}_s{s}.json"
             (AQUI / f).write_text(json.dumps(g, indent=1))
             lista.append(f)

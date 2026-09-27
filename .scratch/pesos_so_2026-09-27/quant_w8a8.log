@@ -1,0 +1,8 @@
+Source: \\NAS\purple\ComfyBench\diffusion_models\qwen_image_2.1_bf16.safetensors
+Profile: qwen_image21   convrot=False groupsize=256   device=cpu
+Selected Linear weights: 192
+Output: \\NAS\purple\ComfyBench\diffusion_models\qwen_image_2.1_bf16_int8.safetensors
+[120/192] quantized
+[192/192] quantized
+Wrote \\NAS\purple\ComfyBench\diffusion_models\qwen_image_2.1_bf16_int8.safetensors (6.76 GiB) in 4.4 min
+Wrote \\NAS\purple\ComfyBench\diffusion_models\qwen_image_2.1_bf16_int8.quant.json

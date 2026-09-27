@@ -1,0 +1,7 @@
+Source: \\NAS\purple\ComfyBench\diffusion_models\qwen_image_2.1_bf16.safetensors
+Profile: qwen_image21  type=Q8_0  quantized=192  kept=73
+Output: \\NAS\purple\ComfyBench\diffusion_models\qwen_image_2.1_bf16_Q8_0.gguf (~7.16 GiB)
+[100/265] tensors
+[200/265] tensors
+[265/265] tensors
+Wrote \\NAS\purple\ComfyBench\diffusion_models\qwen_image_2.1_bf16_Q8_0.gguf (7.16 GiB) in 3.6 min; weight rel-RMSE mean 0.0057 max 0.0070

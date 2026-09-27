@@ -23,6 +23,9 @@ try {
             if ($LASTEXITCODE -ne 0) { Write-Host "ERRO rc=$LASTEXITCODE em $g" }
         }
     } finally {
+        # No Windows PowerShell 5 o stderr do taskkill ("not found") vira erro terminante com 'Stop' e pulava a
+        # segunda limpeza, deixando o servidor vivo (27/09).
+        $ErrorActionPreference = 'Continue'
         & taskkill.exe /PID $p.Id /T /F 2>$null | Out-Null
         Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
             ? { [string]$_.CommandLine -match "main\.py.*--port $Porta" } |

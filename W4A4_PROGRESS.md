@@ -6297,3 +6297,28 @@ Tudo em `.scratch/qwen21_2026-09-26/resultados.md` (numeros, tabelas, arquivos).
   checkout: validado por injecao de falha (completa, saida identica). Por que o driver da OOM ali: em aberto.
   1/4 execucoes do caminho pinado deu imagem diferente sem falha (corrida? nao confirmado). Issue #16223 comentada
   duas vezes. `.scratch/roda_eros_2gpu.py` e os drivers ganharam porta configuravel (a 8190 ficou presa).
+
+## Parte 62 -- 2026-09-27 (tarde): W8A8 sem rotacao, W8A16 e W4A16 (GGUF) do Qwen 2.1; card do HF completo
+
+Critério antes: `.scratch/pesos_so_2026-09-27/criterio.md`. Conversor novo `tools/quant_gguf.py` (GGUF weight-only via
+gguf-py 0.19, do FP32, mesmas 192 lineares, resto BF16, arch `qwen_image`, `.partial` + recusas). Bateria de sempre na
+3090 (6 prompts x 2 seeds, 1024², 25 passos), métricas contra o BF16 de 26/09; controle int8 ConvRot p0_s42 bit a bit
+igual ao de 26/09.
+
+| build | it/s | MS-SSIM (mín) | PSNR | pesos na VRAM |
+|---|---|---|---|---|
+| W8A8 ConvRot (ref.) | 2,40 | 0,995 (0,987) | 38,8 | 6,9 GB |
+| W8A8 rowwise (`quant_int8 --no-convrot`) | 2,35 | 0,976 (0,927) | 30,3 | 6,9 GB |
+| W8A16 GGUF Q8_0 | 0,94 | 0,987 (0,896) | 38,4 | 7,5 GB |
+| W4A16 GGUF Q4_1 | 0,83 | 0,912 (0,817) | 23,6 | 4,5 GB |
+
+- W4A16 NÃO tem o traço duplo no neon: peso de 4 bits com ativação BF16 fica limpo → confirma que o artefato é da
+  ativação de 4 bits. Mas é menos fiel que W4A8 (0,932) e 2,4× mais lento; não substitui W4A8/mixed.
+- W8A16 ≈ W8A8 ConvRot em fidelidade (7/12 ≥ 0,995; um retrato divergiu de trajetória, 0,896) e 2,6× mais lento.
+- A rotação ConvRot compra 0,976 → 0,995 de MS-SSIM (30 → 39 dB) na W8A8 sem custo de velocidade.
+- GGUF (ComfyUI-GGUF desquantiza por matmul) fica abaixo do BF16 em it/s na 3090; ganho só de VRAM.
+- Q4_K_M não gerado: gguf-py não implementa quantização K.
+- Dono pediu subir: os três arquivos + sidecars estão no HF privado `JoaoZaokk/qwen21-w4a4-qat`, com o card (8 builds,
+  comparativos, antes/depois do QAT, gráfico). MiMo cego não rodado nesses três.
+- Correções de ferramenta: `metricas_bateria.py` lê "Prompt executed in hh:mm:ss"; `roda_bateria.ps1` não deixa mais o
+  servidor vivo quando o taskkill falha sob Windows PowerShell 5.
