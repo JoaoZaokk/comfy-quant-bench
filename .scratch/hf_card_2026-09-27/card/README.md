@@ -116,7 +116,7 @@ So W = (q − 8)·scale + zeros is exactly Q4_1's q·d + m. Two local patches ar
   adds `awq_w4a16` to `comfy/quant_ops.py` and its loader branch to `comfy/ops.py`, about 20 lines.
 - `comfy_kitchen_awq_w4a16_triton.patch`: at DiT batch sizes (M > 256), comfy-kitchen dequantizes this layout with a
   chain of PyTorch ops (5.7 ms on the largest layer). This patch adds a fused Triton kernel (0.35 ms) and keeps the
-  cuBLAS matmul. Without it, the build runs but at GGUF-like speed.
+  cuBLAS matmul. Without it, the build runs at 0.75 it/s, slower than the GGUF (0.83). Upstream: format support is proposed in [Comfy-Org/ComfyUI#16612](https://github.com/Comfy-Org/ComfyUI/pull/16612).
 
 Tested with:
 - ComfyUI 0.37.4
