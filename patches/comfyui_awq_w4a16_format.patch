@@ -1,0 +1,64 @@
+# ComfyUI 0.37.4: load comfy-kitchen's AWQ W4A16 layout as quant format 'awq_w4a16' (native W4A16, e.g. Q4_1 codes).
+# Apply from ComfyUI/:  git apply --check <this file> && git apply <this file>
+diff --git a/comfy/quant_ops.py b/comfy/quant_ops.py
+index 01dfff3..126d63f 100644
+--- a/comfy/quant_ops.py
++++ b/comfy/quant_ops.py
+@@ -14,6 +14,7 @@ try:
+         TensorCoreConvRotW4A4Layout as _CKTensorCoreConvRotW4A4Layout,
+         TensorWiseINT8Layout as _CKTensorWiseINT8Layout,
+         AsymW4A8Int8Layout as _CKAsymW4A8Int8Layout,
++        TensorCoreAWQW4A16Layout as _CKAWQW4A16Layout,
+         register_layout_op,
+         register_layout_class,
+         get_layout_class,
+@@ -63,6 +64,9 @@ except ImportError as e:
+     class _CKAsymW4A8Int8Layout:
+         pass
+ 
++    class _CKAWQW4A16Layout:
++        pass
++
+     def register_layout_class(name, cls):
+         pass
+ 
+@@ -207,6 +211,7 @@ register_layout_class("TensorCoreConvRotW4A4Layout", _CKTensorCoreConvRotW4A4Lay
+ if _CK_MXFP8_AVAILABLE:
+     register_layout_class("TensorCoreMXFP8Layout", TensorCoreMXFP8Layout)
+ register_layout_class("AsymW4A8Int8Layout", _CKAsymW4A8Int8Layout)
++register_layout_class("TensorCoreAWQW4A16Layout", _CKAWQW4A16Layout)
+ 
+ QUANT_ALGOS = {
+     "float8_e4m3fn": {
+@@ -256,6 +261,13 @@ QUANT_ALGOS["asym_w4a8_int8"] = {
+     "quantize_input": False,
+ }
+ 
++QUANT_ALGOS["awq_w4a16"] = {
++    "storage_t": torch.int8,
++    "parameters": {"weight_scale"},
++    "comfy_tensor_layout": "TensorCoreAWQW4A16Layout",
++    "quantize_input": False,
++}
++
+ 
+ # ==============================================================================
+ # Re-exports for backward compatibility
+diff --git a/comfy/ops.py b/comfy/ops.py
+index 5688384..71d9543 100644
+--- a/comfy/ops.py
++++ b/comfy/ops.py
+@@ -1268,6 +1268,13 @@ def _load_quantized_module(module, super_load, state_dict, prefix, local_metadat
+                     layer_conf.get("convrot_groupsize", params_conf.get("convrot_groupsize", 256))
+                 ),
+             }
++        elif module.quant_format == "awq_w4a16":
++            # uint4 weight (packed int8 [N,K/2]), per-group scale and zero [K/G,N]: W = (q - 8) * scale + zeros.
++            scale = pop_scale("weight_scale")
++            zeros = pop_scale("weight_zeros")
++            if scale is None or zeros is None:
++                raise ValueError(f"Missing AWQ W4A16 scale/zeros for layer {layer_name}")
++            scales = {"scale": scale, "zeros": zeros, "group_size": int(layer_conf.get("group_size", 64))}
+         else:
+             raise ValueError(f"Unsupported quantization format: {module.quant_format}")
+ 

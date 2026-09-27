@@ -7,7 +7,8 @@
   {"nome": "W4A8", "its": 2.01, "msssim": 0.932, "gb": 3.9, "cor": "#3a9b5c"},
   {"nome": "mixed 0.10", "its": 2.21, "msssim": 0.917, "gb": 3.8, "cor": "#8a6fc2"},
   {"nome": "W4A16 native", "dx": 12, "dy": 2, "its": 0.99, "msssim": 0.933, "gb": 3.9, "cor": "#8b6f1f"},
-  {"nome": "W4A16 GGUF", "dx": 12, "dy": -18, "its": 0.83, "msssim": 0.912, "gb": 4.3, "cor": "#d9c27f"},
+  {"nome": "Q4_1 native", "dx": 12, "dy": -6, "its": 1.02, "msssim": 0.913, "gb": 4.3, "cor": "#b3861f"},
+  {"nome": "Q4_1 GGUF", "dx": -30, "dy": -34, "its": 0.83, "msssim": 0.912, "gb": 4.3, "cor": "#d9c27f"},
   {"nome": "W4A4 RTN", "dx": 10, "dy": -18, "its": 3.26, "msssim": 0.821, "gb": 3.5, "cor": "#d06a3a"},
   {"nome": "W4A4 QAT (speed = RTN kernels)", "dx": -150, "dy": 8, "its": 3.26, "msssim": 0.843, "gb": 3.5, "cor": "#c43a6a", "vazio": true}
 ]

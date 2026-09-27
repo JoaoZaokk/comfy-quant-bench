@@ -42,6 +42,9 @@ if sys.argv[1:] == ["nativo_a16"]:  # 27/09: W8A16/W4A16 nativos (full_precision
 if sys.argv[1:] == ["nativo_a16_ck"]:  # 27/09: W4A16 nativa com o patch do comfy-kitchen (dequant W4A8 fundida)
     DITS = {"w4a16_nativo_ck": "qwen_image_2.1_bf16_w4a8_f32_a16.safetensors"}
     ORDEM = "bateria/ordem_nativo_a16_ck.txt"
+if sys.argv[1:] == ["q4_1_nativo"]:  # 27/09: codigos Q4_1 no layout AWQ W4A16 (patch local ComfyUI + comfy-kitchen)
+    DITS = {"w4a16_q4_1_nativo": "qwen_image_2.1_bf16_q4_1_awq.safetensors"}
+    ORDEM = "bateria/ordem_q4_1_nativo.txt"
 lista = []
 for nome, arquivo in DITS.items():
     for i, p in enumerate(PROMPTS):

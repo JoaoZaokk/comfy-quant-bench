@@ -42,6 +42,13 @@ if sys.argv[1:] == ["nativo_a16"]:  # 27/09: W8A16/W4A16 nativos (full_precision
         ("qwen_image_2.1_bf16_int8_convrot_f32_a16.quant.json", "qwen_image_2.1_w8a16.quant.json"),
     ]
 
+
+if sys.argv[1:] == ["q4_1_nativo"]:  # 27/09: codigos Q4_1 no layout AWQ W4A16 nativo
+    ARQUIVOS = [
+        ("qwen_image_2.1_bf16_q4_1_awq.safetensors", "qwen_image_2.1_w4a16_q4_1.safetensors"),
+        ("qwen_image_2.1_bf16_q4_1_awq.quant.json", "qwen_image_2.1_w4a16_q4_1.quant.json"),
+    ]
+
 api = HfApi()
 no_repo = {f.path: getattr(f, "size", None) for f in api.list_repo_tree(REPO, recursive=True)}
 for local, remoto in ARQUIVOS:

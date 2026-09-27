@@ -6355,3 +6355,20 @@ Pedido: "faz o patch, quero o w4a16 e o w8a16 nativos. isso é um goal". Critér
   Não é mais rápido que o BF16 e não pode ser (a conta é BF16); vale pela VRAM e por não quantizar ativação.
 - HF: `qwen_image_2.1_w8a16.safetensors`, `qwen_image_2.1_w4a16.safetensors` + card atualizado (10 builds, o patch do
   comfy-kitchen descrito no card).
+
+## Parte 64 -- 2026-09-27 (fim da tarde): Q4_1 NATIVO (formato `awq_w4a16`)
+
+Pedido: "faz o q4_1 nativo também". Os códigos Q4_1 (uint4, d e m fp16 por bloco de 32) não cabem em nenhum formato
+que o ComfyUI 0.37.4 carrega, mas o comfy-kitchen já tem o layout AWQ W4A16 com a mesma conta: (q-8)*s + z, z = m + 8d.
+- `tools/quant_awq_w4a16.py` (novo): códigos Q4_1 do gguf-py (os mesmos do GGUF) reempacotados; escala/zero em BF16
+  (contrato do kitchen: saída no dtype das escalas). Erro de peso 0,0811 (GGUF 0,0809).
+- Patch ComfyUI `patches/comfyui_awq_w4a16_format.patch`: registra `TensorCoreAWQW4A16Layout` e o formato
+  `awq_w4a16` (`quant_ops.py`) + ramo de carga `weight_scale`/`weight_zeros`/`group_size` (`ops.py`).
+- Patch comfy-kitchen `patches/comfy_kitchen_awq_w4a16_triton.patch` (sobre o da W4A8): `backends/triton/awq.py` novo
+  (dequant fundida em Triton) usado pelo caminho M>256 do `gemv_awq_w4a16` CUDA; matmul continua no cuBLAS.
+  [24576,4096] g32: 5,68 → 0,35 ms; dequant+matmul 3% acima da BF16. Validado: AWQ x gguf-py rel 0,003 (BF16 das escalas).
+- Bateria (3090): **1,02 it/s** (GGUF Q4_1 0,83; BF16 1,05), MS-SSIM 0,913 (GGUF 0,912), PSNR 23,7; nativo x GGUF
+  entre si MS-SSIM 0,9925 (mesmos pesos). 4,32 GiB.
+- HF: `qwen_image_2.1_w4a16_q4_1.safetensors` + card (11 builds; patches linkados no GitHub).
+- Os patches locais (ComfyUI e comfy-kitchen) têm de ser reaplicados após atualizar; backups pré-patch em
+  `.scratch/pesos_so_2026-09-27/antes_q4_1/`.
