@@ -1,0 +1,18 @@
+{
+ "tipo": "nota",
+ "imagem": "9aa0e6e43526",
+ "resposta": {
+  "prompt_adherence": 9,
+  "text_accuracy": null,
+  "artifacts": 8,
+  "anatomy": 8,
+  "detail_realism": 9,
+  "overall": 8,
+  "defects": [
+   "right eye slightly misaligned",
+   "ear edge a bit unnatural",
+   "background window blur slightly flat"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 9, \"text_accuracy\": null, \"artifacts\": 8, \"anatomy\": 8, \"detail_realism\": 9, \"overall\": 8, \"defects\": [\"right eye slightly misaligned\", \"ear edge a bit unnatural\", \"background window blur slightly flat\"]}\n"
+}

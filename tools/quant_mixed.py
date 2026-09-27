@@ -357,7 +357,11 @@ def measure_layer(layer: str, weight: torch.Tensor, x: torch.Tensor, ck,
     result = {"err_bf16": finite(layer, "err_bf16",
                                  relative(reference, F.linear(x, weight), weights))}
 
-    qdata4, wscales4 = ck.quantize_convrot_w4a4_weight(weight, convrot_groupsize, 64)
+    # FP32 na entrada do quantizador (26/09): a rotacao ConvRot em BF16 muda ~8% dos codigos int8 em +-1-2.
+    # Comfy-Org (int8-convrot) e NidAll (W4A8) quantizam do peso em FP32 -- conferido: 99,9999% dos codigos
+    # iguais com FP32, 91% (int8) / 97,9% (W4A8) com BF16. Os dtypes de saida nao mudam.
+    wq = weight.float()
+    qdata4, wscales4 = ck.quantize_convrot_w4a4_weight(wq, convrot_groupsize, 64)
     got4 = ck.convrot_w4a4_linear(x, qdata4, wscales4, None, convrot_groupsize, 64)
     result["err_w4a4"] = finite(layer, "err_w4a4", relative(reference, got4, weights))
     del qdata4, wscales4, got4
@@ -373,7 +377,7 @@ def measure_layer(layer: str, weight: torch.Tensor, x: torch.Tensor, ck,
         return result
 
     qdata8, s_rel, s_channel, correction, codebook = ck.quantize_w4a8_int8_weight(
-        weight, group_size=group_size, convrot_groupsize=convrot_groupsize,
+        wq, group_size=group_size, convrot_groupsize=convrot_groupsize,
         symmetric=True, scale_dtype=torch.float8_e4m3fn, codebook=True,
         codebook_tensor=None, stochastic_rounding=0)
     if correction is not None:
@@ -848,8 +852,9 @@ def main() -> int:
             info = header[name]
             start, end = info["data_offsets"]
             stem = name.removesuffix(".weight")
+            # FP32 na entrada do quantizador (26/09): ver `measure_layer`.
             weight = read_tensor(handle, data_start + start, end - start,
-                                 info["dtype"], info["shape"]).to("cuda")
+                                 info["dtype"], info["shape"]).to("cuda", dtype=torch.float32)
             if decision[stem] == "convrot_w4a4":
                 qdata, scale = ck.quantize_convrot_w4a4_weight(
                     weight, args.convrot_groupsize, 64)

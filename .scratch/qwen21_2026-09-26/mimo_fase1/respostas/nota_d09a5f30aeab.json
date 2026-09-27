@@ -1,0 +1,21 @@
+{
+ "tipo": "nota",
+ "imagem": "d09a5f30aeab",
+ "resposta": {
+  "prompt_adherence": 9,
+  "text_accuracy": null,
+  "artifacts": 8,
+  "anatomy": 6,
+  "detail_realism": 8,
+  "overall": 8,
+  "defects": [
+   "thumb nail oversized and pale",
+   "finger proportions slightly off",
+   "front apple slightly flattened",
+   "apple skin texture smoothed",
+   "finger tip merges into apple surface",
+   "pear stems slightly pasted-on"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 9, \"text_accuracy\": null, \"artifacts\": 8, \"anatomy\": 6, \"detail_realism\": 8, \"overall\": 8, \"defects\": [\"thumb nail oversized and pale\", \"finger proportions slightly off\", \"front apple slightly flattened\", \"apple skin texture smoothed\", \"finger tip merges into apple surface\", \"pear stems slightly pasted-on\"]}\n"
+}

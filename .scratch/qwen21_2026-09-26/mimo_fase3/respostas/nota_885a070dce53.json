@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "885a070dce53",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": null,
+  "artifacts": 8,
+  "anatomy": null,
+  "detail_realism": 8,
+  "overall": 8,
+  "defects": [
+   "river largely obscured by mist in the middle",
+   "canopy texture slightly repetitive",
+   "soft smearing in lower-left trees",
+   "sunrise light diffuse, no visible sun or warm glow",
+   "minor softness at water's edge"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": null, \"artifacts\": 8, \"anatomy\": null, \"detail_realism\": 8, \"overall\": 8, \"defects\": [\"river largely obscured by mist in the middle\", \"canopy texture slightly repetitive\", \"soft smearing in lower-left trees\", \"sunrise light diffuse, no visible sun or warm glow\", \"minor softness at water's edge\"]}\n"
+}

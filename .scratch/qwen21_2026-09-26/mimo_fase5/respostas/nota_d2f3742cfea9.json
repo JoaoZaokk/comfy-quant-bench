@@ -1,0 +1,18 @@
+{
+ "tipo": "nota",
+ "imagem": "d2f3742cfea9",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": 10,
+  "artifacts": 9,
+  "anatomy": 9,
+  "detail_realism": 8,
+  "overall": 8,
+  "defects": [
+   "headline is light-weight serif, not bold",
+   "extra squiggle element at bottom not requested",
+   "large empty mid-region leaves composition sparse"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": 10, \"artifacts\": 9, \"anatomy\": 9, \"detail_realism\": 8, \"overall\": 8, \"defects\": [\"headline is light-weight serif, not bold\", \"extra squiggle element at bottom not requested\", \"large empty mid-region leaves composition sparse\"]}\n"
+}

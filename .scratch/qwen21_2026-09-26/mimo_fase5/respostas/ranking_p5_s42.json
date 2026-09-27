@@ -1,0 +1,49 @@
+{
+ "tipo": "ranking",
+ "prompt": 5,
+ "seed": 42,
+ "ordem": [
+  "e367179ae991",
+  "36fcd525ebd6",
+  "1346912b7bf4",
+  "a88aa331b6f9"
+ ],
+ "resposta": {
+  "ranking": [
+   2,
+   3,
+   4,
+   1
+  ],
+  "scores": {
+   "1": 5.0,
+   "2": 8.5,
+   "3": 8.5,
+   "4": 8.5
+  },
+  "identical_pairs": [],
+  "defects": {
+   "1": [
+    "only two apples instead of three",
+    "unexplained brown amorphous object below the held apple (clear artifact)",
+    "held apple partly merges with hand contact shadow"
+   ],
+   "2": [
+    "small green lobe behind left pear reads as an extra hidden fruit",
+    "minor skin mottling on large apple"
+   ],
+   "3": [
+    "small green lobe behind left pear",
+    "slightly overlong dark stem on right apple",
+    "minor streaking on large apple"
+   ],
+   "4": [
+    "small green lobe behind left pear",
+    "stem tip on right apple looks truncated/knobbed",
+    "subtle color banding on table wood"
+   ]
+  },
+  "reason": "Images 2-4 are near-identical high-quality renders with correct count (3 apples, 2 pears, hand) and only minor stem/fruit-lobe nits, while Image 1 misses an apple and contains a conspicuous brown artifact object."
+ },
+ "bruto": "{\"ranking\": [2, 3, 4, 1], \"scores\": {\"1\": 5.0, \"2\": 8.5, \"3\": 8.5, \"4\": 8.5}, \"identical_pairs\": [], \"defects\": {\"1\": [\"only two apples instead of three\", \"unexplained brown amorphous object below the held apple (clear artifact)\", \"held apple partly merges with hand contact shadow\"], \"2\": [\"small green lobe behind left pear reads as an extra hidden fruit\", \"minor skin mottling on large apple\"], \"3\": [\"small green lobe behind left pear\", \"slightly overlong dark stem on right apple\", \"minor streaking on large apple\"], \"4\": [\"small green lobe behind left pear\", \"stem tip on right apple looks truncated/knobbed\", \"subtle color banding on table wood\"]}, \"reason\": \"Images 2-4 are near-identical high-quality renders with correct count (3 apples, 2 pears, hand) and only minor stem/fruit-lobe nits, while Image 1 misses an apple and contains a conspicuous brown artifact object.\"}\n"
+}

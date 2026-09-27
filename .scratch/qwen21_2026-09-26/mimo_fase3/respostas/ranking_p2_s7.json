@@ -1,0 +1,66 @@
+{
+ "tipo": "ranking",
+ "prompt": 2,
+ "seed": 7,
+ "ordem": [
+  "d3d37d7d22de",
+  "172b9c21256c",
+  "850e88e460d8",
+  "6fdc6b139a61",
+  "1c6056a32e5f",
+  "5ceeef4736f9"
+ ],
+ "resposta": {
+  "ranking": [
+   1,
+   4,
+   6,
+   2,
+   3,
+   5
+  ],
+  "scores": {
+   "1": 9,
+   "2": 8,
+   "3": 6,
+   "4": 8,
+   "5": 2,
+   "6": 8
+  },
+  "identical_pairs": [
+   [
+    4,
+    6
+   ],
+   [
+    2,
+    4
+   ]
+  ],
+  "defects": {
+   "1": [
+    "slightly larger cup than 'small line drawing' spec"
+   ],
+   "2": [
+    "composition crowded at top with huge empty area below",
+    "cup less detailed, dark fill instead of pure line art"
+   ],
+   "3": [
+    "coffee cup anatomy broken: malformed handle and messy bowl outline",
+    "slight noise on cup rendering"
+   ],
+   "4": [
+    "content anchored only at top, weak use of canvas"
+   ],
+   "5": [
+    "severe text corruption: duplicated garbled 'SLOW MORNINGS' with noise smears",
+    "distorted letterforms and ink-like blotches"
+   ],
+   "6": [
+    "content anchored only at top, weak use of canvas"
+   ]
+  },
+  "reason": "Image 1 is cleanest and best composed with correct spelling and crisp line art; 4/6 (visually identical) and 2 are clean but top-heavy; 3 has a broken cup drawing; 5 has catastrophic text artifacts."
+ },
+ "bruto": "{\"ranking\": [1, 4, 6, 2, 3, 5], \"scores\": {\"1\": 9, \"2\": 8, \"3\": 6, \"4\": 8, \"5\": 2, \"6\": 8}, \"identical_pairs\": [[4, 6], [2, 4]], \"defects\": {\"1\": [\"slightly larger cup than 'small line drawing' spec\"], \"2\": [\"composition crowded at top with huge empty area below\", \"cup less detailed, dark fill instead of pure line art\"], \"3\": [\"coffee cup anatomy broken: malformed handle and messy bowl outline\", \"slight noise on cup rendering\"], \"4\": [\"content anchored only at top, weak use of canvas\"], \"5\": [\"severe text corruption: duplicated garbled 'SLOW MORNINGS' with noise smears\", \"distorted letterforms and ink-like blotches\"], \"6\": [\"content anchored only at top, weak use of canvas\"]}, \"reason\": \"Image 1 is cleanest and best composed with correct spelling and crisp line art; 4/6 (visually identical) and 2 are clean but top-heavy; 3 has a broken cup drawing; 5 has catastrophic text artifacts.\"}\n"
+}

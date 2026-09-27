@@ -1,0 +1,18 @@
+{
+ "tipo": "nota",
+ "imagem": "e54f791cd7a8",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": null,
+  "artifacts": 9,
+  "anatomy": 9,
+  "detail_realism": 9,
+  "overall": 8,
+  "defects": [
+   "no explicit fisherman cues",
+   "slight smoothing on cheek",
+   "background window slightly blown out"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": null, \"artifacts\": 9, \"anatomy\": 9, \"detail_realism\": 9, \"overall\": 8, \"defects\": [\"no explicit fisherman cues\", \"slight smoothing on cheek\", \"background window slightly blown out\"]}\n"
+}

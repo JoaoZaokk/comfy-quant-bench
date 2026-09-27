@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "418d44c452d6",
+ "resposta": {
+  "prompt_adherence": 6,
+  "text_accuracy": null,
+  "artifacts": 7,
+  "anatomy": 7,
+  "detail_realism": 8,
+  "overall": 7,
+  "defects": [
+   "no visual cues of a fisherman",
+   "eyes slightly asymmetric",
+   "oversharpened skin texture on cheeks",
+   "right ear large and oddly placed",
+   "soft window light plausible but source not visibly soft"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 6, \"text_accuracy\": null, \"artifacts\": 7, \"anatomy\": 7, \"detail_realism\": 8, \"overall\": 7, \"defects\": [\"no visual cues of a fisherman\", \"eyes slightly asymmetric\", \"oversharpened skin texture on cheeks\", \"right ear large and oddly placed\", \"soft window light plausible but source not visibly soft\"]}\n"
+}

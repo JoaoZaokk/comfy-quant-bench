@@ -1,0 +1,19 @@
+{
+ "tipo": "nota",
+ "imagem": "c2a220841f22",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": 9,
+  "artifacts": 6,
+  "anatomy": 8,
+  "detail_realism": 7,
+  "overall": 7,
+  "defects": [
+   "stray scribble mark at bottom not requested",
+   "sketchy stray marks around coffee cup/saucer",
+   "minor artifact on top of letter L",
+   "steam line faint and slightly broken"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": 9, \"artifacts\": 6, \"anatomy\": 8, \"detail_realism\": 7, \"overall\": 7, \"defects\": [\"stray scribble mark at bottom not requested\", \"sketchy stray marks around coffee cup/saucer\", \"minor artifact on top of letter L\", \"steam line faint and slightly broken\"]}\n"
+}

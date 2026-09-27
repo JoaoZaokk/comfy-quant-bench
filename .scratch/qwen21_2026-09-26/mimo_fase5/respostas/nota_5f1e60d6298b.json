@@ -1,0 +1,21 @@
+{
+ "tipo": "nota",
+ "imagem": "5f1e60d6298b",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": null,
+  "artifacts": 7,
+  "anatomy": null,
+  "detail_realism": 7,
+  "overall": 7,
+  "defects": [
+   "vertical seam line down center of bottle",
+   "droplets read as bubbles inside glass, not on surface",
+   "marble veining barely visible on surface",
+   "rim light uneven/weak on left edge",
+   "flat pure-black background lacks depth",
+   "slight smearing around bottle shoulder"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": null, \"artifacts\": 7, \"anatomy\": null, \"detail_realism\": 7, \"overall\": 7, \"defects\": [\"vertical seam line down center of bottle\", \"droplets read as bubbles inside glass, not on surface\", \"marble veining barely visible on surface\", \"rim light uneven/weak on left edge\", \"flat pure-black background lacks depth\", \"slight smearing around bottle shoulder\"]}\n"
+}

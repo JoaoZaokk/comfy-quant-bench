@@ -1,0 +1,19 @@
+{
+ "tipo": "nota",
+ "imagem": "73c655b345bc",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": null,
+  "artifacts": 9,
+  "anatomy": 9,
+  "detail_realism": 9,
+  "overall": 9,
+  "defects": [
+   "black marble veining not clearly visible on surface",
+   "background noise/gradient banding in dark areas",
+   "spray nozzle inner detail slightly soft",
+   "surface reads as wet slate more than marble"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": null, \"artifacts\": 9, \"anatomy\": 9, \"detail_realism\": 9, \"overall\": 9, \"defects\": [\"black marble veining not clearly visible on surface\", \"background noise/gradient banding in dark areas\", \"spray nozzle inner detail slightly soft\", \"surface reads as wet slate more than marble\"]}\n"
+}

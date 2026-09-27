@@ -1,0 +1,61 @@
+{
+ "tipo": "ranking",
+ "prompt": 3,
+ "seed": 7,
+ "ordem": [
+  "19d199d9bbfa",
+  "bf79f1096d5a",
+  "546bf5d204f3",
+  "b8e4ccce4d29",
+  "11ee1bd67b2a",
+  "1db7e1b80c66"
+ ],
+ "resposta": {
+  "ranking": [
+   2,
+   4,
+   6,
+   3,
+   1,
+   5
+  ],
+  "scores": {
+   "1": 7,
+   "2": 9,
+   "3": 8,
+   "4": 9,
+   "5": 6,
+   "6": 8
+  },
+  "identical_pairs": [
+   [
+    2,
+    4
+   ]
+  ],
+  "defects": {
+   "1": [
+    "mist banding on water surface",
+    "slightly soft fine detail"
+   ],
+   "2": [
+    "minor haze washout at horizon"
+   ],
+   "3": [
+    "mudflat/branch clutter reduces clean river read"
+   ],
+   "4": [
+    "minor haze washout at horizon"
+   ],
+   "5": [
+    "heavy mist obscures river detail",
+    "washed-out low contrast"
+   ],
+   "6": [
+    "slightly less rich color than image 2/4"
+   ]
+  },
+  "reason": "Images 2 and 4 are pixel-identical with rich autumn color, sharp detail and best prompt adherence; 6 and 3 are strong, 1 has mist banding, and 5 is washed out by heavy mist."
+ },
+ "bruto": "{\"ranking\": [2, 4, 6, 3, 1, 5], \"scores\": {\"1\": 7, \"2\": 9, \"3\": 8, \"4\": 9, \"5\": 6, \"6\": 8}, \"identical_pairs\": [[2, 4]], \"defects\": {\"1\": [\"mist banding on water surface\", \"slightly soft fine detail\"], \"2\": [\"minor haze washout at horizon\"], \"3\": [\"mudflat/branch clutter reduces clean river read\"], \"4\": [\"minor haze washout at horizon\"], \"5\": [\"heavy mist obscures river detail\", \"washed-out low contrast\"], \"6\": [\"slightly less rich color than image 2/4\"]}, \"reason\": \"Images 2 and 4 are pixel-identical with rich autumn color, sharp detail and best prompt adherence; 6 and 3 are strong, 1 has mist banding, and 5 is washed out by heavy mist.\"}\n"
+}

@@ -1,0 +1,21 @@
+{
+ "tipo": "nota",
+ "imagem": "e4a6ec0beee5",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": 9,
+  "artifacts": 7,
+  "anatomy": 7,
+  "detail_realism": 8,
+  "overall": 8,
+  "defects": [
+   "cat sits off to the right rather than under the sign",
+   "cat is small and slightly blob-like with indistinct features",
+   "murky crushed shadows in dark background areas",
+   "slight smearing in wet pavement reflections",
+   "background clutter (bench, wall fixtures) slightly indistinct",
+   "minor neon fringing/bloom around letter edges"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": 9, \"artifacts\": 7, \"anatomy\": 7, \"detail_realism\": 8, \"overall\": 8, \"defects\": [\"cat sits off to the right rather than under the sign\", \"cat is small and slightly blob-like with indistinct features\", \"murky crushed shadows in dark background areas\", \"slight smearing in wet pavement reflections\", \"background clutter (bench, wall fixtures) slightly indistinct\", \"minor neon fringing/bloom around letter edges\"]}\n"
+}

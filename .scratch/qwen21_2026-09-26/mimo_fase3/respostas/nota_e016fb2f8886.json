@@ -1,0 +1,21 @@
+{
+ "tipo": "nota",
+ "imagem": "e016fb2f8886",
+ "resposta": {
+  "prompt_adherence": 9,
+  "text_accuracy": 9,
+  "artifacts": 8,
+  "anatomy": 8,
+  "detail_realism": 9,
+  "overall": 8,
+  "defects": [
+   "cat sits to the side rather than directly under the sign",
+   "cat is dark and low-contrast, details hard to read",
+   "neon color inconsistency (teal Q vs red letters)",
+   "deep shadows crush detail in the shop interior",
+   "pavement reflections slightly smeared",
+   "minor noise in dark areas"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 9, \"text_accuracy\": 9, \"artifacts\": 8, \"anatomy\": 8, \"detail_realism\": 9, \"overall\": 8, \"defects\": [\"cat sits to the side rather than directly under the sign\", \"cat is dark and low-contrast, details hard to read\", \"neon color inconsistency (teal Q vs red letters)\", \"deep shadows crush detail in the shop interior\", \"pavement reflections slightly smeared\", \"minor noise in dark areas\"]}\n"
+}

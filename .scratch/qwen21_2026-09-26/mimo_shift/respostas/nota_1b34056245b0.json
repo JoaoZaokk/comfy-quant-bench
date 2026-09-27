@@ -1,0 +1,21 @@
+{
+ "tipo": "nota",
+ "imagem": "1b34056245b0",
+ "resposta": {
+  "prompt_adherence": 7,
+  "text_accuracy": 3,
+  "artifacts": 8,
+  "anatomy": 7,
+  "detail_realism": 8,
+  "overall": 7,
+  "defects": [
+   "sign reads 'QWEN MAGE' - missing letter I",
+   "'2.1' rendered with broken spacing as '2 . 1'",
+   "two cats instead of one requested cat",
+   "dark cat silhouette shape is muddy/unclear",
+   "minor grain/noise in dark areas",
+   "neon letters have uneven stroke thickness"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 7, \"text_accuracy\": 3, \"artifacts\": 8, \"anatomy\": 7, \"detail_realism\": 8, \"overall\": 7, \"defects\": [\"sign reads 'QWEN MAGE' - missing letter I\", \"'2.1' rendered with broken spacing as '2 . 1'\", \"two cats instead of one requested cat\", \"dark cat silhouette shape is muddy/unclear\", \"minor grain/noise in dark areas\", \"neon letters have uneven stroke thickness\"]}\n"
+}

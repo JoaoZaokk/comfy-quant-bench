@@ -1,0 +1,21 @@
+{
+ "tipo": "nota",
+ "imagem": "e016fb2f8886",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": 8,
+  "artifacts": 7,
+  "anatomy": 7,
+  "detail_realism": 7,
+  "overall": 7,
+  "defects": [
+   "Q glyph has inconsistent cyan glow unlike other letters",
+   "cat is low-detail and slightly malformed",
+   "crushed blacks lose shadow detail",
+   "neon bloom fringing around lettering",
+   "rain streaks smear on glass",
+   "cat sits to the side rather than directly under sign"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": 8, \"artifacts\": 7, \"anatomy\": 7, \"detail_realism\": 7, \"overall\": 7, \"defects\": [\"Q glyph has inconsistent cyan glow unlike other letters\", \"cat is low-detail and slightly malformed\", \"crushed blacks lose shadow detail\", \"neon bloom fringing around lettering\", \"rain streaks smear on glass\", \"cat sits to the side rather than directly under sign\"]}\n"
+}

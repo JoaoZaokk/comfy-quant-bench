@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "2bb1ff7c4ade",
+ "resposta": {
+  "prompt_adherence": 9,
+  "text_accuracy": null,
+  "artifacts": 9,
+  "anatomy": null,
+  "detail_realism": 8,
+  "overall": 8,
+  "defects": [
+   "droplets on glass are sparse and larger than 'tiny'",
+   "pump/nozzle mechanism slightly soft and simplified",
+   "marble surface reads more like wet black stone than veined marble",
+   "minor smearing at base reflections",
+   "internal dip tube curvature looks slightly synthetic"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 9, \"text_accuracy\": null, \"artifacts\": 9, \"anatomy\": null, \"detail_realism\": 8, \"overall\": 8, \"defects\": [\"droplets on glass are sparse and larger than 'tiny'\", \"pump/nozzle mechanism slightly soft and simplified\", \"marble surface reads more like wet black stone than veined marble\", \"minor smearing at base reflections\", \"internal dip tube curvature looks slightly synthetic\"]}\n"
+}

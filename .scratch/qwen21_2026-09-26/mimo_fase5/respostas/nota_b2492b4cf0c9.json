@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "b2492b4cf0c9",
+ "resposta": {
+  "prompt_adherence": 6,
+  "text_accuracy": null,
+  "artifacts": 9,
+  "anatomy": 8,
+  "detail_realism": 9,
+  "overall": 7,
+  "defects": [
+   "only two red apples, prompt asks for three",
+   "apple count wrong",
+   "otherwise faithful colors and composition",
+   "hand slightly stiff but plausible",
+   "minor skin texture smoothing"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 6, \"text_accuracy\": null, \"artifacts\": 9, \"anatomy\": 8, \"detail_realism\": 9, \"overall\": 7, \"defects\": [\"only two red apples, prompt asks for three\", \"apple count wrong\", \"otherwise faithful colors and composition\", \"hand slightly stiff but plausible\", \"minor skin texture smoothing\"]}\n"
+}

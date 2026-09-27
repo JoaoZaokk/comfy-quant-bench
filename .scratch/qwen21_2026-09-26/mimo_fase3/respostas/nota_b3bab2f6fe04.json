@@ -1,0 +1,21 @@
+{
+ "tipo": "nota",
+ "imagem": "b3bab2f6fe04",
+ "resposta": {
+  "prompt_adherence": 6,
+  "text_accuracy": null,
+  "artifacts": 6,
+  "anatomy": 7,
+  "detail_realism": 6,
+  "overall": 6,
+  "defects": [
+   "surface reads as rough black gravel, not marble with veining",
+   "droplets look like dust specks rather than water",
+   "glass silhouette wavy/melted at shoulders and edges",
+   "cap slightly soft and deformed",
+   "speckle noise inside the glass volume",
+   "faint, implausible contact reflection on the base"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 6, \"text_accuracy\": null, \"artifacts\": 6, \"anatomy\": 7, \"detail_realism\": 6, \"overall\": 6, \"defects\": [\"surface reads as rough black gravel, not marble with veining\", \"droplets look like dust specks rather than water\", \"glass silhouette wavy/melted at shoulders and edges\", \"cap slightly soft and deformed\", \"speckle noise inside the glass volume\", \"faint, implausible contact reflection on the base\"]}\n"
+}

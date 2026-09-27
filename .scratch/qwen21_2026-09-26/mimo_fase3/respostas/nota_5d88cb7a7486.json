@@ -1,0 +1,19 @@
+{
+ "tipo": "nota",
+ "imagem": "5d88cb7a7486",
+ "resposta": {
+  "prompt_adherence": 6,
+  "text_accuracy": null,
+  "artifacts": 9,
+  "anatomy": 8,
+  "detail_realism": 8,
+  "overall": 7,
+  "defects": [
+   "only two apples shown, prompt asked for three",
+   "hand contacts the apple at an odd angle",
+   "apple skin slightly waxy/smooth",
+   "faint smearing near pear stems"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 6, \"text_accuracy\": null, \"artifacts\": 9, \"anatomy\": 8, \"detail_realism\": 8, \"overall\": 7, \"defects\": [\"only two apples shown, prompt asked for three\", \"hand contacts the apple at an odd angle\", \"apple skin slightly waxy/smooth\", \"faint smearing near pear stems\"]}\n"
+}

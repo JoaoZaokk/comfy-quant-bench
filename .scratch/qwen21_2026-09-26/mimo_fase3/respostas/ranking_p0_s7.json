@@ -1,0 +1,70 @@
+{
+ "tipo": "ranking",
+ "prompt": 0,
+ "seed": 7,
+ "ordem": [
+  "5726f7224908",
+  "825d6c119036",
+  "db7cb46adb98",
+  "66a023a62fc0",
+  "66284b9b8d99",
+  "38b7934207d4"
+ ],
+ "resposta": {
+  "ranking": [
+   1,
+   5,
+   6,
+   4,
+   2,
+   3
+  ],
+  "scores": {
+   "1": 8,
+   "2": 5,
+   "3": 3,
+   "4": 7,
+   "5": 8,
+   "6": 8
+  },
+  "identical_pairs": [
+   [
+    5,
+    6
+   ]
+  ],
+  "defects": {
+   "1": [
+    "overall very dark",
+    "cat low-detail pale blob"
+   ],
+   "2": [
+    "wobbly/melted neon letterforms",
+    "visible grain noise on facade",
+    "cat nearly invisible dark blob",
+    "subtitle text distorted"
+   ],
+   "3": [
+    "severely distorted illegible text",
+    "very dark crushed blacks",
+    "cat indistinct",
+    "low fine detail"
+   ],
+   "4": [
+    "period in '2.1' appears missing (reads '21')",
+    "sign slightly skewed",
+    "cat pale low detail"
+   ],
+   "5": [
+    "period in '2.1' small/ambiguous",
+    "cat low detail"
+   ],
+   "6": [
+    "period in '2.1' small/ambiguous",
+    "cat low detail"
+   ]
+  },
+  "reason": "Image 1 has the most legible correct sign text ('QWEN' / 'IMAGE 2.1') with strong cinematic mood; images 5 and 6 are pixel-identical clean renders tied just below; 4 loses the period; 2 has melted lettering and noise; 3 is nearly illegible with crushed darkness."
+ },
+ "bruto": "{\"ranking\": [1, 5, 6, 4, 2, 3], \"scores\": {\"1\": 8, \"2\": 5, \"3\": 3, \"4\": 7, \"5\": 8, \"6\": 8}, \"identical_pairs\": [[5, 6]], \"defects\": {\"1\": [\"overall very dark\", \"cat low-detail pale blob\"], \"2\": [\"wobbly/melted neon letterforms\", \"visible grain noise on facade\", \"cat nearly invisible dark blob\", \"subtitle text distorted\"], \"3\": [\"severely distorted illegible text\", \"very dark crushed blacks\", \"cat indistinct\", \"low fine detail\"], \"4\": [\"period in '2.1' appears missing (reads '21')\", \"sign slightly skewed\", \"cat pale low detail\"], \"5\": [\"period in '2.1' small/ambiguous\", \"cat low detail\"], \"6\": [\"period in '2.1' small/ambiguous\", \"cat low detail\"]}, \"reason\": \"Image 1 has the most legible correct sign text ('QWEN' / 'IMAGE 2.1') with strong cinematic mood; images 5 and 6 are pixel-identical clean renders tied just below; 4 loses the period; 2 has melted lettering and noise; 3 is nearly illegible with crushed darkness.\"}\n"
+}

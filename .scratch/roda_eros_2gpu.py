@@ -1,6 +1,6 @@
 """Enfileira um grafo de API no ComfyUI 8190 e amostra as duas placas e a RAM a cada 5 s ate terminar.
 Nao abre video nem audio. Uso: python -s .scratch/roda_eros_2gpu.py <grafo_api.json> <saida.csv>"""
-import csv, ctypes, json, subprocess, sys, time, urllib.request
+import csv, ctypes, json, os, subprocess, sys, time, urllib.request
 
 BASE = "http://127.0.0.1:8190"
 
@@ -52,10 +52,21 @@ def comfy_mem():
 
 def main():
     g = json.load(open(sys.argv[1]))
+    # servidor que morreu no meio da bateria (aimdo abortou, 26/09) deixava este laco esperando para sempre:
+    # prazo de 10 min para o servidor subir, e `PULAR_GRAFOS` (um prefixo por linha) pula grafos de um servidor
+    # que se sabe morto
+    pular = os.path.join(os.path.dirname(os.path.abspath(__file__)), "PULAR_GRAFOS")
+    if os.path.exists(pular) and any(p and p in sys.argv[1] for p in open(pular).read().split()):
+        print("PULADO (servidor morto):", sys.argv[1], flush=True)
+        sys.exit(3)
+    limite = time.time() + 600
     while True:
         try:
             req("/queue"); break
         except Exception:
+            if time.time() > limite:
+                print("ERRO: servidor nao respondeu em 10 min", flush=True)
+                sys.exit(2)
             time.sleep(5)
     t0 = time.time()
     resp = req("/prompt", {"prompt": g})

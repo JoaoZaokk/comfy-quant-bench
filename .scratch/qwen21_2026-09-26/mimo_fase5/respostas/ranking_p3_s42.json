@@ -1,0 +1,53 @@
+{
+ "tipo": "ranking",
+ "prompt": 3,
+ "seed": 42,
+ "ordem": [
+  "885a070dce53",
+  "ecfea36b4443",
+  "9b03ef9ffab7",
+  "32ee7311b789"
+ ],
+ "resposta": {
+  "ranking": [
+   2,
+   3,
+   4,
+   1
+  ],
+  "scores": {
+   "1": 7,
+   "2": 9,
+   "3": 9,
+   "4": 8
+  },
+  "identical_pairs": [
+   [
+    2,
+    3
+   ]
+  ],
+  "defects": {
+   "1": [
+    "murky over-dark river water with low contrast",
+    "slight banding/haze gradient in sky",
+    "less fine foliage detail, softer texture overall"
+   ],
+   "2": [
+    "minor color blotching in shadowed forest areas",
+    "slightly soft mist transition near horizon"
+   ],
+   "3": [
+    "minor color blotching in shadowed forest areas",
+    "slightly soft mist transition near horizon"
+   ],
+   "4": [
+    "small floating vegetation blobs in river read as artifacts",
+    "slightly muddier shoreline detail",
+    "minor color blotch in lower-right canopy"
+   ]
+  },
+  "reason": "Images 2 and 3 are pixel-identical with the best detail and cleanest water rendering, image 4 is nearly as good but with small floating blobs in the river, and image 1 is noticeably darker, murkier and softer with subtle banding."
+ },
+ "bruto": "{\"ranking\": [2, 3, 4, 1], \"scores\": {\"1\": 7, \"2\": 9, \"3\": 9, \"4\": 8}, \"identical_pairs\": [[2, 3]], \"defects\": {\"1\": [\"murky over-dark river water with low contrast\", \"slight banding/haze gradient in sky\", \"less fine foliage detail, softer texture overall\"], \"2\": [\"minor color blotching in shadowed forest areas\", \"slightly soft mist transition near horizon\"], \"3\": [\"minor color blotching in shadowed forest areas\", \"slightly soft mist transition near horizon\"], \"4\": [\"small floating vegetation blobs in river read as artifacts\", \"slightly muddier shoreline detail\", \"minor color blotch in lower-right canopy\"]}, \"reason\": \"Images 2 and 3 are pixel-identical with the best detail and cleanest water rendering, image 4 is nearly as good but with small floating blobs in the river, and image 1 is noticeably darker, murkier and softer with subtle banding.\"}\n"
+}

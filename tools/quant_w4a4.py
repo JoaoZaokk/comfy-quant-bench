@@ -21,9 +21,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import _conversion as C  # noqa: E402
 from _native_probe import native_backend_ready  # noqa: E402
+from quant_w4a8 import is_qwen_image21  # noqa: E402
 
 
 PROFILE_PATTERNS = {
+    # Qwen-Image-2.1: the same regex `quant_w4a8.py` uses (derived from Comfy-Org's int8-convrot
+    # selection, 192 Linears), so the W4A4 and W4A8 builds differ only in the activation path.
+    "qwen_image21": re.compile(
+        r"^transformer_blocks\.\d+\.(?:attn\.(?:to_[qkv]|to_out\.0)|img_mlp\.(?:gate_up|proj|gate_layer|out))\.weight$"
+    ),
     "gemma": re.compile(
         r"^model\.layers\.\d+\.(?:self_attn\.(?:q_proj|k_proj|v_proj|o_proj)|mlp\.(?:gate_proj|up_proj|down_proj))\.weight$"
     ),
@@ -66,6 +72,7 @@ PROFILE_PATTERNS = {
     ),
 }
 EXCLUSIONS = {
+    "qwen_image21": ["norm", "modulation", "img_in", "txt_in", "time_text_embed", "proj_out"],
     "gemma": ["embed_tokens", "norm", "lm_head", "vision"],
     "qwen": ["embed_tokens", "norm", "lm_head", "visual", "vision"],
     "qwen3vl": ["embed_tokens", "norm", "lm_head", "visual", "vision"],
@@ -166,6 +173,8 @@ def detect_profile(path: Path, names: list[str]) -> str:
         "double_blocks.0.img_attn_qkv.weight",
     } <= name_set:
         return "hunyuan_video_15"
+    if is_qwen_image21(name_set):
+        return "qwen_image21"
     lowered = path.name.lower()
     if "gemma" in lowered and any(name.startswith("model.layers.") for name in names):
         return "gemma"
@@ -342,7 +351,8 @@ def planejar(source_handle, header: dict, selected: list[str], ck,
             source_tensor, raw = read_tensor_range(
                 source_handle, source_data_start + start, end - start,
                 info["dtype"], info["shape"])
-            weight = source_tensor.to(device="cuda")
+            # FP32 na entrada (26/09), como quant_int8/quant_w4a8: a rotacao em BF16 perde precisao.
+            weight = source_tensor.to(device="cuda", dtype=torch.float32)
             qdata, scales = ck.quantize_convrot_w4a4_weight(
                 weight, convrot_groupsize=convrot_groupsize,
                 quant_group_size=QUANT_GROUP_SIZE, stochastic_rounding=0)

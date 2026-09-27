@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "7a14a3161d79",
+ "resposta": {
+  "prompt_adherence": 7,
+  "text_accuracy": 10,
+  "artifacts": 9,
+  "anatomy": 8,
+  "detail_realism": 7,
+  "overall": 8,
+  "defects": [
+   "headline is thin/light serif, not bold as requested",
+   "unrequested wave/squiggle decoration at bottom",
+   "large empty gap between cup and bottom mark",
+   "coffee cup drawing is sparse with minimal detail",
+   "steam wisp is faint and undersized"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 7, \"text_accuracy\": 10, \"artifacts\": 9, \"anatomy\": 8, \"detail_realism\": 7, \"overall\": 8, \"defects\": [\"headline is thin/light serif, not bold as requested\", \"unrequested wave/squiggle decoration at bottom\", \"large empty gap between cup and bottom mark\", \"coffee cup drawing is sparse with minimal detail\", \"steam wisp is faint and undersized\"]}\n"
+}

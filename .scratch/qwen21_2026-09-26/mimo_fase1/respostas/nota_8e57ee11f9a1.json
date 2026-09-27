@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "8e57ee11f9a1",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": 10,
+  "artifacts": 9,
+  "anatomy": 9,
+  "detail_realism": 8,
+  "overall": 9,
+  "defects": [
+   "headline not bold (regular-weight serif)",
+   "cup drawing very small relative to headline",
+   "excessive empty space below",
+   "cup line work slightly delicate for a poster",
+   "flat background lacks subtle texture"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": 10, \"artifacts\": 9, \"anatomy\": 9, \"detail_realism\": 8, \"overall\": 9, \"defects\": [\"headline not bold (regular-weight serif)\", \"cup drawing very small relative to headline\", \"excessive empty space below\", \"cup line work slightly delicate for a poster\", \"flat background lacks subtle texture\"]}\n"
+}

@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "a88aa331b6f9",
+ "resposta": {
+  "prompt_adherence": 9,
+  "text_accuracy": null,
+  "artifacts": 9,
+  "anatomy": 8,
+  "detail_realism": 8,
+  "overall": 8,
+  "defects": [
+   "apple stems look dark and burnt",
+   "left pear heavily occluded behind apple",
+   "slight waxy/plastic sheen on apple skin",
+   "fingertip contact with small apple slightly ambiguous",
+   "pear stems unnaturally dark spikes"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 9, \"text_accuracy\": null, \"artifacts\": 9, \"anatomy\": 8, \"detail_realism\": 8, \"overall\": 8, \"defects\": [\"apple stems look dark and burnt\", \"left pear heavily occluded behind apple\", \"slight waxy/plastic sheen on apple skin\", \"fingertip contact with small apple slightly ambiguous\", \"pear stems unnaturally dark spikes\"]}\n"
+}

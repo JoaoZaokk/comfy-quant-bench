@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "b1ba6c757b86",
+ "resposta": {
+  "prompt_adherence": 5,
+  "text_accuracy": null,
+  "artifacts": 9,
+  "anatomy": 8,
+  "detail_realism": 8,
+  "overall": 7,
+  "defects": [
+   "only two red apples instead of three",
+   "only two green pears correct but apple count wrong",
+   "hand slightly oversized relative to fruit",
+   "minor smearing on lower pear skin",
+   "apple stem area slightly mushy"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 5, \"text_accuracy\": null, \"artifacts\": 9, \"anatomy\": 8, \"detail_realism\": 8, \"overall\": 7, \"defects\": [\"only two red apples instead of three\", \"only two green pears correct but apple count wrong\", \"hand slightly oversized relative to fruit\", \"minor smearing on lower pear skin\", \"apple stem area slightly mushy\"]}\n"
+}

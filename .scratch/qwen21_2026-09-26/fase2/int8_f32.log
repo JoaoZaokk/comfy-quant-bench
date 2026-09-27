@@ -1,0 +1,8 @@
+Source: \\NAS\purple\ComfyBench\diffusion_models\qwen_image_2.1_bf16.safetensors
+Profile: qwen_image21   convrot=True groupsize=256   device=cuda
+Selected Linear weights: 192
+Output: \\NAS\purple\ComfyBench\diffusion_models\qwen_image_2.1_bf16_int8_convrot_f32.safetensors
+[120/192] quantized
+[192/192] quantized
+Wrote \\NAS\purple\ComfyBench\diffusion_models\qwen_image_2.1_bf16_int8_convrot_f32.safetensors (6.76 GiB) in 3.6 min
+Wrote \\NAS\purple\ComfyBench\diffusion_models\qwen_image_2.1_bf16_int8_convrot_f32.quant.json

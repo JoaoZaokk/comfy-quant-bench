@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "d2f3742cfea9",
+ "resposta": {
+  "prompt_adherence": 7,
+  "text_accuracy": 10,
+  "artifacts": 9,
+  "anatomy": 8,
+  "detail_realism": 7,
+  "overall": 7,
+  "defects": [
+   "headlines are light-weight serif, not bold",
+   "extraneous squiggle mark at bottom not in prompt",
+   "large empty lower half unbalances composition",
+   "cup line drawing slightly sketchy/uneven",
+   "SLOW noticeably smaller scale than MORNINGS"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 7, \"text_accuracy\": 10, \"artifacts\": 9, \"anatomy\": 8, \"detail_realism\": 7, \"overall\": 7, \"defects\": [\"headlines are light-weight serif, not bold\", \"extraneous squiggle mark at bottom not in prompt\", \"large empty lower half unbalances composition\", \"cup line drawing slightly sketchy/uneven\", \"SLOW noticeably smaller scale than MORNINGS\"]}\n"
+}

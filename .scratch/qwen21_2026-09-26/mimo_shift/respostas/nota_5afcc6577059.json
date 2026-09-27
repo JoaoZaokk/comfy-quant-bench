@@ -1,0 +1,21 @@
+{
+ "tipo": "nota",
+ "imagem": "5afcc6577059",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": 7,
+  "artifacts": 7,
+  "anatomy": 7,
+  "detail_realism": 8,
+  "overall": 8,
+  "defects": [
+   "blue 'Q' glyph ghosted/overlapping red letters on sign",
+   "missing space: reads 'IMAGE2.1' not 'IMAGE 2.1'",
+   "cat is tiny with blobby, indistinct anatomy",
+   "store interior behind glass is muddy and unresolved",
+   "mild neon bloom/colored fringing on letter edges",
+   "reflections on pavement slightly smeared"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": 7, \"artifacts\": 7, \"anatomy\": 7, \"detail_realism\": 8, \"overall\": 8, \"defects\": [\"blue 'Q' glyph ghosted/overlapping red letters on sign\", \"missing space: reads 'IMAGE2.1' not 'IMAGE 2.1'\", \"cat is tiny with blobby, indistinct anatomy\", \"store interior behind glass is muddy and unresolved\", \"mild neon bloom/colored fringing on letter edges\", \"reflections on pavement slightly smeared\"]}\n"
+}

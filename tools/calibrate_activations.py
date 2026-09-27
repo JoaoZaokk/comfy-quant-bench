@@ -278,6 +278,15 @@ PROFILE_PATTERNS = {
     "krea2": re.compile(
         r"^blocks\.\d+\.(?:attn\.(?:w[qkvo]|gate)|mlp\.(?:gate|up|down))$"
     ),
+    # Qwen-Image-2.1 (`comfy/ldm/qwen_image21/model.py`), 32 blocos de corrente unica x 6 Linears
+    # = 192. Modulo e arquivo tem o mesmo nome. Derivado do `qwen_image_2.1_int8_convrot` da
+    # Comfy-Org (192 `comfy_quant`, sem falso positivo nem negativo) e do mixed da NidAll (as
+    # mesmas 192). `gate_up` e o layout fundido da Comfy-Org; `proj`/`gate_layer`, o do diffusers.
+    # FORA: `img_in`, `txt_in.*`, `modulation.1` (global, nao por bloco), o embedder de timestep,
+    # `norm_out.linear` e `proj_out`.
+    "qwen_image21": re.compile(
+        r"^transformer_blocks\.\d+\.(?:attn\.(?:to_[qkv]|to_out\.0)|img_mlp\.(?:gate_up|proj|gate_layer|out))$"
+    ),
 }
 
 # The patterns above match **module** names, because that is what this file hooks. Downstream,
@@ -650,7 +659,10 @@ def main() -> int:
         handles.append(module.register_forward_pre_hook(make_hook(name)))
 
     latent_format = model.model.latent_format
-    side = max(args.size // 8, 8)
+    # `--size` e em PIXELS. O lado do latente sai do fator espacial do proprio formato: ate 26/09 era
+    # `size // 8` fixo, que acerta Z-Image/Flux/WAN (8) mas calibra o Qwen-Image-2.1 (16) em 4x os
+    # tokens pedidos e o LTX (32) em 16x.
+    side = max(args.size // getattr(latent_format, "spacial_downscale_ratio", 8), 8)
     # `latent_dimensions` is 2 for image models and 3 for video ones, and a video model handed a
     # 4-D latent does not fail cleanly -- it fails somewhere inside the transformer with a shape
     # error that says nothing about the latent. Read the format rather than assuming images.

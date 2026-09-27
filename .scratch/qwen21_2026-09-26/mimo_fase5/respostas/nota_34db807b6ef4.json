@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "34db807b6ef4",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": 9,
+  "artifacts": 9,
+  "anatomy": 8,
+  "detail_realism": 8,
+  "overall": 8,
+  "defects": [
+   "serif letters are light/regular, not bold as requested",
+   "cup line drawing slightly wobbly/sketchy strokes",
+   "handle of cup thin and slightly irregular",
+   "large empty middle area reduces balance",
+   "minor uneven stroke weight in letterforms"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": 9, \"artifacts\": 9, \"anatomy\": 8, \"detail_realism\": 8, \"overall\": 8, \"defects\": [\"serif letters are light/regular, not bold as requested\", \"cup line drawing slightly wobbly/sketchy strokes\", \"handle of cup thin and slightly irregular\", \"large empty middle area reduces balance\", \"minor uneven stroke weight in letterforms\"]}\n"
+}

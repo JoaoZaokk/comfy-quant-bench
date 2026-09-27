@@ -1,0 +1,21 @@
+{
+ "tipo": "nota",
+ "imagem": "df4206332a5c",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": null,
+  "artifacts": 8,
+  "anatomy": 7,
+  "detail_realism": 7,
+  "overall": 7,
+  "defects": [
+   "droplets read as internal bubbles/dust rather than surface water",
+   "black marble veining barely visible",
+   "sprayer nozzle hole is an oversized dark blob",
+   "banding/dark seam on gold cap collar",
+   "inner glass wall reads as a duplicate rectangle artifact",
+   "slight smearing along glass edges"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": null, \"artifacts\": 8, \"anatomy\": 7, \"detail_realism\": 7, \"overall\": 7, \"defects\": [\"droplets read as internal bubbles/dust rather than surface water\", \"black marble veining barely visible\", \"sprayer nozzle hole is an oversized dark blob\", \"banding/dark seam on gold cap collar\", \"inner glass wall reads as a duplicate rectangle artifact\", \"slight smearing along glass edges\"]}\n"
+}

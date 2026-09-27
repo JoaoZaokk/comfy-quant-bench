@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "58f42a378b57",
+ "resposta": {
+  "prompt_adherence": 7,
+  "text_accuracy": null,
+  "artifacts": 6,
+  "anatomy": 8,
+  "detail_realism": 6,
+  "overall": 7,
+  "defects": [
+   "droplets read as uniform noise speckle not real water",
+   "black marble veining barely visible on surface",
+   "smearing/noise texture inside glass body",
+   "bottle base edge looks thin/unrealistic",
+   "cap reflections generic and flat"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 7, \"text_accuracy\": null, \"artifacts\": 6, \"anatomy\": 8, \"detail_realism\": 6, \"overall\": 7, \"defects\": [\"droplets read as uniform noise speckle not real water\", \"black marble veining barely visible on surface\", \"smearing/noise texture inside glass body\", \"bottle base edge looks thin/unrealistic\", \"cap reflections generic and flat\"]}\n"
+}

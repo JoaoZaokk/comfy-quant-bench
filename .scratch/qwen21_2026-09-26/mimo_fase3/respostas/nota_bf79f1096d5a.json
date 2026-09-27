@@ -1,0 +1,19 @@
+{
+ "tipo": "nota",
+ "imagem": "bf79f1096d5a",
+ "resposta": {
+  "prompt_adherence": 9,
+  "text_accuracy": null,
+  "artifacts": 9,
+  "anatomy": null,
+  "detail_realism": 9,
+  "overall": 9,
+  "defects": [
+   "sunrise glow is subtle rather than explicit",
+   "distant canopy slightly soft",
+   "mist edges somewhat diffuse",
+   "minor repetitive tree texture in far background"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 9, \"text_accuracy\": null, \"artifacts\": 9, \"anatomy\": null, \"detail_realism\": 9, \"overall\": 9, \"defects\": [\"sunrise glow is subtle rather than explicit\", \"distant canopy slightly soft\", \"mist edges somewhat diffuse\", \"minor repetitive tree texture in far background\"]}\n"
+}

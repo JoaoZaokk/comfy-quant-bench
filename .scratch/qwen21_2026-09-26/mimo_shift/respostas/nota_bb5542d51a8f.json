@@ -1,0 +1,21 @@
+{
+ "tipo": "nota",
+ "imagem": "bb5542d51a8f",
+ "resposta": {
+  "prompt_adherence": 9,
+  "text_accuracy": 9,
+  "artifacts": 9,
+  "anatomy": 8,
+  "detail_realism": 9,
+  "overall": 9,
+  "defects": [
+   "cat slightly soft and underspecified in form",
+   "Q glyph tail stylized oddly",
+   "shop interior detail somewhat muddled",
+   "sign reads as channel letters rather than neon tubes",
+   "lower corners overly dark",
+   "minor photographic grain in shadows"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 9, \"text_accuracy\": 9, \"artifacts\": 9, \"anatomy\": 8, \"detail_realism\": 9, \"overall\": 9, \"defects\": [\"cat slightly soft and underspecified in form\", \"Q glyph tail stylized oddly\", \"shop interior detail somewhat muddled\", \"sign reads as channel letters rather than neon tubes\", \"lower corners overly dark\", \"minor photographic grain in shadows\"]}\n"
+}

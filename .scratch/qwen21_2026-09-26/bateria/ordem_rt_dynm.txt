@@ -1,0 +1,7 @@
+bateria/rt_dynm_int8_p0_s42.json
+bateria/rt_dynm_int8_p1_s42.json
+bateria/rt_dynm_int8_p3_s42.json
+bateria/rt_dynm_mixed_p0_s42.json
+bateria/rt_dynm_mixed_p1_s42.json
+bateria/rt_dynm_mixed_p3_s42.json
+bateria/rt_dynm_bf16_p0_s42.json

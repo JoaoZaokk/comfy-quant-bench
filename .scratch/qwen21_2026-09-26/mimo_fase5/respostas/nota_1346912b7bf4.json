@@ -1,0 +1,21 @@
+{
+ "tipo": "nota",
+ "imagem": "1346912b7bf4",
+ "resposta": {
+  "prompt_adherence": 9,
+  "text_accuracy": null,
+  "artifacts": 8,
+  "anatomy": 6,
+  "detail_realism": 8,
+  "overall": 8,
+  "defects": [
+   "thumb slightly elongated",
+   "lower fingertips blobby/soft",
+   "small apple stem juts out sideways",
+   "hand skin over-smoothed",
+   "thumbnail unnaturally large and pale",
+   "minor smearing in wood grain at right edge"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 9, \"text_accuracy\": null, \"artifacts\": 8, \"anatomy\": 6, \"detail_realism\": 8, \"overall\": 8, \"defects\": [\"thumb slightly elongated\", \"lower fingertips blobby/soft\", \"small apple stem juts out sideways\", \"hand skin over-smoothed\", \"thumbnail unnaturally large and pale\", \"minor smearing in wood grain at right edge\"]}\n"
+}

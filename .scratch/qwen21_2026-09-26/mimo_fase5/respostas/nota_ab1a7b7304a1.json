@@ -1,0 +1,21 @@
+{
+ "tipo": "nota",
+ "imagem": "ab1a7b7304a1",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": 6,
+  "artifacts": 6,
+  "anatomy": 5,
+  "detail_realism": 7,
+  "overall": 7,
+  "defects": [
+   "Q is a malformed spiral, not a proper letter",
+   "mixed neon colors within the word (red/white/green)",
+   "rain streaks barely visible",
+   "cat silhouette is blobby, anatomy ambiguous",
+   "magenta color blotches in pavement reflections",
+   "doubled tube lines / chromatic fringing around letters"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": 6, \"artifacts\": 6, \"anatomy\": 5, \"detail_realism\": 7, \"overall\": 7, \"defects\": [\"Q is a malformed spiral, not a proper letter\", \"mixed neon colors within the word (red/white/green)\", \"rain streaks barely visible\", \"cat silhouette is blobby, anatomy ambiguous\", \"magenta color blotches in pavement reflections\", \"doubled tube lines / chromatic fringing around letters\"]}\n"
+}

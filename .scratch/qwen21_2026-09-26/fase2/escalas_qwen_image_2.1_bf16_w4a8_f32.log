@@ -1,0 +1,17 @@
+[0/192] transformer_blocks.0.attn.to_k 0.0169 -> 0.0156
+[24/192] transformer_blocks.12.attn.to_k 0.0331 -> 0.0321
+[48/192] transformer_blocks.16.attn.to_k 0.0289 -> 0.0274
+[72/192] transformer_blocks.2.attn.to_k 0.0223 -> 0.0192
+[96/192] transformer_blocks.23.attn.to_k 0.0175 -> 0.0149
+[120/192] transformer_blocks.27.attn.to_k 0.0144 -> 0.0122
+[144/192] transformer_blocks.30.attn.to_k 0.0203 -> 0.0182
+[168/192] transformer_blocks.6.attn.to_k 0.0273 -> 0.0257
+{
+ "model": "\\\\NAS\\purple\\ComfyBench\\diffusion_models\\qwen_image_2.1_bf16_w4a8_f32.safetensors",
+ "output": "\\\\NAS\\purple\\ComfyBench\\diffusion_models\\qwen_image_2.1_bf16_w4a8_f32_escalas.safetensors",
+ "camadas": 192,
+ "trocadas": 186,
+ "erro_heldout_medio_antes": 0.042433876051897336,
+ "erro_heldout_medio_depois": 0.0414445482820156,
+ "segundos": 226.8
+}

@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "546bf5d204f3",
+ "resposta": {
+  "prompt_adherence": 9,
+  "text_accuracy": null,
+  "artifacts": 8,
+  "anatomy": null,
+  "detail_realism": 8,
+  "overall": 8,
+  "defects": [
+   "tree canopy texture slightly repetitive/mushy in patches",
+   "sky is near-featureless washed-out haze",
+   "mist edges somewhat smeared over water",
+   "distant horizon detail flattens into blur",
+   "minor uniform grain across darker forest areas"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 9, \"text_accuracy\": null, \"artifacts\": 8, \"anatomy\": null, \"detail_realism\": 8, \"overall\": 8, \"defects\": [\"tree canopy texture slightly repetitive/mushy in patches\", \"sky is near-featureless washed-out haze\", \"mist edges somewhat smeared over water\", \"distant horizon detail flattens into blur\", \"minor uniform grain across darker forest areas\"]}\n"
+}

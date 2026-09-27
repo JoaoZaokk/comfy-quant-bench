@@ -1,0 +1,59 @@
+{
+ "tipo": "ranking",
+ "prompt": 1,
+ "seed": 42,
+ "ordem": [
+  "fe22ce1b8722",
+  "b52341620aee",
+  "266d336eb2a8",
+  "ce3f793ac3a8",
+  "57e1922195a1"
+ ],
+ "resposta": {
+  "ranking": [
+   1,
+   3,
+   4,
+   5,
+   2
+  ],
+  "scores": {
+   "1": 9,
+   "2": 8,
+   "3": 9,
+   "4": 9,
+   "5": 8
+  },
+  "identical_pairs": [
+   [
+    1,
+    3
+   ],
+   [
+    3,
+    4
+   ]
+  ],
+  "defects": {
+   "1": [
+    "minor: slightly flattened highlight on forehead"
+   ],
+   "2": [
+    "slightly softer focus than images 1/3/4",
+    "heavy-lidded right eye looks marginally asymmetric"
+   ],
+   "3": [
+    "minor: slightly flattened highlight on forehead"
+   ],
+   "4": [
+    "minor: slightly flattened highlight on forehead"
+   ],
+   "5": [
+    "slightly different expression/eye shape from the other variants",
+    "very subtle smoothing of skin texture around cheeks"
+   ]
+  },
+  "reason": "Images 1, 3 and 4 are pixel-identical and show the sharpest skin, beard and fabric detail; image 5 is a close but subtly different variant with slight expression drift, and image 2 is the softest with mildly asymmetric eyes."
+ },
+ "bruto": "{\"ranking\": [1, 3, 4, 5, 2], \"scores\": {\"1\": 9, \"2\": 8, \"3\": 9, \"4\": 9, \"5\": 8}, \"identical_pairs\": [[1, 3], [3, 4]], \"defects\": {\"1\": [\"minor: slightly flattened highlight on forehead\"], \"2\": [\"slightly softer focus than images 1/3/4\", \"heavy-lidded right eye looks marginally asymmetric\"], \"3\": [\"minor: slightly flattened highlight on forehead\"], \"4\": [\"minor: slightly flattened highlight on forehead\"], \"5\": [\"slightly different expression/eye shape from the other variants\", \"very subtle smoothing of skin texture around cheeks\"]}, \"reason\": \"Images 1, 3 and 4 are pixel-identical and show the sharpest skin, beard and fabric detail; image 5 is a close but subtly different variant with slight expression drift, and image 2 is the softest with mildly asymmetric eyes.\"}\n"
+}

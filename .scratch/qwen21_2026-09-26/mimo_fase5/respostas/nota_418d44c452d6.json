@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "418d44c452d6",
+ "resposta": {
+  "prompt_adherence": 9,
+  "text_accuracy": null,
+  "artifacts": 9,
+  "anatomy": 9,
+  "detail_realism": 9,
+  "overall": 9,
+  "defects": [
+   "window light slightly stronger than 'soft'",
+   "no explicit fishing signifiers",
+   "minor skin texture softness on cheeks",
+   "background window slightly blown out",
+   "ear slightly less detailed than rest of face"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 9, \"text_accuracy\": null, \"artifacts\": 9, \"anatomy\": 9, \"detail_realism\": 9, \"overall\": 9, \"defects\": [\"window light slightly stronger than 'soft'\", \"no explicit fishing signifiers\", \"minor skin texture softness on cheeks\", \"background window slightly blown out\", \"ear slightly less detailed than rest of face\"]}\n"
+}

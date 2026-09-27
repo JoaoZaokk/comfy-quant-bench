@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "1346912b7bf4",
+ "resposta": {
+  "prompt_adherence": 9,
+  "text_accuracy": null,
+  "artifacts": 8,
+  "anatomy": 8,
+  "detail_realism": 9,
+  "overall": 9,
+  "defects": [
+   "stubby/detached-looking stem on small apple",
+   "lower fingers slightly soft/blurry",
+   "hand fingertips a bit smooth and waxy",
+   "minor yellow streaking blurs red-apple uniformity",
+   "pear skin speckling slightly uniform"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 9, \"text_accuracy\": null, \"artifacts\": 8, \"anatomy\": 8, \"detail_realism\": 9, \"overall\": 9, \"defects\": [\"stubby/detached-looking stem on small apple\", \"lower fingers slightly soft/blurry\", \"hand fingertips a bit smooth and waxy\", \"minor yellow streaking blurs red-apple uniformity\", \"pear skin speckling slightly uniform\"]}\n"
+}

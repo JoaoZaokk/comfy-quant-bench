@@ -1,0 +1,18 @@
+{
+ "tipo": "nota",
+ "imagem": "1db7e1b80c66",
+ "resposta": {
+  "prompt_adherence": 9,
+  "text_accuracy": null,
+  "artifacts": 9,
+  "anatomy": null,
+  "detail_realism": 8,
+  "overall": 9,
+  "defects": [
+   "mist plume reads slightly like smoke column",
+   "horizon somewhat washed out",
+   "minor tree texture softness at edges"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 9, \"text_accuracy\": null, \"artifacts\": 9, \"anatomy\": null, \"detail_realism\": 8, \"overall\": 9, \"defects\": [\"mist plume reads slightly like smoke column\", \"horizon somewhat washed out\", \"minor tree texture softness at edges\"]}\n"
+}

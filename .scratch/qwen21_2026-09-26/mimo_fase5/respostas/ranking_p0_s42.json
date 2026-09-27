@@ -1,0 +1,47 @@
+{
+ "tipo": "ranking",
+ "prompt": 0,
+ "seed": 42,
+ "ordem": [
+  "e016fb2f8886",
+  "ab1a7b7304a1",
+  "4b6a53243cdb",
+  "d46719adbb54"
+ ],
+ "resposta": {
+  "ranking": [
+   4,
+   1,
+   2,
+   3
+  ],
+  "scores": {
+   "1": 8,
+   "2": 8,
+   "3": 6,
+   "4": 9
+  },
+  "identical_pairs": [],
+  "defects": {
+   "1": [
+    "slight softness in neon letter edges",
+    "minor dark blur around sign frame"
+   ],
+   "2": [
+    "slight blur/softness overall vs image 4",
+    "mild color noise in pavement reflections"
+   ],
+   "3": [
+    "text ghosting/doubling on QWEN letters",
+    "spelling error: comma instead of period in 'IMAGE 2,1'",
+    "iridescent color blotches in wet pavement reflections",
+    "heavier noise and neon fringe artifacts"
+   ],
+   "4": [
+    "very minor noise in deep shadows"
+   ]
+  },
+  "reason": "Image 4 has the sharpest correct text and richest detail (bench, plant, clean cat); images 1 and 2 are clean but slightly softer; image 3 has doubled/ghosted lettering, a punctuation error and visible color blotches."
+ },
+ "bruto": "{\"ranking\": [4, 1, 2, 3], \"scores\": {\"1\": 8, \"2\": 8, \"3\": 6, \"4\": 9}, \"identical_pairs\": [], \"defects\": {\"1\": [\"slight softness in neon letter edges\", \"minor dark blur around sign frame\"], \"2\": [\"slight blur/softness overall vs image 4\", \"mild color noise in pavement reflections\"], \"3\": [\"text ghosting/doubling on QWEN letters\", \"spelling error: comma instead of period in 'IMAGE 2,1'\", \"iridescent color blotches in wet pavement reflections\", \"heavier noise and neon fringe artifacts\"], \"4\": [\"very minor noise in deep shadows\"]}, \"reason\": \"Image 4 has the sharpest correct text and richest detail (bench, plant, clean cat); images 1 and 2 are clean but slightly softer; image 3 has doubled/ghosted lettering, a punctuation error and visible color blotches.\"}\n"
+}

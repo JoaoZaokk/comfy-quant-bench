@@ -1,0 +1,19 @@
+{
+ "tipo": "nota",
+ "imagem": "8e942c9fd137",
+ "resposta": {
+  "prompt_adherence": 6,
+  "text_accuracy": null,
+  "artifacts": 9,
+  "anatomy": 8,
+  "detail_realism": 9,
+  "overall": 7,
+  "defects": [
+   "only two apples shown, prompt asks for three",
+   "hand fingertips slightly smoothed",
+   "minor blur at lower apple stem",
+   "pear stem of lower pear slightly odd curvature"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 6, \"text_accuracy\": null, \"artifacts\": 9, \"anatomy\": 8, \"detail_realism\": 9, \"overall\": 7, \"defects\": [\"only two apples shown, prompt asks for three\", \"hand fingertips slightly smoothed\", \"minor blur at lower apple stem\", \"pear stem of lower pear slightly odd curvature\"]}\n"
+}

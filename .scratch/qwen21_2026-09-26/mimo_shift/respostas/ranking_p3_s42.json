@@ -1,0 +1,32 @@
+{
+ "tipo": "ranking",
+ "prompt": 3,
+ "seed": 42,
+ "ordem": [
+  "5969a7e58cd0",
+  "1b000c74bee8"
+ ],
+ "resposta": {
+  "ranking": [
+   1,
+   2
+  ],
+  "scores": {
+   "1": 9,
+   "2": 8.5
+  },
+  "identical_pairs": [],
+  "defects": {
+   "1": [
+    "very subtle softness in distant forest texture under fog",
+    "slight haze flattening of the horizon line"
+   ],
+   "2": [
+    "marginally softer tree crowns and shoreline detail than image 1",
+    "minor color blotching in the dark water reflection, faint noise in shadow areas"
+   ]
+  },
+  "reason": "Both match the prompt closely with natural composition and no artifacts or text, but image 1 retains slightly finer detail in the canopy and shoreline while image 2 is marginally softer with faint blotching in the water shadows."
+ },
+ "bruto": "Os hashes diferem; vou confirmar se a diferen\u00e7a \u00e9 apenas de codifica\u00e7\u00e3o PNG ou se h\u00e1 diferen\u00e7a de pixels.\n{\"ranking\": [1, 2], \"scores\": {\"1\": 9, \"2\": 8.5}, \"identical_pairs\": [], \"defects\": {\"1\": [\"very subtle softness in distant forest texture under fog\", \"slight haze flattening of the horizon line\"], \"2\": [\"marginally softer tree crowns and shoreline detail than image 1\", \"minor color blotching in the dark water reflection, faint noise in shadow areas\"]}, \"reason\": \"Both match the prompt closely with natural composition and no artifacts or text, but image 1 retains slightly finer detail in the canopy and shoreline while image 2 is marginally softer with faint blotching in the water shadows.\"}\n"
+}

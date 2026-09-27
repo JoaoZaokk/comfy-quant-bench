@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "9e4de9ff92a8",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": null,
+  "artifacts": 8,
+  "anatomy": null,
+  "detail_realism": 8,
+  "overall": 8,
+  "defects": [
+   "mist mostly over forest, less directly over the water",
+   "slight smearing/softness in fog areas",
+   "riverbank vegetation slightly mushy near bottom",
+   "subtle painterly look in distant trees",
+   "minor repetitive tree-canopy texture"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": null, \"artifacts\": 8, \"anatomy\": null, \"detail_realism\": 8, \"overall\": 8, \"defects\": [\"mist mostly over forest, less directly over the water\", \"slight smearing/softness in fog areas\", \"riverbank vegetation slightly mushy near bottom\", \"subtle painterly look in distant trees\", \"minor repetitive tree-canopy texture\"]}\n"
+}

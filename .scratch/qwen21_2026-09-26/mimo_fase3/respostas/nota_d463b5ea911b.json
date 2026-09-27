@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "d463b5ea911b",
+ "resposta": {
+  "prompt_adherence": 9,
+  "text_accuracy": null,
+  "artifacts": 7,
+  "anatomy": 8,
+  "detail_realism": 6,
+  "overall": 7,
+  "defects": [
+   "skin texture waxy/over-smoothed",
+   "excessive smoothing around eyes",
+   "uneven texture distribution",
+   "beard detail slightly waxy",
+   "minor noise in background"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 9, \"text_accuracy\": null, \"artifacts\": 7, \"anatomy\": 8, \"detail_realism\": 6, \"overall\": 7, \"defects\": [\"skin texture waxy/over-smoothed\", \"excessive smoothing around eyes\", \"uneven texture distribution\", \"beard detail slightly waxy\", \"minor noise in background\"]}\n"
+}

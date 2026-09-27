@@ -1,0 +1,50 @@
+{
+ "tipo": "ranking",
+ "prompt": 4,
+ "seed": 7,
+ "ordem": [
+  "73c655b345bc",
+  "1c6c96724f81",
+  "56839681dde8",
+  "b3bab2f6fe04"
+ ],
+ "resposta": {
+  "ranking": [
+   1,
+   2,
+   3,
+   4
+  ],
+  "scores": {
+   "1": 9,
+   "2": 9,
+   "3": 7.5,
+   "4": 6
+  },
+  "identical_pairs": [
+   [
+    1,
+    2
+   ]
+  ],
+  "defects": {
+   "1": [
+    "very few droplets actually on the glass body (most droplets are on the marble, not the bottle)"
+   ],
+   "2": [
+    "same minimal droplet-on-glass coverage as image 1"
+   ],
+   "3": [
+    "visible speckle/noise distributed inside the glass volume, reads as sensor noise rather than intentional droplets",
+    "slight loss of edge crispness on the cap compared to 1/2"
+   ],
+   "4": [
+    "heavy grainy noise across the whole bottle and cap, glass looks frosted/textured rather than translucent",
+    "numerous white speckles scattered over the body read as artifacts, not water droplets",
+    "rim highlights slightly blown/softened by the noise"
+   ]
+  },
+  "reason": "Images 1 and 2 are pixel-identical clean renders with crisp glass and rim light; 3 adds mild speckle noise inside the glass; 4 is noticeably grainy with artifact-like speckling across the bottle and cap."
+ },
+ "bruto": "{\"ranking\": [1, 2, 3, 4], \"scores\": {\"1\": 9, \"2\": 9, \"3\": 7.5, \"4\": 6}, \"identical_pairs\": [[1, 2]], \"defects\": {\"1\": [\"very few droplets actually on the glass body (most droplets are on the marble, not the bottle)\"], \"2\": [\"same minimal droplet-on-glass coverage as image 1\"], \"3\": [\"visible speckle/noise distributed inside the glass volume, reads as sensor noise rather than intentional droplets\", \"slight loss of edge crispness on the cap compared to 1/2\"], \"4\": [\"heavy grainy noise across the whole bottle and cap, glass looks frosted/textured rather than translucent\", \"numerous white speckles scattered over the body read as artifacts, not water droplets\", \"rim highlights slightly blown/softened by the noise\"]}, \"reason\": \"Images 1 and 2 are pixel-identical clean renders with crisp glass and rim light; 3 adds mild speckle noise inside the glass; 4 is noticeably grainy with artifact-like speckling across the bottle and cap.\"}\n"
+}

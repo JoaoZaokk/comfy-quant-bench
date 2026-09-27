@@ -1,0 +1,18 @@
+{
+ "tipo": "nota",
+ "imagem": "850e88e460d8",
+ "resposta": {
+  "prompt_adherence": 9,
+  "text_accuracy": 10,
+  "artifacts": 9,
+  "anatomy": 9,
+  "detail_realism": 8,
+  "overall": 9,
+  "defects": [
+   "headline is regular serif weight, not bold",
+   "coffee cup drawing is very simplistic/rough",
+   "cup proportions feel slightly squat"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 9, \"text_accuracy\": 10, \"artifacts\": 9, \"anatomy\": 9, \"detail_realism\": 8, \"overall\": 9, \"defects\": [\"headline is regular serif weight, not bold\", \"coffee cup drawing is very simplistic/rough\", \"cup proportions feel slightly squat\"]}\n"
+}

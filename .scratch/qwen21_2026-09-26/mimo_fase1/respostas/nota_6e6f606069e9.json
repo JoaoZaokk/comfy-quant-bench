@@ -1,0 +1,19 @@
+{
+ "tipo": "nota",
+ "imagem": "6e6f606069e9",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": null,
+  "artifacts": 9,
+  "anatomy": 9,
+  "detail_realism": 9,
+  "overall": 9,
+  "defects": [
+   "no visual cue identifying subject as a fisherman (no cap, boat, or coastal context)",
+   "right ear appears slightly oversized and softly defined",
+   "beard texture becomes slightly mushy near the neckline",
+   "background window frame has minor smearing at edges"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": null, \"artifacts\": 9, \"anatomy\": 9, \"detail_realism\": 9, \"overall\": 9, \"defects\": [\"no visual cue identifying subject as a fisherman (no cap, boat, or coastal context)\", \"right ear appears slightly oversized and softly defined\", \"beard texture becomes slightly mushy near the neckline\", \"background window frame has minor smearing at edges\"]}\n"
+}

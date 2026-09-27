@@ -1,0 +1,21 @@
+{
+ "tipo": "nota",
+ "imagem": "ecfea36b4443",
+ "resposta": {
+  "prompt_adherence": 9,
+  "text_accuracy": null,
+  "artifacts": 8,
+  "anatomy": null,
+  "detail_realism": 8,
+  "overall": 8,
+  "defects": [
+   "sun not visible, sunrise only implied by warm side light",
+   "distant trees near horizon slightly mushy and blended",
+   "river surface lacks ripple/reflection micro-detail",
+   "some mist edges look faintly smeared",
+   "muddy bank edge in lower left slightly noisy",
+   "tree crowns in dense clusters merge into soft blobs"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 9, \"text_accuracy\": null, \"artifacts\": 8, \"anatomy\": null, \"detail_realism\": 8, \"overall\": 8, \"defects\": [\"sun not visible, sunrise only implied by warm side light\", \"distant trees near horizon slightly mushy and blended\", \"river surface lacks ripple/reflection micro-detail\", \"some mist edges look faintly smeared\", \"muddy bank edge in lower left slightly noisy\", \"tree crowns in dense clusters merge into soft blobs\"]}\n"
+}

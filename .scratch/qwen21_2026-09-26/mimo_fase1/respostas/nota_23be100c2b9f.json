@@ -1,0 +1,18 @@
+{
+ "tipo": "nota",
+ "imagem": "23be100c2b9f",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": 10,
+  "artifacts": 7,
+  "anatomy": 9,
+  "detail_realism": 8,
+  "overall": 8,
+  "defects": [
+   "headline serif is thin/light, not bold as requested",
+   "stray squiggle mark at bottom center",
+   "stray mark breaks minimalist composition"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": 10, \"artifacts\": 7, \"anatomy\": 9, \"detail_realism\": 8, \"overall\": 8, \"defects\": [\"headline serif is thin/light, not bold as requested\", \"stray squiggle mark at bottom center\", \"stray mark breaks minimalist composition\"]}\n"
+}

@@ -1,0 +1,21 @@
+{
+ "tipo": "nota",
+ "imagem": "4f4b8603fe6b",
+ "resposta": {
+  "prompt_adherence": 7,
+  "text_accuracy": 6,
+  "artifacts": 6,
+  "anatomy": 5,
+  "detail_realism": 7,
+  "overall": 7,
+  "defects": [
+   "missing period in '2.1' (renders '21')",
+   "cat is tiny and blurry",
+   "cat sits left of the sign, not under it",
+   "flat blown-out white interior behind glass",
+   "noise and mush in dark regions",
+   "background signage garbled/undefined"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 7, \"text_accuracy\": 6, \"artifacts\": 6, \"anatomy\": 5, \"detail_realism\": 7, \"overall\": 7, \"defects\": [\"missing period in '2.1' (renders '21')\", \"cat is tiny and blurry\", \"cat sits left of the sign, not under it\", \"flat blown-out white interior behind glass\", \"noise and mush in dark regions\", \"background signage garbled/undefined\"]}\n"
+}

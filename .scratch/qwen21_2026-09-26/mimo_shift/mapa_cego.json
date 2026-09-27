@@ -1,0 +1,62 @@
+{
+ "32420cfaebfb": {
+  "dit": "padrao",
+  "prompt": 0,
+  "seed": 42
+ },
+ "1b34056245b0": {
+  "dit": "padrao",
+  "prompt": 0,
+  "seed": 7
+ },
+ "65b527a0a484": {
+  "dit": "padrao",
+  "prompt": 1,
+  "seed": 42
+ },
+ "f1dd42d1e274": {
+  "dit": "padrao",
+  "prompt": 1,
+  "seed": 7
+ },
+ "5969a7e58cd0": {
+  "dit": "padrao",
+  "prompt": 3,
+  "seed": 42
+ },
+ "eb69db7a525b": {
+  "dit": "padrao",
+  "prompt": 3,
+  "seed": 7
+ },
+ "bb5542d51a8f": {
+  "dit": "mu131",
+  "prompt": 0,
+  "seed": 42
+ },
+ "5afcc6577059": {
+  "dit": "mu131",
+  "prompt": 0,
+  "seed": 7
+ },
+ "3fa7798a0de6": {
+  "dit": "mu131",
+  "prompt": 1,
+  "seed": 42
+ },
+ "fd9a72eb706c": {
+  "dit": "mu131",
+  "prompt": 1,
+  "seed": 7
+ },
+ "1b000c74bee8": {
+  "dit": "mu131",
+  "prompt": 3,
+  "seed": 42
+ },
+ "e2893e43a3a4": {
+  "dit": "mu131",
+  "prompt": 3,
+  "seed": 7
+ }
+}

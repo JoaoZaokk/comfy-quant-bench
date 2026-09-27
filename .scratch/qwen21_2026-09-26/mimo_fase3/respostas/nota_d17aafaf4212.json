@@ -1,0 +1,21 @@
+{
+ "tipo": "nota",
+ "imagem": "d17aafaf4212",
+ "resposta": {
+  "prompt_adherence": 7,
+  "text_accuracy": null,
+  "artifacts": 6,
+  "anatomy": 7,
+  "detail_realism": 6,
+  "overall": 6,
+  "defects": [
+   "water droplets on glass not clearly visible",
+   "glass surface looks rough/icy rather than polished",
+   "cap/neck area blobby and ill-defined",
+   "noisy speckled texture inside glass",
+   "wobbly uneven bottle edges",
+   "reflection slightly smeared"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 7, \"text_accuracy\": null, \"artifacts\": 6, \"anatomy\": 7, \"detail_realism\": 6, \"overall\": 6, \"defects\": [\"water droplets on glass not clearly visible\", \"glass surface looks rough/icy rather than polished\", \"cap/neck area blobby and ill-defined\", \"noisy speckled texture inside glass\", \"wobbly uneven bottle edges\", \"reflection slightly smeared\"]}\n"
+}

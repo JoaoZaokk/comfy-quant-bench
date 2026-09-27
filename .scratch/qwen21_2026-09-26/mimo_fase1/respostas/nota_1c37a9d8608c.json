@@ -1,0 +1,19 @@
+{
+ "tipo": "nota",
+ "imagem": "1c37a9d8608c",
+ "resposta": {
+  "prompt_adherence": 9,
+  "text_accuracy": null,
+  "artifacts": 9,
+  "anatomy": null,
+  "detail_realism": 9,
+  "overall": 9,
+  "defects": [
+   "tree canopy texture slightly repetitive",
+   "sky gradient a bit flat/hazy near horizon",
+   "minor smudging in mist edges",
+   "distant forest lacks micro-detail"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 9, \"text_accuracy\": null, \"artifacts\": 9, \"anatomy\": null, \"detail_realism\": 9, \"overall\": 9, \"defects\": [\"tree canopy texture slightly repetitive\", \"sky gradient a bit flat/hazy near horizon\", \"minor smudging in mist edges\", \"distant forest lacks micro-detail\"]}\n"
+}

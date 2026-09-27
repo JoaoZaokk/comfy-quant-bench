@@ -1,0 +1,21 @@
+{
+ "tipo": "nota",
+ "imagem": "5726f7224908",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": 7,
+  "artifacts": 8,
+  "anatomy": 6,
+  "detail_realism": 7,
+  "overall": 7,
+  "defects": [
+   "\"IMAGE 2.1\" subtitle slightly wobbly/distorted",
+   "cat is small, dark and low-detail",
+   "shop interior looks empty/flat",
+   "sign text split into two colors/sizes instead of one sign",
+   "very dark shadows hide detail on left side",
+   "cat muzzle/face indistinct in the gloom"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": 7, \"artifacts\": 8, \"anatomy\": 6, \"detail_realism\": 7, \"overall\": 7, \"defects\": [\"\\\"IMAGE 2.1\\\" subtitle slightly wobbly/distorted\", \"cat is small, dark and low-detail\", \"shop interior looks empty/flat\", \"sign text split into two colors/sizes instead of one sign\", \"very dark shadows hide detail on left side\", \"cat muzzle/face indistinct in the gloom\"]}\n"
+}

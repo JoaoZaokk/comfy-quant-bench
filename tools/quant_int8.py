@@ -193,7 +193,9 @@ def main() -> int:
             info = header[name]
             start, end = info["data_offsets"]
             weight = read_tensor(handle, data_start + start, end - start,
-                                 info["dtype"], info["shape"]).to(args.device)
+                                 info["dtype"], info["shape"]).to(args.device, torch.float32)
+            # FP32 na entrada (26/09): em BF16 a rotacao muda ~8% dos codigos; a Comfy-Org quantiza do FP32
+            # (99,99999% dos codigos iguais aos dela com FP32, 91% com BF16).
             qdata, scale = quantize(weight, args.convrot, args.convrot_groupsize)
             quantized[name] = {"qdata": qdata.cpu().contiguous(),
                                "scale": scale.cpu().contiguous().float()}

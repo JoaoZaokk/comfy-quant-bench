@@ -1,0 +1,50 @@
+{
+ "tipo": "ranking",
+ "prompt": 2,
+ "seed": 42,
+ "ordem": [
+  "d2f3742cfea9",
+  "e5b060598215",
+  "34db807b6ef4",
+  "a702427088f4"
+ ],
+ "resposta": {
+  "ranking": [
+   1,
+   4,
+   3,
+   2
+  ],
+  "scores": {
+   "1": 7,
+   "2": 5,
+   "3": 5.5,
+   "4": 6.5
+  },
+  "identical_pairs": [],
+  "defects": {
+   "1": [
+    "stray squiggle/wave doodle at bottom not in prompt",
+    "serif is light rather than bold"
+   ],
+   "2": [
+    "coffee cup displaced to bottom far from headline",
+    "stray horizontal dash below headline",
+    "cup is shaded sketch rather than clean line drawing",
+    "serif is light rather than bold"
+   ],
+   "3": [
+    "coffee cup displaced to bottom far from headline",
+    "stray horizontal dash below headline",
+    "sketchy shadow hatching under cup",
+    "serif is light rather than bold"
+   ],
+   "4": [
+    "duplicate coffee cup at bottom (two cups total)",
+    "serif is light rather than bold"
+   ]
+  },
+  "reason": "All spell SLOW MORNINGS correctly on cream background; Image 1 best matches the headline-above-small-line-cup layout (only a faint stray doodle), Image 4 duplicates the cup, Images 3 and 2 misplace the cup to the bottom with a stray dash and sketchier rendering."
+ },
+ "bruto": "{\"ranking\": [1, 4, 3, 2], \"scores\": {\"1\": 7, \"2\": 5, \"3\": 5.5, \"4\": 6.5}, \"identical_pairs\": [], \"defects\": {\"1\": [\"stray squiggle/wave doodle at bottom not in prompt\", \"serif is light rather than bold\"], \"2\": [\"coffee cup displaced to bottom far from headline\", \"stray horizontal dash below headline\", \"cup is shaded sketch rather than clean line drawing\", \"serif is light rather than bold\"], \"3\": [\"coffee cup displaced to bottom far from headline\", \"stray horizontal dash below headline\", \"sketchy shadow hatching under cup\", \"serif is light rather than bold\"], \"4\": [\"duplicate coffee cup at bottom (two cups total)\", \"serif is light rather than bold\"]}, \"reason\": \"All spell SLOW MORNINGS correctly on cream background; Image 1 best matches the headline-above-small-line-cup layout (only a faint stray doodle), Image 4 duplicates the cup, Images 3 and 2 misplace the cup to the bottom with a stray dash and sketchier rendering.\"}\n"
+}

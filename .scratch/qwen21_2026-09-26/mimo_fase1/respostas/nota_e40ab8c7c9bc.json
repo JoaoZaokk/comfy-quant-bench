@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "e40ab8c7c9bc",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": null,
+  "artifacts": 9,
+  "anatomy": 8,
+  "detail_realism": 8,
+  "overall": 8,
+  "defects": [
+   "water droplets mostly on surface/base, sparse on bottle body",
+   "black marble veining not discernible",
+   "metal sprayer collar slightly distorted",
+   "surface reflection slightly muddy",
+   "dip tube curve looks a bit too stylized"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": null, \"artifacts\": 9, \"anatomy\": 8, \"detail_realism\": 8, \"overall\": 8, \"defects\": [\"water droplets mostly on surface/base, sparse on bottle body\", \"black marble veining not discernible\", \"metal sprayer collar slightly distorted\", \"surface reflection slightly muddy\", \"dip tube curve looks a bit too stylized\"]}\n"
+}

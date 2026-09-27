@@ -1,0 +1,66 @@
+{
+ "tipo": "ranking",
+ "prompt": 1,
+ "seed": 42,
+ "ordem": [
+  "243923df6683",
+  "0c01ecd489aa",
+  "29e1b4f9bdcb",
+  "266d336eb2a8",
+  "b52341620aee",
+  "c9947e487f6a"
+ ],
+ "resposta": {
+  "ranking": [
+   5,
+   6,
+   3,
+   4,
+   1,
+   2
+  ],
+  "scores": {
+   "1": 8.3,
+   "2": 7.9,
+   "3": 9.1,
+   "4": 8.5,
+   "5": 9.4,
+   "6": 9.4
+  },
+  "identical_pairs": [
+   [
+    5,
+    6
+   ]
+  ],
+  "defects": {
+   "1": [
+    "pele ligeiramente cerosa/pl\u00e1stica na testa e ma\u00e7\u00e3s do rosto",
+    "\u00edris de cores discordantes (olho esquerdo acinzentado, direito esverdeado-amarelado)",
+    "barba com textura um pouco pastosa na transi\u00e7\u00e3o com o queixo"
+   ],
+   "2": [
+    "envelhecimento exagerado: rugas e couro cabeludo hiper-irregulares",
+    "olhos com cores e formatos assim\u00e9tricos, olhar desalinhado",
+    "barba manchada com manchas escuras irregulares"
+   ],
+   "3": [
+    "tom dos olhos ligeiramente inconsistente entre os dois",
+    "fios soltos no topo do cabelo um pouco borrados"
+   ],
+   "4": [
+    "cabelo superior desgrenhado com fios esmaecidos/artefatos junto ao fundo",
+    "p\u00e1lpebras levemente pesadas e olhar menos n\u00edtido",
+    "nariz levemente alongado em rela\u00e7\u00e3o ao plano m\u00e9dio"
+   ],
+   "5": [
+    "nenhum defeito significativo; micro-textura da pele levemente uniforme demais"
+   ],
+   "6": [
+    "nenhum defeito significativo; micro-textura da pele levemente uniforme demais"
+   ]
+  },
+  "reason": "As imagens 5 e 6 s\u00e3o pixel-id\u00eanticas e representam o melhor equil\u00edbrio de fidelidade ao prompt, anatomia e micro-detalhe; a 3 \u00e9 quase igual com leve desvio na cor dos olhos, seguidas por 4 (cabelo com artefatos), 1 (pele cerosa e \u00edris desiguais) e 2 (envelhecimento exagerado e olhos assim\u00e9tricos)."
+ },
+ "bruto": "{\"ranking\": [5, 6, 3, 4, 1, 2], \"scores\": {\"1\": 8.3, \"2\": 7.9, \"3\": 9.1, \"4\": 8.5, \"5\": 9.4, \"6\": 9.4}, \"identical_pairs\": [[5, 6]], \"defects\": {\"1\": [\"pele ligeiramente cerosa/pl\u00e1stica na testa e ma\u00e7\u00e3s do rosto\", \"\u00edris de cores discordantes (olho esquerdo acinzentado, direito esverdeado-amarelado)\", \"barba com textura um pouco pastosa na transi\u00e7\u00e3o com o queixo\"], \"2\": [\"envelhecimento exagerado: rugas e couro cabeludo hiper-irregulares\", \"olhos com cores e formatos assim\u00e9tricos, olhar desalinhado\", \"barba manchada com manchas escuras irregulares\"], \"3\": [\"tom dos olhos ligeiramente inconsistente entre os dois\", \"fios soltos no topo do cabelo um pouco borrados\"], \"4\": [\"cabelo superior desgrenhado com fios esmaecidos/artefatos junto ao fundo\", \"p\u00e1lpebras levemente pesadas e olhar menos n\u00edtido\", \"nariz levemente alongado em rela\u00e7\u00e3o ao plano m\u00e9dio\"], \"5\": [\"nenhum defeito significativo; micro-textura da pele levemente uniforme demais\"], \"6\": [\"nenhum defeito significativo; micro-textura da pele levemente uniforme demais\"]}, \"reason\": \"As imagens 5 e 6 s\u00e3o pixel-id\u00eanticas e representam o melhor equil\u00edbrio de fidelidade ao prompt, anatomia e micro-detalhe; a 3 \u00e9 quase igual com leve desvio na cor dos olhos, seguidas por 4 (cabelo com artefatos), 1 (pele cerosa e \u00edris desiguais) e 2 (envelhecimento exagerado e olhos assim\u00e9tricos).\"}\n"
+}

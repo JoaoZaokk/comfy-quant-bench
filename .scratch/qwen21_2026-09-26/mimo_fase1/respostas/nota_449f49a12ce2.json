@@ -1,0 +1,21 @@
+{
+ "tipo": "nota",
+ "imagem": "449f49a12ce2",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": 8,
+  "artifacts": 6,
+  "anatomy": 6,
+  "detail_realism": 7,
+  "overall": 7,
+  "defects": [
+   "Q rendered as concentric swirl logo rather than plain letter",
+   "cat small, slightly off-center and head shape muddled",
+   "shadows crushed/underexposed, detail lost in dark areas",
+   "left chair frame distorted, legs uneven",
+   "wet-pavement reflections slightly smeared/blobby",
+   "minor letterform wobble in '2.1' subtitle"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": 8, \"artifacts\": 6, \"anatomy\": 6, \"detail_realism\": 7, \"overall\": 7, \"defects\": [\"Q rendered as concentric swirl logo rather than plain letter\", \"cat small, slightly off-center and head shape muddled\", \"shadows crushed/underexposed, detail lost in dark areas\", \"left chair frame distorted, legs uneven\", \"wet-pavement reflections slightly smeared/blobby\", \"minor letterform wobble in '2.1' subtitle\"]}\n"
+}

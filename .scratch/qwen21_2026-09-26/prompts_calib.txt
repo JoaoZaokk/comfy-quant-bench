@@ -1,0 +1,7 @@
+# Calibracao Qwen-Image-2.1: prompts DIFERENTES dos da bateria, para o build mixed nao ser escolhido no conjunto de teste
+A handwritten chalkboard menu outside a small cafe listing "SOUP 5" and "BREAD 3", street scene, daylight photo
+A young woman laughing in a sunflower field, wind in her hair, golden hour, shallow depth of field
+Isometric illustration of a tiny futuristic city on a floating island, soft pastel colors, clean vector style
+A bowl of ramen with a soft boiled egg, steam rising, top-down food photography on a dark wooden table
+An old leather-bound book open on a desk next to a brass compass and a candle, warm cinematic lighting
+A golden retriever puppy jumping to catch a red frisbee on a beach, sharp action photo, splashing water

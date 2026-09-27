@@ -67,6 +67,13 @@ PROFILE_PATTERNS = {
     "hunyuan_video_15": re.compile(
         r"^double_blocks\.\d+\.(?:(?:img|txt)_attn_(?:qkv|proj)|(?:img|txt)_mlp\.fc[12])\.weight$"
     ),
+    # Qwen-Image-2.1 single-stream DiT. Derived from Comfy-Org's own int8-convrot and NidAll's mixed
+    # checkpoints (26/09): both quantize exactly these 6 Linears per block (192), and keep img_in,
+    # txt_in, modulation, the timestep embedder, norm_out and proj_out in BF16. Matches the fused
+    # Comfy-Org layout (img_mlp.gate_up) and the diffusers one (img_mlp.proj + img_mlp.gate_layer).
+    "qwen_image21": re.compile(
+        r"^transformer_blocks\.\d+\.(?:attn\.(?:to_[qkv]|to_out\.0)|img_mlp\.(?:gate_up|proj|gate_layer|out))\.weight$"
+    ),
     "gemma": re.compile(
         r"^model\.layers\.\d+\.(?:self_attn\.(?:q_proj|k_proj|v_proj|o_proj)|mlp\.(?:gate_proj|up_proj|down_proj))\.weight$"
     ),
@@ -139,6 +146,14 @@ def read_header(path: Path) -> tuple[dict, dict[str, str]]:
     return header, metadata
 
 
+def is_qwen_image21(name_set: set[str]) -> bool:
+    """The same keys `comfy.model_detection` uses for image_model == "qwen_image21"."""
+    return ({"txt_in.text_norm.weight", "modulation.1.weight", "transformer_blocks.0.attn.norm_q.weight",
+             "img_in.weight", "proj_out.weight"} <= name_set
+            and bool({"transformer_blocks.0.img_mlp.gate_up.weight",
+                      "transformer_blocks.0.img_mlp.proj.weight"} & name_set))
+
+
 def detect_profile(path: Path, names: list[str]) -> str:
     name_set = set(names)
     # LTX-2.5 is the only architecture here with paired audio<->video cross-attention next to a
@@ -150,6 +165,8 @@ def detect_profile(path: Path, names: list[str]) -> str:
     if {"txt_in.individual_token_refiner.blocks.0.norm1.weight",
             "double_blocks.0.img_attn_qkv.weight"} <= name_set:
         return "hunyuan_video_15"
+    if is_qwen_image21(name_set):
+        return "qwen_image21"
     lowered = path.name.lower()
     if "qwen" in lowered and any(n.startswith("model.language_model.layers.") for n in names):
         return "qwen3vl"
@@ -299,7 +316,9 @@ def main() -> int:
             info = header[name]
             start, end = info["data_offsets"]
             weight = read_tensor(source_handle, data_start + start, end - start,
-                                 info["dtype"], info["shape"]).to(device="cuda")
+                                 info["dtype"], info["shape"]).to(device="cuda", dtype=torch.float32)
+            # FP32 na entrada (26/09): com BF16 2,1% dos codigos saem diferentes dos da NidAll, que quantiza do
+            # FP32 (99,9998% iguais com FP32). Os dtypes de saida nao mudam.
             qdata, s_rel, s_channel, correction, codebook = ck.quantize_w4a8_int8_weight(
                 weight,
                 group_size=args.group_size,

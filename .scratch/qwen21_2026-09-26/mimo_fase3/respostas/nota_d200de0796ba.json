@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "d200de0796ba",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": null,
+  "artifacts": 8,
+  "anatomy": 7,
+  "detail_realism": 8,
+  "overall": 8,
+  "defects": [
+   "olho esquerdo levemente assim\u00e9trico/ptose",
+   "textura do bigode levemente borrada",
+   "sem atributos espec\u00edficos de pescador",
+   "cachecol com textura um pouco enlameada",
+   "ru\u00eddo fino no topo do cabelo"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": null, \"artifacts\": 8, \"anatomy\": 7, \"detail_realism\": 8, \"overall\": 8, \"defects\": [\"olho esquerdo levemente assim\u00e9trico/ptose\", \"textura do bigode levemente borrada\", \"sem atributos espec\u00edficos de pescador\", \"cachecol com textura um pouco enlameada\", \"ru\u00eddo fino no topo do cabelo\"]}\n"
+}

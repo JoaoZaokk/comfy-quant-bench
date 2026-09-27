@@ -1,0 +1,12 @@
+bateria/shift_padrao_p0_s42.json
+bateria/shift_padrao_p0_s7.json
+bateria/shift_padrao_p1_s42.json
+bateria/shift_padrao_p1_s7.json
+bateria/shift_padrao_p3_s42.json
+bateria/shift_padrao_p3_s7.json
+bateria/shift_mu131_p0_s42.json
+bateria/shift_mu131_p0_s7.json
+bateria/shift_mu131_p1_s42.json
+bateria/shift_mu131_p1_s7.json
+bateria/shift_mu131_p3_s42.json
+bateria/shift_mu131_p3_s7.json

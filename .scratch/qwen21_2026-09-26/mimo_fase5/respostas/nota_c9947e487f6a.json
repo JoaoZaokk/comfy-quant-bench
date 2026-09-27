@@ -1,0 +1,18 @@
+{
+ "tipo": "nota",
+ "imagem": "c9947e487f6a",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": null,
+  "artifacts": 9,
+  "anatomy": 9,
+  "detail_realism": 9,
+  "overall": 9,
+  "defects": [
+   "no clear fisherman cues (no fishing context/gear)",
+   "slight asymmetry in eye shape",
+   "minor smoothing on cheek skin"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": null, \"artifacts\": 9, \"anatomy\": 9, \"detail_realism\": 9, \"overall\": 9, \"defects\": [\"no clear fisherman cues (no fishing context/gear)\", \"slight asymmetry in eye shape\", \"minor smoothing on cheek skin\"]}\n"
+}

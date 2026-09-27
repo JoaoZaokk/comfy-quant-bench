@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "4d7e37c70caa",
+ "resposta": {
+  "prompt_adherence": 9,
+  "text_accuracy": null,
+  "artifacts": 8,
+  "anatomy": null,
+  "detail_realism": 8,
+  "overall": 8,
+  "defects": [
+   "river surface slightly muddy/flat in dark sections",
+   "some tree canopy smearing near fog boundary",
+   "subtle color banding in sky haze",
+   "bank edges slightly too smooth in mid-ground",
+   "mild over-saturation in orange foliage"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 9, \"text_accuracy\": null, \"artifacts\": 8, \"anatomy\": null, \"detail_realism\": 8, \"overall\": 8, \"defects\": [\"river surface slightly muddy/flat in dark sections\", \"some tree canopy smearing near fog boundary\", \"subtle color banding in sky haze\", \"bank edges slightly too smooth in mid-ground\", \"mild over-saturation in orange foliage\"]}\n"
+}

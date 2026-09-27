@@ -1,0 +1,21 @@
+{
+ "tipo": "nota",
+ "imagem": "7b55e9609584",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": 6,
+  "artifacts": 7,
+  "anatomy": 7,
+  "detail_realism": 7,
+  "overall": 7,
+  "defects": [
+   "sign reads 'IMAGE 2:1' not 'IMAGE 2.1'",
+   "cramped spacing in sign text",
+   "cat small and low-detail",
+   "noisy dark shadows",
+   "background storefront soft/blurry",
+   "slight glow bleed around neon letters"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": 6, \"artifacts\": 7, \"anatomy\": 7, \"detail_realism\": 7, \"overall\": 7, \"defects\": [\"sign reads 'IMAGE 2:1' not 'IMAGE 2.1'\", \"cramped spacing in sign text\", \"cat small and low-detail\", \"noisy dark shadows\", \"background storefront soft/blurry\", \"slight glow bleed around neon letters\"]}\n"
+}

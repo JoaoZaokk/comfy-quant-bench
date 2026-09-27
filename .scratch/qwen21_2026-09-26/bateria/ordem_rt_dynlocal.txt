@@ -1,0 +1,1 @@
+bateria/rt_dynlocal_bf16_p0_s42.json

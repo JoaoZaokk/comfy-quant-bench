@@ -1,0 +1,19 @@
+{
+ "tipo": "nota",
+ "imagem": "94ad8cb7dd0d",
+ "resposta": {
+  "prompt_adherence": 9,
+  "text_accuracy": 9,
+  "artifacts": 8,
+  "anatomy": 7,
+  "detail_realism": 8,
+  "overall": 8,
+  "defects": [
+   "cat small and facial detail indistinct",
+   "Q letter cyan tint inconsistent with red sign",
+   "deep shadows crush detail",
+   "minor noise in dark pavement reflections"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 9, \"text_accuracy\": 9, \"artifacts\": 8, \"anatomy\": 7, \"detail_realism\": 8, \"overall\": 8, \"defects\": [\"cat small and facial detail indistinct\", \"Q letter cyan tint inconsistent with red sign\", \"deep shadows crush detail\", \"minor noise in dark pavement reflections\"]}\n"
+}

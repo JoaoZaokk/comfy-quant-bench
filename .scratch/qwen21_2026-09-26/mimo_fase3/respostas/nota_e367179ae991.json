@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "e367179ae991",
+ "resposta": {
+  "prompt_adherence": 6,
+  "text_accuracy": null,
+  "artifacts": 8,
+  "anatomy": 7,
+  "detail_realism": 8,
+  "overall": 6,
+  "defects": [
+   "only two apples instead of three",
+   "extra unrequested brown object in foreground",
+   "pear stem overly long/stiff",
+   "apple-hand contact slightly flattened",
+   "minor skin texture smoothing on fingers"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 6, \"text_accuracy\": null, \"artifacts\": 8, \"anatomy\": 7, \"detail_realism\": 8, \"overall\": 6, \"defects\": [\"only two apples instead of three\", \"extra unrequested brown object in foreground\", \"pear stem overly long/stiff\", \"apple-hand contact slightly flattened\", \"minor skin texture smoothing on fingers\"]}\n"
+}

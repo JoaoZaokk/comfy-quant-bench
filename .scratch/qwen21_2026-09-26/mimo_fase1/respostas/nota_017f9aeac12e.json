@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "017f9aeac12e",
+ "resposta": {
+  "prompt_adherence": 9,
+  "text_accuracy": null,
+  "artifacts": 8,
+  "anatomy": null,
+  "detail_realism": 8,
+  "overall": 8,
+  "defects": [
+   "mist looks smeared/painterly in places",
+   "tree clusters slightly mushy and repetitive",
+   "subtle banding in hazy sky",
+   "river bank edges a bit soft",
+   "distant horizon slightly washed out"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 9, \"text_accuracy\": null, \"artifacts\": 8, \"anatomy\": null, \"detail_realism\": 8, \"overall\": 8, \"defects\": [\"mist looks smeared/painterly in places\", \"tree clusters slightly mushy and repetitive\", \"subtle banding in hazy sky\", \"river bank edges a bit soft\", \"distant horizon slightly washed out\"]}\n"
+}

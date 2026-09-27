@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "449f49a12ce2",
+ "resposta": {
+  "prompt_adherence": 9,
+  "text_accuracy": 8,
+  "artifacts": 7,
+  "anatomy": 7,
+  "detail_realism": 8,
+  "overall": 8,
+  "defects": [
+   "missing space in 'IMAGE2.1'",
+   "cat body slightly smudged and low-detail",
+   "dark shadow areas muddy with lost detail",
+   "bench/props textures slightly broken",
+   "minor neon oversaturation on red tubes"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 9, \"text_accuracy\": 8, \"artifacts\": 7, \"anatomy\": 7, \"detail_realism\": 8, \"overall\": 8, \"defects\": [\"missing space in 'IMAGE2.1'\", \"cat body slightly smudged and low-detail\", \"dark shadow areas muddy with lost detail\", \"bench/props textures slightly broken\", \"minor neon oversaturation on red tubes\"]}\n"
+}

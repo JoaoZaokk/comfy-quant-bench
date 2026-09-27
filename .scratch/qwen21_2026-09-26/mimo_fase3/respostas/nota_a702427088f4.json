@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "a702427088f4",
+ "resposta": {
+  "prompt_adherence": 7,
+  "text_accuracy": 10,
+  "artifacts": 9,
+  "anatomy": 8,
+  "detail_realism": 7,
+  "overall": 7,
+  "defects": [
+   "two coffee cups instead of one",
+   "headline is light serif, not bold",
+   "large empty gap in middle of poster",
+   "second cup duplicated at bottom unprompted",
+   "sparse layout feels unfinished"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 7, \"text_accuracy\": 10, \"artifacts\": 9, \"anatomy\": 8, \"detail_realism\": 7, \"overall\": 7, \"defects\": [\"two coffee cups instead of one\", \"headline is light serif, not bold\", \"large empty gap in middle of poster\", \"second cup duplicated at bottom unprompted\", \"sparse layout feels unfinished\"]}\n"
+}

@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "1c6c96724f81",
+ "resposta": {
+  "prompt_adherence": 9,
+  "text_accuracy": null,
+  "artifacts": 9,
+  "anatomy": 9,
+  "detail_realism": 9,
+  "overall": 9,
+  "defects": [
+   "marble veining barely visible, reads as generic dark wet stone",
+   "cap assembly slightly clunky in proportion",
+   "surface droplets somewhat uniform in distribution",
+   "interior tube bends slightly unnaturally",
+   "minor grain in dark background"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 9, \"text_accuracy\": null, \"artifacts\": 9, \"anatomy\": 9, \"detail_realism\": 9, \"overall\": 9, \"defects\": [\"marble veining barely visible, reads as generic dark wet stone\", \"cap assembly slightly clunky in proportion\", \"surface droplets somewhat uniform in distribution\", \"interior tube bends slightly unnaturally\", \"minor grain in dark background\"]}\n"
+}

@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "d3d37d7d22de",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": 10,
+  "artifacts": 9,
+  "anatomy": 8,
+  "detail_realism": 8,
+  "overall": 8,
+  "defects": [
+   "serif headline is light, not bold as requested",
+   "subtle vignette/gradient in background instead of flat cream",
+   "cup line drawing slightly wobbly, inconsistent stroke weight",
+   "cup handle small and awkwardly attached",
+   "steam strokes faint and uneven"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": 10, \"artifacts\": 9, \"anatomy\": 8, \"detail_realism\": 8, \"overall\": 8, \"defects\": [\"serif headline is light, not bold as requested\", \"subtle vignette/gradient in background instead of flat cream\", \"cup line drawing slightly wobbly, inconsistent stroke weight\", \"cup handle small and awkwardly attached\", \"steam strokes faint and uneven\"]}\n"
+}

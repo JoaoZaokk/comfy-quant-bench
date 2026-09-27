@@ -1,0 +1,49 @@
+{
+ "tipo": "ranking",
+ "prompt": 0,
+ "seed": 7,
+ "ordem": [
+  "7b55e9609584",
+  "825d6c119036",
+  "5726f7224908",
+  "38b7934207d4"
+ ],
+ "resposta": {
+  "ranking": [
+   4,
+   3,
+   1,
+   2
+  ],
+  "scores": {
+   "1": 7,
+   "2": 5,
+   "3": 8,
+   "4": 9
+  },
+  "identical_pairs": [],
+  "defects": {
+   "1": [
+    "sign text wrong: 'QWEN' stacked over 'IMAGE 2\u00b71' with malformed separator",
+    "neon letters slightly uneven/wobbly",
+    "cat partially obscured and low contrast"
+   ],
+   "2": [
+    "main sign text garbled/corrupted ('QWEN' illegible, glitchy strokes)",
+    "red 'IMAGE' text broken and unreadable",
+    "neon fringing and color blotches around letters"
+   ],
+   "3": [
+    "text split into two lines ('QWEN' / 'IMAGE 2.1') instead of one line",
+    "small drift in letterforms, slight glow bleed",
+    "cat small and washed out"
+   ],
+   "4": [
+    "minor letter kerning inconsistency in 'QWEN'",
+    "slight noise in dark areas"
+   ]
+  },
+  "reason": "Image 4 has the only correctly spelled single-line 'QWEN IMAGE 2.1' sign with clean neon and a clear cat; Image 3 is faithful but stacked; Image 1 has malformed text; Image 2 has garbled illegible lettering."
+ },
+ "bruto": "{\"ranking\": [4, 3, 1, 2], \"scores\": {\"1\": 7, \"2\": 5, \"3\": 8, \"4\": 9}, \"identical_pairs\": [], \"defects\": {\"1\": [\"sign text wrong: 'QWEN' stacked over 'IMAGE 2\u00b71' with malformed separator\", \"neon letters slightly uneven/wobbly\", \"cat partially obscured and low contrast\"], \"2\": [\"main sign text garbled/corrupted ('QWEN' illegible, glitchy strokes)\", \"red 'IMAGE' text broken and unreadable\", \"neon fringing and color blotches around letters\"], \"3\": [\"text split into two lines ('QWEN' / 'IMAGE 2.1') instead of one line\", \"small drift in letterforms, slight glow bleed\", \"cat small and washed out\"], \"4\": [\"minor letter kerning inconsistency in 'QWEN'\", \"slight noise in dark areas\"]}, \"reason\": \"Image 4 has the only correctly spelled single-line 'QWEN IMAGE 2.1' sign with clean neon and a clear cat; Image 3 is faithful but stacked; Image 1 has malformed text; Image 2 has garbled illegible lettering.\"}\n"
+}

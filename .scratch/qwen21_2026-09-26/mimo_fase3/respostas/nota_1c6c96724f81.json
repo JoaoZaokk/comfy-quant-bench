@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "1c6c96724f81",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": null,
+  "artifacts": 8,
+  "anatomy": null,
+  "detail_realism": 8,
+  "overall": 8,
+  "defects": [
+   "black marble veining not visible on surface",
+   "droplets read like fine noise/sand rather than water",
+   "slightly wavy bottom glass edge",
+   "sprayer cap details mildly smudged",
+   "subtle smearing in base reflection"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": null, \"artifacts\": 8, \"anatomy\": null, \"detail_realism\": 8, \"overall\": 8, \"defects\": [\"black marble veining not visible on surface\", \"droplets read like fine noise/sand rather than water\", \"slightly wavy bottom glass edge\", \"sprayer cap details mildly smudged\", \"subtle smearing in base reflection\"]}\n"
+}

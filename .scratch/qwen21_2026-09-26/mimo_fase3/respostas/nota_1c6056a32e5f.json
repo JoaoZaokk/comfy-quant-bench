@@ -1,0 +1,21 @@
+{
+ "tipo": "nota",
+ "imagem": "1c6056a32e5f",
+ "resposta": {
+  "prompt_adherence": 4,
+  "text_accuracy": 5,
+  "artifacts": 8,
+  "anatomy": 7,
+  "detail_realism": 5,
+  "overall": 4,
+  "defects": [
+   "extra garbled unreadable text line above headline",
+   "letters not bold serif \u2014 thin shaky hand-drawn strokes",
+   "headline letters wobbly and uneven",
+   "coffee cup drawing tiny and faint",
+   "excessive empty space, poor poster composition",
+   "overall sketchy look not matching clean minimalist style"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 4, \"text_accuracy\": 5, \"artifacts\": 8, \"anatomy\": 7, \"detail_realism\": 5, \"overall\": 4, \"defects\": [\"extra garbled unreadable text line above headline\", \"letters not bold serif \u2014 thin shaky hand-drawn strokes\", \"headline letters wobbly and uneven\", \"coffee cup drawing tiny and faint\", \"excessive empty space, poor poster composition\", \"overall sketchy look not matching clean minimalist style\"]}\n"
+}

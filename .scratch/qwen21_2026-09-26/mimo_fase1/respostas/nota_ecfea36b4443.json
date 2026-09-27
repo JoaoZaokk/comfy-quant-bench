@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "ecfea36b4443",
+ "resposta": {
+  "prompt_adherence": 9,
+  "text_accuracy": null,
+  "artifacts": 8,
+  "anatomy": null,
+  "detail_realism": 9,
+  "overall": 9,
+  "defects": [
+   "mist looks slightly uniform on the left",
+   "some canopy texture repetition",
+   "lower water surface reads flat and very dark",
+   "a few edge tree silhouettes are indistinct",
+   "sun itself not visible (sunrise implied by light only)"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 9, \"text_accuracy\": null, \"artifacts\": 8, \"anatomy\": null, \"detail_realism\": 9, \"overall\": 9, \"defects\": [\"mist looks slightly uniform on the left\", \"some canopy texture repetition\", \"lower water surface reads flat and very dark\", \"a few edge tree silhouettes are indistinct\", \"sun itself not visible (sunrise implied by light only)\"]}\n"
+}

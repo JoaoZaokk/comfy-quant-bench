@@ -1,0 +1,21 @@
+{
+ "tipo": "nota",
+ "imagem": "885a070dce53",
+ "resposta": {
+  "prompt_adherence": 9,
+  "text_accuracy": null,
+  "artifacts": 8,
+  "anatomy": null,
+  "detail_realism": 8,
+  "overall": 9,
+  "defects": [
+   "bottom-center riverbank texture muddled/indistinct",
+   "abrupt tonal break between reflective water and dark water",
+   "foreground foliage slightly mushy",
+   "faint banding in upper-left mist",
+   "upper river reach reads fairly straight, less winding",
+   "dark water areas lack surface texture detail"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 9, \"text_accuracy\": null, \"artifacts\": 8, \"anatomy\": null, \"detail_realism\": 8, \"overall\": 9, \"defects\": [\"bottom-center riverbank texture muddled/indistinct\", \"abrupt tonal break between reflective water and dark water\", \"foreground foliage slightly mushy\", \"faint banding in upper-left mist\", \"upper river reach reads fairly straight, less winding\", \"dark water areas lack surface texture detail\"]}\n"
+}

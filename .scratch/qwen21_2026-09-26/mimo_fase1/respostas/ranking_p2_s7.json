@@ -1,0 +1,70 @@
+{
+ "tipo": "ranking",
+ "prompt": 2,
+ "seed": 7,
+ "ordem": [
+  "de0aec621c6a",
+  "639ea2250885",
+  "850e88e460d8",
+  "31deafe98ced",
+  "d3d37d7d22de"
+ ],
+ "resposta": {
+  "ranking": [
+   5,
+   1,
+   2,
+   3,
+   4
+  ],
+  "scores": {
+   "1": 7.5,
+   "2": 7.5,
+   "3": 7.5,
+   "4": 7.5,
+   "5": 9
+  },
+  "identical_pairs": [
+   [
+    1,
+    2
+   ],
+   [
+    2,
+    3
+   ],
+   [
+    3,
+    4
+   ]
+  ],
+  "defects": {
+   "1": [
+    "serif headline is regular weight, not bold",
+    "composition very top-heavy with vast empty space",
+    "cup drawing lacks steam/detail"
+   ],
+   "2": [
+    "serif headline is regular weight, not bold",
+    "composition very top-heavy with vast empty space",
+    "cup drawing lacks steam/detail"
+   ],
+   "3": [
+    "serif headline is regular weight, not bold",
+    "composition very top-heavy with vast empty space",
+    "cup drawing lacks steam/detail"
+   ],
+   "4": [
+    "serif headline is regular weight, not bold",
+    "composition very top-heavy with vast empty space",
+    "cup drawing lacks steam/detail"
+   ],
+   "5": [
+    "headline still not fully bold weight",
+    "steam wisps are an extra unrequested element"
+   ]
+  },
+  "reason": "Image 5 gives a larger, stronger serif headline with a cleaner centered composition and a crisper small line-drawn cup (with steam), while Images 1-4 are pixel-identical to each other and only satisfy the prompt with a lighter, smaller headline and sparse top-heavy layout."
+ },
+ "bruto": "{\"ranking\": [5, 1, 2, 3, 4], \"scores\": {\"1\": 7.5, \"2\": 7.5, \"3\": 7.5, \"4\": 7.5, \"5\": 9}, \"identical_pairs\": [[1, 2], [2, 3], [3, 4]], \"defects\": {\"1\": [\"serif headline is regular weight, not bold\", \"composition very top-heavy with vast empty space\", \"cup drawing lacks steam/detail\"], \"2\": [\"serif headline is regular weight, not bold\", \"composition very top-heavy with vast empty space\", \"cup drawing lacks steam/detail\"], \"3\": [\"serif headline is regular weight, not bold\", \"composition very top-heavy with vast empty space\", \"cup drawing lacks steam/detail\"], \"4\": [\"serif headline is regular weight, not bold\", \"composition very top-heavy with vast empty space\", \"cup drawing lacks steam/detail\"], \"5\": [\"headline still not fully bold weight\", \"steam wisps are an extra unrequested element\"]}, \"reason\": \"Image 5 gives a larger, stronger serif headline with a cleaner centered composition and a crisper small line-drawn cup (with steam), while Images 1-4 are pixel-identical to each other and only satisfy the prompt with a lighter, smaller headline and sparse top-heavy layout.\"}\n"
+}

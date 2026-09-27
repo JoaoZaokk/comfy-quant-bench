@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "de0aec621c6a",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": 10,
+  "artifacts": 9,
+  "anatomy": null,
+  "detail_realism": 7,
+  "overall": 8,
+  "defects": [
+   "letters not truly bold",
+   "coffee cup tiny and sparse",
+   "large empty space below",
+   "centering slightly top-heavy",
+   "line drawing lacks detail"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": 10, \"artifacts\": 9, \"anatomy\": null, \"detail_realism\": 7, \"overall\": 8, \"defects\": [\"letters not truly bold\", \"coffee cup tiny and sparse\", \"large empty space below\", \"centering slightly top-heavy\", \"line drawing lacks detail\"]}\n"
+}

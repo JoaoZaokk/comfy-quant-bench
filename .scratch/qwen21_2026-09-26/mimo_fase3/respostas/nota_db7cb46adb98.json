@@ -1,0 +1,21 @@
+{
+ "tipo": "nota",
+ "imagem": "db7cb46adb98",
+ "resposta": {
+  "prompt_adherence": 6,
+  "text_accuracy": 3,
+  "artifacts": 4,
+  "anatomy": 4,
+  "detail_realism": 5,
+  "overall": 4,
+  "defects": [
+   "neon text jumbled and misspelled (reads QWENIMAGE / IMAGE 2.1, not 'QWEN IMAGE 2.1')",
+   "cat is tiny, blurry and structurally malformed",
+   "painterly smearing across building facade",
+   "neon letters have broken/fringed edges",
+   "overly dark, crushed shadows hide detail",
+   "uneven noisy texture on wet pavement"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 6, \"text_accuracy\": 3, \"artifacts\": 4, \"anatomy\": 4, \"detail_realism\": 5, \"overall\": 4, \"defects\": [\"neon text jumbled and misspelled (reads QWENIMAGE / IMAGE 2.1, not 'QWEN IMAGE 2.1')\", \"cat is tiny, blurry and structurally malformed\", \"painterly smearing across building facade\", \"neon letters have broken/fringed edges\", \"overly dark, crushed shadows hide detail\", \"uneven noisy texture on wet pavement\"]}\n"
+}

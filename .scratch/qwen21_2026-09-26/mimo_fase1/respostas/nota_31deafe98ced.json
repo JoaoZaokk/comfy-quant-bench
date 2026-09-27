@@ -1,0 +1,19 @@
+{
+ "tipo": "nota",
+ "imagem": "31deafe98ced",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": 10,
+  "artifacts": 9,
+  "anatomy": 9,
+  "detail_realism": 8,
+  "overall": 8,
+  "defects": [
+   "headline is serif but not bold weight",
+   "coffee cup drawing very small with sparse detail",
+   "extreme top-heavy composition leaves large empty area",
+   "minor thin line artifact near bottom/right edge"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": 10, \"artifacts\": 9, \"anatomy\": 9, \"detail_realism\": 8, \"overall\": 8, \"defects\": [\"headline is serif but not bold weight\", \"coffee cup drawing very small with sparse detail\", \"extreme top-heavy composition leaves large empty area\", \"minor thin line artifact near bottom/right edge\"]}\n"
+}

@@ -1,0 +1,21 @@
+{
+ "tipo": "nota",
+ "imagem": "b3bab2f6fe04",
+ "resposta": {
+  "prompt_adherence": 9,
+  "text_accuracy": null,
+  "artifacts": 7,
+  "anatomy": 8,
+  "detail_realism": 8,
+  "overall": 8,
+  "defects": [
+   "cap/neck slightly melty and irregular",
+   "subtle smearing near bottle shoulder",
+   "droplets unevenly distributed and slightly blobby",
+   "glass edges show faint noise",
+   "reflection on marble slightly noisy",
+   "bottle silhouette margins a bit rough"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 9, \"text_accuracy\": null, \"artifacts\": 7, \"anatomy\": 8, \"detail_realism\": 8, \"overall\": 8, \"defects\": [\"cap/neck slightly melty and irregular\", \"subtle smearing near bottle shoulder\", \"droplets unevenly distributed and slightly blobby\", \"glass edges show faint noise\", \"reflection on marble slightly noisy\", \"bottle silhouette margins a bit rough\"]}\n"
+}

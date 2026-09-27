@@ -1,0 +1,19 @@
+{
+ "tipo": "nota",
+ "imagem": "fe22ce1b8722",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": null,
+  "artifacts": 9,
+  "anatomy": 8,
+  "detail_realism": 9,
+  "overall": 8,
+  "defects": [
+   "fisherman identity not conveyed (no cues beyond rustic shirt)",
+   "left ear attachment/shape slightly unnatural",
+   "minor hair smearing at crown and temples",
+   "window background panes slightly soft/unnatural geometry"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": null, \"artifacts\": 9, \"anatomy\": 8, \"detail_realism\": 9, \"overall\": 8, \"defects\": [\"fisherman identity not conveyed (no cues beyond rustic shirt)\", \"left ear attachment/shape slightly unnatural\", \"minor hair smearing at crown and temples\", \"window background panes slightly soft/unnatural geometry\"]}\n"
+}

@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "9f76cde48efd",
+ "resposta": {
+  "prompt_adherence": 9,
+  "text_accuracy": 9,
+  "artifacts": 7,
+  "anatomy": 7,
+  "detail_realism": 8,
+  "overall": 8,
+  "defects": [
+   "text split across two lines instead of one",
+   "cat slightly mushy and indistinct",
+   "blotchy blown-out red reflection on pavement",
+   "mottled smearing on wall behind sign",
+   "very dark edges lose detail"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 9, \"text_accuracy\": 9, \"artifacts\": 7, \"anatomy\": 7, \"detail_realism\": 8, \"overall\": 8, \"defects\": [\"text split across two lines instead of one\", \"cat slightly mushy and indistinct\", \"blotchy blown-out red reflection on pavement\", \"mottled smearing on wall behind sign\", \"very dark edges lose detail\"]}\n"
+}

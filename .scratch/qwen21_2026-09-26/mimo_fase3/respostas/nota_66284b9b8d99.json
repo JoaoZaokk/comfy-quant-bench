@@ -1,0 +1,21 @@
+{
+ "tipo": "nota",
+ "imagem": "66284b9b8d99",
+ "resposta": {
+  "prompt_adherence": 9,
+  "text_accuracy": 8,
+  "artifacts": 8,
+  "anatomy": 7,
+  "detail_realism": 8,
+  "overall": 8,
+  "defects": [
+   "cat shape slightly blobby/smudged",
+   "decimal point in '2.1' barely rendered",
+   "shadow noise in dark areas",
+   "window interior textures smeared",
+   "minor neon fringe halos",
+   "pavement reflections slightly streaky"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 9, \"text_accuracy\": 8, \"artifacts\": 8, \"anatomy\": 7, \"detail_realism\": 8, \"overall\": 8, \"defects\": [\"cat shape slightly blobby/smudged\", \"decimal point in '2.1' barely rendered\", \"shadow noise in dark areas\", \"window interior textures smeared\", \"minor neon fringe halos\", \"pavement reflections slightly streaky\"]}\n"
+}

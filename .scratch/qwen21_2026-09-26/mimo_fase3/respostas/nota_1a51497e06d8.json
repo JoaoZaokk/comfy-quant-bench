@@ -1,0 +1,19 @@
+{
+ "tipo": "nota",
+ "imagem": "1a51497e06d8",
+ "resposta": {
+  "prompt_adherence": 6,
+  "text_accuracy": null,
+  "artifacts": 8,
+  "anatomy": 7,
+  "detail_realism": 8,
+  "overall": 7,
+  "defects": [
+   "only two apples instead of three",
+   "hand fingers slightly short and merged",
+   "thumb/nail proportions slightly off",
+   "apple skin sheen slightly plasticky"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 6, \"text_accuracy\": null, \"artifacts\": 8, \"anatomy\": 7, \"detail_realism\": 8, \"overall\": 7, \"defects\": [\"only two apples instead of three\", \"hand fingers slightly short and merged\", \"thumb/nail proportions slightly off\", \"apple skin sheen slightly plasticky\"]}\n"
+}

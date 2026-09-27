@@ -1,0 +1,67 @@
+{
+ "tipo": "ranking",
+ "prompt": 4,
+ "seed": 7,
+ "ordem": [
+  "ee359a40c7fd",
+  "73c655b345bc",
+  "e40ab8c7c9bc",
+  "0c1d2ada9d7f",
+  "0ed8c6dc7e36"
+ ],
+ "resposta": {
+  "ranking": [
+   2,
+   3,
+   4,
+   5,
+   1
+  ],
+  "scores": {
+   "1": 7.5,
+   "2": 8.5,
+   "3": 8.5,
+   "4": 8.5,
+   "5": 8.0
+  },
+  "identical_pairs": [
+   [
+    2,
+    3
+   ],
+   [
+    3,
+    4
+   ]
+  ],
+  "defects": {
+   "1": [
+    "spray nozzle reads dark/less defined than others",
+    "slightly dimmer cap highlights",
+    "minor softness in inner glass wall edges"
+   ],
+   "2": [
+    "tiny speck/dot artifact on pump mechanism",
+    "subtle noise in black background",
+    "minor banding in reflection"
+   ],
+   "3": [
+    "tiny speck/dot artifact on pump mechanism",
+    "subtle noise in black background",
+    "minor banding in reflection"
+   ],
+   "4": [
+    "tiny speck/dot artifact on pump mechanism",
+    "subtle noise in black background",
+    "minor banding in reflection"
+   ],
+   "5": [
+    "slightly lower contrast on rim light",
+    "faint noise in background",
+    "soft inner-wall highlight on left edge"
+   ]
+  },
+  "reason": "Images 2-4 appear pixel-identical and show the sharpest pump detail and rim lighting; 5 is nearly as good with marginally softer contrast; 1 has the least defined spray mechanism."
+ },
+ "bruto": "{\"ranking\": [2, 3, 4, 5, 1], \"scores\": {\"1\": 7.5, \"2\": 8.5, \"3\": 8.5, \"4\": 8.5, \"5\": 8.0}, \"identical_pairs\": [[2, 3], [3, 4]], \"defects\": {\"1\": [\"spray nozzle reads dark/less defined than others\", \"slightly dimmer cap highlights\", \"minor softness in inner glass wall edges\"], \"2\": [\"tiny speck/dot artifact on pump mechanism\", \"subtle noise in black background\", \"minor banding in reflection\"], \"3\": [\"tiny speck/dot artifact on pump mechanism\", \"subtle noise in black background\", \"minor banding in reflection\"], \"4\": [\"tiny speck/dot artifact on pump mechanism\", \"subtle noise in black background\", \"minor banding in reflection\"], \"5\": [\"slightly lower contrast on rim light\", \"faint noise in background\", \"soft inner-wall highlight on left edge\"]}, \"reason\": \"Images 2-4 appear pixel-identical and show the sharpest pump detail and rim lighting; 5 is nearly as good with marginally softer contrast; 1 has the least defined spray mechanism.\"}\n"
+}

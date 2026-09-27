@@ -1,0 +1,21 @@
+{
+ "tipo": "nota",
+ "imagem": "56839681dde8",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": null,
+  "artifacts": 7,
+  "anatomy": 7,
+  "detail_realism": 7,
+  "overall": 8,
+  "defects": [
+   "cap/nozzle assembly slightly malformed",
+   "inner dip tube curve looks unnatural",
+   "base reads as speckled stone not black marble",
+   "minor grain/noise in droplet areas",
+   "faint smearing on glass edge highlights",
+   "reflections on surface slightly blown out"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": null, \"artifacts\": 7, \"anatomy\": 7, \"detail_realism\": 7, \"overall\": 8, \"defects\": [\"cap/nozzle assembly slightly malformed\", \"inner dip tube curve looks unnatural\", \"base reads as speckled stone not black marble\", \"minor grain/noise in droplet areas\", \"faint smearing on glass edge highlights\", \"reflections on surface slightly blown out\"]}\n"
+}

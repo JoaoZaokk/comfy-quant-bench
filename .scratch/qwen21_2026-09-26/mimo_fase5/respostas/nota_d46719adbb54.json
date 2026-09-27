@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "d46719adbb54",
+ "resposta": {
+  "prompt_adherence": 9,
+  "text_accuracy": 9,
+  "artifacts": 8,
+  "anatomy": 7,
+  "detail_realism": 8,
+  "overall": 8,
+  "defects": [
+   "cat is very small and hard to evaluate in deep shadows",
+   "extremely dark areas obscure some scene detail",
+   "slight neon glow halo/bleeding around bright letters",
+   "wet pavement reflections slightly oversaturated in reds",
+   "background wall texture feels somewhat flat"
+  ]
+ },
+ "bruto": "```json\n{\"prompt_adherence\": 9, \"text_accuracy\": 9, \"artifacts\": 8, \"anatomy\": 7, \"detail_realism\": 8, \"overall\": 8, \"defects\": [\"cat is very small and hard to evaluate in deep shadows\", \"extremely dark areas obscure some scene detail\", \"slight neon glow halo/bleeding around bright letters\", \"wet pavement reflections slightly oversaturated in reds\", \"background wall texture feels somewhat flat\"]}\n```\n"
+}

@@ -1,0 +1,64 @@
+{
+ "tipo": "ranking",
+ "prompt": 4,
+ "seed": 7,
+ "ordem": [
+  "b3bab2f6fe04",
+  "73c655b345bc",
+  "ee359a40c7fd",
+  "2bb1ff7c4ade",
+  "d17aafaf4212",
+  "1c6c96724f81"
+ ],
+ "resposta": {
+  "ranking": [
+   2,
+   6,
+   3,
+   4,
+   1,
+   5
+  ],
+  "scores": {
+   "1": 6,
+   "2": 9,
+   "3": 8,
+   "4": 7,
+   "5": 4,
+   "6": 9
+  },
+  "identical_pairs": [],
+  "defects": {
+   "1": [
+    "tampa sem borrifador met\u00e1lico (bloco de vidro)",
+    "granula\u00e7\u00e3o/ru\u00eddo excessivo no vidro",
+    "impurezas no lugar de got\u00edculas"
+   ],
+   "2": [
+    "lev\u00edssima granula\u00e7\u00e3o na base",
+    "textura do m\u00e1rmore pouco definida"
+   ],
+   "3": [
+    "bolhas/part\u00edculas internas no l\u00edquido",
+    "leve ru\u00eddo no ombro do frasco"
+   ],
+   "4": [
+    "impurezas granuladas no vidro",
+    "estrutura da tampa confusa",
+    "got\u00edculas pouco definidas"
+   ],
+   "5": [
+    "vidro muito sujo e amarelado",
+    "sem estrutura de spray na tampa",
+    "textura de 'gelo' em vez de vidro liso",
+    "tampa deformada"
+   ],
+   "6": [
+    "quase id\u00eantica \u00e0 imagem 2 (489k pixels diferem, m\u00e1ximo 243)",
+    "lev\u00edssima granula\u00e7\u00e3o na base"
+   ]
+  },
+  "reason": "2 e 6 s\u00e3o quase id\u00eanticas (verificadas por diff pixel a pixel, n\u00e3o s\u00e3o id\u00eanticas) e dominam com spray met\u00e1lico correto, vidro limpo e got\u00edculas; 3 \u00e9 boa mas com part\u00edculas; 4 intermedi\u00e1ria; 1 perde o borrifador e tem ru\u00eddo; 5 \u00e9 de longe a pior com vidro sujo e tampa deformada."
+ },
+ "bruto": "Preciso dos hashes s\u00f3 dos 6 arquivos da rodada para confirmar identidade:\nOs hashes s\u00e3o todos distintos (n\u00e3o s\u00e3o id\u00eanticos byte a byte). Vou conferir identidade pixel a pixel entre os pares suspeitos (2 vs 6 parecem visualmente id\u00eanticas):\n{\"ranking\": [2, 6, 3, 4, 1, 5], \"scores\": {\"1\": 6, \"2\": 9, \"3\": 8, \"4\": 7, \"5\": 4, \"6\": 9}, \"identical_pairs\": [], \"defects\": {\"1\": [\"tampa sem borrifador met\u00e1lico (bloco de vidro)\", \"granula\u00e7\u00e3o/ru\u00eddo excessivo no vidro\", \"impurezas no lugar de got\u00edculas\"], \"2\": [\"lev\u00edssima granula\u00e7\u00e3o na base\", \"textura do m\u00e1rmore pouco definida\"], \"3\": [\"bolhas/part\u00edculas internas no l\u00edquido\", \"leve ru\u00eddo no ombro do frasco\"], \"4\": [\"impurezas granuladas no vidro\", \"estrutura da tampa confusa\", \"got\u00edculas pouco definidas\"], \"5\": [\"vidro muito sujo e amarelado\", \"sem estrutura de spray na tampa\", \"textura de 'gelo' em vez de vidro liso\", \"tampa deformada\"], \"6\": [\"quase id\u00eantica \u00e0 imagem 2 (489k pixels diferem, m\u00e1ximo 243)\", \"lev\u00edssima granula\u00e7\u00e3o na base\"]}, \"reason\": \"2 e 6 s\u00e3o quase id\u00eanticas (verificadas por diff pixel a pixel, n\u00e3o s\u00e3o id\u00eanticas) e dominam com spray met\u00e1lico correto, vidro limpo e got\u00edculas; 3 \u00e9 boa mas com part\u00edculas; 4 intermedi\u00e1ria; 1 perde o borrifador e tem ru\u00eddo; 5 \u00e9 de longe a pior com vidro sujo e tampa deformada.\"}\n"
+}

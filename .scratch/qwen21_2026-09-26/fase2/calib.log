@@ -1,0 +1,57 @@
+encoding 6 prompt(s) with ['qwen3vl_8b_w4a8.safetensors']
+  [1, 36, 4096]  |cond| 5262.7744
+  [1, 30, 4096]  |cond| 4173.7812
+  [1, 29, 4096]  |cond| 4263.3516
+  [1, 31, 4096]  |cond| 4358.8726
+  [1, 29, 4096]  |cond| 4271.2822
+  [1, 32, 4096]  |cond| 4368.6538
+loading P:\ComfyBench\diffusion_models\qwen_image_2.1_bf16.safetensors
+hooking 192 Linear layers matching profile 'qwen_image21'
+run 1/6 prompt 0 seed 42 steps 25
+run 2/6 prompt 1 seed 42 steps 25
+run 3/6 prompt 2 seed 42 steps 25
+run 4/6 prompt 3 seed 42 steps 25
+run 5/6 prompt 4 seed 42 steps 25
+run 6/6 prompt 5 seed 42 steps 25
+
+{
+  "source": "P:\\ComfyBench\\diffusion_models\\qwen_image_2.1_bf16.safetensors",
+  "source_identity_sha256": "4e00f43633f8c40776c7520f7077b436d6d2861a1aa78eb91f738c62b0b1a4c9",
+  "sample_dtype": "torch.bfloat16",
+  "sigma_tagged_layers": 192,
+  "sigma_min": 0.07669990509748459,
+  "sigma_max": 1.0,
+  "sigma_distinct": 25,
+  "profile": "qwen_image21",
+  "prompts": 6,
+  "seeds": [
+    42
+  ],
+  "steps": 25,
+  "cfg": 1.0,
+  "sampler": "euler",
+  "scheduler": "simple",
+  "size": 1024,
+  "rows": 256,
+  "runs": 6,
+  "layers": 192,
+  "never_ran": [],
+  "seconds": 165.23,
+  "torch": "2.13.0+cu130",
+  "gpu": "NVIDIA GeForce RTX 3090"
+}
+
+layer                                             rows   crest p50   crest p99   crest max
+transformer_blocks.4.img_mlp.out                614587       22.44       90.30      100.58
+transformer_blocks.6.img_mlp.out                614587       24.08       87.46      104.22
+transformer_blocks.31.img_mlp.out               614587       72.73       82.33       84.70
+transformer_blocks.7.img_mlp.out                614587       19.11       73.67       98.84
+transformer_blocks.5.img_mlp.out                614587       22.12       70.43      107.92
+transformer_blocks.8.img_mlp.out                614587       20.23       64.24      100.48
+transformer_blocks.3.img_mlp.out                614587       20.68       62.68       94.06
+transformer_blocks.0.img_mlp.out                614587       21.73       57.86       83.31
+transformer_blocks.2.img_mlp.out                614587       19.77       57.56       87.87
+transformer_blocks.9.img_mlp.out                614587       18.54       55.99       78.64
+
+wrote calib\qwen21_bf16_2026-09-26.calib.pt (516.4 MiB) in 165.2s
+crest factor is a diagnostic. The promotion decision is measured against the real kernels in tools/quant_mixed.py.

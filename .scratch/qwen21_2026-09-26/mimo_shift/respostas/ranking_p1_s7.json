@@ -1,0 +1,32 @@
+{
+ "tipo": "ranking",
+ "prompt": 1,
+ "seed": 7,
+ "ordem": [
+  "f1dd42d1e274",
+  "fd9a72eb706c"
+ ],
+ "resposta": {
+  "ranking": [
+   1,
+   2
+  ],
+  "scores": {
+   "1": 9,
+   "2": 9
+  },
+  "identical_pairs": [],
+  "defects": {
+   "1": [
+    "minor hair strand smearing near left temple",
+    "very slight softness in far-side beard edge"
+   ],
+   "2": [
+    "slight muddiness in mustache/mouth region detail",
+    "minor hair strand smearing near left temple"
+   ]
+  },
+  "reason": "The two renders are near-identical in composition, lighting and skin detail; Image 1 shows marginally crisper mustache and lip definition while Image 2 blurs slightly around the mouth, with both otherwise exhibiting excellent prompt adherence and no significant artifacts."
+ },
+ "bruto": "{\"ranking\": [1, 2], \"scores\": {\"1\": 9, \"2\": 9}, \"identical_pairs\": [], \"defects\": {\"1\": [\"minor hair strand smearing near left temple\", \"very slight softness in far-side beard edge\"], \"2\": [\"slight muddiness in mustache/mouth region detail\", \"minor hair strand smearing near left temple\"]}, \"reason\": \"The two renders are near-identical in composition, lighting and skin detail; Image 1 shows marginally crisper mustache and lip definition while Image 2 blurs slightly around the mouth, with both otherwise exhibiting excellent prompt adherence and no significant artifacts.\"}\n"
+}

@@ -1,0 +1,61 @@
+{
+ "tipo": "ranking",
+ "prompt": 3,
+ "seed": 7,
+ "ordem": [
+  "b8e4ccce4d29",
+  "bf79f1096d5a",
+  "1c37a9d8608c",
+  "017f9aeac12e",
+  "17614d750867"
+ ],
+ "resposta": {
+  "ranking": [
+   2,
+   3,
+   4,
+   5,
+   1
+  ],
+  "scores": {
+   "1": 6.5,
+   "2": 8.5,
+   "3": 8.5,
+   "4": 8.0,
+   "5": 7.0
+  },
+  "identical_pairs": [
+   [
+    2,
+    3
+   ]
+  ],
+  "defects": {
+   "1": [
+    "heavy haze washing out upper-left quadrant",
+    "unnatural river geometry with floating sandbars",
+    "soft/blurry tree detail",
+    "slight color banding in sky"
+   ],
+   "2": [
+    "minor haze clipping in horizon",
+    "subtle smearing of tree texture in far field"
+   ],
+   "3": [
+    "minor haze clipping in horizon",
+    "subtle smearing of tree texture in far field"
+   ],
+   "4": [
+    "slightly softer mist transition than 2/3",
+    "minor haze clipping at horizon"
+   ],
+   "5": [
+    "implausible vertical steam/smoke column",
+    "mist clumps unnaturally over river bend",
+    "slightly blotchy water shading"
+   ]
+  },
+  "reason": "Images 2 and 3 are pixel-identical and show the cleanest detail and prompt adherence, 4 is a near-tie with slightly softer mist, 5 has an odd steam column artifact, and 1 is hazier with weaker fine detail and questionable river geometry."
+ },
+ "bruto": "{\"ranking\": [2, 3, 4, 5, 1], \"scores\": {\"1\": 6.5, \"2\": 8.5, \"3\": 8.5, \"4\": 8.0, \"5\": 7.0}, \"identical_pairs\": [[2, 3]], \"defects\": {\"1\": [\"heavy haze washing out upper-left quadrant\", \"unnatural river geometry with floating sandbars\", \"soft/blurry tree detail\", \"slight color banding in sky\"], \"2\": [\"minor haze clipping in horizon\", \"subtle smearing of tree texture in far field\"], \"3\": [\"minor haze clipping in horizon\", \"subtle smearing of tree texture in far field\"], \"4\": [\"slightly softer mist transition than 2/3\", \"minor haze clipping at horizon\"], \"5\": [\"implausible vertical steam/smoke column\", \"mist clumps unnaturally over river bend\", \"slightly blotchy water shading\"]}, \"reason\": \"Images 2 and 3 are pixel-identical and show the cleanest detail and prompt adherence, 4 is a near-tie with slightly softer mist, 5 has an odd steam column artifact, and 1 is hazier with weaker fine detail and questionable river geometry.\"}\n"
+}

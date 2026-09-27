@@ -1,0 +1,21 @@
+{
+ "tipo": "nota",
+ "imagem": "9b03ef9ffab7",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": null,
+  "artifacts": 8,
+  "anatomy": null,
+  "detail_realism": 7,
+  "overall": 8,
+  "defects": [
+   "canopy texture repetitive and mushy at mid-distance",
+   "mist mostly over forest, only faint over water",
+   "smearing in fog-covered tree areas on left",
+   "river bank vegetation looks soft/blurry",
+   "gold tones slightly oversaturated",
+   "horizon fog band looks flat and layered"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": null, \"artifacts\": 8, \"anatomy\": null, \"detail_realism\": 7, \"overall\": 8, \"defects\": [\"canopy texture repetitive and mushy at mid-distance\", \"mist mostly over forest, only faint over water\", \"smearing in fog-covered tree areas on left\", \"river bank vegetation looks soft/blurry\", \"gold tones slightly oversaturated\", \"horizon fog band looks flat and layered\"]}\n"
+}

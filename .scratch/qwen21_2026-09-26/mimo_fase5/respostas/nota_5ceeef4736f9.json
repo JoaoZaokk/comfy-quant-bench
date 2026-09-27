@@ -1,0 +1,19 @@
+{
+ "tipo": "nota",
+ "imagem": "5ceeef4736f9",
+ "resposta": {
+  "prompt_adherence": 7,
+  "text_accuracy": 7,
+  "artifacts": 6,
+  "anatomy": 7,
+  "detail_realism": 6,
+  "overall": 6,
+  "defects": [
+   "smearing/overlap glitch in middle of 'SLOW MORNINGS' (W/M garbled",
+   "headline is thin/regular serif, not bold as requested",
+   "coffee cup line drawing slightly malformed (rim/body)",
+   "subtle uneven texture in cream background"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 7, \"text_accuracy\": 7, \"artifacts\": 6, \"anatomy\": 7, \"detail_realism\": 6, \"overall\": 6, \"defects\": [\"smearing/overlap glitch in middle of 'SLOW MORNINGS' (W/M garbled\", \"headline is thin/regular serif, not bold as requested\", \"coffee cup line drawing slightly malformed (rim/body)\", \"subtle uneven texture in cream background\"]}\n"
+}

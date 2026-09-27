@@ -1,0 +1,19 @@
+{
+ "tipo": "nota",
+ "imagem": "b814c3fde4d2",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": null,
+  "artifacts": 6,
+  "anatomy": 8,
+  "detail_realism": 8,
+  "overall": 8,
+  "defects": [
+   "strange striped texture patch on right shoulder/garment",
+   "skin texture slightly waxy on cheek",
+   "background window edge slightly warped",
+   "hair blend with background a bit soft"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": null, \"artifacts\": 6, \"anatomy\": 8, \"detail_realism\": 8, \"overall\": 8, \"defects\": [\"strange striped texture patch on right shoulder/garment\", \"skin texture slightly waxy on cheek\", \"background window edge slightly warped\", \"hair blend with background a bit soft\"]}\n"
+}

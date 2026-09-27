@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "2240dc88eaa6",
+ "resposta": {
+  "prompt_adherence": 9,
+  "text_accuracy": null,
+  "artifacts": 9,
+  "anatomy": 9,
+  "detail_realism": 8,
+  "overall": 9,
+  "defects": [
+   "gold cap shows subtle banding/brushed texture artifacts",
+   "water droplets slightly uniform in size and distribution",
+   "glass inner edge highlights look a touch artificial",
+   "marble reflection slightly blown out beneath bottle",
+   "minor softening along bottle silhouette"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 9, \"text_accuracy\": null, \"artifacts\": 9, \"anatomy\": 9, \"detail_realism\": 8, \"overall\": 9, \"defects\": [\"gold cap shows subtle banding/brushed texture artifacts\", \"water droplets slightly uniform in size and distribution\", \"glass inner edge highlights look a touch artificial\", \"marble reflection slightly blown out beneath bottle\", \"minor softening along bottle silhouette\"]}\n"
+}

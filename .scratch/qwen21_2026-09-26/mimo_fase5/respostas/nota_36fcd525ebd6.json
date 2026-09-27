@@ -1,0 +1,19 @@
+{
+ "tipo": "nota",
+ "imagem": "36fcd525ebd6",
+ "resposta": {
+  "prompt_adherence": 9,
+  "text_accuracy": null,
+  "artifacts": 9,
+  "anatomy": 7,
+  "detail_realism": 9,
+  "overall": 8,
+  "defects": [
+   "thumb proportion slightly oversized",
+   "finger grip on apple a bit stiff/unnatural",
+   "minor smoothing on apple skin texture",
+   "small apple scale slightly inconsistent with others"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 9, \"text_accuracy\": null, \"artifacts\": 9, \"anatomy\": 7, \"detail_realism\": 9, \"overall\": 8, \"defects\": [\"thumb proportion slightly oversized\", \"finger grip on apple a bit stiff/unnatural\", \"minor smoothing on apple skin texture\", \"small apple scale slightly inconsistent with others\"]}\n"
+}

@@ -6246,3 +6246,37 @@ Pedido do dono: backup, atualizar a instalacao principal, testar e consertar, ba
   troca as 224 lineares pelo `SVDQW4A4Linear` do Nunchaku 1.2.1 instalado e carrega com strict; patcher move o
   modelo inteiro. Funcionou na primeira execucao. Sem metrica contra BF16 ainda (o BF16 no disco esta em 2 shards
   diffusers). O seu `.bat` de 8190 roda sem `--disable-dynamic-vram`; os testes daqui usaram a flag.
+
+## Parte 60 -- 2026-09-26 (noite, autonomo): Qwen-Image-2.1 -- nossas quants x Comfy-Org/NidAll/mesmertech, runtime
+
+Tudo em `.scratch/qwen21_2026-09-26/resultados.md` (numeros, tabelas, arquivos). Criterio antes de medir em
+`criterio.md` (secoes 3-5). RTX 3090, ComfyUI 0.37.4, 1024^2, 25 passos, euler/simple, cfg 1, TE qwen3vl_8b_w4a8.
+
+- **Bug nosso nos conversores**: `quant_int8/w4a8/w4a4/mixed` passavam o peso BF16 direto ao quantizador; a rotacao
+  ConvRot em BF16 muda ~8% dos codigos int8 (+-1-2) e 2,1% dos W4A8. Comfy-Org e NidAll quantizam do FP32. Corrigido
+  (`.float()` antes do quantizador). Com a correcao, a nossa int8 reproduz a da Comfy-Org (codigos 99,99995%, escalas
+  a 1 ulp) e a nossa W4A8 a da NidAll (erro por camada identico, 0,0083 e 0,0424). Na W4A4 o efeito some (0,140).
+- **`calibrate_activations.py`**: lado do latente era `size // 8` fixo; Qwen 2.1 e /16, LTX /32. Corrigido pelo
+  `spacial_downscale_ratio` do formato. Perfil `qwen_image21` novo (192 lineares, a selecao da Comfy-Org).
+- **Ferramentas novas**: `tools/erro_por_camada.py` (erro de saida por camada, ativacoes reais, kernels reais,
+  inclusive Nunchaku; casa `gate_up` fundido com `gate_layer`+`proj`), `tools/refina_escalas.py` (escala por linha
+  otima em forma fechada; negativo no render), `tools/junta_shards_safetensors.py`.
+- **Fusao**: `gate_up` da Comfy-Org = cat(gate_layer, proj) byte a byte; render bf16 fundido x separado 12/12 pixel a
+  pixel iguais. Runtime deterministico entre boots (9/9 bit a bit).
+- **Qualidade** (MS-SSIM vs bf16, 12 imagens; MiMo V2.6 Pro cego; eu): int8 0,99 = bf16; W4A8 0,93, limpo; int4
+  SVDQ 0,89 e nossa W4A4 0,82 com **traco duplo no neon**; mixed 0,15 (gate_up em W4A4) 0,86 com o mesmo neon;
+  **mixed 0,10 (so Q/K em W4A4) 0,92, neon limpo, MiMo = W4A8**. O artefato vem da ativacao de 4 bits na MLP.
+  Piso de ruido: dois arquivos quase identicos (nossa int8 x Comfy-Org) dao imagens com MS-SSIM 0,955-0,9995 --
+  diferencas de media < ~0,006 sao trajetoria, nao qualidade. MiMo: ruido 0,75 na nota da mesma imagem; ranking de
+  5-6 imagens incoerente; so notas e ranking de ate 4 servem.
+- **Velocidade** (it/s 1024^2): bf16 1,05; int8 2,37; W4A8 2,01; int4 SVDQ 2,44; mixed 0,15 2,82; mixed 0,10 2,21;
+  W4A4 3,26. A 2048^2: int8 1,69x bf16, mixed 0,10 1,62x, W4A4 2,11x.
+- **Shift fixo 0,69 a 2048^2 (#16447)**: mu 1,31 via ModelSamplingFlux nao deu vitoria clara com int8 a 25 passos
+  (mais limpo x mais detalhe; MiMo 4x2 para o padrao em ranking, notas empatadas). Nao aplicar o PR so por isso.
+- **Dynamic VRAM (modo do .bat do dono)**: o BF16 lido de `\NAS` ABORTA o processo (aimdo 0.5.5
+  `hostbuf_read_file_slice device copy failed result=2`), 3/3; do disco local roda (3 s de init, bit a bit igual).
+  int8/W4A8 passam pelo NAS com 35-70 s a mais na 1a imagem. Commits da master 2f7c6d47+1d61dcc3: sem ganho, nao
+  consertam; revertidos. Usar `--disable-dynamic-vram` com modelos grandes em rede.
+- **Treino**: QAT nao rodou -- 3090 vetada; a ferramenta do klein e diffusers e do Qwen 2.1 so ha o transformer;
+  um QAT nativo do ComfyUI com STE de ativacao e projeto de horas + Colab sem orcamento combinado. O "so escalas"
+  local (minimos quadrados) foi feito e deu negativo no render. Proposta no relatorio.

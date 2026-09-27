@@ -1,0 +1,21 @@
+{
+ "tipo": "nota",
+ "imagem": "5f1e60d6298b",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": null,
+  "artifacts": 7,
+  "anatomy": null,
+  "detail_realism": 7,
+  "overall": 7,
+  "defects": [
+   "vertical seam line visible inside bottle",
+   "droplets read more like dust/noise than water",
+   "marble surface texture barely visible",
+   "slight grain in dark glass areas",
+   "gold cap texture looks slightly plasticky",
+   "reflection on marble surface is minimal"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": null, \"artifacts\": 7, \"anatomy\": null, \"detail_realism\": 7, \"overall\": 7, \"defects\": [\"vertical seam line visible inside bottle\", \"droplets read more like dust/noise than water\", \"marble surface texture barely visible\", \"slight grain in dark glass areas\", \"gold cap texture looks slightly plasticky\", \"reflection on marble surface is minimal\"]}\n"
+}

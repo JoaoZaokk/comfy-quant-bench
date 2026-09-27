@@ -1,0 +1,19 @@
+{
+ "tipo": "nota",
+ "imagem": "8e942c9fd137",
+ "resposta": {
+  "prompt_adherence": 6,
+  "text_accuracy": null,
+  "artifacts": 9,
+  "anatomy": 8,
+  "detail_realism": 8,
+  "overall": 7,
+  "defects": [
+   "only two apples present instead of three",
+   "count mismatch with prompt",
+   "fingers gripping lower apple look slightly compressed",
+   "apple stem cavity on lower apple slightly shallow"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 6, \"text_accuracy\": null, \"artifacts\": 9, \"anatomy\": 8, \"detail_realism\": 8, \"overall\": 7, \"defects\": [\"only two apples present instead of three\", \"count mismatch with prompt\", \"fingers gripping lower apple look slightly compressed\", \"apple stem cavity on lower apple slightly shallow\"]}\n"
+}

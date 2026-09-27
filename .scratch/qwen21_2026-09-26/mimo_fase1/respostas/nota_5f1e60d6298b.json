@@ -1,0 +1,21 @@
+{
+ "tipo": "nota",
+ "imagem": "5f1e60d6298b",
+ "resposta": {
+  "prompt_adherence": 8,
+  "text_accuracy": null,
+  "artifacts": 8,
+  "anatomy": 8,
+  "detail_realism": 7,
+  "overall": 7,
+  "defects": [
+   "murky dark interior reads like void not translucent glass",
+   "rim light subtle and uneven",
+   "marble veining barely visible on surface",
+   "gold cap collar slightly lumpy/segmented",
+   "droplets look slightly synthetic",
+   "reflection on marble weak and blurry"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 8, \"text_accuracy\": null, \"artifacts\": 8, \"anatomy\": 8, \"detail_realism\": 7, \"overall\": 7, \"defects\": [\"murky dark interior reads like void not translucent glass\", \"rim light subtle and uneven\", \"marble veining barely visible on surface\", \"gold cap collar slightly lumpy/segmented\", \"droplets look slightly synthetic\", \"reflection on marble weak and blurry\"]}\n"
+}

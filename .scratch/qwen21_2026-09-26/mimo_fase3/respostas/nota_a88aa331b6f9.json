@@ -1,0 +1,20 @@
+{
+ "tipo": "nota",
+ "imagem": "a88aa331b6f9",
+ "resposta": {
+  "prompt_adherence": 9,
+  "text_accuracy": null,
+  "artifacts": 8,
+  "anatomy": 7,
+  "detail_realism": 8,
+  "overall": 8,
+  "defects": [
+   "front apple implausibly small vs other apples",
+   "lower fingers slightly blurred/melted",
+   "pear skin waxy plastic sheen",
+   "hand thumb tip slightly malformed",
+   "soft focus on front apple stem area"
+  ]
+ },
+ "bruto": "{\"prompt_adherence\": 9, \"text_accuracy\": null, \"artifacts\": 8, \"anatomy\": 7, \"detail_realism\": 8, \"overall\": 8, \"defects\": [\"front apple implausibly small vs other apples\", \"lower fingers slightly blurred/melted\", \"pear skin waxy plastic sheen\", \"hand thumb tip slightly malformed\", \"soft focus on front apple stem area\"]}\n"
+}

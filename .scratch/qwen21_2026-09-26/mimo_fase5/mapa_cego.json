@@ -1,0 +1,242 @@
+{
+ "d46719adbb54": {
+  "dit": "bf16",
+  "prompt": 0,
+  "seed": 42
+ },
+ "38b7934207d4": {
+  "dit": "bf16",
+  "prompt": 0,
+  "seed": 7
+ },
+ "266d336eb2a8": {
+  "dit": "bf16",
+  "prompt": 1,
+  "seed": 42
+ },
+ "418d44c452d6": {
+  "dit": "bf16",
+  "prompt": 1,
+  "seed": 7
+ },
+ "d2f3742cfea9": {
+  "dit": "bf16",
+  "prompt": 2,
+  "seed": 42
+ },
+ "850e88e460d8": {
+  "dit": "bf16",
+  "prompt": 2,
+  "seed": 7
+ },
+ "ecfea36b4443": {
+  "dit": "bf16",
+  "prompt": 3,
+  "seed": 42
+ },
+ "bf79f1096d5a": {
+  "dit": "bf16",
+  "prompt": 3,
+  "seed": 7
+ },
+ "5f1e60d6298b": {
+  "dit": "bf16",
+  "prompt": 4,
+  "seed": 42
+ },
+ "73c655b345bc": {
+  "dit": "bf16",
+  "prompt": 4,
+  "seed": 7
+ },
+ "1346912b7bf4": {
+  "dit": "bf16",
+  "prompt": 5,
+  "seed": 42
+ },
+ "8e942c9fd137": {
+  "dit": "bf16",
+  "prompt": 5,
+  "seed": 7
+ },
+ "e016fb2f8886": {
+  "dit": "nosso_w4a8",
+  "prompt": 0,
+  "seed": 42
+ },
+ "5726f7224908": {
+  "dit": "nosso_w4a8",
+  "prompt": 0,
+  "seed": 7
+ },
+ "c9947e487f6a": {
+  "dit": "nosso_w4a8",
+  "prompt": 1,
+  "seed": 42
+ },
+ "5ed08ea40191": {
+  "dit": "nosso_w4a8",
+  "prompt": 1,
+  "seed": 7
+ },
+ "a702427088f4": {
+  "dit": "nosso_w4a8",
+  "prompt": 2,
+  "seed": 42
+ },
+ "6fdc6b139a61": {
+  "dit": "nosso_w4a8",
+  "prompt": 2,
+  "seed": 7
+ },
+ "9b03ef9ffab7": {
+  "dit": "nosso_w4a8",
+  "prompt": 3,
+  "seed": 42
+ },
+ "1db7e1b80c66": {
+  "dit": "nosso_w4a8",
+  "prompt": 3,
+  "seed": 7
+ },
+ "02a0926fe51a": {
+  "dit": "nosso_w4a8",
+  "prompt": 4,
+  "seed": 42
+ },
+ "1c6c96724f81": {
+  "dit": "nosso_w4a8",
+  "prompt": 4,
+  "seed": 7
+ },
+ "a88aa331b6f9": {
+  "dit": "nosso_w4a8",
+  "prompt": 5,
+  "seed": 42
+ },
+ "b30b780d585d": {
+  "dit": "nosso_w4a8",
+  "prompt": 5,
+  "seed": 7
+ },
+ "4b6a53243cdb": {
+  "dit": "nosso_mixed_p010",
+  "prompt": 0,
+  "seed": 42
+ },
+ "7b55e9609584": {
+  "dit": "nosso_mixed_p010",
+  "prompt": 0,
+  "seed": 7
+ },
+ "9aa0e6e43526": {
+  "dit": "nosso_mixed_p010",
+  "prompt": 1,
+  "seed": 42
+ },
+ "9a4de89e6394": {
+  "dit": "nosso_mixed_p010",
+  "prompt": 1,
+  "seed": 7
+ },
+ "34db807b6ef4": {
+  "dit": "nosso_mixed_p010",
+  "prompt": 2,
+  "seed": 42
+ },
+ "030175eacd1c": {
+  "dit": "nosso_mixed_p010",
+  "prompt": 2,
+  "seed": 7
+ },
+ "32ee7311b789": {
+  "dit": "nosso_mixed_p010",
+  "prompt": 3,
+  "seed": 42
+ },
+ "519f871e086a": {
+  "dit": "nosso_mixed_p010",
+  "prompt": 3,
+  "seed": 7
+ },
+ "863b5dd6288f": {
+  "dit": "nosso_mixed_p010",
+  "prompt": 4,
+  "seed": 42
+ },
+ "56839681dde8": {
+  "dit": "nosso_mixed_p010",
+  "prompt": 4,
+  "seed": 7
+ },
+ "36fcd525ebd6": {
+  "dit": "nosso_mixed_p010",
+  "prompt": 5,
+  "seed": 42
+ },
+ "b1ba6c757b86": {
+  "dit": "nosso_mixed_p010",
+  "prompt": 5,
+  "seed": 7
+ },
+ "ab1a7b7304a1": {
+  "dit": "nosso_mixed",
+  "prompt": 0,
+  "seed": 42
+ },
+ "825d6c119036": {
+  "dit": "nosso_mixed",
+  "prompt": 0,
+  "seed": 7
+ },
+ "243923df6683": {
+  "dit": "nosso_mixed",
+  "prompt": 1,
+  "seed": 42
+ },
+ "b814c3fde4d2": {
+  "dit": "nosso_mixed",
+  "prompt": 1,
+  "seed": 7
+ },
+ "e5b060598215": {
+  "dit": "nosso_mixed",
+  "prompt": 2,
+  "seed": 42
+ },
+ "5ceeef4736f9": {
+  "dit": "nosso_mixed",
+  "prompt": 2,
+  "seed": 7
+ },
+ "885a070dce53": {
+  "dit": "nosso_mixed",
+  "prompt": 3,
+  "seed": 42
+ },
+ "19d199d9bbfa": {
+  "dit": "nosso_mixed",
+  "prompt": 3,
+  "seed": 7
+ },
+ "58f42a378b57": {
+  "dit": "nosso_mixed",
+  "prompt": 4,
+  "seed": 42
+ },
+ "b3bab2f6fe04": {
+  "dit": "nosso_mixed",
+  "prompt": 4,
+  "seed": 7
+ },
+ "e367179ae991": {
+  "dit": "nosso_mixed",
+  "prompt": 5,
+  "seed": 42
+ },
+ "b2492b4cf0c9": {
+  "dit": "nosso_mixed",
+  "prompt": 5,
+  "seed": 7
+ }
+}

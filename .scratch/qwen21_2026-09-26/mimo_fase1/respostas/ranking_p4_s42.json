@@ -1,0 +1,67 @@
+{
+ "tipo": "ranking",
+ "prompt": 4,
+ "seed": 42,
+ "ordem": [
+  "c783867a3536",
+  "5f1e60d6298b",
+  "ea365b13ccee",
+  "2240dc88eaa6",
+  "29a94e81b0ce"
+ ],
+ "resposta": {
+  "ranking": [
+   1,
+   2,
+   4,
+   3,
+   5
+  ],
+  "scores": {
+   "1": 9,
+   "2": 9,
+   "3": 8,
+   "4": 9,
+   "5": 8
+  },
+  "identical_pairs": [
+   [
+    1,
+    2
+   ],
+   [
+    1,
+    4
+   ],
+   [
+    2,
+    4
+   ]
+  ],
+  "defects": {
+   "1": [
+    "inner glass cavity edge slightly soft",
+    "marble veining barely visible"
+   ],
+   "2": [
+    "inner glass cavity edge slightly soft",
+    "marble veining barely visible"
+   ],
+   "3": [
+    "marble veining more pronounced than reference",
+    "slightly different inner cavity geometry"
+   ],
+   "4": [
+    "inner glass cavity edge slightly soft",
+    "marble veining barely visible"
+   ],
+   "5": [
+    "marble reads flat/dark with minimal veining",
+    "slightly narrower bottle proportion",
+    "fewer visible droplets at base"
+   ]
+  },
+  "reason": "Images 1, 2 and 4 are pixel-identical and show the best balance of rim light, glass translucency and droplet detail; 3 and 5 are distinct variants with slightly weaker marble texture and minor geometry drift."
+ },
+ "bruto": "{\"ranking\": [1, 2, 4, 3, 5], \"scores\": {\"1\": 9, \"2\": 9, \"3\": 8, \"4\": 9, \"5\": 8}, \"identical_pairs\": [[1, 2], [1, 4], [2, 4]], \"defects\": {\"1\": [\"inner glass cavity edge slightly soft\", \"marble veining barely visible\"], \"2\": [\"inner glass cavity edge slightly soft\", \"marble veining barely visible\"], \"3\": [\"marble veining more pronounced than reference\", \"slightly different inner cavity geometry\"], \"4\": [\"inner glass cavity edge slightly soft\", \"marble veining barely visible\"], \"5\": [\"marble reads flat/dark with minimal veining\", \"slightly narrower bottle proportion\", \"fewer visible droplets at base\"]}, \"reason\": \"Images 1, 2 and 4 are pixel-identical and show the best balance of rim light, glass translucency and droplet detail; 3 and 5 are distinct variants with slightly weaker marble texture and minor geometry drift.\"}\n"
+}
