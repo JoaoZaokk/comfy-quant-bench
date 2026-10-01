@@ -11,20 +11,9 @@
 !/*.md
 !/inspect_quant.py
 !/_check_accel.py
-# Launchers. Tracked as of 2026-08-30: they now carry `set CUDA_VISIBLE_DEVICES=0,1`,
-# which is what keeps ComfyUI 0.34+ from hiding the 3080 Ti on Windows. Listed one by
-# one, not as *.bat, because this file is an allowlist -- baixar_vae22.bat,
-# run_cpu.bat and run_deepcompressor.bat stay out deliberately.
-!/run_8190_limpo.bat
-!/run_nvidia_gpu.bat
-!/run_nvidia_gpu_8190.bat
-!/run_nvidia_gpu_8190_dual_component.bat
-!/run_nvidia_gpu_8190_flash.bat
-!/run_nvidia_gpu_8190_loopback.bat
-!/run_nvidia_gpu_8190_ultra_image.bat
-!/run_nvidia_gpu_8190_ultra_video.bat
-!/run_nvidia_gpu_8190_void_cache_none.bat
-!/run_nvidia_gpu_fast_fp16_accumulation.bat
+# Launchers (.bat) ficam fora: sao configuracao desta maquina, nao codigo de quantizacao. Desde
+# 2026-10-01 o iniciar_comfy.bat (3 modos, descrito em .agent-reference/comfy/09-comandos-launchers.md)
+# vive so no disco, como os antigos em _launchers_antigos/.
 
 # Written by /setup-matt-pocock-skills: where issues live, the triage vocabulary, and the domain-doc
 # rules. Text only, and the skills read them as input on every run -- so untracked here means every
@@ -83,6 +72,9 @@ tools/*/build*/
 !/patches/
 /patches/*
 !/patches/*.patch
+!/patches/README.md
+!/patches/tests/
+!/patches/arquivo/
 
 !/bench/
 /bench/*
@@ -117,3 +109,38 @@ tools/.gpu_lock_beat_pid
 # Token de ESCRITA do HuggingFace mora em .hf/token (W4A4_HANDOFF.md:611).
 # Nada vazou -- conferido nos 260 commits por quatro caminhos -- mas nada impedia.
 .hf/
+
+# Model/checkpoint payloads created by experiments must stay out of Git.
+/.scratch/**/*.safetensors
+/.scratch/**/*.pt
+/.scratch/**/*.pth
+/.scratch/**/*.ckpt
+
+# Agent references are source documentation; keep binary payloads excluded.
+!/.agent-reference/
+/.agent-reference/**
+!/.agent-reference/**/
+!/.agent-reference/**/*.md
+
+# .scratch guarda texto (tickets, criterios, scripts, resultados .md/.json pequenos). Imagem, video,
+# audio, pacote e log sao saida regeneravel ou grande: em 2026-10-01 um `git add -A` levaria 560 MB,
+# quase tudo PNG de folhas de contato e renders. Um arquivo desses que precise entrar vai com `git add -f`.
+/.scratch/**/*.png
+/.scratch/**/*.jpg
+/.scratch/**/*.jpeg
+/.scratch/**/*.webp
+/.scratch/**/*.gif
+/.scratch/**/*.mp4
+/.scratch/**/*.webm
+/.scratch/**/*.wav
+/.scratch/**/*.flac
+/.scratch/**/*.mp3
+/.scratch/**/*.zip
+/.scratch/**/*.whl
+/.scratch/**/*.log
+/.scratch/**/*.err
+/.scratch/**/*.pid
+/.scratch/object_info_*.json
+/.scratch/**/*.bat
+/.scratch/pip_2026-09-29/dryrun.json
+/.scratch/revisao_2026-09-29/conv/prova/selecao_real_*.json
