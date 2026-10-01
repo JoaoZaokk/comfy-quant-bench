@@ -1,0 +1,29 @@
+[
+  {
+    "braco": "int8",
+    "semente": 1002,
+    "status": "success",
+    "arquivos": [
+      "krea2_cao1002x_int8_1002_00001_.png"
+    ],
+    "segundos": 136.6
+  },
+  {
+    "braco": "w4a4",
+    "semente": 1002,
+    "status": "success",
+    "arquivos": [
+      "krea2_cao1002x_w4a4_1002_00001_.png"
+    ],
+    "segundos": 100.5
+  },
+  {
+    "braco": "misto",
+    "semente": 1002,
+    "status": "success",
+    "arquivos": [
+      "krea2_cao1002x_misto_1002_00001_.png"
+    ],
+    "segundos": 33.5
+  }
+]

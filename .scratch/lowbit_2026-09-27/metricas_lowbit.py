@@ -1,35 +1,35 @@
 """Metricas da bateria low-bit: cada braco contra a referencia, identidade entre packs, tempo e memoria do log.
 
     python_embeded\\python.exe -s metricas_lowbit.py <fase> <braco_ref> <saida.json>
+
+Revisao 2026-09-29: o it/s vem do log do ComfyUI casado POR POSICAO com os tempos sem erro; se as
+contagens diferem, recusa (antes o zip truncava calado e deslocava tempos entre bracos). A imagem de
+cada prompt/seed sai de `metricas_imagem.imagem_unica` (antes: a de maior contador, calada, mesmo
+que as execucoes tivessem dado imagens diferentes).
 """
-import hashlib
 import json
 import re
 import statistics as st
 import sys
 from pathlib import Path
 
-import numpy as np
-import torch
-from PIL import Image
-
 sys.path.insert(0, "F:/COMFY_PORTABLE/tools")
-from metricas_imagem import carrega  # noqa: E402
-from torchmetrics.functional.image import multiscale_structural_similarity_index_measure as msssim  # noqa: E402
+from metricas_imagem import carrega, identica, imagem_unica, medir  # noqa: E402
 
 AQUI = Path(__file__).parent
 FASE, REF, SAIDA = sys.argv[1], sys.argv[2], sys.argv[3]
 IMG = Path("F:/COMFY_PORTABLE/ComfyUI/output/lowbit_2026-09-27") / FASE
 
 
-def sha(p):
-    return hashlib.sha256(np.asarray(Image.open(p).convert("RGB")).tobytes()).hexdigest()
+def iguais(f, g):
+    return identica(carrega(f), carrega(g))
 
 
 def por_braco():
     out = {}
     for d in sorted(p for p in IMG.iterdir() if p.is_dir()):
-        out[d.name] = {re.sub(r"_\d+_\.png$", "", f.name): f for f in sorted(d.glob("*.png"))}
+        chaves = sorted({re.sub(r"_\d+_\.png$", "", f.name) for f in d.glob("*.png")})
+        out[d.name] = {k: imagem_unica(d, k) for k in chaves}
     return out
 
 
@@ -56,6 +56,10 @@ imgs = por_braco()
 tempos = json.loads((AQUI / f"tempos_{FASE}.json").read_text(encoding="utf-8"))
 execs = log_por_prompt(AQUI / f"comfy_{FASE}.log")
 ok = [t for t in tempos if "erro" not in t]
+if len(ok) != len(execs):
+    raise SystemExit(f"RECUSADO: {len(ok)} execucoes sem erro em tempos_{FASE}.json e {len(execs)} "
+                     f"'Prompt executed' em comfy_{FASE}.log. O casamento e por posicao; com contagens "
+                     "diferentes o it/s cairia no braco errado.")
 for t, e in zip(ok, execs):
     t.update(e)
 
@@ -66,20 +70,20 @@ for braco, fotos in imgs.items():
     r = {"n": len(fotos), "it_s_quente_mediana": st.median(quentes) if quentes else None,
          "it_s_quentes": quentes, "cargas": sorted({c for t in linhas for c in t.get("cargas", [])})}
     if REF in imgs and braco != REF:
-        ms, iguais = [], 0
+        ms, n_iguais = [], 0
         for k, f in fotos.items():
             g = imgs[REF].get(k)
             if g is None:
                 continue
-            iguais += sha(f) == sha(g)
-            ms.append(msssim(carrega(f), carrega(g), data_range=1.0).item())
-        r.update({"identicas_ref": iguais, "msssim_ref_min": min(ms) if ms else None, "msssim_ref_media": st.mean(ms) if ms else None})
+            n_iguais += iguais(f, g)
+            ms.append(medir(carrega(f), carrega(g), quais=("msssim",))["msssim"])
+        r.update({"identicas_ref": n_iguais, "msssim_ref_min": min(ms) if ms else None, "msssim_ref_media": st.mean(ms) if ms else None})
     res[braco] = r
 # identidade entre os packs do mesmo modelo (mesmos pesos -> mesmas imagens)
 for modelo in ("ternario", "binario"):
     bracos = [b for b in imgs if b.startswith(modelo + "_")]
     for b in bracos[1:]:
-        res[b][f"identicas_a_{bracos[0]}"] = sum(sha(f) == sha(imgs[bracos[0]][k]) for k, f in imgs[b].items() if k in imgs[bracos[0]])
+        res[b][f"identicas_a_{bracos[0]}"] = sum(iguais(f, imgs[bracos[0]][k]) for k, f in imgs[b].items() if k in imgs[bracos[0]])
 res["_erros"] = [t for t in tempos if "erro" in t]
 Path(SAIDA).write_text(json.dumps(res, indent=1, default=str), encoding="utf-8")
 for b, r in res.items():

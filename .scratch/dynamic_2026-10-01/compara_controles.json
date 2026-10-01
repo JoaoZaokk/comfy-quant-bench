@@ -1,0 +1,56 @@
+{
+ "NZ_frio dyn x dyn_rep": {
+  "identica": false,
+  "psnr": 14.916,
+  "msssim": 0.593
+ },
+ "NZ_frio nodyn x nodyn_rep": {
+  "identica": false,
+  "psnr": 14.617,
+  "msssim": 0.588
+ },
+ "NZ_quente dyn x dyn_rep": {
+  "identica": false,
+  "psnr": 14.903,
+  "msssim": 0.501
+ },
+ "NZ_quente nodyn x nodyn_rep": {
+  "identica": false,
+  "psnr": 14.26,
+  "msssim": 0.508
+ },
+ "NQ_frio dyn x dyn_rep": {
+  "identica": false,
+  "psnr": 32.132,
+  "msssim": 0.976
+ },
+ "NQ_frio nodyn x nodyn_rep": {
+  "identica": false,
+  "psnr": 33.156,
+  "msssim": 0.98
+ },
+ "NQ_quente dyn x dyn_rep": {
+  "identica": false,
+  "psnr": 31.328,
+  "msssim": 0.959
+ },
+ "NQ_quente nodyn x nodyn_rep": {
+  "identica": false,
+  "psnr": 32.827,
+  "msssim": 0.976
+ },
+ "Z1_frio dyn x nodyn": {
+  "identica": true
+ },
+ "Z1_frio s dyn/nodyn": [
+  21.556,
+  33.431
+ ],
+ "Z1_quente dyn x nodyn": {
+  "identica": true
+ },
+ "Z1_quente s dyn/nodyn": [
+  7.223,
+  7.119
+ ]
+}

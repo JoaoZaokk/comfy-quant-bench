@@ -1,0 +1,77 @@
+{
+ "encoder": "gemma_3_12B_it_w4a8.safetensors",
+ "proj_checkpoint": "ltx-2.3_text_projection_bf16_W.safetensors",
+ "prompt": "a lone lighthouse on a rocky cliff at dusk, waves breaking against the rocks, the beam sweeping across low clouds, seabirds circling",
+ "negative": "blurry, out of focus, low contrast, washed out",
+ "saida": "ltx23cond_gw4a8L",
+ "device": "default",
+ "gpu": "0",
+ "commit_antes": 70.23886108398438,
+ "commit_depois_encoder": 82.36835861206055,
+ "commit_limite": 124.84232711791992,
+ "escritos": {
+  "_pos": {
+   "arquivo": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\embeddings\\ltx23cond_gw4a8L_pos.safetensors",
+   "bytes": 664112,
+   "tensores": {
+    "conditioning_data_0": [
+     1,
+     27,
+     6144
+    ]
+   },
+   "options": {
+    "options_0": "{\"pooled_output\": null, \"unprocessed_ltxav_embeds\": true}"
+   }
+  },
+  "_neg": {
+   "arquivo": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\embeddings\\ltx23cond_gw4a8L_neg.safetensors",
+   "bytes": 319968,
+   "tensores": {
+    "conditioning_data_0": [
+     1,
+     13,
+     6144
+    ]
+   },
+   "options": {
+    "options_0": "{\"pooled_output\": null, \"unprocessed_ltxav_embeds\": true}"
+   }
+  }
+ },
+ "compare": {
+  "_pos0": {
+   "forma_igual": true,
+   "exato": false,
+   "dif_max": 7.0,
+   "mascara_igual": null,
+   "ref_forma": [
+    1,
+    27,
+    6144
+   ],
+   "minha_forma": [
+    1,
+    27,
+    6144
+   ]
+  },
+  "_neg0": {
+   "forma_igual": true,
+   "exato": false,
+   "dif_max": 6.0,
+   "mascara_igual": null,
+   "ref_forma": [
+    1,
+    13,
+    6144
+   ],
+   "minha_forma": [
+    1,
+    13,
+    6144
+   ]
+  }
+ },
+ "stock_locks": true
+}

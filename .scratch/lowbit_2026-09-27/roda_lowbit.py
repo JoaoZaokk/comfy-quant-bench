@@ -1,15 +1,14 @@
 """Bateria do loader low-bit no ComfyUI real (P3-P6): cada braco renderiza os mesmos prompts/sementes.
 
 Usa um servidor ja no ar (sobe pelo roda_lowbit.ps1, que toma o lock). Grava imagens em
-ComfyUI/output/lowbit_2026-09-27/<braco>/ e tempos por prompt em tempos_<fase>.json.
+ComfyUI/output/lowbit_2026-09-27/<braco>/, tempos por prompt em tempos_<fase>.json e um registro
+por prompt_id em resultados_<fase>.jsonl (tools/comfy_client.py). Exit != 0 se algum grafo falhou.
 
-    python_embeded\\python.exe -s .scratch\\lowbit_2026-09-27\\roda_lowbit.py <porta> <fase>
+    python_embeded\\python.exe -s .scratch\\lowbit_2026-09-27\\roda_lowbit.py <porta> <fase> [prazo_s_por_grafo]
 """
 import json
 import pathlib
 import sys
-import time
-import urllib.request
 
 PORTA, FASE = sys.argv[1], sys.argv[2]
 URL = f"http://127.0.0.1:{PORTA}"
@@ -62,46 +61,41 @@ def grafo(braco, prompt, seed, device):
     }
 
 
-def chama(caminho, dados=None):
-    req = urllib.request.Request(URL + caminho, data=json.dumps(dados).encode() if dados is not None else None,
-                                 headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return json.loads(r.read())
+# Cliente canonico (revisao 2026-09-29): o laco anterior era `while True` sem prazo sobre /history,
+# e um KeyError se a execucao nao tivesse execution_start. Agora: prazo por grafo, node_errors num
+# 200 recusa, cache hit marcado, um registro JSONL por prompt_id, exit != 0 se algum grafo falhou.
+sys.path.insert(0, "F:/COMFY_PORTABLE/tools")
+import comfy_client as cc  # noqa: E402
 
-
-def espera_servidor():
-    for _ in range(300):
-        try:
-            return chama("/system_stats")
-        except Exception:
-            time.sleep(2)
-    raise SystemExit("servidor nao subiu")
-
-
-def roda(g):
-    pid = chama("/prompt", {"prompt": g})["prompt_id"]
-    while True:
-        h = chama(f"/history/{pid}")
-        if pid in h:
-            st = h[pid]["status"]
-            msgs = {m[0]: m[1] for m in st.get("messages", [])}
-            if st.get("status_str") != "success":
-                return {"erro": msgs.get("execution_error", st)}
-            t0, t1 = msgs["execution_start"]["timestamp"], msgs["execution_success"]["timestamp"]
-            return {"s": (t1 - t0) / 1000}
-        time.sleep(0.5)
-
-
-espera_servidor()
+PRAZO_S = float(sys.argv[3]) if len(sys.argv) > 3 else 1800.0
+comfy = cc.Comfy(URL)
+try:
+    comfy.wait_up(600)
+except TimeoutError as e:
+    raise SystemExit(f"servidor nao subiu: {e}")
+ctl = cc.controles(comfy)
 device = "cuda:1" if FASE == "gpu1" else "cuda:0"
-tempos = []
+saida_jsonl = D / f"resultados_{FASE}.jsonl"
+tempos, registros = [], []
 for braco in FASES[FASE]:
     for p in PROMPTS:
         for s in SEEDS:
-            r = roda(grafo(braco, p, s, device))
-            r.update({"braco": braco, "prompt": PROMPTS.index(p), "seed": s})
+            i = PROMPTS.index(p)
+            reg = cc.roda_um(comfy, grafo(braco, p, s, device), PRAZO_S,
+                             rotulo=f"{FASE}/{braco}/p{i}_s{s}",
+                             extra={**ctl, "braco": braco, "prompt": i, "seed": s, "device": device})
+            cc.grava_jsonl(saida_jsonl, reg)
+            registros.append(reg)
+            # formato antigo de tempos_<fase>.json, que metricas_lowbit.py le
+            r = {"braco": braco, "prompt": i, "seed": s, "prompt_id": reg.get("prompt_id"),
+                 "files": reg.get("files"), "cache_hit": reg.get("cache_hit")}
+            if reg["status"] == "success":
+                r["s"] = reg["server_side_s"]
+            else:
+                r["erro"] = {"status": reg["status"], "erro": reg.get("erro")}
             print(json.dumps(r), flush=True)
             tempos.append(r)
-    stats = chama("/system_stats")
+    stats = comfy.system_stats()
     print("VRAM", braco, [(d["name"][:24], round((d["vram_total"] - d["vram_free"]) / 2**30, 2)) for d in stats["devices"]], flush=True)
 (D / f"tempos_{FASE}.json").write_text(json.dumps(tempos, indent=1), encoding="utf-8")
+raise SystemExit(cc.codigo_de_saida(registros))

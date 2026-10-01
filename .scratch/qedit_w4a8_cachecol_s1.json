@@ -1,0 +1,17 @@
+{
+  "transformer": "qwen_image_edit_2511_w4a8.safetensors",
+  "encoder": "qwen_2.5_vl_7b.safetensors",
+  "imagem": "edit_pescador.png",
+  "instrucao": "add a red knitted scarf around his neck, change nothing else",
+  "seed": 1,
+  "steps": 30,
+  "cfg": 2.5,
+  "shift": 3.0,
+  "segundos": 113.29874515533447,
+  "arquivos": [
+    "qedit_w4a8_cachecol_s1_00001_.png"
+  ],
+  "distorch": false,
+  "alocacao": null,
+  "status": "success"
+}

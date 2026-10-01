@@ -1,0 +1,24 @@
+bb16476fdfe77e265184  4986872984  F:/tts_lab/release/_teste_reconstrucao/w8/model-00001-of-00002.safetensors
+ffe5167ec93c7cd1eadf  4136876104  F:/tts_lab/release/_teste_reconstrucao/w8/model-00002-of-00002.safetensors
+74fc41c5a7151c6f350a  1871099728  F:/tts_lab/release/_teste_reconstrucao/w8/codec.pth
+0f7b93510868b4583454  4986872984  F:/tts_lab/release/_teste_reconstrucao/w4g128/model-00001-of-00002.safetensors
+2564b458d40619152d2d  4136876104  F:/tts_lab/release/_teste_reconstrucao/w4g128/model-00002-of-00002.safetensors
+74fc41c5a7151c6f350a  1871099728  F:/tts_lab/release/_teste_reconstrucao/w4g128/codec.pth
+c4218e8ac93be83b35ee  4986872984  F:/tts_lab/noite_v9/checkpoints/s2-pro/model-00001-of-00002.safetensors
+76738d23465deaac4314  4136876104  F:/tts_lab/noite_v9/checkpoints/s2-pro/model-00002-of-00002.safetensors
+74fc41c5a7151c6f350a  1871099728  F:/tts_lab/noite_v9/checkpoints/s2-pro/codec.pth
+ba1809c00bff27ad65bb  4986872984  F:/tts_lab/models/s2-pro-w8-sim/model-00001-of-00002.safetensors
+fa12719b3151b1991881  4136876104  F:/tts_lab/models/s2-pro-w8-sim/model-00002-of-00002.safetensors
+74fc41c5a7151c6f350a  1871099728  F:/tts_lab/models/s2-pro-w8-sim/codec.pth
+0f7b93510868b4583454  4986872984  F:/tts_lab/models/s2-pro-w4-sim/model-00001-of-00002.safetensors
+5119381b0be098e417f9  4136876104  F:/tts_lab/models/s2-pro-w4-sim/model-00002-of-00002.safetensors
+74fc41c5a7151c6f350a  1871099728  F:/tts_lab/models/s2-pro-w4-sim/codec.pth
+c4218e8ac93be83b35ee  4986872984  F:/tts_lab/models/s2-pro/model-00001-of-00002.safetensors
+76738d23465deaac4314  4136876104  F:/tts_lab/models/s2-pro/model-00002-of-00002.safetensors
+74fc41c5a7151c6f350a  1871099728  F:/tts_lab/models/s2-pro/codec.pth
+== release/_teste_reconstrucao/w8: LICENSE.md chat_template.jinja codec.pth config.json model-00001-of-00002.safetensors model-00002-of-00002.safetensors model.safetensors.index.json special_tokens_map.json tokenizer.json tokenizer_config.json 
+== release/_teste_reconstrucao/w4g128: LICENSE.md chat_template.jinja codec.pth config.json model-00001-of-00002.safetensors model-00002-of-00002.safetensors model.safetensors.index.json special_tokens_map.json tokenizer.json tokenizer_config.json 
+== noite_v9/checkpoints/s2-pro: LICENSE.md README.md chat_template.jinja codec.pth config.json model-00001-of-00002.safetensors model-00002-of-00002.safetensors model.safetensors.index.json overview.png special_tokens_map.json tokenizer.json tokenizer_config.json 
+== models/s2-pro-w8-sim: LICENSE.md README.md chat_template.jinja codec.pth config.json model-00001-of-00002.safetensors model-00002-of-00002.safetensors model.safetensors.index.json overview.png quantizacao_sim.json special_tokens_map.json tokenizer.json tokenizer_config.json 
+== models/s2-pro-w4-sim: LICENSE.md README.md chat_template.jinja codec.pth config.json model-00001-of-00002.safetensors model-00002-of-00002.safetensors model.safetensors.index.json overview.png quantizacao_sim.json special_tokens_map.json tokenizer.json tokenizer_config.json 
+== models/s2-pro: LICENSE.md README.md chat_template.jinja codec.pth config.json model-00001-of-00002.safetensors model-00002-of-00002.safetensors model.safetensors.index.json overview.png special_tokens_map.json tokenizer.json tokenizer_config.json 

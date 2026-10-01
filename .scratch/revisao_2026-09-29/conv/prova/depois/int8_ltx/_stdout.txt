@@ -1,0 +1,8 @@
+Source: F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\fontes\ltx_sint_bf16.safetensors
+Profile: ltx_2_5   convrot=True groupsize=256   device=cpu
+Selected Linear weights: 30
+Output: F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\depois\int8_ltx\saida.safetensors
+Wrote F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\depois\int8_ltx\saida.safetensors (2.65 MiB) in 0.0 min
+Wrote F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\depois\int8_ltx\saida.quant.json
+
+--- stderr ---

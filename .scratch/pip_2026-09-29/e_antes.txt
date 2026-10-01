@@ -1,0 +1,21 @@
+[33m[rgthree-comfy] ComfyUI's new Node 2.0 rendering may be incompatible with some rgthree-comfy nodes and features, breaking some rendering as well as losing the ability to access a node's properties (a vital part of many nodes). It also appears to run MUCH more slowly spiking CPU usage and causing jankiness and unresponsiveness, especially with large workflows. Personally I am not planning to use the new Nodes 2.0 and, unfortunately, am not able to invest the time to investigate and overhaul rgthree-comfy where needed. If you have issues when Nodes 2.0 is enabled, I'd urge you to switch it off as well and join me in hoping ComfyUI is not planning to deprecate the existing, stable canvas rendering all together.
+ Lib\site-packages\torch\utils\_pytree.py:630] <enum 'KernelPreference'> is an Enum subclass and is now natively supported by torch.compile as an opaque value type. Calling register_constant() on Enum subclasses is deprecated and will be an error in a future release.
+ Lib\site-packages\torch\utils\_pytree.py:630] <enum 'ScaleCalculationMode'> is an Enum subclass and is now natively supported by torch.compile as an opaque value type. Calling register_constant() on Enum subclasses is deprecated and will be an error in a future release.
+Error loading module AILab_QwenVL_GGUF: No module named 'llama_cpp'
+Error loading module AILab_QwenVL_GGUF_PromptEnhancer: No module named 'llama_cpp'
+Warning: Perth watermarking not available. Audio will be generated without watermarking.
+[AnimateDiffEvo] - [0;31mERROR[0m - No motion models found. Please download one and place in: ['F:\\COMFY_PORTABLE\\ComfyUI\\custom_nodes\\ComfyUI-AnimateDiff-Evolved\\models', 'F:\\COMFY_PORTABLE\\ComfyUI\\models\\animatediff_models']
+[INFO]    0.0 seconds (IMPORT FAILED): F:\COMFY_PORTABLE\ComfyUI\custom_nodes\ComfyUI-VoxCPM
+[INFO]    1.0 seconds (IMPORT FAILED): F:\COMFY_PORTABLE\ComfyUI\custom_nodes\comfyui_tinyterranodes
+[INFO] No OpenGL_accelerate module loaded: No module named 'OpenGL_accelerate'
+[INFO] [error_translator] Routes registered: POST /mec/translate_error, POST /mec/teach_error, GET /mec/learned_patterns
+[MEC] error_translator routes registered.
+[WARNING] Cannot import F:\COMFY_PORTABLE\ComfyUI\custom_nodes\comfyui_tinyterranodes module for custom nodes: Source contains parsing errors: 'F:\\COMFY_PORTABLE\\ComfyUI\\custom_nodes\\comfyui_tinyterranodes\\config.ini'
+[WARNING] Dynamic vram disabled with argument. If you have any issues with dynamic vram enabled please give us a detailed reports as this argument will be removed soon. If you use gguf we recommend keeping dynamic vram enabled and using native ComfyUI model formats instead. ComfyUI native formats like fp8, int8 and w4a8 will be faster even if they are larger than your memory.
+[WARNING] Skip F:\COMFY_PORTABLE\ComfyUI\custom_nodes\ComfyUI-VoxCPM module for custom nodes due to the lack of NODE_CLASS_MAPPINGS or comfy_entrypoint (need one).
+[WARNING] Traceback (most recent call last):
+[WARNING] [LTXV2 MultiGPU] Failed to import from ComfyUI-MultiGPU: Could not find ComfyUI-MultiGPU exports
+[WARNING] [LTXV2 MultiGPU] Falling back to standalone mode
+[WARNING] quant-preflight: 30 further loader-shaped node class(es) are OUT OF SCOPE and get no check at all: AudioEncoderLoader, CLIPVisionLoader, CheckpointLoader, ConditioningLoader, ControlNetLoader, DiffControlNetLoader, DiffusersLoader, FrameInterpolationModelLoader, GLIGENLoader, HypernetworkLoader, ImageOnlyCheckpointLoader, LTXAVTextEncoderLoader, LTXVAudioVAELoader, LatentUpscaleModelLoader, LoraLoader, LoraLoaderBypass, LoraLoaderBypassModelOnly, LoraLoaderModelOnly, LoraModelLoader, LowBitDiffusionLoader, ModelPatchLoader, OpticalFlowLoader, PhotoMakerLoader, QuadrupleCLIPLoader, SAM3DBody_Loader, StyleModelLoader, TripleCLIPLoader, UpscaleModelLoader, VAELoader, unCLIPCheckpointLoader
+configparser.ParsingError: Source contains parsing errors: 'F:\\COMFY_PORTABLE\\ComfyUI\\custom_nodes\\comfyui_tinyterranodes\\config.ini'
+no module 'xformers'. Processing without...

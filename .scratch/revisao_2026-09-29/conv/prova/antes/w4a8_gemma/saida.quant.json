@@ -1,0 +1,21 @@
+{
+  "source": "F:\\COMFY_PORTABLE\\.scratch\\revisao_2026-09-29\\conv\\prova\\fontes\\gemma_sint_bf16.safetensors",
+  "source_size": 2400008,
+  "output": "F:\\COMFY_PORTABLE\\.scratch\\revisao_2026-09-29\\conv\\prova\\antes\\w4a8_gemma\\saida.safetensors",
+  "output_size": 727712,
+  "architecture": "gemma",
+  "quantization": "asym_w4a8_int8",
+  "layout": "AsymW4A8Int8Layout",
+  "backend": "comfy_kitchen.backends.cuda.FAKE",
+  "group_size": 16,
+  "convrot_groupsize": 256,
+  "symmetric": true,
+  "codebook": true,
+  "quantized_tensors": 14,
+  "preserved_tensors": 12,
+  "comfy_kitchen_version": "0.2.35",
+  "torch_version": "2.13.0+cu130",
+  "cuda_version": "13.0",
+  "gpu": "CPU-FAKE",
+  "conversion_seconds": 0.048
+}

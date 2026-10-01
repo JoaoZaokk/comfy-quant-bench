@@ -1,0 +1,26 @@
+OK   w4a4_gemma               rc 0/0; saida.quant.json: sidecar IGUAL; saida.safetensors: IGUAL 25a0ebada8557c04
+OK   w4a4_gemma_cg64          rc 0/0; saida.quant.json: sidecar IGUAL; saida.safetensors: IGUAL 6d266d84ea245575
+OK   w4a4_ltx                 rc 0/0; saida.quant.json: sidecar IGUAL; saida.safetensors: IGUAL 6cc75e96f187235c
+DIF  w4a4_ltx_auto            rc 1/0; saida.quant.json: so depois; saida.safetensors: so depois
+OK   w4a8_gemma               rc 0/0; saida.quant.json: sidecar IGUAL; saida.safetensors: IGUAL 8354f67b5f8c0604
+OK   w4a8_gemma_nocb          rc 0/0; saida.quant.json: sidecar IGUAL; saida.safetensors: IGUAL 4f88c0bba9556a70
+OK   w4a8_ltx                 rc 0/0; saida.quant.json: sidecar IGUAL; saida.safetensors: IGUAL d0070612b28896e3
+OK   int8_gemma               rc 0/0; saida.quant.json: sidecar IGUAL; saida.safetensors: IGUAL cb775d95adbea246
+OK   int8_gemma_noconvrot     rc 0/0; saida.quant.json: sidecar IGUAL; saida.safetensors: IGUAL 7bd7275ef7ba9f54
+OK   int8_ltx                 rc 0/0; saida.quant.json: sidecar IGUAL; saida.safetensors: IGUAL f87209cf4a38f32e
+OK   mixed_zimage             rc 0/0; saida.quant.json: sidecar IGUAL; saida.safetensors: IGUAL a4df4d30bdc936d3
+OK   mixed_zimage_somente     rc 0/0; saida.quant.json: sidecar IGUAL; saida.safetensors: IGUAL 458a6c86ac7048b8
+DIF  smooth_gemma             rc 0/0; saida.quant.json: sidecar DIFERENTE; saida.safetensors: DIFERENTE
+DIF  smooth_gemma_bf16        rc 0/0; saida.quant.json: sidecar DIFERENTE; saida.safetensors: IGUAL 61205e63d501c991
+OK   awq_gemma                rc 0/0; gemma_sint_bf16.safetensors: IGUAL ab59163123a57116; gemma_sint_bf16_q4_1_awq.quant.json: sidecar IGUAL; gemma_sint_bf16_q4_1_awq.safetensors: IGUAL 2233053c537d4025
+OK   weight_only              rc 0/0; ja_quantizado.safetensors: IGUAL 82ef05d3e3a5e543; ja_quantizado_a16.quant.json: sidecar IGUAL; ja_quantizado_a16.safetensors: IGUAL 19472c1231fc52ee
+OK   te_int8                  rc 0/0; saida.quant.json: sidecar IGUAL; saida.safetensors: IGUAL 72cd2d67d56ef630
+OK   te_fp8                   rc 0/0; saida.quant.json: sidecar IGUAL; saida.safetensors: IGUAL 40d2f3ab0994c087
+OK   svdq                     rc 0/0; saida.safetensors: IGUAL 31b62fdc4331903c
+OK   svdq_fused               rc 0/0; saida.safetensors: IGUAL e7235d24e8d74d99
+OK   extrai                   rc 0/0; saida.safetensors: IGUAL cbcf786aad071c76
+OK   mistura                  rc 0/0; saida.safetensors: IGUAL e7eb8191add1e93e
+OK   mistura_rtn              rc 0/0; saida.safetensors: IGUAL 6ec63bf8fd560b0b
+OK   transplanta              rc 0/0; klein4b_transp_T1_braco_bfl.safetensors: IGUAL 7b54f4865e5f9d47; klein4b_transp_T2_braco_bfl.safetensors: IGUAL 7de69f174c4039ab; klein4b_transp_T3_braco_bfl.safetensors: IGUAL 8bed5ef04b4c0cbb
+OK   grava                    rc 0/0; saida.safetensors: EQUIVALENTE (header parseado e dados identicos; so a ordem das chaves do __metadata__ difere -- save_file antigo e aleatorio)
+OK   grava_int8               rc 0/0; saida.safetensors: EQUIVALENTE (header parseado e dados identicos; so a ordem das chaves do __metadata__ difere -- save_file antigo e aleatorio)

@@ -1,0 +1,40 @@
+Source:  F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\fontes\zimage_sint_native_bf16.safetensors
+Profile: zimage   group_size=16 convrot_groupsize=256
+Selected Linear weights: 20
+Output:  F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\depois\mixed_zimage\saida.safetensors
+
+  quantize_convrot_w4a4_weight     -> comfy_kitchen.backends.cuda.FAKE
+  convrot_w4a4_linear              -> comfy_kitchen.backends.cuda.FAKE
+  quantize_w4a8_int8_weight        -> comfy_kitchen.backends.cuda.FAKE
+  w4a8_int8_linear                 -> comfy_kitchen.backends.cuda.FAKE
+
+format                layers
+convrot_w4a4              11
+asym_w4a8_int8             8
+bf16                       1
+
+1 layer(s) were not measured and took --uncalibrated=w4a8:
+  layers.0.feed_forward.w2: absent from the calibration
+
+layer                                        bf16     w4a4     w4a8  crest p99  format
+layers.1.attention.qkv                     0.0040   0.2900   0.0967       9.00  asym_w4a8_int8
+layers.2.feed_forward.w2                   0.0040   0.2900   0.0967      16.00  asym_w4a8_int8
+layers.1.attention.out                     0.0040   0.2500   0.5833       8.00  bf16
+layers.2.feed_forward.w1                   0.0040   0.2500   0.0833      15.00  asym_w4a8_int8
+noise_refiner.0.feed_forward.w3            0.0040   0.2500   0.0833      22.00  asym_w4a8_int8
+layers.0.feed_forward.w3                   0.0040   0.2100   0.0700       7.00  asym_w4a8_int8
+layers.2.attention.qkv                     0.0040   0.2100   0.0700      14.00  asym_w4a8_int8
+noise_refiner.0.feed_forward.w2            0.0040   0.2100   0.0700      21.00  asym_w4a8_int8
+layers.2.attention.out                     0.0040   0.1700   0.0567      13.00  convrot_w4a4
+noise_refiner.0.feed_forward.w1            0.0040   0.1700   0.0567      20.00  convrot_w4a4
+layers.0.feed_forward.w1                   0.0040   0.1300   0.0433       5.00  convrot_w4a4
+layers.1.feed_forward.w3                   0.0040   0.1300   0.0433      12.00  convrot_w4a4
+
+worst W4A4 error left in the model: 0.1700
+[19/19] quantized
+
+Wrote F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\depois\mixed_zimage\saida.safetensors (3.65 MiB) in 0.1 s
+7.19 MiB -> 3.65 MiB   1.97x lighter
+Wrote F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\depois\mixed_zimage\saida.quant.json
+
+--- stderr ---

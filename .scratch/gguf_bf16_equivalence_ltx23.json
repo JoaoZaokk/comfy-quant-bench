@@ -1,0 +1,200 @@
+{
+ "safetensors": "C:/ComfyBench/ltx-2.3/ltx-2.3-22b-distilled-1.1_transformer_bf16_C.safetensors",
+ "gguf": "C:/ComfyBench/ltx-2.3/ltx-2.3-22b-distilled-1.1-BF16.gguf",
+ "device": "cuda:1",
+ "camadas": [
+  {
+   "camada": "adaln_single.linear.weight",
+   "forma": [
+    36864,
+    4096
+   ],
+   "P1_bytes_peso": true,
+   "P1_bias_exato": true,
+   "P2_dequant_bit_a_bit": true,
+   "P3_saida_identica": true,
+   "P3_dif_max": 0.0,
+   "dtype_saida": [
+    "torch.bfloat16",
+    "torch.bfloat16"
+   ]
+  },
+  {
+   "camada": "audio_adaln_single.emb.timestep_embedder.linear_1.weight",
+   "forma": [
+    2048,
+    256
+   ],
+   "P1_bytes_peso": true,
+   "P1_bias_exato": true,
+   "P2_dequant_bit_a_bit": true,
+   "P3_saida_identica": true,
+   "P3_dif_max": 0.0,
+   "dtype_saida": [
+    "torch.bfloat16",
+    "torch.bfloat16"
+   ]
+  },
+  {
+   "camada": "transformer_blocks.25.attn2.to_v.weight",
+   "forma": [
+    4096,
+    4096
+   ],
+   "P1_bytes_peso": true,
+   "P1_bias_exato": true,
+   "P2_dequant_bit_a_bit": true,
+   "P3_saida_identica": true,
+   "P3_dif_max": 0.0,
+   "dtype_saida": [
+    "torch.bfloat16",
+    "torch.bfloat16"
+   ]
+  },
+  {
+   "camada": "transformer_blocks.29.audio_attn1.to_k.weight",
+   "forma": [
+    2048,
+    2048
+   ],
+   "P1_bytes_peso": true,
+   "P1_bias_exato": true,
+   "P2_dequant_bit_a_bit": true,
+   "P3_saida_identica": true,
+   "P3_dif_max": 0.0,
+   "dtype_saida": [
+    "torch.bfloat16",
+    "torch.bfloat16"
+   ]
+  },
+  {
+   "camada": "transformer_blocks.31.audio_to_video_attn.to_q.weight",
+   "forma": [
+    2048,
+    4096
+   ],
+   "P1_bytes_peso": true,
+   "P1_bias_exato": true,
+   "P2_dequant_bit_a_bit": true,
+   "P3_saida_identica": true,
+   "P3_dif_max": 0.0,
+   "dtype_saida": [
+    "torch.bfloat16",
+    "torch.bfloat16"
+   ]
+  },
+  {
+   "camada": "transformer_blocks.37.video_to_audio_attn.to_q.weight",
+   "forma": [
+    2048,
+    2048
+   ],
+   "P1_bytes_peso": true,
+   "P1_bias_exato": true,
+   "P2_dequant_bit_a_bit": true,
+   "P3_saida_identica": true,
+   "P3_dif_max": 0.0,
+   "dtype_saida": [
+    "torch.bfloat16",
+    "torch.bfloat16"
+   ]
+  },
+  {
+   "camada": "transformer_blocks.4.video_to_audio_attn.to_v.weight",
+   "forma": [
+    2048,
+    4096
+   ],
+   "P1_bytes_peso": true,
+   "P1_bias_exato": true,
+   "P2_dequant_bit_a_bit": true,
+   "P3_saida_identica": true,
+   "P3_dif_max": 0.0,
+   "dtype_saida": [
+    "torch.bfloat16",
+    "torch.bfloat16"
+   ]
+  },
+  {
+   "camada": "transformer_blocks.42.audio_to_video_attn.to_out.0.weight",
+   "forma": [
+    4096,
+    2048
+   ],
+   "P1_bytes_peso": true,
+   "P1_bias_exato": true,
+   "P2_dequant_bit_a_bit": true,
+   "P3_saida_identica": true,
+   "P3_dif_max": 0.0,
+   "dtype_saida": [
+    "torch.bfloat16",
+    "torch.bfloat16"
+   ]
+  },
+  {
+   "camada": "transformer_blocks.46.video_to_audio_attn.to_q.weight",
+   "forma": [
+    2048,
+    2048
+   ],
+   "P1_bytes_peso": true,
+   "P1_bias_exato": true,
+   "P2_dequant_bit_a_bit": true,
+   "P3_saida_identica": true,
+   "P3_dif_max": 0.0,
+   "dtype_saida": [
+    "torch.bfloat16",
+    "torch.bfloat16"
+   ]
+  },
+  {
+   "camada": "transformer_blocks.47.attn2.to_out.0.weight",
+   "forma": [
+    4096,
+    4096
+   ],
+   "P1_bytes_peso": true,
+   "P1_bias_exato": true,
+   "P2_dequant_bit_a_bit": true,
+   "P3_saida_identica": true,
+   "P3_dif_max": 0.0,
+   "dtype_saida": [
+    "torch.bfloat16",
+    "torch.bfloat16"
+   ]
+  },
+  {
+   "camada": "transformer_blocks.47.audio_attn1.to_v.weight",
+   "forma": [
+    2048,
+    2048
+   ],
+   "P1_bytes_peso": true,
+   "P1_bias_exato": true,
+   "P2_dequant_bit_a_bit": true,
+   "P3_saida_identica": true,
+   "P3_dif_max": 0.0,
+   "dtype_saida": [
+    "torch.bfloat16",
+    "torch.bfloat16"
+   ]
+  },
+  {
+   "camada": "transformer_blocks.9.audio_ff.net.0.proj.weight",
+   "forma": [
+    8192,
+    2048
+   ],
+   "P1_bytes_peso": true,
+   "P1_bias_exato": true,
+   "P2_dequant_bit_a_bit": true,
+   "P3_saida_identica": true,
+   "P3_dif_max": 0.0,
+   "dtype_saida": [
+    "torch.bfloat16",
+    "torch.bfloat16"
+   ]
+  }
+ ],
+ "identico": true
+}

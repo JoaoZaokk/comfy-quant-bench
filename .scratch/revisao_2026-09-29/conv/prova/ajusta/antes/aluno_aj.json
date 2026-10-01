@@ -1,0 +1,8 @@
+{
+  "modo": "ajuste",
+  "mestre": "fp32",
+  "elementos_mudados_frac": 0.5,
+  "desvios_por_tensor": {
+    "a": 0.001
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "source": "F:\\COMFY_PORTABLE\\.scratch\\revisao_2026-09-29\\conv\\prova\\fontes\\gemma_sint_bf16.safetensors",
+  "source_size": 2400008,
+  "output": "F:\\COMFY_PORTABLE\\.scratch\\revisao_2026-09-29\\conv\\prova\\antes\\int8_gemma_noconvrot\\saida.safetensors",
+  "output_size": 1239272,
+  "architecture": "gemma",
+  "quantization": "int8_tensorwise",
+  "convrot": false,
+  "convrot_groupsize": 256,
+  "quantized_tensors": 14,
+  "preserved_tensors": 12,
+  "quantized_on": "cpu",
+  "backend": null,
+  "comfy_kitchen_version": "0.2.35",
+  "torch_version": "2.13.0+cu130",
+  "conversion_seconds": 1.094
+}

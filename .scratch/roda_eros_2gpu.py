@@ -1,14 +1,18 @@
 """Enfileira um grafo de API no ComfyUI 8190 e amostra as duas placas e a RAM a cada 5 s ate terminar.
-Nao abre video nem audio. Uso: python -s .scratch/roda_eros_2gpu.py <grafo_api.json> <saida.csv>"""
-import csv, ctypes, json, os, subprocess, sys, time, urllib.request
+Nao abre video nem audio. Uso:
+    python -s .scratch/roda_eros_2gpu.py <grafo_api.json> <saida.csv> [<resultados.jsonl>]
+
+Revisao 2026-09-29: submissao e espera pelo cliente canonico (`tools/comfy_client.py`). Antes o laco
+do render era `while True` sem prazo, e uma execucao com status != success saia com codigo 0 -- o
+`roda_bateria.ps1` so via erro em validacao. Agora: prazo por grafo (`PRAZO_GRAFO_S`, padrao 5400 s),
+node_errors num 200 recusa, exit 0 renderizou / 1 falhou, recusou ou estourou / 5 cache hit, e um
+registro por prompt_id no JSONL (grafo, status, server_side_s, wall, cache_hit, files, placa, args)."""
+import csv, ctypes, json, os, subprocess, sys, time
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tools"))
+import comfy_client as cc  # noqa: E402
 
 BASE = f"http://127.0.0.1:{os.environ.get('COMFY_PORT', '8190')}"  # porta configuravel: um processo zumbi prendeu a 8190 (27/09)
-
-
-def req(path, data=None):
-    r = urllib.request.Request(BASE + path, data=json.dumps(data).encode() if data else None,
-                               headers={"Content-Type": "application/json"})
-    return json.loads(urllib.request.urlopen(r, timeout=60).read())
 
 
 class MS(ctypes.Structure):
@@ -26,9 +30,9 @@ def gpus():
     # com o commit do Windows no limite o CreateProcess falha (WinError 1455, 26/09); amostra perdida, run segue
     try:
         o = subprocess.run(["nvidia-smi", "--query-gpu=memory.used,utilization.gpu", "--format=csv,noheader,nounits"],
-                           capture_output=True, text=True).stdout.strip().splitlines()
-        return [x.split(", ") for x in o]
-    except OSError:
+                           capture_output=True, text=True, timeout=20).stdout.strip().splitlines()
+        return [x.split(", ") for x in o] + [["", ""], ["", ""]]
+    except (OSError, subprocess.TimeoutExpired):  # nvidia-smi pendurado nao pode pendurar a bateria
         return [["", ""], ["", ""]]
 
 
@@ -59,37 +63,36 @@ def main():
     if os.path.exists(pular) and any(p and p in sys.argv[1] for p in open(pular).read().split()):
         print("PULADO (servidor morto):", sys.argv[1], flush=True)
         sys.exit(3)
-    limite = time.time() + 600
-    while True:
-        try:
-            req("/queue"); break
-        except Exception:
-            if time.time() > limite:
-                print("ERRO: servidor nao respondeu em 10 min", flush=True)
-                sys.exit(2)
-            time.sleep(5)
+    comfy = cc.Comfy(BASE)
+    try:
+        comfy.wait_up(600)
+    except TimeoutError:
+        print("ERRO: servidor nao respondeu em 10 min", flush=True)
+        sys.exit(2)
+    prazo = float(os.environ.get("PRAZO_GRAFO_S", "5400"))
     t0 = time.time()
-    resp = req("/prompt", {"prompt": g})
-    if resp.get("node_errors"):  # saida com erro de validacao e ignorada e o prompt "passa" sem rodar (26/09)
-        print("ERRO de validacao:", json.dumps(resp["node_errors"])[:3000], flush=True)
-        sys.exit(1)
-    pid = resp["prompt_id"]
-    print(f"enviado {pid}", flush=True)
     with open(sys.argv[2], "w", newline="") as f:
         w = csv.writer(f); w.writerow(["t", "g0_mib", "g0_util", "g1_mib", "g1_util", "ram_gib", "commit_gib", "comfy_rss_gib", "comfy_priv_gib"])
-        while True:
+        ultima = [-1e9]
+
+        def amostra(_decorrido):
+            if time.time() - ultima[0] < 5:
+                return
+            ultima[0] = time.time()
             (a, b), (c, d) = gpus()[:2]
             r, cm = ram()
             w.writerow([round(time.time() - t0), a, b, c, d, f"{r:.1f}", f"{cm:.1f}", *comfy_mem()]); f.flush()
-            h = req(f"/history/{pid}")
-            if pid in h:
-                st = h[pid]["status"]
-                print(f"{st.get('status_str')} em {time.time() - t0:.0f} s", flush=True)
-                if st.get("status_str") != "success":
-                    print(json.dumps(st.get("messages", []))[-3000:], flush=True)
-                break
-            time.sleep(5)
+
+        reg = cc.roda_um(comfy, g, prazo, rotulo=sys.argv[1], tick=amostra,
+                         extra={**cc.controles(comfy), "amostras_csv": sys.argv[2]})
+    print(f"{reg['status']} em {time.time() - t0:.0f} s (server_side_s={reg.get('server_side_s')}, "
+          f"cache_hit={reg.get('cache_hit')})", flush=True)
+    if reg["status"] != "success":
+        print(str(reg.get("erro"))[-3000:], flush=True)
+    if len(sys.argv) > 3:
+        cc.grava_jsonl(sys.argv[3], reg)
     print("FIM", flush=True)
+    sys.exit(cc.codigo_de_saida([reg]))
 
 
 if __name__ == "__main__":

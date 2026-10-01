@@ -1,0 +1,11 @@
+
+--- stderr ---
+Traceback (most recent call last):
+  File "F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\roda_um.py", line 110, in <module>
+    rc = m.main()
+  File "F:\COMFY_PORTABLE\.scratch\antes_tools_conv_20260929\quant_w4a4.py", line 428, in main
+    profile = (detect_profile(source, list(header))
+               ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "F:\COMFY_PORTABLE\.scratch\antes_tools_conv_20260929\quant_w4a4.py", line 187, in detect_profile
+    raise ValueError("auto-detection found no supported profile; pass a supported --profile after verifying the architecture")
+ValueError: auto-detection found no supported profile; pass a supported --profile after verifying the architecture

@@ -1,0 +1,29 @@
+{
+  "pera_s1": {
+    "mudou": {
+      "int8lora": 28.29728126525879,
+      "w4a8lora": 36.1536979675293
+    },
+    "derivou_regiao_quieta": 4.440062522888184,
+    "derivou_global": 12.131962776184082,
+    "corte_quartil": 14.666666984558105
+  },
+  "cachecol_s1": {
+    "mudou": {
+      "int8lora": 16.274459838867188,
+      "w4a8lora": 21.23703956604004
+    },
+    "derivou_regiao_quieta": 1.697866439819336,
+    "derivou_global": 10.542760848999023,
+    "corte_quartil": 5.333333492279053
+  },
+  "closed_s1": {
+    "mudou": {
+      "int8lora": 41.91999053955078,
+      "w4a8lora": 39.87442398071289
+    },
+    "derivou_regiao_quieta": 4.478419303894043,
+    "derivou_global": 10.097210884094238,
+    "corte_quartil": 17.33333396911621
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "modelo": "ltx-2.5-22b-distilled-transformer-bf16_w4a8.safetensors",
+  "transformer": "ltx-2.5-22b-distilled-transformer-bf16_w4a8.safetensors",
+  "checkpoint": null,
+  "gguf": null,
+  "encoder": "gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors",
+  "video_vae": "ltx-2.5-video-vae-bf16.safetensors",
+  "audio_vae": "ltx-2.5-audio-vae-bf16.safetensors",
+  "lora": null,
+  "lora_strength": null,
+  "lora_bypass": false,
+  "frames": 9,
+  "fps": 25,
+  "size": 512,
+  "cfg": 1.0,
+  "sigmas": "0.909375, 0.725, 0.421875, 0.0",
+  "passos": 3,
+  "seed": 1234,
+  "prompt": "a lone lighthouse on a rocky cliff at dusk, waves breaking against the rocks, the beam sweeping across low clouds, seabirds circling",
+  "negative": "blurry, out of focus, low contrast, washed out",
+  "segundos": 503.8094925880432,
+  "s_por_quadro": 55.97883250978258,
+  "s_por_passo": 167.93649752934775,
+  "quadros": [
+    "ltx25_smoke_av_00001_.png",
+    "ltx25_smoke_av_00002_.png",
+    "ltx25_smoke_av_00003_.png",
+    "ltx25_smoke_av_00004_.png",
+    "ltx25_smoke_av_00005_.png",
+    "ltx25_smoke_av_00006_.png",
+    "ltx25_smoke_av_00007_.png",
+    "ltx25_smoke_av_00008_.png",
+    "ltx25_smoke_av_00009_.png"
+  ],
+  "audio": [
+    "ltx25_smoke_av_audio_00001.flac"
+  ],
+  "video": [
+    "ltx25_smoke_av_av_00001_.mp4"
+  ],
+  "distorch": false,
+  "alocacao": null,
+  "status": "success"
+}

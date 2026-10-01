@@ -1,11 +1,19 @@
 """Folha de contato: para cada prompt/seed, as imagens dos DiTs lado a lado (rotuladas), para inspecao visual.
 
     python_embeded\\python.exe -s folha_contato.py <saida_dir> <lado_px> <dit> [<dit> ...] [--raiz R] [--corte x0,y0,x1,y1]
+
+A imagem de cada prompt/seed sai de `metricas_imagem.imagem_unica` (revisao 2026-09-29): antes era
+`_00001_` fixo, e um grafo rodado de novo (`_00002_`) aparecia na folha com a imagem ANTIGA. Para
+baterias novas prefira `tools/monta_grade.py --layout comfy`, que faz o mesmo em grade.
 """
 import argparse
+import sys
 from pathlib import Path
 
 from PIL import Image, ImageDraw
+
+sys.path.insert(0, "F:/COMFY_PORTABLE/tools")
+from metricas_imagem import imagem_unica  # noqa: E402
 
 AQUI = Path(__file__).parent
 ap = argparse.ArgumentParser()
@@ -22,7 +30,7 @@ for i in map(int, a.prompts.split(",")):
     for s in map(int, a.seeds.split(",")):
         ims = []
         for d in a.dits:
-            im = Image.open(a.raiz / d / f"p{i}_s{s}_00001_.png").convert("RGB")
+            im = Image.open(imagem_unica(a.raiz / d, f"p{i}_s{s}")).convert("RGB")
             if a.corte:
                 x0, y0, x1, y1 = map(float, a.corte.split(","))
                 W, H = im.size

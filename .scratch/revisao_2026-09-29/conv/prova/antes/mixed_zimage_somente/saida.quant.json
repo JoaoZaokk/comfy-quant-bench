@@ -1,0 +1,61 @@
+{
+  "source": "F:\\COMFY_PORTABLE\\.scratch\\revisao_2026-09-29\\conv\\prova\\fontes\\zimage_sint_native_bf16.safetensors",
+  "source_size": 7541904,
+  "source_identity_sha256": "1bb51e99ef06308a89bb0b1a6030915d855cae1cd8a34aa213d26948f16f13e8",
+  "analysis_source_identity_sha256": "1bb51e99ef06308a89bb0b1a6030915d855cae1cd8a34aa213d26948f16f13e8",
+  "measure_dtype": "torch.bfloat16",
+  "output": "F:\\COMFY_PORTABLE\\.scratch\\revisao_2026-09-29\\conv\\prova\\antes\\mixed_zimage_somente\\saida.safetensors",
+  "output_size": 3845880,
+  "architecture": "zimage",
+  "quantization": "mixed convrot_w4a4 / asym_w4a8_int8",
+  "selection": {
+    "promote_error": 0.15,
+    "keep_bf16_error": null,
+    "budget": 1.0,
+    "uncalibrated": "bf16",
+    "somente_w4a4": true,
+    "sigma_weight": "none"
+  },
+  "layer_counts": {
+    "convrot_w4a4": 19,
+    "asym_w4a8_int8": 0,
+    "bf16": 1
+  },
+  "calibration": {
+    "sint": true
+  },
+  "group_size": 16,
+  "convrot_groupsize": 256,
+  "backend": {
+    "quantize_convrot_w4a4_weight": "comfy_kitchen.backends.cuda.FAKE",
+    "convrot_w4a4_linear": "comfy_kitchen.backends.cuda.FAKE"
+  },
+  "preserved_tensors": 12,
+  "comfy_kitchen_version": "0.2.35",
+  "torch_version": "2.13.0+cu130",
+  "cuda_version": "13.0",
+  "gpu": "CPU-FAKE",
+  "conversion_seconds": 0.019,
+  "layers": {
+    "layers.0.attention.out": "convrot_w4a4",
+    "layers.0.attention.qkv": "convrot_w4a4",
+    "layers.0.feed_forward.w1": "convrot_w4a4",
+    "layers.0.feed_forward.w2": "bf16",
+    "layers.0.feed_forward.w3": "convrot_w4a4",
+    "layers.1.attention.out": "convrot_w4a4",
+    "layers.1.attention.qkv": "convrot_w4a4",
+    "layers.1.feed_forward.w1": "convrot_w4a4",
+    "layers.1.feed_forward.w2": "convrot_w4a4",
+    "layers.1.feed_forward.w3": "convrot_w4a4",
+    "layers.2.attention.out": "convrot_w4a4",
+    "layers.2.attention.qkv": "convrot_w4a4",
+    "layers.2.feed_forward.w1": "convrot_w4a4",
+    "layers.2.feed_forward.w2": "convrot_w4a4",
+    "layers.2.feed_forward.w3": "convrot_w4a4",
+    "noise_refiner.0.attention.out": "convrot_w4a4",
+    "noise_refiner.0.attention.qkv": "convrot_w4a4",
+    "noise_refiner.0.feed_forward.w1": "convrot_w4a4",
+    "noise_refiner.0.feed_forward.w2": "convrot_w4a4",
+    "noise_refiner.0.feed_forward.w3": "convrot_w4a4"
+  }
+}

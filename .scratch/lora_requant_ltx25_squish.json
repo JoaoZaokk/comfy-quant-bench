@@ -1,0 +1,529 @@
+{
+  "ckpt": "ltx-2.5-22b-distilled-transformer-bf16_w4a8.safetensors",
+  "lora": "ltx2-squish.safetensors",
+  "strength": 1.0,
+  "source": "W:/ltx-2.5/ltx-2.5-22b-distilled-transformer-bf16.safetensors",
+  "lora_tensores": 2304,
+  "alvos": 1152,
+  "aplicados": 1152,
+  "pesos_com_patch": 1152,
+  "alvos_sem_peso_no_modelo": [],
+  "chaves_nao_mapeadas": 0,
+  "amostra_quantizadas": 24,
+  "amostra_nao_quantizadas": 0,
+  "todas_mantem_layout": true,
+  "sobrevivencia": {
+    "mediana": 0.9564433693885803,
+    "min": 0.9191964268684387,
+    "max": 0.9838748574256897,
+    "n": 8
+  },
+  "cosseno": {
+    "mediana": 0.39234548807144165,
+    "min": 0.22860932350158691,
+    "max": 0.6944044232368469,
+    "n": 8
+  },
+  "ruido_extra": {
+    "mediana": 3.1247012615203857,
+    "min": 1.0196796655654907,
+    "max": 3.915173053741455,
+    "n": 8
+  },
+  "magnitude": {
+    "mediana": 0.0,
+    "min": 0.0,
+    "max": 0.08635227382183075,
+    "n": 24
+  },
+  "err_antes": {
+    "mediana": 0.07309510558843613,
+    "min": 0.07298069447278976,
+    "max": 0.07321900129318237,
+    "n": 24
+  },
+  "err_depois": {
+    "mediana": 0.08368927985429764,
+    "min": 0.08346208184957504,
+    "max": 0.11394201219081879,
+    "n": 24
+  },
+  "err_zero": {
+    "mediana": 0.08367136120796204,
+    "min": 0.08351939916610718,
+    "max": 0.08394575864076614,
+    "n": 24
+  },
+  "ruido_zero": {
+    "mediana": 0.04048950970172882,
+    "min": 0.040175940841436386,
+    "max": 0.04104733467102051,
+    "n": 24
+  },
+  "falhas_calculate_weight": 0,
+  "exemplo_falha": [],
+  "camadas_com_delta_zero": 16,
+  "camadas": [
+    {
+      "chave": "diffusion_model.transformer_blocks.12.audio_attn1.to_k.weight",
+      "shape": [
+        2048,
+        2048
+      ],
+      "layout": "AsymW4A8Int8Layout",
+      "mesmo_layout_apos_patch": true,
+      "magnitude": 0.0,
+      "delta_zero": true,
+      "ruido_zero": 0.040510017424821854,
+      "sobrevivencia": null,
+      "cosseno": null,
+      "ruido_extra": null,
+      "err_antes": 0.0730816051363945,
+      "err_depois": 0.08361171931028366,
+      "err_zero": 0.08369003981351852,
+      "fonte_chave": "model.diffusion_model.transformer_blocks.12.audio_attn1.to_k.weight"
+    },
+    {
+      "chave": "diffusion_model.transformer_blocks.12.video_to_audio_attn.to_k.weight",
+      "shape": [
+        2048,
+        4096
+      ],
+      "layout": "AsymW4A8Int8Layout",
+      "mesmo_layout_apos_patch": true,
+      "magnitude": 0.0,
+      "delta_zero": true,
+      "ruido_zero": 0.040401555597782135,
+      "sobrevivencia": null,
+      "cosseno": null,
+      "ruido_extra": null,
+      "err_antes": 0.07312479615211487,
+      "err_depois": 0.08347465842962265,
+      "err_zero": 0.08363881707191467,
+      "fonte_chave": "model.diffusion_model.transformer_blocks.12.video_to_audio_attn.to_k.weight"
+    },
+    {
+      "chave": "diffusion_model.transformer_blocks.15.attn1.to_out.0.weight",
+      "shape": [
+        4096,
+        4096
+      ],
+      "layout": "AsymW4A8Int8Layout",
+      "mesmo_layout_apos_patch": true,
+      "magnitude": 0.013103828765451908,
+      "delta_zero": false,
+      "ruido_zero": 0.04048950970172882,
+      "sobrevivencia": 0.9191964268684387,
+      "cosseno": 0.22860932350158691,
+      "ruido_extra": 3.915173053741455,
+      "err_antes": 0.07315728813409805,
+      "err_depois": 0.0893719270825386,
+      "err_zero": 0.08373622596263885,
+      "fonte_chave": "model.diffusion_model.transformer_blocks.15.attn1.to_out.0.weight"
+    },
+    {
+      "chave": "diffusion_model.transformer_blocks.16.attn1.to_v.weight",
+      "shape": [
+        4096,
+        4096
+      ],
+      "layout": "AsymW4A8Int8Layout",
+      "mesmo_layout_apos_patch": true,
+      "magnitude": 0.013604586943984032,
+      "delta_zero": false,
+      "ruido_zero": 0.04035685956478119,
+      "sobrevivencia": 0.926938533782959,
+      "cosseno": 0.23964062333106995,
+      "ruido_extra": 3.7560384273529053,
+      "err_antes": 0.07309453189373016,
+      "err_depois": 0.08917747437953949,
+      "err_zero": 0.08357089012861252,
+      "fonte_chave": "model.diffusion_model.transformer_blocks.16.attn1.to_v.weight"
+    },
+    {
+      "chave": "diffusion_model.transformer_blocks.18.audio_attn1.to_v.weight",
+      "shape": [
+        2048,
+        2048
+      ],
+      "layout": "AsymW4A8Int8Layout",
+      "mesmo_layout_apos_patch": true,
+      "magnitude": 0.0,
+      "delta_zero": true,
+      "ruido_zero": 0.04063136503100395,
+      "sobrevivencia": null,
+      "cosseno": null,
+      "ruido_extra": null,
+      "err_antes": 0.07302917540073395,
+      "err_depois": 0.08356849104166031,
+      "err_zero": 0.08367136120796204,
+      "fonte_chave": "model.diffusion_model.transformer_blocks.18.audio_attn1.to_v.weight"
+    },
+    {
+      "chave": "diffusion_model.transformer_blocks.19.audio_attn1.to_q.weight",
+      "shape": [
+        2048,
+        2048
+      ],
+      "layout": "AsymW4A8Int8Layout",
+      "mesmo_layout_apos_patch": true,
+      "magnitude": 0.0,
+      "delta_zero": true,
+      "ruido_zero": 0.04033724218606949,
+      "sobrevivencia": null,
+      "cosseno": null,
+      "ruido_extra": null,
+      "err_antes": 0.07305914908647537,
+      "err_depois": 0.08348694443702698,
+      "err_zero": 0.0835525393486023,
+      "fonte_chave": "model.diffusion_model.transformer_blocks.19.audio_attn1.to_q.weight"
+    },
+    {
+      "chave": "diffusion_model.transformer_blocks.2.attn1.to_k.weight",
+      "shape": [
+        4096,
+        4096
+      ],
+      "layout": "AsymW4A8Int8Layout",
+      "mesmo_layout_apos_patch": true,
+      "magnitude": 0.027590665966272354,
+      "delta_zero": false,
+      "ruido_zero": 0.04047231003642082,
+      "sobrevivencia": 0.9564433693885803,
+      "cosseno": 0.39234548807144165,
+      "ruido_extra": 2.2427167892456055,
+      "err_antes": 0.07303469628095627,
+      "err_depois": 0.09567175060510635,
+      "err_zero": 0.08359560370445251,
+      "fonte_chave": "model.diffusion_model.transformer_blocks.2.attn1.to_k.weight"
+    },
+    {
+      "chave": "diffusion_model.transformer_blocks.20.video_to_audio_attn.to_v.weight",
+      "shape": [
+        2048,
+        4096
+      ],
+      "layout": "AsymW4A8Int8Layout",
+      "mesmo_layout_apos_patch": true,
+      "magnitude": 0.0,
+      "delta_zero": true,
+      "ruido_zero": 0.04028726741671562,
+      "sobrevivencia": null,
+      "cosseno": null,
+      "ruido_extra": null,
+      "err_antes": 0.07312639057636261,
+      "err_depois": 0.0834989845752716,
+      "err_zero": 0.08357623219490051,
+      "fonte_chave": "model.diffusion_model.transformer_blocks.20.video_to_audio_attn.to_v.weight"
+    },
+    {
+      "chave": "diffusion_model.transformer_blocks.23.attn2.to_k.weight",
+      "shape": [
+        4096,
+        4096
+      ],
+      "layout": "AsymW4A8Int8Layout",
+      "mesmo_layout_apos_patch": true,
+      "magnitude": 0.014725537970662117,
+      "delta_zero": false,
+      "ruido_zero": 0.040403999388217926,
+      "sobrevivencia": 0.9314513802528381,
+      "cosseno": 0.25496619939804077,
+      "ruido_extra": 3.53316068649292,
+      "err_antes": 0.07308604568243027,
+      "err_depois": 0.08970622718334198,
+      "err_zero": 0.08359265327453613,
+      "fonte_chave": "model.diffusion_model.transformer_blocks.23.attn2.to_k.weight"
+    },
+    {
+      "chave": "diffusion_model.transformer_blocks.24.audio_to_video_attn.to_v.weight",
+      "shape": [
+        2048,
+        2048
+      ],
+      "layout": "AsymW4A8Int8Layout",
+      "mesmo_layout_apos_patch": true,
+      "magnitude": 0.0,
+      "delta_zero": true,
+      "ruido_zero": 0.04064016416668892,
+      "sobrevivencia": null,
+      "cosseno": null,
+      "ruido_extra": null,
+      "err_antes": 0.07307928055524826,
+      "err_depois": 0.08362652361392975,
+      "err_zero": 0.0837416723370552,
+      "fonte_chave": "model.diffusion_model.transformer_blocks.24.audio_to_video_attn.to_v.weight"
+    },
+    {
+      "chave": "diffusion_model.transformer_blocks.26.video_to_audio_attn.to_k.weight",
+      "shape": [
+        2048,
+        4096
+      ],
+      "layout": "AsymW4A8Int8Layout",
+      "mesmo_layout_apos_patch": true,
+      "magnitude": 0.0,
+      "delta_zero": true,
+      "ruido_zero": 0.040175940841436386,
+      "sobrevivencia": null,
+      "cosseno": null,
+      "ruido_extra": null,
+      "err_antes": 0.07312919944524765,
+      "err_depois": 0.08350571244955063,
+      "err_zero": 0.08353797346353531,
+      "fonte_chave": "model.diffusion_model.transformer_blocks.26.video_to_audio_attn.to_k.weight"
+    },
+    {
+      "chave": "diffusion_model.transformer_blocks.28.video_to_audio_attn.to_v.weight",
+      "shape": [
+        2048,
+        4096
+      ],
+      "layout": "AsymW4A8Int8Layout",
+      "mesmo_layout_apos_patch": true,
+      "magnitude": 0.0,
+      "delta_zero": true,
+      "ruido_zero": 0.04049545153975487,
+      "sobrevivencia": null,
+      "cosseno": null,
+      "ruido_extra": null,
+      "err_antes": 0.07314147800207138,
+      "err_depois": 0.08357588201761246,
+      "err_zero": 0.08367986232042313,
+      "fonte_chave": "model.diffusion_model.transformer_blocks.28.video_to_audio_attn.to_v.weight"
+    },
+    {
+      "chave": "diffusion_model.transformer_blocks.34.audio_attn1.to_k.weight",
+      "shape": [
+        2048,
+        2048
+      ],
+      "layout": "AsymW4A8Int8Layout",
+      "mesmo_layout_apos_patch": true,
+      "magnitude": 0.0,
+      "delta_zero": true,
+      "ruido_zero": 0.04070984572172165,
+      "sobrevivencia": null,
+      "cosseno": null,
+      "ruido_extra": null,
+      "err_antes": 0.073044553399086,
+      "err_depois": 0.08359925448894501,
+      "err_zero": 0.08371324092149734,
+      "fonte_chave": "model.diffusion_model.transformer_blocks.34.audio_attn1.to_k.weight"
+    },
+    {
+      "chave": "diffusion_model.transformer_blocks.37.attn1.to_q.weight",
+      "shape": [
+        4096,
+        4096
+      ],
+      "layout": "AsymW4A8Int8Layout",
+      "mesmo_layout_apos_patch": true,
+      "magnitude": 0.03907090798020363,
+      "delta_zero": false,
+      "ruido_zero": 0.04045784845948219,
+      "sobrevivencia": 0.9642351269721985,
+      "cosseno": 0.4734625816345215,
+      "ruido_extra": 1.7941874265670776,
+      "err_antes": 0.0731213167309761,
+      "err_depois": 0.10117895156145096,
+      "err_zero": 0.0836581438779831,
+      "fonte_chave": "model.diffusion_model.transformer_blocks.37.attn1.to_q.weight"
+    },
+    {
+      "chave": "diffusion_model.transformer_blocks.37.audio_to_video_attn.to_q.weight",
+      "shape": [
+        2048,
+        4096
+      ],
+      "layout": "AsymW4A8Int8Layout",
+      "mesmo_layout_apos_patch": true,
+      "magnitude": 0.0,
+      "delta_zero": true,
+      "ruido_zero": 0.04045118764042854,
+      "sobrevivencia": null,
+      "cosseno": null,
+      "ruido_extra": null,
+      "err_antes": 0.0731155052781105,
+      "err_depois": 0.0835304707288742,
+      "err_zero": 0.08365017920732498,
+      "fonte_chave": "model.diffusion_model.transformer_blocks.37.audio_to_video_attn.to_q.weight"
+    },
+    {
+      "chave": "diffusion_model.transformer_blocks.38.attn1.to_out.0.weight",
+      "shape": [
+        4096,
+        4096
+      ],
+      "layout": "AsymW4A8Int8Layout",
+      "mesmo_layout_apos_patch": true,
+      "magnitude": 0.018262242898344994,
+      "delta_zero": false,
+      "ruido_zero": 0.04076090455055237,
+      "sobrevivencia": 0.9299736618995667,
+      "cosseno": 0.2853202223777771,
+      "ruido_extra": 3.1247012615203857,
+      "err_antes": 0.07321900129318237,
+      "err_depois": 0.0927899107336998,
+      "err_zero": 0.08390142023563385,
+      "fonte_chave": "model.diffusion_model.transformer_blocks.38.attn1.to_out.0.weight"
+    },
+    {
+      "chave": "diffusion_model.transformer_blocks.39.audio_to_video_attn.to_q.weight",
+      "shape": [
+        2048,
+        4096
+      ],
+      "layout": "AsymW4A8Int8Layout",
+      "mesmo_layout_apos_patch": true,
+      "magnitude": 0.0,
+      "delta_zero": true,
+      "ruido_zero": 0.04040652886033058,
+      "sobrevivencia": null,
+      "cosseno": null,
+      "ruido_extra": null,
+      "err_antes": 0.07311948388814926,
+      "err_depois": 0.08346208184957504,
+      "err_zero": 0.08361313492059708,
+      "fonte_chave": "model.diffusion_model.transformer_blocks.39.audio_to_video_attn.to_q.weight"
+    },
+    {
+      "chave": "diffusion_model.transformer_blocks.4.audio_attn2.to_out.0.weight",
+      "shape": [
+        2048,
+        2048
+      ],
+      "layout": "AsymW4A8Int8Layout",
+      "mesmo_layout_apos_patch": true,
+      "magnitude": 0.0,
+      "delta_zero": true,
+      "ruido_zero": 0.04087023437023163,
+      "sobrevivencia": null,
+      "cosseno": null,
+      "ruido_extra": null,
+      "err_antes": 0.07305038720369339,
+      "err_depois": 0.08368927985429764,
+      "err_zero": 0.08379334211349487,
+      "fonte_chave": "model.diffusion_model.transformer_blocks.4.audio_attn2.to_out.0.weight"
+    },
+    {
+      "chave": "diffusion_model.transformer_blocks.40.video_to_audio_attn.to_out.0.weight",
+      "shape": [
+        2048,
+        2048
+      ],
+      "layout": "AsymW4A8Int8Layout",
+      "mesmo_layout_apos_patch": true,
+      "magnitude": 0.0,
+      "delta_zero": true,
+      "ruido_zero": 0.04104733467102051,
+      "sobrevivencia": null,
+      "cosseno": null,
+      "ruido_extra": null,
+      "err_antes": 0.07309510558843613,
+      "err_depois": 0.08380188047885895,
+      "err_zero": 0.08394575864076614,
+      "fonte_chave": "model.diffusion_model.transformer_blocks.40.video_to_audio_attn.to_out.0.weight"
+    },
+    {
+      "chave": "diffusion_model.transformer_blocks.41.audio_attn2.to_v.weight",
+      "shape": [
+        2048,
+        2048
+      ],
+      "layout": "AsymW4A8Int8Layout",
+      "mesmo_layout_apos_patch": true,
+      "magnitude": 0.0,
+      "delta_zero": true,
+      "ruido_zero": 0.04061611369252205,
+      "sobrevivencia": null,
+      "cosseno": null,
+      "ruido_extra": null,
+      "err_antes": 0.07304932177066803,
+      "err_depois": 0.08361842483282089,
+      "err_zero": 0.08370424062013626,
+      "fonte_chave": "model.diffusion_model.transformer_blocks.41.audio_attn2.to_v.weight"
+    },
+    {
+      "chave": "diffusion_model.transformer_blocks.46.video_to_audio_attn.to_out.0.weight",
+      "shape": [
+        2048,
+        2048
+      ],
+      "layout": "AsymW4A8Int8Layout",
+      "mesmo_layout_apos_patch": true,
+      "magnitude": 0.0,
+      "delta_zero": true,
+      "ruido_zero": 0.04079100117087364,
+      "sobrevivencia": null,
+      "cosseno": null,
+      "ruido_extra": null,
+      "err_antes": 0.0730961337685585,
+      "err_depois": 0.0837349221110344,
+      "err_zero": 0.08383306115865707,
+      "fonte_chave": "model.diffusion_model.transformer_blocks.46.video_to_audio_attn.to_out.0.weight"
+    },
+    {
+      "chave": "diffusion_model.transformer_blocks.47.attn1.to_q.weight",
+      "shape": [
+        4096,
+        4096
+      ],
+      "layout": "AsymW4A8Int8Layout",
+      "mesmo_layout_apos_patch": true,
+      "magnitude": 0.08635227382183075,
+      "delta_zero": false,
+      "ruido_zero": 0.04044448584318161,
+      "sobrevivencia": 0.9838748574256897,
+      "cosseno": 0.6944044232368469,
+      "ruido_extra": 1.0196796655654907,
+      "err_antes": 0.07298069447278976,
+      "err_depois": 0.11394201219081879,
+      "err_zero": 0.08351939916610718,
+      "fonte_chave": "model.diffusion_model.transformer_blocks.47.attn1.to_q.weight"
+    },
+    {
+      "chave": "diffusion_model.transformer_blocks.47.audio_attn2.to_out.0.weight",
+      "shape": [
+        2048,
+        2048
+      ],
+      "layout": "AsymW4A8Int8Layout",
+      "mesmo_layout_apos_patch": true,
+      "magnitude": 0.0,
+      "delta_zero": true,
+      "ruido_zero": 0.04074906185269356,
+      "sobrevivencia": null,
+      "cosseno": null,
+      "ruido_extra": null,
+      "err_antes": 0.0731457769870758,
+      "err_depois": 0.08376242220401764,
+      "err_zero": 0.08384303003549576,
+      "fonte_chave": "model.diffusion_model.transformer_blocks.47.audio_attn2.to_out.0.weight"
+    },
+    {
+      "chave": "diffusion_model.transformer_blocks.8.attn2.to_q.weight",
+      "shape": [
+        4096,
+        4096
+      ],
+      "layout": "AsymW4A8Int8Layout",
+      "mesmo_layout_apos_patch": true,
+      "magnitude": 0.06740592420101166,
+      "delta_zero": false,
+      "ruido_zero": 0.04041656106710434,
+      "sobrevivencia": 0.9783907532691956,
+      "cosseno": 0.6185941696166992,
+      "ruido_extra": 1.2428959608078003,
+      "err_antes": 0.07303734123706818,
+      "err_depois": 0.11086640506982803,
+      "err_zero": 0.083591990172863,
+      "fonte_chave": "model.diffusion_model.transformer_blocks.8.attn2.to_q.weight"
+    }
+  ],
+  "razao_err_depois_antes": {
+    "mediana": 1.1451436522277656,
+    "min": 1.1414479070619103,
+    "max": 1.5612623723839885
+  }
+}

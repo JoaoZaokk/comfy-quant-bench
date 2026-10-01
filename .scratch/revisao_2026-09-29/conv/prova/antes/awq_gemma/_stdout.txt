@@ -1,0 +1,7 @@
+Source: F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\antes\awq_gemma\gemma_sint_bf16.safetensors
+Profile: gemma  Q4_1 -> awq_w4a16 (group 32)  quantized=14  kept=12
+Output: F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\antes\awq_gemma\gemma_sint_bf16_q4_1_awq.safetensors
+[14/14] quantized
+Wrote F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\antes\awq_gemma\gemma_sint_bf16_q4_1_awq.safetensors (0.7 MiB); weight rel-RMSE mean 0.0783
+
+--- stderr ---

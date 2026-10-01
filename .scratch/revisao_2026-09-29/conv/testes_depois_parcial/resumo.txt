@@ -1,0 +1,9 @@
+test_conversion_core rc=0
+test_native_probe rc=0
+test_quant_mixed_provenance rc=0
+test_quant_mixed_sigma rc=0
+test_smooth_guards rc=0
+test_svdq_verify rc=0
+test_svdq_write_contract rc=0
+test_verify_formats rc=1
+test_avaliar_backend rc=0

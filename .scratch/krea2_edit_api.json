@@ -1,0 +1,187 @@
+{
+  "29": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "54",
+        0
+      ],
+      "filename_prefix": "krea2_identity_edit"
+    }
+  },
+  "53": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "79",
+        0
+      ],
+      "positive": [
+        "84",
+        0
+      ],
+      "negative": [
+        "85",
+        0
+      ],
+      "latent_image": [
+        "82",
+        0
+      ],
+      "seed": 1088049369132323,
+      "steps": 10,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1
+    }
+  },
+  "54": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "53",
+        0
+      ],
+      "vae": [
+        "57",
+        0
+      ]
+    }
+  },
+  "55": {
+    "class_type": "UNETLoaderMultiGPU",
+    "inputs": {
+      "unet_name": "krea2_turbo_int8_convrot.safetensors",
+      "weight_dtype": "default",
+      "device": "cuda:0"
+    }
+  },
+  "56": {
+    "class_type": "CLIPLoaderMultiGPU",
+    "inputs": {
+      "clip_name": "qwen3vl_4b_bf16.safetensors",
+      "type": "krea2",
+      "device": "cuda:1"
+    }
+  },
+  "57": {
+    "class_type": "VAELoaderMultiGPU",
+    "inputs": {
+      "vae_name": "qwen_image_vae.safetensors",
+      "device": "cuda:0"
+    }
+  },
+  "71": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+      "model": [
+        "55",
+        0
+      ],
+      "lora_name": "krea2_identity_edit_v1_2.safetensors",
+      "strength_model": 1
+    }
+  },
+  "72": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "example.png"
+    }
+  },
+  "73": {
+    "class_type": "VAEEncode",
+    "inputs": {
+      "pixels": [
+        "72",
+        0
+      ],
+      "vae": [
+        "57",
+        0
+      ]
+    }
+  },
+  "79": {
+    "class_type": "Krea2EditModelPatch",
+    "inputs": {
+      "model": [
+        "71",
+        0
+      ],
+      "source_latent": [
+        "73",
+        0
+      ],
+      "vae": [
+        "57",
+        0
+      ],
+      "source_image": [
+        "72",
+        0
+      ],
+      "target_latent": [
+        "82",
+        0
+      ],
+      "ref_boost": 4,
+      "ref_boost_a": 1,
+      "fit_mode": "fit"
+    }
+  },
+  "82": {
+    "class_type": "EmptySD3LatentImage",
+    "inputs": {
+      "width": [
+        "83",
+        0
+      ],
+      "height": [
+        "83",
+        1
+      ],
+      "batch_size": 1
+    }
+  },
+  "83": {
+    "class_type": "ResolutionSelector",
+    "inputs": {
+      "aspect_ratio": "1:1 (Square)",
+      "megapixels": 1,
+      "multiple": 8
+    }
+  },
+  "84": {
+    "class_type": "Krea2EditGroundedEncode",
+    "inputs": {
+      "clip": [
+        "56",
+        0
+      ],
+      "image": [
+        "72",
+        0
+      ],
+      "prompt": "Change her outfit to a red raincoat.",
+      "grounding_px": 768,
+      "system_prompt": ""
+    }
+  },
+  "85": {
+    "class_type": "Krea2EditGroundedEncode",
+    "inputs": {
+      "clip": [
+        "56",
+        0
+      ],
+      "image": [
+        "72",
+        0
+      ],
+      "prompt": "",
+      "grounding_px": 768,
+      "system_prompt": ""
+    }
+  }
+}

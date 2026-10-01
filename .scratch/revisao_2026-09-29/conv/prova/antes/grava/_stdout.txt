@@ -1,0 +1,6 @@
+gravado F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\antes\grava\saida.safetensors (0.00 GiB): 3 camadas, 1 puladas
+NAO COBERTO: nao mede nada e nao renderiza. Camadas sem amostra ficam com o peso
+  ORIGINAL, nao podado -- entao o arquivo e um modelo misto e o render tem de dizer
+  quantas camadas de fato mudaram.
+
+--- stderr ---

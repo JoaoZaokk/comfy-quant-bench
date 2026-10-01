@@ -1,0 +1,9 @@
+fonte: F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\fontes\gemma_sint_bf16.safetensors
+saida: F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\antes\te_fp8\saida.safetensors
+formato: float8_e4m3fn
+  model.embed_tokens.weight: [64, 256] BF16
+  model.embed_tokens.weight: {'rel_rmse': 0.0266441861479041, 'pior_linha_rel': 0.0317881815135479, 'gather_rel_rmse': 0.026506999507546425}
+gravado F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\antes\te_fp8\saida.safetensors (2.27 MiB) em 1 s
+gravado F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\antes\te_fp8\saida.quant.json
+
+--- stderr ---

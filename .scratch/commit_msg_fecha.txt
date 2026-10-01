@@ -1,0 +1,44 @@
+Closing round: the six conversions never verified at the output, measured; factory Gemma W4A8, two 2.5 int8 builds, capybara W4A8, Krea 2 Turbo and Qwen3-VL 4B published
+
+Counted first: 53 sidecars, 25 with weights, 44 verified at the output, 6 not. The criterion
+for all six was written before any number (bench/criterio_fechamento_2026-09-14.md) and the
+verdicts sit in the same file, per prediction, with the hour.
+
+- A: the factory Gemma 3 12B in W4A8 as the LTX 2.3 encoder. Conditioning 0.043 rel-L2 from
+  BF16 on both math paths (releasing the two text-encoder locks costs 0.001); the W4A8
+  transformer on it renders MAE 6.75 / SSIM 0.894 / log-mel 0.087 from the BF16-encoder
+  render, same scene, under the transformer's own quantization distance (10.39). New repo:
+  JoaoZaokk/Gemma-3-12B-it-W4A8-ConvRot.
+- C: on LTX 2.5 our int8_tensorwise + ConvRot reproduces Lightricks' int8 (MAE 4.19 vs 4.10,
+  log-mel 0.043 vs 0.041); the same int8 without the rotation lands 2x farther (8.23), behind
+  our W4A8 in the frames and still 2x ahead of it in the sound. Both on the 2.5 repo with
+  MP4/FLAC proofs; per-step for all five arms from the sampler's bar (BF16 8.48, the four
+  quantized arms 2.02-2.26 s/it).
+- D: the heretic Gemma W4A8 keeps the scene (5.45 MAE); both W4A4 builds render a coherent
+  but different scene on the released path (daylight where the prompt said dusk; 29.8 and
+  38.1) and keep the scene on stock ComfyUI's locked path (16.4 and 27.4). Releasing the
+  locks costs 2x on W4A4 and 0.001 on W4A8; SmoothQuant pays 1.4x and does not rescue; the
+  abliterated BF16 sits 0.10 from the factory BF16 and keeps the scene, so the flip is between
+  rel-L2 0.11 and 0.16 on this prompt. The W4A4 weights are not published; the proofs and
+  sidecars are.
+- E: capybara_v0.1 in W4A8 is usable (latent divergence 0.14 vs 0.71 for its W4A4 at the same
+  seed); the reconversion came out byte-identical to the deleted 2026-09-01 build across two
+  cards. On the Hunyuan repo with both images.
+- G: the 2.3 audio tie is the metric saturating under phase decorrelation: at 3 steps Q6_K
+  stays in phase with the reference (+8.4 dB) and W4A8 does not (-1.1 dB), with the caveat
+  that 3 steps renders a degraded scene in every arm.
+
+Two instruments fixed on the way. tools/sampler_tempo_do_log.py read only "Prompt executed
+in X seconds"; ComfyUI switches to HH:MM:SS above 600 s, so every long run showed as
+"(sem fim)" and the 2.5 BF16's 8.48 s/it had been invisible. tools/quality_ladder.py now casts
+every arm to the model's compute dtype after a lazy load, skipping QuantizedTensor: a
+uniformly-BF16 file on an fp16 model (capybara on HunyuanVideo 1.5) died in the sampler with
+"Half and BFloat16" while the guard only looked for files that disagree with themselves.
+
+Krea 2 Turbo W4A4 published gated under the Krea 2 Community License (name prefix, NOTICE,
+licence copy, modification statement); Qwen3-VL 4B W4A8 published. Cards for 2.5, heretic,
+Hunyuan and 2.3 rewritten with the new rows. CLAUDE.md, README and W4A4_PROGRESS part 52
+carry the findings, the two open discrepancies (monkeypatch vs flag on what releasing costs
+W4A8; the capybara W4A8 single-run speed) and the one-prompt-one-seed caveat.
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>

@@ -1,0 +1,30 @@
+{
+ "NQ_frio": {
+  "s_dyn": 26.333,
+  "s_nodyn": 34.459,
+  "identica": false,
+  "psnr": 36.26,
+  "msssim": 0.989
+ },
+ "NQ_quente": {
+  "s_dyn": 11.376,
+  "s_nodyn": 11.538,
+  "identica": false,
+  "psnr": 30.148,
+  "msssim": 0.954
+ },
+ "NZ_frio": {
+  "s_dyn": 15.511,
+  "s_nodyn": 21.894,
+  "identica": false,
+  "psnr": 15.983,
+  "msssim": 0.652
+ },
+ "NZ_quente": {
+  "s_dyn": 3.369,
+  "s_nodyn": 3.395,
+  "identica": false,
+  "psnr": 13.277,
+  "msssim": 0.519
+ }
+}

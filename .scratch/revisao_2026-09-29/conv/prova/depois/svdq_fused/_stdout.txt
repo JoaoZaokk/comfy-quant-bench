@@ -1,0 +1,21 @@
+svdq_sint.safetensors: 27 tensors, 4 quantised layers
+rank 4, group_size 64
+recovering 4 layers on cpu
+  4/4  303.0 layers/s
+
+checked 1 layers: bias suppression, kernel determinism, finiteness -- all passed.
+
+Activation-quantisation cost per layer, on random input. **Not a verdict.**
+  layer                                            cos    relL2  cos(wrong)  relL2(wrong)
+  layers.0.attention.to_out.0                   1.0000   0.0002     -0.0156        1.4252
+  relL2 spread 0.000 .. 0.000 across these layers.
+  The last two columns are the same measurement against a shuffled copy of the recovered
+  matrix -- what having no information looks like. Do not turn any of this into a
+  threshold: measured on Z-Image INT4, a matrix 20% wrong scores cosine 0.976 while a
+  correct feed_forward.net.2 scores 0.704, so the wrong matrix outranks the right one.
+  Only --reference can say whether the reconstruction is good.
+writing saida.safetensors (0.00 GiB)
+done: F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\depois\svdq_fused\saida.safetensors
+reminder: this carries INT4 quality at BF16 size. It is only worth keeping for a model you do not have a BF16 original of.
+
+--- stderr ---

@@ -1,0 +1,3913 @@
+{
+ "hub_por_tamanho": {
+  "1519": [
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-korean-ggml",
+    ".gitattributes",
+    null
+   ],
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenCodeInstruct-Learning-LoRA",
+    ".gitattributes",
+    null
+   ],
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-Agentic-Tessa-1K-LoRA",
+    ".gitattributes",
+    null
+   ],
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-Agentic-Tessa-8K-2048-Experimental-LoRA",
+    ".gitattributes",
+    null
+   ],
+   [
+    "JoaoZaokk/fish-s2-pro-ptbr-lora",
+    ".gitattributes",
+    null
+   ],
+   [
+    "JoaoZaokk/glm-4-voice-bridge-GLM-4.6V-Flash-alpha",
+    ".gitattributes",
+    null
+   ],
+   [
+    "JoaoZaokk/Qwen2.5-VL-7B-W4A4-ConvRot",
+    ".gitattributes",
+    null
+   ],
+   [
+    "JoaoZaokk/parakeet-tdt-0.6b-v2-ggml",
+    ".gitattributes",
+    null
+   ],
+   [
+    "JoaoZaokk/parakeet-tdt-0.6b-v3-ggml",
+    ".gitattributes",
+    null
+   ],
+   [
+    "JoaoZaokk/ivrit-whisper-large-v3-turbo-ggml",
+    ".gitattributes",
+    null
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-finnish-ggml",
+    ".gitattributes",
+    null
+   ],
+   [
+    "JoaoZaokk/orukeet-ggml",
+    ".gitattributes",
+    null
+   ],
+   [
+    "JoaoZaokk/parakeet-tdt-1.1b-ggml",
+    ".gitattributes",
+    null
+   ],
+   [
+    "JoaoZaokk/distil-whisper-large-v3-ptbr-ggml",
+    ".gitattributes",
+    null
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-latam-ggml",
+    ".gitattributes",
+    null
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-distil-it-v0.2-ggml",
+    ".gitattributes",
+    null
+   ],
+   [
+    "JoaoZaokk/Belle-whisper-large-v3-turbo-zh-ggml",
+    ".gitattributes",
+    null
+   ],
+   [
+    "JoaoZaokk/kotoba-whisper-v2.0-ggml",
+    ".gitattributes",
+    null
+   ],
+   [
+    "JoaoZaokk/whisper-podlodka-turbo-ggml",
+    ".gitattributes",
+    null
+   ],
+   [
+    "JoaoZaokk/typhoon-whisper-turbo-ggml",
+    ".gitattributes",
+    null
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-german-ggml",
+    ".gitattributes",
+    null
+   ],
+   [
+    "JoaoZaokk/EraX-WoW-Turbo-V1.1-ggml",
+    ".gitattributes",
+    null
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-arabic-dialectal-v2-ggml",
+    ".gitattributes",
+    null
+   ],
+   [
+    "JoaoZaokk/whisper-hu-large-v3-turbo-finetuned-ggml",
+    ".gitattributes",
+    null
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-french-distil-dec16-ggml",
+    ".gitattributes",
+    null
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-vaani-hindi-ggml",
+    ".gitattributes",
+    null
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-turkish-general-ggml",
+    ".gitattributes",
+    null
+   ],
+   [
+    "JoaoZaokk/kb-whisper-large-ggml",
+    ".gitattributes",
+    null
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-hr-parla-ggml",
+    ".gitattributes",
+    null
+   ],
+   [
+    "JoaoZaokk/Qwen3-VL-4B-W4A8-ConvRot",
+    ".gitattributes",
+    null
+   ]
+  ],
+  "1966": [
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-korean-ggml",
+    "README.md",
+    null
+   ]
+  ],
+  "669": [
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-korean-ggml",
+    "UPSTREAM-README.md",
+    null
+   ]
+  ],
+  "1608": [
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-korean-ggml",
+    "VERIFY.txt",
+    null
+   ]
+  ],
+  "1624555275": [
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-korean-ggml",
+    "ggml-whisper-large-v3-turbo-korean-f16.bin",
+    "52f396b30fb994c53ad2792effa161d587e14b72ceb96c505a306a30d67eea5a"
+   ],
+   [
+    "JoaoZaokk/ivrit-whisper-large-v3-turbo-ggml",
+    "ggml-ivrit-whisper-large-v3-turbo-f16.bin",
+    "c8090411113357097bfafc2b8e228ec1639fa7f5fe4ecb5d054ac0ccef8641b1"
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-latam-ggml",
+    "ggml-whisper-large-v3-turbo-latam-f16.bin",
+    "b2e3f5e5b159a6978164d237f981fe95335693abb716fb1c229507b235ace540"
+   ],
+   [
+    "JoaoZaokk/Belle-whisper-large-v3-turbo-zh-ggml",
+    "ggml-belle-whisper-large-v3-turbo-zh-f16.bin",
+    "2a3bba5bfdb4d4da3d9949a83b405711727ca1941d4d5810895e077eb3cb4d99"
+   ],
+   [
+    "JoaoZaokk/whisper-podlodka-turbo-ggml",
+    "ggml-whisper-podlodka-turbo-f16.bin",
+    "d91de99adaf803b7f7f30c4f59ec06c391e35e78328e297b213b1377f977fbec"
+   ]
+  ],
+  "473992235": [
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-korean-ggml",
+    "ggml-whisper-large-v3-turbo-korean-q4_0.bin",
+    "4526c26e37831946ac75a143cf7f0eb4f69394aa986d5fdb1f072dfd39568373"
+   ],
+   [
+    "JoaoZaokk/ivrit-whisper-large-v3-turbo-ggml",
+    "ggml-ivrit-whisper-large-v3-turbo-q4_0.bin",
+    "e049b13550e5d67d44de3e30354710eaebd67569699d6b91ffe3103dbdc77975"
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-latam-ggml",
+    "ggml-whisper-large-v3-turbo-latam-q4_0.bin",
+    "3e3cdb138c87f434ce4fc40ed75af8455e8d6dec16a783c9f89b583c2aa02d61"
+   ],
+   [
+    "JoaoZaokk/Belle-whisper-large-v3-turbo-zh-ggml",
+    "ggml-belle-whisper-large-v3-turbo-zh-q4_0.bin",
+    "8ca166f07c852828cac74c9799818698faf704d69f495c6b00f1492a958474f4"
+   ],
+   [
+    "JoaoZaokk/whisper-podlodka-turbo-ggml",
+    "ggml-whisper-podlodka-turbo-q4_0.bin",
+    "172d761c921345082986689cb622f891184da29476b85e873bb272687a3c73a7"
+   ],
+   [
+    "JoaoZaokk/typhoon-whisper-turbo-ggml",
+    "ggml-typhoon-whisper-turbo-q4_0.bin",
+    "2e93048f0160f3ae46b0a738e76f8117872b8bfc16e31c1a7c9314bc062abda9"
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-german-ggml",
+    "ggml-whisper-large-v3-turbo-german-q4_0.bin",
+    "7cddd47d15d259b4db61a1851237ef47cc76409d61aca3ffa32f237b3a9577a8"
+   ],
+   [
+    "JoaoZaokk/EraX-WoW-Turbo-V1.1-ggml",
+    "ggml-EraX-WoW-Turbo-V1.1-q4_0.bin",
+    "441b5ebaae540260299d61374f37c02b2e8a3151cf64666c3a21e54d583980c1"
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-arabic-dialectal-v2-ggml",
+    "ggml-whisper-large-v3-turbo-arabic-dialectal-v2-q4_0.bin",
+    "6d8062da1f5ec83f2b1ac5189ccefe83cfa393101085cd700700db1fe6a3e661"
+   ],
+   [
+    "JoaoZaokk/whisper-hu-large-v3-turbo-finetuned-ggml",
+    "ggml-whisper-hu-large-v3-turbo-finetuned-q4_0.bin",
+    "2a4af0159343ef3ed39f955d4b698d25b7e72618be17a4e5aea0cfd5ff9fe99d"
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-hr-parla-ggml",
+    "ggml-whisper-large-v3-turbo-hr-parla-q4_0.bin",
+    "efca0b129327652f9efa4006c5ebd76c1f414987216c2265f73ace913b73988b"
+   ]
+  ],
+  "574041195": [
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-korean-ggml",
+    "ggml-whisper-large-v3-turbo-korean-q5_0.bin",
+    "fa112c2285b8b61525cf87b1693bfab5fc21ff511287e2b586974a7b58ca9d7f"
+   ],
+   [
+    "JoaoZaokk/ivrit-whisper-large-v3-turbo-ggml",
+    "ggml-ivrit-whisper-large-v3-turbo-q5_0.bin",
+    "6c1da92e8e41dd64b8cc402eee7eb7a433d2152567e1a4d9cf181fefcc67a572"
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-latam-ggml",
+    "ggml-whisper-large-v3-turbo-latam-q5_0.bin",
+    "1f6261540cb4bdb81cb5821ea40e1dc8ae3041fa4a73f00249abe3e65738dcc4"
+   ],
+   [
+    "JoaoZaokk/Belle-whisper-large-v3-turbo-zh-ggml",
+    "ggml-belle-whisper-large-v3-turbo-zh-q5_0.bin",
+    "bab0d61935b3f75e5435217eadfb1fceb6bcb09751b025a232e76ed33107747f"
+   ],
+   [
+    "JoaoZaokk/whisper-podlodka-turbo-ggml",
+    "ggml-whisper-podlodka-turbo-q5_0.bin",
+    "7e58e89ea5ff49edf330649caa4d7a0895a3d3254fecd9c1cf63b27dd8fcf53d"
+   ],
+   [
+    "JoaoZaokk/typhoon-whisper-turbo-ggml",
+    "ggml-typhoon-whisper-turbo-q5_0.bin",
+    "2ffbb16719beda21f92f351ce66cef1e65cc2996b78556d1f77cbcc94ab88e67"
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-german-ggml",
+    "ggml-whisper-large-v3-turbo-german-q5_0.bin",
+    "15e92e3db0993c52fffa781513eec9253475331c1be808f8fb409285c9d9d030"
+   ],
+   [
+    "JoaoZaokk/EraX-WoW-Turbo-V1.1-ggml",
+    "ggml-EraX-WoW-Turbo-V1.1-q5_0.bin",
+    "2f140355754455e252661a3df3506db02e709aca689c87305a6d5f784b9e227a"
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-arabic-dialectal-v2-ggml",
+    "ggml-whisper-large-v3-turbo-arabic-dialectal-v2-q5_0.bin",
+    "325b7dc691ac04174d91abbd58af74543236a146b87ea2f2f9ecfd9b260a9b6a"
+   ],
+   [
+    "JoaoZaokk/whisper-hu-large-v3-turbo-finetuned-ggml",
+    "ggml-whisper-hu-large-v3-turbo-finetuned-q5_0.bin",
+    "0bf4f4b5b7acfa3fe947b8033b0d83acf9497d84b08b604753fda6b004044a1c"
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-hr-parla-ggml",
+    "ggml-whisper-large-v3-turbo-hr-parla-q5_0.bin",
+    "945a3d2fe71af09fa170b36832821b7cfec0e1b600e62aac847dba2b16f2942c"
+   ]
+  ],
+  "874188075": [
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-korean-ggml",
+    "ggml-whisper-large-v3-turbo-korean-q8_0.bin",
+    "b0590271b17d683aba5bbe4ada0c310d5c9031f4c165400423271e7273d30a90"
+   ],
+   [
+    "JoaoZaokk/ivrit-whisper-large-v3-turbo-ggml",
+    "ggml-ivrit-whisper-large-v3-turbo-q8_0.bin",
+    "123a936e686b06d45b52dc1790251a1418841352ca94079ae643d57893ffc9a6"
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-latam-ggml",
+    "ggml-whisper-large-v3-turbo-latam-q8_0.bin",
+    "d8dfa0f9dcb257a0efac704128f2eb41d07c530b2eda6337ebf241c4f4326383"
+   ],
+   [
+    "JoaoZaokk/Belle-whisper-large-v3-turbo-zh-ggml",
+    "ggml-belle-whisper-large-v3-turbo-zh-q8_0.bin",
+    "5f7e94394c73549de0bf0817c0d2628ea28d6e5bf22c2bd146fb3f834a870778"
+   ],
+   [
+    "JoaoZaokk/whisper-podlodka-turbo-ggml",
+    "ggml-whisper-podlodka-turbo-q8_0.bin",
+    "4f790d4b6f402815e902d95146f67b083330ea6d4b6baf7d9873c2ea1f48d930"
+   ],
+   [
+    "JoaoZaokk/typhoon-whisper-turbo-ggml",
+    "ggml-typhoon-whisper-turbo-q8_0.bin",
+    "6c1aca53a64c8ee82989a73265a0428d5c60d32cbe06e1eb2261dd3b34cf5c15"
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-german-ggml",
+    "ggml-whisper-large-v3-turbo-german-q8_0.bin",
+    "8583eb7d71c59cc2d7bd7ca77fccd6108c795f3b072d0bbf50eef2e1e8204020"
+   ],
+   [
+    "JoaoZaokk/EraX-WoW-Turbo-V1.1-ggml",
+    "ggml-EraX-WoW-Turbo-V1.1-q8_0.bin",
+    "5b0a7b0c1fecc260a431c0eba0c22e21be27c8b8f3083ab31795910e4b4ef71c"
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-arabic-dialectal-v2-ggml",
+    "ggml-whisper-large-v3-turbo-arabic-dialectal-v2-q8_0.bin",
+    "7c8eae29df8fb8c2e783f70798ad65ece8aeacf153a7159b7334d6d5369690cd"
+   ],
+   [
+    "JoaoZaokk/whisper-hu-large-v3-turbo-finetuned-ggml",
+    "ggml-whisper-hu-large-v3-turbo-finetuned-q8_0.bin",
+    "f6e36a679f20e220cc9ab3fa480ebcebf0cc1f09ae7dabfe574fe104976b7089"
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-hr-parla-ggml",
+    "ggml-whisper-large-v3-turbo-hr-parla-q8_0.bin",
+    "29b73250e1f190bf60fb2394e7b6e76faed417aedbd622bdca6ccb90825be88c"
+   ]
+  ],
+  "1274": [
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-korean-ggml",
+    "upstream-config.json",
+    null
+   ]
+  ],
+  "2530": [
+   [
+    "JoaoZaokk/LTX-2.3-22B-distilled-1.1-W4A8-ConvRot",
+    ".gitattributes",
+    null
+   ]
+  ],
+  "19197": [
+   [
+    "JoaoZaokk/LTX-2.3-22B-distilled-1.1-W4A8-ConvRot",
+    "LICENSE_LTX_2_COMMUNITY.txt",
+    null
+   ]
+  ],
+  "23887": [
+   [
+    "JoaoZaokk/LTX-2.3-22B-distilled-1.1-W4A8-ConvRot",
+    "README.md",
+    null
+   ]
+  ],
+  "904678": [
+   [
+    "JoaoZaokk/LTX-2.3-22B-distilled-1.1-W4A8-ConvRot",
+    "av/bf16_original.flac",
+    "97e65438be64d3581f40f954211f11ecadb2b402ff56899313812452088b28c4"
+   ]
+  ],
+  "901515": [
+   [
+    "JoaoZaokk/LTX-2.3-22B-distilled-1.1-W4A8-ConvRot",
+    "av/bf16_original.mp4",
+    "68986abf4ef9893ec2b55006cc2d73f21710b90b513be393f795034a2ba31b7b"
+   ]
+  ],
+  "4368": [
+   [
+    "JoaoZaokk/LTX-2.3-22B-distilled-1.1-W4A8-ConvRot",
+    "av/comparacao_av.json",
+    null
+   ]
+  ],
+  "1157141": [
+   [
+    "JoaoZaokk/LTX-2.3-22B-distilled-1.1-W4A8-ConvRot",
+    "av/contato_av.png",
+    "cea1c927b32c0cead317c2b3c91ac0dad9faa82b3a7f873bdb2d8a18dd9043a2"
+   ]
+  ],
+  "667702": [
+   [
+    "JoaoZaokk/LTX-2.3-22B-distilled-1.1-W4A8-ConvRot",
+    "av/gguf_q6k_third_party.flac",
+    "4620ec526187f2d66ef14d6a1174b8ec2a5119eab254360d132ab2b9092b6461"
+   ]
+  ],
+  "941217": [
+   [
+    "JoaoZaokk/LTX-2.3-22B-distilled-1.1-W4A8-ConvRot",
+    "av/gguf_q6k_third_party.mp4",
+    "8a06ae5925b4418f319ab8a48ee1c781b5eb1fe616f2e3cde3a6873c35c12645"
+   ]
+  ],
+  "994629": [
+   [
+    "JoaoZaokk/LTX-2.3-22B-distilled-1.1-W4A8-ConvRot",
+    "av/w4a4_control.flac",
+    "c8115448ec2d1c90686ca8c3f71824d3bdc6e5d173ded13df1f95c11061443e6"
+   ]
+  ],
+  "1240036": [
+   [
+    "JoaoZaokk/LTX-2.3-22B-distilled-1.1-W4A8-ConvRot",
+    "av/w4a4_control.mp4",
+    "5715ca664fcdd92223d3f896ef10c08d30e031287bd961f8e404188ee9e33826"
+   ]
+  ],
+  "695415": [
+   [
+    "JoaoZaokk/LTX-2.3-22B-distilled-1.1-W4A8-ConvRot",
+    "av/w4a8_this_file.flac",
+    "ae29a45a9c3fd40f8e7887ce98256a82d1c9595ba0256891cfd21808be3405d3"
+   ]
+  ],
+  "1001568": [
+   [
+    "JoaoZaokk/LTX-2.3-22B-distilled-1.1-W4A8-ConvRot",
+    "av/w4a8_this_file.mp4",
+    "05a444897f315b23fc209bcee71df2b899149bed4ae948d637e368bc30ccfe38"
+   ]
+  ],
+  "2261": [
+   [
+    "JoaoZaokk/LTX-2.3-22B-distilled-1.1-W4A8-ConvRot",
+    "conditioning/NEGATIVE_ltxv_saver_drops_the_key.json",
+    null
+   ]
+  ],
+  "601606": [
+   [
+    "JoaoZaokk/LTX-2.3-22B-distilled-1.1-W4A8-ConvRot",
+    "conditioning/NEGATIVE_ltxv_saver_drops_the_key.png",
+    "40e895171387683ee47bc174d2d10d3c75a2f5bd43405a8f7fc0dfc63dfa9309"
+   ]
+  ],
+  "2267": [
+   [
+    "JoaoZaokk/LTX-2.3-22B-distilled-1.1-W4A8-ConvRot",
+    "conditioning/identity_saved_vs_live_encoder.json",
+    null
+   ]
+  ],
+  "549017": [
+   [
+    "JoaoZaokk/LTX-2.3-22B-distilled-1.1-W4A8-ConvRot",
+    "conditioning/identity_saved_vs_live_encoder.png",
+    "741414f089556b5a5d26ba516196c35fa0f880d8cc47bcc41cbb8406f39b5d58"
+   ]
+  ],
+  "4440": [
+   [
+    "JoaoZaokk/LTX-2.3-22B-distilled-1.1-W4A8-ConvRot",
+    "lora/comparacao_av.json",
+    null
+   ]
+  ],
+  "879716": [
+   [
+    "JoaoZaokk/LTX-2.3-22B-distilled-1.1-W4A8-ConvRot",
+    "lora/contato_av.png",
+    "add37d9fe2bbdc477fcbd53e441de8ba1fea87c61fd4fceedb300901faac4c0f"
+   ]
+  ],
+  "174316": [
+   [
+    "JoaoZaokk/LTX-2.3-22B-distilled-1.1-W4A8-ConvRot",
+    "lora/lora_bypass_seed1234.mp4",
+    "7b03bdc86d2e5269debc86be5e9cbf858e0fdd68b0173a171f06767f1a20168e"
+   ]
+  ],
+  "169802": [
+   [
+    "JoaoZaokk/LTX-2.3-22B-distilled-1.1-W4A8-ConvRot",
+    "lora/lora_merged_seed1234.mp4",
+    "1905da4ce84ea4ed63949c8af1147fcea7337a5f93056fea78c98f2c75614e24"
+   ]
+  ],
+  "2278": [
+   [
+    "JoaoZaokk/LTX-2.3-22B-distilled-1.1-W4A8-ConvRot",
+    "lora/merged_vs_bypass.json",
+    null
+   ]
+  ],
+  "102221": [
+   [
+    "JoaoZaokk/LTX-2.3-22B-distilled-1.1-W4A8-ConvRot",
+    "lora/no_lora_seed1234.mp4",
+    "1ae07aa87b362a25b7fd1507db3a7d6efd69b5c2bb784f93cf0069f71e7d22fa"
+   ]
+  ],
+  "126784": [
+   [
+    "JoaoZaokk/LTX-2.3-22B-distilled-1.1-W4A8-ConvRot",
+    "lora/no_lora_seed4321.mp4",
+    "9a63821890caef7c3274d394a1d3f64ababfe3bc522f8018360779c1f8540d32"
+   ]
+  ],
+  "738": [
+   [
+    "JoaoZaokk/LTX-2.3-22B-distilled-1.1-W4A8-ConvRot",
+    "ltx-2.3-22b-distilled-1.1_w4a8.quant.json",
+    null
+   ],
+   [
+    "JoaoZaokk/HunyuanVideo-1.5-720p-T2V-Quantized",
+    "capybara_v0.1_w4a8r.quant.json",
+    null
+   ]
+  ],
+  "16651422654": [
+   [
+    "JoaoZaokk/LTX-2.3-22B-distilled-1.1-W4A8-ConvRot",
+    "ltx-2.3-22b-distilled-1.1_w4a8.safetensors",
+    "e1d14f103f094882139ddd9b79284ce649245364df17e4c9c491656c3906c866"
+   ]
+  ],
+  "1570": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-MiniMax-M2.1-Distill-heretic",
+    ".gitattributes",
+    null
+   ],
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback",
+    ".gitattributes",
+    null
+   ],
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT4",
+    ".gitattributes",
+    null
+   ],
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT8",
+    ".gitattributes",
+    null
+   ]
+  ],
+  "1558": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-MiniMax-M2.1-Distill-heretic",
+    "README.md",
+    null
+   ]
+  ],
+  "4134": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-MiniMax-M2.1-Distill-heretic",
+    "chat_template.jinja",
+    null
+   ],
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback",
+    "chat_template.jinja",
+    null
+   ]
+  ],
+  "1725": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-MiniMax-M2.1-Distill-heretic",
+    "config.json",
+    null
+   ],
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback",
+    "config.json",
+    null
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-distil-it-v0.2-ggml",
+    "VERIFY.txt",
+    null
+   ]
+  ],
+  "148": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-MiniMax-M2.1-Distill-heretic",
+    "generation_config.json",
+    null
+   ]
+  ],
+  "4990818672": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-MiniMax-M2.1-Distill-heretic",
+    "model-00001-of-00002.safetensors",
+    "ce8066c9580d7b5f7d2730ef9094ef45730404985da5e78cb6eebdd9321ec127"
+   ]
+  ],
+  "3054163328": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-MiniMax-M2.1-Distill-heretic",
+    "model-00002-of-00002.safetensors",
+    "8a85674707ab8d3f26ec94c415c9c1f8f184713f370b6d74e7407c3159952a5a"
+   ]
+  ],
+  "33261": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-MiniMax-M2.1-Distill-heretic",
+    "model.safetensors.index.json",
+    null
+   ],
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback",
+    "model.safetensors.index.json",
+    null
+   ]
+  ],
+  "11422818": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-MiniMax-M2.1-Distill-heretic",
+    "tokenizer.json",
+    "035e84034e240f0aea24a0c034801801d23ac0506250099f017982ec808ac7d3"
+   ],
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback",
+    "tokenizer.json",
+    "035e84034e240f0aea24a0c034801801d23ac0506250099f017982ec808ac7d3"
+   ],
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT4",
+    "tokenizer.json",
+    "035e84034e240f0aea24a0c034801801d23ac0506250099f017982ec808ac7d3"
+   ],
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT8",
+    "tokenizer.json",
+    "035e84034e240f0aea24a0c034801801d23ac0506250099f017982ec808ac7d3"
+   ]
+  ],
+  "420": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-MiniMax-M2.1-Distill-heretic",
+    "tokenizer_config.json",
+    null
+   ]
+  ],
+  "5083": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback",
+    "README.md",
+    null
+   ]
+  ],
+  "149": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback",
+    "generation_config.json",
+    null
+   ]
+  ],
+  "3981503976": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback",
+    "model-00001-of-00003.safetensors",
+    "1cc20aceedc89916a7fedbe44799a476df84b3f5e716722f561137af48ed4d05"
+   ]
+  ],
+  "3961229704": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback",
+    "model-00002-of-00003.safetensors",
+    "e37457b0f3c78f6c4d9693821853c46799cc1e04d0ec32b42d885a48154abf8e"
+   ]
+  ],
+  "102247928": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback",
+    "model-00003-of-00003.safetensors",
+    "1bbd3c9d57e057d7691f52e07a87ea400959b6be3af034cebd0ac4d476b9e651"
+   ]
+  ],
+  "212": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback",
+    "requirements-training.txt",
+    null
+   ]
+  ],
+  "501": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback",
+    "tokenizer_config.json",
+    null
+   ]
+  ],
+  "7935": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT4",
+    "README.md",
+    null
+   ]
+  ],
+  "707": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT4",
+    "added_tokens.json",
+    null
+   ],
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT8",
+    "added_tokens.json",
+    null
+   ]
+  ],
+  "4047": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT4",
+    "chat_template.jinja",
+    null
+   ],
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT8",
+    "chat_template.jinja",
+    null
+   ]
+  ],
+  "1677": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT4",
+    "config.json",
+    null
+   ],
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT8",
+    "config.json",
+    null
+   ]
+  ],
+  "121": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT4",
+    "generation_config.json",
+    null
+   ],
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT8",
+    "generation_config.json",
+    null
+   ]
+  ],
+  "1671853": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT4",
+    "merges.txt",
+    null
+   ],
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT8",
+    "merges.txt",
+    null
+   ]
+  ],
+  "457": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT4",
+    "openvino_config.json",
+    null
+   ],
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT8",
+    "openvino_config.json",
+    null
+   ]
+  ],
+  "2189717": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT4",
+    "openvino_detokenizer.bin",
+    "d73093f72c80ebcaffb76a192727170ecd3c6a06c4df52df0e76b3f70ad9d7f7"
+   ],
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT8",
+    "openvino_detokenizer.bin",
+    "d73093f72c80ebcaffb76a192727170ecd3c6a06c4df52df0e76b3f70ad9d7f7"
+   ]
+  ],
+  "11608": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT4",
+    "openvino_detokenizer.xml",
+    null
+   ],
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT8",
+    "openvino_detokenizer.xml",
+    null
+   ]
+  ],
+  "2277818085": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT4",
+    "openvino_model.bin",
+    "510571582d97301270b7a145a009c035d3a9b93c05f5f03426d4aa4ceadad97a"
+   ]
+  ],
+  "3799191": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT4",
+    "openvino_model.xml",
+    null
+   ]
+  ],
+  "5588835": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT4",
+    "openvino_tokenizer.bin",
+    "0ec3a43a1c100c8ba5cd5618f5aa22328b939cfd2d8c9a7bf7f9327ab877a123"
+   ],
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT8",
+    "openvino_tokenizer.bin",
+    "0ec3a43a1c100c8ba5cd5618f5aa22328b939cfd2d8c9a7bf7f9327ab877a123"
+   ]
+  ],
+  "28602": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT4",
+    "openvino_tokenizer.xml",
+    null
+   ],
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT8",
+    "openvino_tokenizer.xml",
+    null
+   ]
+  ],
+  "293": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT4",
+    "special_tokens_map.json",
+    null
+   ],
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT8",
+    "special_tokens_map.json",
+    null
+   ]
+  ],
+  "5238": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT4",
+    "tokenizer_config.json",
+    null
+   ],
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT8",
+    "tokenizer_config.json",
+    null
+   ]
+  ],
+  "2776833": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT4",
+    "vocab.json",
+    null
+   ],
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT8",
+    "vocab.json",
+    null
+   ]
+  ],
+  "8000": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT8",
+    "README.md",
+    null
+   ]
+  ],
+  "4026830485": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT8",
+    "openvino_model.bin",
+    "edce8c8eef25b4cabfffee16bbf3c4803b124e60ff526d2f30cbd584fcdbb9fb"
+   ]
+  ],
+  "3530989": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenVINO-INT8",
+    "openvino_model.xml",
+    null
+   ]
+  ],
+  "175": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenCodeInstruct-Learning-LoRA",
+    ".hfignore",
+    null
+   ],
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-Agentic-Tessa-1K-LoRA",
+    ".hfignore",
+    null
+   ],
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-Agentic-Tessa-8K-2048-Experimental-LoRA",
+    ".hfignore",
+    null
+   ]
+  ],
+  "6204": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenCodeInstruct-Learning-LoRA",
+    "README.md",
+    null
+   ]
+  ],
+  "836": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenCodeInstruct-Learning-LoRA",
+    "RUN_SUMMARY.md",
+    null
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-german-ggml",
+    "VERIFY.txt",
+    null
+   ]
+  ],
+  "1144": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenCodeInstruct-Learning-LoRA",
+    "adapter_config.json",
+    null
+   ]
+  ],
+  "132187888": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenCodeInstruct-Learning-LoRA",
+    "adapter_model.safetensors",
+    "01178f2d4c6b008a52355a9e56b1c3562762ca787fba64f457ae2a7b4f31cf06"
+   ],
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-Agentic-Tessa-1K-LoRA",
+    "adapter_model.safetensors",
+    "98ded48491637d9d95508ef4c671d6bebc7233223e9bd1de3c4d4011928a463f"
+   ],
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-Agentic-Tessa-8K-2048-Experimental-LoRA",
+    "adapter_model.safetensors",
+    "755c62addb939a5d86835d99c2dfbe991c2eafdcb04e7a482637ae1a89a013f1"
+   ]
+  ],
+  "440": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenCodeInstruct-Learning-LoRA",
+    "benchmark/COMPARISON.md",
+    null
+   ]
+  ],
+  "38057": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenCodeInstruct-Learning-LoRA",
+    "benchmark/after_results.jsonl",
+    null
+   ]
+  ],
+  "607": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenCodeInstruct-Learning-LoRA",
+    "benchmark/after_summary.md",
+    null
+   ]
+  ],
+  "26665": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenCodeInstruct-Learning-LoRA",
+    "benchmark/before_results.jsonl",
+    null
+   ]
+  ],
+  "609": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenCodeInstruct-Learning-LoRA",
+    "benchmark/before_summary.md",
+    null
+   ]
+  ],
+  "1023": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenCodeInstruct-Learning-LoRA",
+    "benchmark/comparison.json",
+    null
+   ]
+  ],
+  "771": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-OpenCodeInstruct-Learning-LoRA",
+    "run_info.json",
+    null
+   ]
+  ],
+  "3903": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-Agentic-Tessa-1K-LoRA",
+    "README.md",
+    null
+   ]
+  ],
+  "1179": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-Agentic-Tessa-1K-LoRA",
+    "adapter_config.json",
+    null
+   ],
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-Agentic-Tessa-8K-2048-Experimental-LoRA",
+    "adapter_config.json",
+    null
+   ]
+  ],
+  "436": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-Agentic-Tessa-1K-LoRA",
+    "benchmark/COMPARISON.md",
+    null
+   ]
+  ],
+  "27706": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-Agentic-Tessa-1K-LoRA",
+    "benchmark/after_results.jsonl",
+    null
+   ]
+  ],
+  "605": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-Agentic-Tessa-1K-LoRA",
+    "benchmark/after_summary.md",
+    null
+   ]
+  ],
+  "26668": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-Agentic-Tessa-1K-LoRA",
+    "benchmark/before_results.jsonl",
+    null
+   ]
+  ],
+  "610": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-Agentic-Tessa-1K-LoRA",
+    "benchmark/before_summary.md",
+    null
+   ]
+  ],
+  "4685": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-Agentic-Tessa-8K-2048-Experimental-LoRA",
+    "README.md",
+    null
+   ]
+  ],
+  "428": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-Agentic-Tessa-8K-2048-Experimental-LoRA",
+    "benchmark/COMPARISON.md",
+    null
+   ]
+  ],
+  "29188": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-Agentic-Tessa-8K-2048-Experimental-LoRA",
+    "benchmark/after_results.jsonl",
+    null
+   ]
+  ],
+  "593": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-Agentic-Tessa-8K-2048-Experimental-LoRA",
+    "benchmark/after_summary.md",
+    null
+   ]
+  ],
+  "28587": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-Agentic-Tessa-8K-2048-Experimental-LoRA",
+    "benchmark/before_results.jsonl",
+    null
+   ]
+  ],
+  "617": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-Agentic-Tessa-8K-2048-Experimental-LoRA",
+    "benchmark/before_summary.md",
+    null
+   ]
+  ],
+  "999": [
+   [
+    "JoaoZaokk/Qwen3-4B-Thinking-2507-Heretic-CodeFeedback-Agentic-Tessa-8K-2048-Experimental-LoRA",
+    "benchmark/comparison.json",
+    null
+   ]
+  ],
+  "10360": [
+   [
+    "JoaoZaokk/fish-s2-pro-ptbr-lora",
+    "LICENSE.md",
+    null
+   ]
+  ],
+  "3207": [
+   [
+    "JoaoZaokk/fish-s2-pro-ptbr-lora",
+    "NOTICE",
+    null
+   ]
+  ],
+  "15331": [
+   [
+    "JoaoZaokk/fish-s2-pro-ptbr-lora",
+    "README.md",
+    null
+   ]
+  ],
+  "42748949": [
+   [
+    "JoaoZaokk/fish-s2-pro-ptbr-lora",
+    "adapters/ptbr-2h-256spk/lora.ckpt",
+    "8f51da117d09764ad349159197b2efb0f20ee84153865913ea754ff37ca21cb7"
+   ],
+   [
+    "JoaoZaokk/fish-s2-pro-ptbr-lora",
+    "adapters/ptbr-2h-46spk/lora.ckpt",
+    "97c432ff7510e131e5948ed8788b4d6964ee5eb40292fea5424d520026abaaaf"
+   ]
+  ],
+  "3628": [
+   [
+    "JoaoZaokk/fish-s2-pro-ptbr-lora",
+    "metrics.json",
+    null
+   ]
+  ],
+  "1639": [
+   [
+    "JoaoZaokk/Qwen3-4B-W4A4-ConvRot",
+    ".gitattributes",
+    null
+   ]
+  ],
+  "13224": [
+   [
+    "JoaoZaokk/Qwen3-4B-W4A4-ConvRot",
+    "README.md",
+    null
+   ]
+  ],
+  "1523825": [
+   [
+    "JoaoZaokk/Qwen3-4B-W4A4-ConvRot",
+    "images/prompt_curto.png",
+    "19193769ae3d626905506aac5ac9f2d90bf7518244921cb3d3b9e145b0ccdf55"
+   ]
+  ],
+  "4286514": [
+   [
+    "JoaoZaokk/Qwen3-4B-W4A4-ConvRot",
+    "images/prompt_longo.png",
+    "b94c65277ecad077f6f04361228e11b1be183f3d7d6a5438454d2b79b0f06987"
+   ]
+  ],
+  "1046": [
+   [
+    "JoaoZaokk/Qwen3-4B-W4A4-ConvRot",
+    "qwen_3_4b_w4a4_convrot.quant.json",
+    null
+   ]
+  ],
+  "2599483696": [
+   [
+    "JoaoZaokk/Qwen3-4B-W4A4-ConvRot",
+    "qwen_3_4b_w4a4_convrot.safetensors",
+    "3efae124fd4117b02d40106081a4e2cab6e829e8259653575f9b54a63b680d48"
+   ]
+  ],
+  "2755": [
+   [
+    "JoaoZaokk/Wan2.1-VACE-1.3B-W4A4-ConvRot",
+    ".gitattributes",
+    null
+   ]
+  ],
+  "13073": [
+   [
+    "JoaoZaokk/Wan2.1-VACE-1.3B-W4A4-ConvRot",
+    "README.md",
+    null
+   ]
+  ],
+  "218716": [
+   [
+    "JoaoZaokk/Wan2.1-VACE-1.3B-W4A4-ConvRot",
+    "images/armadilha_vace_strength_0.0.png",
+    "b821077270f7a8eaad152b3158787d5a81a825ccd8efdc9783ee376b502f84c3"
+   ]
+  ],
+  "357426": [
+   [
+    "JoaoZaokk/Wan2.1-VACE-1.3B-W4A4-ConvRot",
+    "images/armadilha_vace_strength_1.0.png",
+    "891737e3ff29220d02e324dbe7daa7c6ba2cfad1705196d495f570e158bf7d83"
+   ]
+  ],
+  "7350929": [
+   [
+    "JoaoZaokk/Wan2.1-VACE-1.3B-W4A4-ConvRot",
+    "images/ladder_6_sementes_regime_certo.png",
+    "24332224d577e2432d5992cad641795213a68a1b63427dc0aead5042eb465d81"
+   ]
+  ],
+  "1856801": [
+   [
+    "JoaoZaokk/Wan2.1-VACE-1.3B-W4A4-ConvRot",
+    "images/o_regime_errado.png",
+    "2f0e12cf5ee53785563231f776cb620b0d7adb8abca3196d9b27c4b709c90cae"
+   ]
+  ],
+  "297568": [
+   [
+    "JoaoZaokk/Wan2.1-VACE-1.3B-W4A4-ConvRot",
+    "images/s4_fp16_referencia.png",
+    "82c772f02129a9e2b8a37a43211aa7461e9c21837a189b029210d3a29f419b2b"
+   ]
+  ],
+  "297551": [
+   [
+    "JoaoZaokk/Wan2.1-VACE-1.3B-W4A4-ConvRot",
+    "images/s4_misto005_bom.png",
+    "2f2c2bfce58bcdbfec48d5fc5b4606fcbe897a34a274968351ca748273b72356"
+   ]
+  ],
+  "314703": [
+   [
+    "JoaoZaokk/Wan2.1-VACE-1.3B-W4A4-ConvRot",
+    "images/s4_misto015_borrado.png",
+    "63f4cd2882d5140d934835ddc443999e76803ea7e6c276027dc41ff2554d697e"
+   ]
+  ],
+  "309081": [
+   [
+    "JoaoZaokk/Wan2.1-VACE-1.3B-W4A4-ConvRot",
+    "images/s4_w4a4_puro_DESTRUIDO.png",
+    "80c15b3206d418f36e3132bca75e9093834e3b3245943188de2ed8a7b551bf0e"
+   ]
+  ],
+  "301024": [
+   [
+    "JoaoZaokk/Wan2.1-VACE-1.3B-W4A4-ConvRot",
+    "images/s5_fp16_referencia.png",
+    "0f81b148d0c65119436ce0a3d14c76294cc57d1fec8d2e55b9eafcefd8ad8046"
+   ]
+  ],
+  "306721": [
+   [
+    "JoaoZaokk/Wan2.1-VACE-1.3B-W4A4-ConvRot",
+    "images/s5_misto005_bom.png",
+    "afea188b407a7857d0bdd6427c1c0ef592800eb6b2212412c67cbe596067be8f"
+   ]
+  ],
+  "318910": [
+   [
+    "JoaoZaokk/Wan2.1-VACE-1.3B-W4A4-ConvRot",
+    "images/s5_misto015_borrado.png",
+    "af4ef8f8019a421c57256674cc46f0fb17fd0c9fd61066649b2bba0cb1bbeb1a"
+   ]
+  ],
+  "314051": [
+   [
+    "JoaoZaokk/Wan2.1-VACE-1.3B-W4A4-ConvRot",
+    "images/s5_w4a4_puro_DESTRUIDO.png",
+    "ff28eb71155f921bd6cc9e48f300edb6c926d85717504542a9aba2f6104b62fa"
+   ]
+  ],
+  "22796": [
+   [
+    "JoaoZaokk/Wan2.1-VACE-1.3B-W4A4-ConvRot",
+    "wan21-vace-13b-misto005.quant.json",
+    null
+   ]
+  ],
+  "2310437144": [
+   [
+    "JoaoZaokk/Wan2.1-VACE-1.3B-W4A4-ConvRot",
+    "wan21-vace-13b-misto005.safetensors",
+    "212b9111995c80a16c074c566327f6e2c6c4616d3306d5d41a4f7eac0b40a142"
+   ]
+  ],
+  "22534": [
+   [
+    "JoaoZaokk/Wan2.1-VACE-1.3B-W4A4-ConvRot",
+    "wan21-vace-13b-misto015.quant.json",
+    null
+   ]
+  ],
+  "2268833976": [
+   [
+    "JoaoZaokk/Wan2.1-VACE-1.3B-W4A4-ConvRot",
+    "wan21-vace-13b-misto015.safetensors",
+    "043abdd63290f4ffa06e415c547483d2169171f83e9fe93796070242c9c46009"
+   ]
+  ],
+  "22195": [
+   [
+    "JoaoZaokk/Wan2.1-VACE-1.3B-W4A4-ConvRot",
+    "wan21-vace-13b-w4a4.quant.json",
+    null
+   ]
+  ],
+  "2224343584": [
+   [
+    "JoaoZaokk/Wan2.1-VACE-1.3B-W4A4-ConvRot",
+    "wan21-vace-13b-w4a4.safetensors",
+    "3756d3efbdc2b27afd8379c430f872be2bb575a02b4c10df9f344f9404c97bea"
+   ]
+  ],
+  "2131": [
+   [
+    "JoaoZaokk/HunyuanVideo-1.5-720p-T2V-Quantized",
+    ".gitattributes",
+    null
+   ]
+  ],
+  "16424": [
+   [
+    "JoaoZaokk/HunyuanVideo-1.5-720p-T2V-Quantized",
+    "LICENSE_TENCENT_HUNYUANVIDEO15.txt",
+    null
+   ]
+  ],
+  "3026": [
+   [
+    "JoaoZaokk/HunyuanVideo-1.5-720p-T2V-Quantized",
+    "NOTICE.txt",
+    null
+   ]
+  ],
+  "25734": [
+   [
+    "JoaoZaokk/HunyuanVideo-1.5-720p-T2V-Quantized",
+    "NOTICE_TENCENT_HUNYUANVIDEO15.txt",
+    null
+   ]
+  ],
+  "10782": [
+   [
+    "JoaoZaokk/HunyuanVideo-1.5-720p-T2V-Quantized",
+    "README.md",
+    null
+   ]
+  ],
+  "8847634096": [
+   [
+    "JoaoZaokk/HunyuanVideo-1.5-720p-T2V-Quantized",
+    "capybara_v0.1_w4a8r.safetensors",
+    "4317156bea06f76cbb2f8b40c715da063442c52c94c8fb4091e95fa7cb1b1fcc"
+   ]
+  ],
+  "25615": [
+   [
+    "JoaoZaokk/HunyuanVideo-1.5-720p-T2V-Quantized",
+    "hunyuan15-misto-t025.quant.json",
+    null
+   ]
+  ],
+  "8622819672": [
+   [
+    "JoaoZaokk/HunyuanVideo-1.5-720p-T2V-Quantized",
+    "hunyuan15-misto-t025.safetensors",
+    "8c6469e2e92359628602648756d9f5844da569d232fe19833759768514f6a83b"
+   ]
+  ],
+  "25373": [
+   [
+    "JoaoZaokk/HunyuanVideo-1.5-720p-T2V-Quantized",
+    "hunyuan15-misto-t040.quant.json",
+    null
+   ]
+  ],
+  "8539157144": [
+   [
+    "JoaoZaokk/HunyuanVideo-1.5-720p-T2V-Quantized",
+    "hunyuan15-misto-t040.safetensors",
+    "679269440e695185149332e4e40996455e8925d2241a86511e4bb08731fa867e"
+   ]
+  ],
+  "748": [
+   [
+    "JoaoZaokk/HunyuanVideo-1.5-720p-T2V-Quantized",
+    "hv15_w4a8.quant.json",
+    null
+   ]
+  ],
+  "8847567376": [
+   [
+    "JoaoZaokk/HunyuanVideo-1.5-720p-T2V-Quantized",
+    "hv15_w4a8.safetensors",
+    "3ed43444767ecb34339fcdd4b2d9580f6e755dbad40a427e7ca77235a41e76d7"
+   ]
+  ],
+  "733995": [
+   [
+    "JoaoZaokk/HunyuanVideo-1.5-720p-T2V-Quantized",
+    "images/capybara_v0.1__p0_s12345.png",
+    "5c007a3f309e7962b4a5f1fa2900715980e18541c72e62ef8c48d48344ccbc9a"
+   ]
+  ],
+  "722580": [
+   [
+    "JoaoZaokk/HunyuanVideo-1.5-720p-T2V-Quantized",
+    "images/capybara_v0.1_w4a8r__p0_s12345.png",
+    "2b1947cfdf8203ba5134911a5b52d044d88fdaafd0143b3a21dbb32ef88d7c85"
+   ]
+  ],
+  "755": [
+   [
+    "JoaoZaokk/HunyuanVideo-1.5-720p-T2V-Quantized",
+    "images/capybara_w4a8_ladder.json",
+    null
+   ]
+  ],
+  "647413": [
+   [
+    "JoaoZaokk/HunyuanVideo-1.5-720p-T2V-Quantized",
+    "images/fp16_referencia.png",
+    "4f1ec6dfda6b1bd2e82ceb7a96a40c7add4bde9ddfa070c465ba381470278be4"
+   ]
+  ],
+  "721740": [
+   [
+    "JoaoZaokk/HunyuanVideo-1.5-720p-T2V-Quantized",
+    "images/misto_t015.png",
+    "d97ae7c6219e0b3c347e680731ad012c786299c7bcf565ef4f799526afab3714"
+   ]
+  ],
+  "749352": [
+   [
+    "JoaoZaokk/HunyuanVideo-1.5-720p-T2V-Quantized",
+    "images/misto_t021.png",
+    "0199f93ff3a45f2d8cbe2cf5aee38baee492abc921418f962f1aa67c6b79e34b"
+   ]
+  ],
+  "759921": [
+   [
+    "JoaoZaokk/HunyuanVideo-1.5-720p-T2V-Quantized",
+    "images/misto_t022.png",
+    "a0dbc0d4f2ed9f382b5dea63e476f0f9af9fb4ef20bd9fe75c21f90943f0d308"
+   ]
+  ],
+  "949612": [
+   [
+    "JoaoZaokk/HunyuanVideo-1.5-720p-T2V-Quantized",
+    "images/misto_t025_0.1837_correta_granulada.png",
+    "e74de4f1a26764c0dca1ea674a392877dabe2a0bc39a4aa4cf52500b4e18fdb1"
+   ]
+  ],
+  "1214721": [
+   [
+    "JoaoZaokk/HunyuanVideo-1.5-720p-T2V-Quantized",
+    "images/misto_t040_0.2147_DESTRUIDA.png",
+    "2daf285032c7be557a0f77bc72009c9f2f3d3e2210adf08ee7ab7a74f5900485"
+   ]
+  ],
+  "1207918": [
+   [
+    "JoaoZaokk/HunyuanVideo-1.5-720p-T2V-Quantized",
+    "images/w4a4_puro_DESTRUIDO.png",
+    "bcf0a7a143ab2156d965e1ddbded16f3c17b06b686ac07acfc629fc86bd1fb22"
+   ]
+  ],
+  "1901": [
+   [
+    "JoaoZaokk/Beyond-Reality-Z-Image-v2-W4A4-ConvRot",
+    ".gitattributes",
+    null
+   ],
+   [
+    "JoaoZaokk/orukeet-ggml",
+    "README.md",
+    null
+   ],
+   [
+    "JoaoZaokk/whisper-hu-large-v3-turbo-finetuned-ggml",
+    "README.md",
+    null
+   ]
+  ],
+  "10252": [
+   [
+    "JoaoZaokk/Beyond-Reality-Z-Image-v2-W4A4-ConvRot",
+    "README.md",
+    null
+   ]
+  ],
+  "1674281": [
+   [
+    "JoaoZaokk/Beyond-Reality-Z-Image-v2-W4A4-ConvRot",
+    "images/seed1_bf16_referencia.png",
+    "f5b732d53e9bedcaa0e882776c393b00ffd5769ba87e9d2ce713ae9388568fc5"
+   ]
+  ],
+  "1673504": [
+   [
+    "JoaoZaokk/Beyond-Reality-Z-Image-v2-W4A4-ConvRot",
+    "images/seed1_misto.png",
+    "ff32e13e11643637fe8fd0943dd4d32b2af3d1623b1500d6caee41a62ee7d0a3"
+   ]
+  ],
+  "1842062": [
+   [
+    "JoaoZaokk/Beyond-Reality-Z-Image-v2-W4A4-ConvRot",
+    "images/seed1_w4a4_puro.png",
+    "7c3860839e10a99396780fe66d90b5c6fd6fa90a5a940e4d0bf5c5abeae11dd9"
+   ]
+  ],
+  "1457532": [
+   [
+    "JoaoZaokk/Beyond-Reality-Z-Image-v2-W4A4-ConvRot",
+    "images/seed2_bf16_referencia.png",
+    "5d505bc96095f707da898f0c407ec60a65238d895427a6e5f075100adef58cdc"
+   ]
+  ],
+  "1562052": [
+   [
+    "JoaoZaokk/Beyond-Reality-Z-Image-v2-W4A4-ConvRot",
+    "images/seed2_misto.png",
+    "373817ac582be0c1a31725fa650ef7a1ae0cac1ad3504ea73e0f2191b377dbd6"
+   ]
+  ],
+  "1790085": [
+   [
+    "JoaoZaokk/Beyond-Reality-Z-Image-v2-W4A4-ConvRot",
+    "images/seed2_w4a4_puro.png",
+    "db6beb10fcb7d7808c6358293c1300b3b46f919094d31508ebe19a1ee4432b3e"
+   ]
+  ],
+  "10203": [
+   [
+    "JoaoZaokk/Beyond-Reality-Z-Image-v2-W4A4-ConvRot",
+    "zimage-v2-mixed.quant.json",
+    null
+   ]
+  ],
+  "3409277648": [
+   [
+    "JoaoZaokk/Beyond-Reality-Z-Image-v2-W4A4-ConvRot",
+    "zimage-v2-mixed.safetensors",
+    "7ca1925f475c711ef3f6a3cb4d5f00ece0addfd7d4fcd07b30a876cab0046c53"
+   ]
+  ],
+  "10092": [
+   [
+    "JoaoZaokk/Beyond-Reality-Z-Image-v2-W4A4-ConvRot",
+    "zimage-v2-w4a4.quant.json",
+    null
+   ]
+  ],
+  "3290988448": [
+   [
+    "JoaoZaokk/Beyond-Reality-Z-Image-v2-W4A4-ConvRot",
+    "zimage-v2-w4a4.safetensors",
+    "b73978d2426666bfd617089d69cb504dd1a5bb3d5491ac1778ba51ae1c5ba556"
+   ],
+   [
+    "JoaoZaokk/Z-Image-Turbo-W4A4-ConvRot",
+    "zimage_turbo_w4a4.safetensors",
+    "d30f2863881eac3fe92c5c0638a9234871f6cd296c187eb9784e89bccd3c5c0d"
+   ],
+   [
+    "JoaoZaokk/Z-Image-De-Turbo-W4A4-ConvRot",
+    "zimage_deturbo_w4a4.safetensors",
+    "c417dc4922efe9f64ae0612466413f35b2f008aeee10e621441413e31bde0384"
+   ]
+  ],
+  "1346": [
+   [
+    "JoaoZaokk/glm-4-voice-bridge-GLM-4.6V-Flash-alpha",
+    "LICENSE",
+    null
+   ]
+  ],
+  "12056": [
+   [
+    "JoaoZaokk/glm-4-voice-bridge-GLM-4.6V-Flash-alpha",
+    "README.md",
+    null
+   ]
+  ],
+  "6490": [
+   [
+    "JoaoZaokk/glm-4-voice-bridge-GLM-4.6V-Flash-alpha",
+    "licenses/glm-4-voice-LICENSE.txt",
+    null
+   ]
+  ],
+  "6116": [
+   [
+    "JoaoZaokk/glm-4-voice-bridge-GLM-4.6V-Flash-alpha",
+    "logs/epocas10-map-v1-abortado-62k.log",
+    null
+   ]
+  ],
+  "7652": [
+   [
+    "JoaoZaokk/glm-4-voice-bridge-GLM-4.6V-Flash-alpha",
+    "logs/epocas10-map-v2-morto-20k.log",
+    null
+   ]
+  ],
+  "1371": [
+   [
+    "JoaoZaokk/glm-4-voice-bridge-GLM-4.6V-Flash-alpha",
+    "logs/epocas10-map-v2-parcial-20k.json",
+    null
+   ]
+  ],
+  "4586": [
+   [
+    "JoaoZaokk/glm-4-voice-bridge-GLM-4.6V-Flash-alpha",
+    "logs/epocas10-map-v4-completa-87550.json",
+    null
+   ],
+   [
+    "JoaoZaokk/glm-4-voice-bridge-GLM-4.6V-Flash-alpha",
+    "logs/epocas10-random-completa-87550.json",
+    null
+   ]
+  ],
+  "2855": [
+   [
+    "JoaoZaokk/glm-4-voice-bridge-GLM-4.6V-Flash-alpha",
+    "logs/epocas10-map-v4-completa-87550.log",
+    null
+   ]
+  ],
+  "10074": [
+   [
+    "JoaoZaokk/glm-4-voice-bridge-GLM-4.6V-Flash-alpha",
+    "logs/epocas10-random-completa-87550.log",
+    null
+   ]
+  ],
+  "5823": [
+   [
+    "JoaoZaokk/glm-4-voice-bridge-GLM-4.6V-Flash-alpha",
+    "logs/epocas10-shuffled_map-abortado-40k.log",
+    null
+   ]
+  ],
+  "2926": [
+   [
+    "JoaoZaokk/glm-4-voice-bridge-GLM-4.6V-Flash-alpha",
+    "logs/final300-map-20k.json",
+    null
+   ]
+  ],
+  "2914": [
+   [
+    "JoaoZaokk/glm-4-voice-bridge-GLM-4.6V-Flash-alpha",
+    "logs/final300-map-40k.json",
+    null
+   ]
+  ],
+  "29037": [
+   [
+    "JoaoZaokk/glm-4-voice-bridge-GLM-4.6V-Flash-alpha",
+    "logs/ident-011-controle-random.json",
+    null
+   ]
+  ],
+  "29030": [
+   [
+    "JoaoZaokk/glm-4-voice-bridge-GLM-4.6V-Flash-alpha",
+    "logs/ident-011-final.json",
+    null
+   ]
+  ],
+  "28953": [
+   [
+    "JoaoZaokk/glm-4-voice-bridge-GLM-4.6V-Flash-alpha",
+    "logs/ident-011-piso.json",
+    null
+   ]
+  ],
+  "524580": [
+   [
+    "JoaoZaokk/glm-4-voice-bridge-GLM-4.6V-Flash-alpha",
+    "pontes/cv-pt-map-r16-10ep-40k.safetensors",
+    "2ff3d16b68d2d78b16866b25610b72628e08499fe6a55b0a9436b0913407e398"
+   ],
+   [
+    "JoaoZaokk/glm-4-voice-bridge-GLM-4.6V-Flash-alpha",
+    "pontes/cv-pt-map-r16-10ep-final-87550.safetensors",
+    "e024739bdd12250ed2e0feaaef246bf313ceef0a5db05daeed914b9c460848c5"
+   ],
+   [
+    "JoaoZaokk/glm-4-voice-bridge-GLM-4.6V-Flash-alpha",
+    "pontes/cv-pt-map-r16-10ep-parcial-20k.safetensors",
+    "593d43ae5484575facf978db72af35c6468c1d9e4c405681588740d9afdabb79"
+   ],
+   [
+    "JoaoZaokk/glm-4-voice-bridge-GLM-4.6V-Flash-alpha",
+    "pontes/cv-pt-map-r16-12k.safetensors",
+    "2379884b6e27179c03c569074d4008b9e3660ae24f399eb447a78683dd9c687a"
+   ]
+  ],
+  "524588": [
+   [
+    "JoaoZaokk/glm-4-voice-bridge-GLM-4.6V-Flash-alpha",
+    "pontes/cv-pt-random-r16-10ep-final-87550.safetensors",
+    "d253b6caf279ca02009c0cd1f92cf49c56e1fde2626ff233dfe25d703383027a"
+   ]
+  ],
+  "7984": [
+   [
+    "JoaoZaokk/glm-4-voice-bridge-GLM-4.6V-Flash-alpha",
+    "relatorios/G2-voice-etapa0-008.md",
+    null
+   ]
+  ],
+  "6391": [
+   [
+    "JoaoZaokk/glm-4-voice-bridge-GLM-4.6V-Flash-alpha",
+    "relatorios/G2-voice-etapa0-009.md",
+    null
+   ]
+  ],
+  "9125": [
+   [
+    "JoaoZaokk/glm-4-voice-bridge-GLM-4.6V-Flash-alpha",
+    "relatorios/G2-voice-etapa0-010.md",
+    null
+   ]
+  ],
+  "15497": [
+   [
+    "JoaoZaokk/glm-4-voice-bridge-GLM-4.6V-Flash-alpha",
+    "relatorios/G2-voice-etapa0-011.md",
+    null
+   ]
+  ],
+  "7733": [
+   [
+    "JoaoZaokk/glm-4-voice-bridge-GLM-4.6V-Flash-alpha",
+    "scripts/g2_voice_etapa0_tables.py",
+    null
+   ]
+  ],
+  "27865": [
+   [
+    "JoaoZaokk/glm-4-voice-bridge-GLM-4.6V-Flash-alpha",
+    "scripts/g2_voice_etapa1_asr.py",
+    null
+   ]
+  ],
+  "10796": [
+   [
+    "JoaoZaokk/glm-4-voice-bridge-GLM-4.6V-Flash-alpha",
+    "scripts/g2_voice_etapa1_ident.py",
+    null
+   ]
+  ],
+  "5103": [
+   [
+    "JoaoZaokk/glm-4-voice-bridge-GLM-4.6V-Flash-alpha",
+    "scripts/g2_voice_etapa1_tokenize.py",
+    null
+   ]
+  ],
+  "1769": [
+   [
+    "JoaoZaokk/Gemma-3-12B-it-Heretic-W4A8",
+    ".gitattributes",
+    null
+   ]
+  ],
+  "10041": [
+   [
+    "JoaoZaokk/Gemma-3-12B-it-Heretic-W4A8",
+    "README.md",
+    null
+   ]
+  ],
+  "742": [
+   [
+    "JoaoZaokk/Gemma-3-12B-it-Heretic-W4A8",
+    "gemma_3_12B_it_heretic_w4a8.quant.json",
+    null
+   ]
+  ],
+  "8089619138": [
+   [
+    "JoaoZaokk/Gemma-3-12B-it-Heretic-W4A8",
+    "gemma_3_12B_it_heretic_w4a8.safetensors",
+    "7fa24d7e148cc93afa76cd15202f610a07a886b225b6255671831fe6f3226e04"
+   ]
+  ],
+  "6136": [
+   [
+    "JoaoZaokk/Gemma-3-12B-it-Heretic-W4A8",
+    "ltx23_encoder_test/conditioning_vs_bf16.json",
+    null
+   ]
+  ],
+  "2256": [
+   [
+    "JoaoZaokk/Gemma-3-12B-it-Heretic-W4A8",
+    "ltx23_encoder_test/heretic_vs_factory_comparacao_av.json",
+    null
+   ]
+  ],
+  "538210": [
+   [
+    "JoaoZaokk/Gemma-3-12B-it-Heretic-W4A8",
+    "ltx23_encoder_test/heretic_vs_factory_contato_av.png",
+    "d4627b9cdf274865e1cf78e9b4d6bd56f6f59a878a4cfb57b8f7d830fe0277f3"
+   ]
+  ],
+  "5521": [
+   [
+    "JoaoZaokk/Gemma-3-12B-it-Heretic-W4A8",
+    "ltx23_encoder_test/locked_render_comparacao_av.json",
+    null
+   ]
+  ],
+  "1362987": [
+   [
+    "JoaoZaokk/Gemma-3-12B-it-Heretic-W4A8",
+    "ltx23_encoder_test/locked_render_contato_av.png",
+    "540608dbc12424bb284646d7fa7ae41b336b833a7cabdd268814759b392a6998"
+   ]
+  ],
+  "4397": [
+   [
+    "JoaoZaokk/Gemma-3-12B-it-Heretic-W4A8",
+    "ltx23_encoder_test/render_comparacao_av.json",
+    null
+   ]
+  ],
+  "1093794": [
+   [
+    "JoaoZaokk/Gemma-3-12B-it-Heretic-W4A8",
+    "ltx23_encoder_test/render_contato_av.png",
+    "8a3fd09e464d8f6afaf3b3a939bb13b35e5e38da7f2fffea1a770ba16575e6f9"
+   ]
+  ],
+  "1060": [
+   [
+    "JoaoZaokk/Gemma-3-12B-it-Heretic-W4A8",
+    "w4a4/gemma_3_12B_it_heretic_w4a4_convrot.quant.json",
+    null
+   ]
+  ],
+  "7417110666": [
+   [
+    "JoaoZaokk/Gemma-3-12B-it-Heretic-W4A8",
+    "w4a4/gemma_3_12B_it_heretic_w4a4_convrot.safetensors",
+    "515c3b5a2b6c735e1093b1ebcc79cea5b316237d78fad98b8ea777b73ec0bbd7"
+   ]
+  ],
+  "1198": [
+   [
+    "JoaoZaokk/Gemma-3-12B-it-Heretic-W4A8",
+    "w4a4/gemma_3_12B_it_heretic_w4a4_smooth.quant.json",
+    null
+   ]
+  ],
+  "7417110698": [
+   [
+    "JoaoZaokk/Gemma-3-12B-it-Heretic-W4A8",
+    "w4a4/gemma_3_12B_it_heretic_w4a4_smooth.safetensors",
+    "09982cfd6322bd1b95d17290414d4d85698c0cf1de99f20f47e47a88f54bbf3d"
+   ]
+  ],
+  "4078": [
+   [
+    "JoaoZaokk/Qwen2.5-VL-7B-W4A4-ConvRot",
+    "README.md",
+    null
+   ]
+  ],
+  "1058": [
+   [
+    "JoaoZaokk/Qwen2.5-VL-7B-W4A4-ConvRot",
+    "qwen_2.5_vl_7b_w4a4_convrot.quant.json",
+    null
+   ]
+  ],
+  "6802084504": [
+   [
+    "JoaoZaokk/Qwen2.5-VL-7B-W4A4-ConvRot",
+    "qwen_2.5_vl_7b_w4a4_convrot.safetensors",
+    "3db3a47eff36045a3a802700494a8e1a5dd4dffac678c9d7182f6f9d6d5a61a9"
+   ]
+  ],
+  "1749": [
+   [
+    "JoaoZaokk/Z-Image-Turbo-W4A4-ConvRot",
+    ".gitattributes",
+    null
+   ]
+  ],
+  "6147": [
+   [
+    "JoaoZaokk/Z-Image-Turbo-W4A4-ConvRot",
+    "README.md",
+    null
+   ]
+  ],
+  "2215865": [
+   [
+    "JoaoZaokk/Z-Image-Turbo-W4A4-ConvRot",
+    "images/grid_seed1.png",
+    "1ccdcea1d1acfbcca9245b51dfc218abb9ec04948fa6ebcfe0626c3cb981682f"
+   ]
+  ],
+  "1906068": [
+   [
+    "JoaoZaokk/Z-Image-Turbo-W4A4-ConvRot",
+    "images/sign_bf16.png",
+    "18f2da72bfe5e54737249e6fa29e21f94bb2242cb03d391ce5eea0d2d5d81888"
+   ]
+  ],
+  "1895181": [
+   [
+    "JoaoZaokk/Z-Image-Turbo-W4A4-ConvRot",
+    "images/sign_mixed.png",
+    "92b472e94a2263219e5470afa3932fc59341062aa71d4561f37776d27ee88333"
+   ]
+  ],
+  "1787365": [
+   [
+    "JoaoZaokk/Z-Image-Turbo-W4A4-ConvRot",
+    "images/sign_w4a4.png",
+    "b415ce06e7d0a1b47dd991b2ad78fcd2bf25b0570b337c8a65cde3dfd3faf15d"
+   ]
+  ],
+  "10721": [
+   [
+    "JoaoZaokk/Z-Image-Turbo-W4A4-ConvRot",
+    "zimage_turbo_mixed.quant.json",
+    null
+   ]
+  ],
+  "3409892688": [
+   [
+    "JoaoZaokk/Z-Image-Turbo-W4A4-ConvRot",
+    "zimage_turbo_mixed.safetensors",
+    "abc68440e86c63ec9001f95b1862ef6d398436753c4d48f941e94bcb47acc459"
+   ]
+  ],
+  "10605": [
+   [
+    "JoaoZaokk/Z-Image-Turbo-W4A4-ConvRot",
+    "zimage_turbo_w4a4.quant.json",
+    null
+   ]
+  ],
+  "1761": [
+   [
+    "JoaoZaokk/Z-Image-De-Turbo-W4A4-ConvRot",
+    ".gitattributes",
+    null
+   ]
+  ],
+  "4525": [
+   [
+    "JoaoZaokk/Z-Image-De-Turbo-W4A4-ConvRot",
+    "README.md",
+    null
+   ]
+  ],
+  "2075686": [
+   [
+    "JoaoZaokk/Z-Image-De-Turbo-W4A4-ConvRot",
+    "images/grid_seed1.png",
+    "eaafdb835c6278bb4b3fa0719b974b844c393e563e56e104936a227d0a9c63af"
+   ]
+  ],
+  "1242474": [
+   [
+    "JoaoZaokk/Z-Image-De-Turbo-W4A4-ConvRot",
+    "images/portrait_bf16.png",
+    "5249517136427a712dd9d21743ed8379eeb701e2d5eb067c43f72a6836ba12a5"
+   ]
+  ],
+  "1256564": [
+   [
+    "JoaoZaokk/Z-Image-De-Turbo-W4A4-ConvRot",
+    "images/portrait_mixed.png",
+    "457ad7a283594185eed8ad566c47862bb71e7e00134875cd452ac49d454ec066"
+   ]
+  ],
+  "1344796": [
+   [
+    "JoaoZaokk/Z-Image-De-Turbo-W4A4-ConvRot",
+    "images/portrait_w4a4.png",
+    "1c74b1c43f0e4f411515a6a1997a3ca764ed83569f8ebcf3912740b5bd81f8fe"
+   ]
+  ],
+  "10728": [
+   [
+    "JoaoZaokk/Z-Image-De-Turbo-W4A4-ConvRot",
+    "zimage_deturbo_mixed.quant.json",
+    null
+   ]
+  ],
+  "3402826136": [
+   [
+    "JoaoZaokk/Z-Image-De-Turbo-W4A4-ConvRot",
+    "zimage_deturbo_mixed.safetensors",
+    "494213ad75c50ca63fd68ed638329eecacea2927565cfd8a8a5109a1f87bea97"
+   ]
+  ],
+  "10619": [
+   [
+    "JoaoZaokk/Z-Image-De-Turbo-W4A4-ConvRot",
+    "zimage_deturbo_w4a4.quant.json",
+    null
+   ]
+  ],
+  "1964": [
+   [
+    "JoaoZaokk/parakeet-tdt-0.6b-v2-ggml",
+    "README.md",
+    null
+   ]
+  ],
+  "23599": [
+   [
+    "JoaoZaokk/parakeet-tdt-0.6b-v2-ggml",
+    "UPSTREAM-README.md",
+    null
+   ]
+  ],
+  "1396": [
+   [
+    "JoaoZaokk/parakeet-tdt-0.6b-v2-ggml",
+    "VERIFY.txt",
+    null
+   ]
+  ],
+  "1237448348": [
+   [
+    "JoaoZaokk/parakeet-tdt-0.6b-v2-ggml",
+    "ggml-parakeet-tdt-0.6b-v2-f16.bin",
+    "1af0aed998520343d0f9b9b96b3b351accccb2d87a53c98f08015c5b408256cd"
+   ]
+  ],
+  "350355828": [
+   [
+    "JoaoZaokk/parakeet-tdt-0.6b-v2-ggml",
+    "ggml-parakeet-tdt-0.6b-v2-q4_0.bin",
+    "177dc926c2b6c14a34c167f740042275a300f0f0f910aa3934bb368ea2089e2b"
+   ]
+  ],
+  "427494308": [
+   [
+    "JoaoZaokk/parakeet-tdt-0.6b-v2-ggml",
+    "ggml-parakeet-tdt-0.6b-v2-q5_0.bin",
+    "f2d2b6eabaf77c8c67109e365db72fc4e20d69b52d1af184f3211ec7c530ae04"
+   ]
+  ],
+  "658909748": [
+   [
+    "JoaoZaokk/parakeet-tdt-0.6b-v2-ggml",
+    "ggml-parakeet-tdt-0.6b-v2-q8_0.bin",
+    "668e1daca59c7a7b0c5072624e5c4abf99b84b60cee29cf2d0c82f1c9b97baa2"
+   ]
+  ],
+  "2171": [
+   [
+    "JoaoZaokk/parakeet-tdt-0.6b-v3-ggml",
+    "README.md",
+    null
+   ]
+  ],
+  "1255897319": [
+   [
+    "JoaoZaokk/parakeet-tdt-0.6b-v3-ggml",
+    "ggml-parakeet-tdt-0.6b-v3-f16.bin",
+    "833bffc9513b2cae867ee9e51633cfd11e4d51aaa5597c8ac02159385a2b426f"
+   ],
+   [
+    "JoaoZaokk/orukeet-ggml",
+    "ggml-orukeet-f16.bin",
+    "da0eaeb20761b9ec48a51873fd31c40370da81031e4d5caf0fd0b03b378b34e2"
+   ]
+  ],
+  "355615679": [
+   [
+    "JoaoZaokk/parakeet-tdt-0.6b-v3-ggml",
+    "ggml-parakeet-tdt-0.6b-v3-q4_0.bin",
+    "8c9040ced595471a2f2c7a1c7c97ef1b465b3dffee1f23f9f6bd3c260899702a"
+   ],
+   [
+    "JoaoZaokk/orukeet-ggml",
+    "ggml-orukeet-q4_0.bin",
+    "4da777774cf1720442d82560df3ca4a02e8295767a43010077e46e66ab93724f"
+   ]
+  ],
+  "433901039": [
+   [
+    "JoaoZaokk/parakeet-tdt-0.6b-v3-ggml",
+    "ggml-parakeet-tdt-0.6b-v3-q5_0.bin",
+    "496c05e5ec93731fa70770ab7374c1aa0f2f0dd96885702c9a4091078d4018f2"
+   ],
+   [
+    "JoaoZaokk/orukeet-ggml",
+    "ggml-orukeet-q5_0.bin",
+    "5df30706701245d583e826f6bd734dcfca365283315f33adcce995cb832f30cd"
+   ]
+  ],
+  "668757119": [
+   [
+    "JoaoZaokk/parakeet-tdt-0.6b-v3-ggml",
+    "ggml-parakeet-tdt-0.6b-v3-q8_0.bin",
+    "ea8000f18ae5d347f47973ff0517f673c7a9d65711d6bb6765ef3b20e4baadf5"
+   ],
+   [
+    "JoaoZaokk/orukeet-ggml",
+    "ggml-orukeet-q8_0.bin",
+    "46ee7e4b7e5ec1e9870e4004027849f74508fb9aaacf0e22786a396c378d5c6a"
+   ]
+  ],
+  "1908": [
+   [
+    "JoaoZaokk/nemotron-3.5-asr-streaming-0.6b-gguf",
+    ".gitattributes",
+    null
+   ]
+  ],
+  "2393": [
+   [
+    "JoaoZaokk/nemotron-3.5-asr-streaming-0.6b-gguf",
+    "README.md",
+    null
+   ]
+  ],
+  "1078": [
+   [
+    "JoaoZaokk/nemotron-3.5-asr-streaming-0.6b-gguf",
+    "VERIFY.txt",
+    null
+   ]
+  ],
+  "1484324992": [
+   [
+    "JoaoZaokk/nemotron-3.5-asr-streaming-0.6b-gguf",
+    "nemotron-3.5-asr-streaming-0.6b-f16.gguf",
+    "b64413c3886edf2b45eb3e757f911f1bc8020b7cf157622cd0bd0452c6d84aac"
+   ]
+  ],
+  "718102624": [
+   [
+    "JoaoZaokk/nemotron-3.5-asr-streaming-0.6b-gguf",
+    "nemotron-3.5-asr-streaming-0.6b-q4_k.gguf",
+    "b123293cdac615d44549fbb4a6756c94b7ce5772d099f71d881d401ef96a278c"
+   ]
+  ],
+  "784801888": [
+   [
+    "JoaoZaokk/nemotron-3.5-asr-streaming-0.6b-gguf",
+    "nemotron-3.5-asr-streaming-0.6b-q5_k.gguf",
+    "ec99e8338f62311d7ac95f15d638989ad30ce6fd1d21eb61330a8f5ae2ae89d5"
+   ]
+  ],
+  "855669856": [
+   [
+    "JoaoZaokk/nemotron-3.5-asr-streaming-0.6b-gguf",
+    "nemotron-3.5-asr-streaming-0.6b-q6_k.gguf",
+    "7b9b9b4ac1938d51fca7563c82fd6d69fa427319e69498116f34ffdf3efd94b7"
+   ]
+  ],
+  "983696480": [
+   [
+    "JoaoZaokk/nemotron-3.5-asr-streaming-0.6b-gguf",
+    "nemotron-3.5-asr-streaming-0.6b-q8_0.gguf",
+    "0fe1f6dfcded95ca761a03ae411cc05050653cb19e85c28b5a16cdc42946e631"
+   ]
+  ],
+  "1907": [
+   [
+    "JoaoZaokk/ivrit-whisper-large-v3-turbo-ggml",
+    "README.md",
+    null
+   ]
+  ],
+  "215": [
+   [
+    "JoaoZaokk/ivrit-whisper-large-v3-turbo-ggml",
+    "UPSTREAM-README.md",
+    null
+   ]
+  ],
+  "1853": [
+   [
+    "JoaoZaokk/ivrit-whisper-large-v3-turbo-ggml",
+    "VERIFY.txt",
+    null
+   ]
+  ],
+  "1975": [
+   [
+    "JoaoZaokk/whisper-large-v3-finnish-ggml",
+    "README.md",
+    null
+   ]
+  ],
+  "2508": [
+   [
+    "JoaoZaokk/whisper-large-v3-finnish-ggml",
+    "UPSTREAM-README.md",
+    null
+   ]
+  ],
+  "1741": [
+   [
+    "JoaoZaokk/whisper-large-v3-finnish-ggml",
+    "VERIFY.txt",
+    null
+   ]
+  ],
+  "3095033483": [
+   [
+    "JoaoZaokk/whisper-large-v3-finnish-ggml",
+    "ggml-whisper-large-v3-finnish-f16.bin",
+    "89536e66c7b521189b55cd010c71faf50c447d281a38cf3f6ba616a5f4b78d2e"
+   ]
+  ],
+  "889340843": [
+   [
+    "JoaoZaokk/whisper-large-v3-finnish-ggml",
+    "ggml-whisper-large-v3-finnish-q4_0.bin",
+    "99cb766d23d9168fc72a3ccb3517bb9fe9c98d65aca0b5f145304799862141bb"
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-vaani-hindi-ggml",
+    "ggml-whisper-large-v3-vaani-hindi-q4_0.bin",
+    "436c0e440c789b210700f5d57db4f7af470a5de67eeb92c5682b78b4ae3c52a4"
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-turkish-general-ggml",
+    "ggml-whisper-large-v3-turkish-general-q4_0.bin",
+    "155d727505dd91cefe5c01c9d764fdf8704226776118e090f9fc2412716b6c93"
+   ],
+   [
+    "JoaoZaokk/kb-whisper-large-ggml",
+    "ggml-kb-whisper-large-q4_0.bin",
+    "6448cc544de3a530fc153a6343df0971a21d0eed07ee187d6b9b2fc4852b5581"
+   ]
+  ],
+  "1081140203": [
+   [
+    "JoaoZaokk/whisper-large-v3-finnish-ggml",
+    "ggml-whisper-large-v3-finnish-q5_0.bin",
+    "7c7a5cc5064ca96dc73cfa164c9044d87ee843b8782fc69040b6330569f12b9f"
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-vaani-hindi-ggml",
+    "ggml-whisper-large-v3-vaani-hindi-q5_0.bin",
+    "c016cde18a36eaa285c238b7929c3c3f457f62a2dd12765d563df18d600374e7"
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-turkish-general-ggml",
+    "ggml-whisper-large-v3-turkish-general-q5_0.bin",
+    "d4c8894a0c46c0ee5ef067ae981b415c7683721c52b2bc54308895a8f7f240eb"
+   ],
+   [
+    "JoaoZaokk/kb-whisper-large-ggml",
+    "ggml-kb-whisper-large-q5_0.bin",
+    "6d2863812d7410322bb7d8647a5c7260761300fa946714c9ed66d22bb30bcb19"
+   ]
+  ],
+  "1656538283": [
+   [
+    "JoaoZaokk/whisper-large-v3-finnish-ggml",
+    "ggml-whisper-large-v3-finnish-q8_0.bin",
+    "be973f96cf9520269473c8987a3028139d2820eb73fff7bcb84cc79a1cbbfb97"
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-vaani-hindi-ggml",
+    "ggml-whisper-large-v3-vaani-hindi-q8_0.bin",
+    "38b4e109ca16430050667d4e26e49472e14ec37f3f20f1e27fb98b8bee633b2d"
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-turkish-general-ggml",
+    "ggml-whisper-large-v3-turkish-general-q8_0.bin",
+    "01c59ed6e5c90abc99313b91d43dbe6a0a9cbea23d0052aea271b8ab8418125b"
+   ],
+   [
+    "JoaoZaokk/kb-whisper-large-ggml",
+    "ggml-kb-whisper-large-q8_0.bin",
+    "339d086f52e4f5752647ce6bf67cc02cebf197703a5ce4cc2f4252b0c47b38d8"
+   ]
+  ],
+  "13115": [
+   [
+    "JoaoZaokk/orukeet-ggml",
+    "UPSTREAM-README.md",
+    null
+   ]
+  ],
+  "1500": [
+   [
+    "JoaoZaokk/orukeet-ggml",
+    "VERIFY.txt",
+    null
+   ]
+  ],
+  "1929": [
+   [
+    "JoaoZaokk/parakeet-tdt-1.1b-ggml",
+    "README.md",
+    null
+   ]
+  ],
+  "12391": [
+   [
+    "JoaoZaokk/parakeet-tdt-1.1b-ggml",
+    "UPSTREAM-README.md",
+    null
+   ]
+  ],
+  "235": [
+   [
+    "JoaoZaokk/parakeet-tdt-1.1b-ggml",
+    "VERIFY.txt",
+    null
+   ]
+  ],
+  "2145221814": [
+   [
+    "JoaoZaokk/parakeet-tdt-1.1b-ggml",
+    "ggml-parakeet-tdt-1.1b-f16.bin",
+    "0f74197dca8668af13dbfdb251edc487dc7156c7acd35292451ecd4814f7c15c"
+   ]
+  ],
+  "609224590": [
+   [
+    "JoaoZaokk/parakeet-tdt-1.1b-ggml",
+    "ggml-parakeet-tdt-1.1b-q4_0.bin",
+    "e89b12cbc918c36e7ed3fdcf9aa0464cabc1aa389ccc929b513aeeb6aa5c0252"
+   ]
+  ],
+  "742789566": [
+   [
+    "JoaoZaokk/parakeet-tdt-1.1b-ggml",
+    "ggml-parakeet-tdt-1.1b-q5_0.bin",
+    "54c89b4654a7ab6b4f1c922f7f81793e7b12ef264c5c356da8e58d42a6d94ed3"
+   ]
+  ],
+  "1143484494": [
+   [
+    "JoaoZaokk/parakeet-tdt-1.1b-ggml",
+    "ggml-parakeet-tdt-1.1b-q8_0.bin",
+    "0f3237affada01a1f3bf22e0582c3b79f79a21ac165fd179384ffbe91a3f4d14"
+   ]
+  ],
+  "1893": [
+   [
+    "JoaoZaokk/distil-whisper-large-v3-ptbr-ggml",
+    "README.md",
+    null
+   ]
+  ],
+  "2407": [
+   [
+    "JoaoZaokk/distil-whisper-large-v3-ptbr-ggml",
+    "UPSTREAM-README.md",
+    null
+   ]
+  ],
+  "1573": [
+   [
+    "JoaoZaokk/distil-whisper-large-v3-ptbr-ggml",
+    "VERIFY.txt",
+    null
+   ]
+  ],
+  "1519521155": [
+   [
+    "JoaoZaokk/distil-whisper-large-v3-ptbr-ggml",
+    "ggml-distil-whisper-large-v3-ptbr-f16.bin",
+    "01a9beecc56a9695ecacf07d0252c59e21055b2d609de994b09a511f72428a97"
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-distil-it-v0.2-ggml",
+    "ggml-whisper-large-v3-distil-it-v0.2-f16.bin",
+    "25376cefca437d0fb66688b50fee20bc6fb9e9ec98214ab493558928ffaf8ac0"
+   ],
+   [
+    "JoaoZaokk/kotoba-whisper-v2.0-ggml",
+    "ggml-kotoba-whisper-v2.0-f16.bin",
+    "eff70a8a236e731abba774ba71e1f6d0fce53302137208c32207e694e0bf4546"
+   ]
+  ],
+  "444324515": [
+   [
+    "JoaoZaokk/distil-whisper-large-v3-ptbr-ggml",
+    "ggml-distil-whisper-large-v3-ptbr-q4_0.bin",
+    "f19f9ea48d52c345811fa8963c866626fa28bd66750146d539268a8cbd412c4d"
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-distil-it-v0.2-ggml",
+    "ggml-whisper-large-v3-distil-it-v0.2-q4_0.bin",
+    "de14b7f085cfbffe69b53ac8a4af25fd914ca67c13529cb5a118b1d4fb3d3b44"
+   ],
+   [
+    "JoaoZaokk/kotoba-whisper-v2.0-ggml",
+    "ggml-kotoba-whisper-v2.0-q4_0.bin",
+    "0c354841b6aae62abecd99fb4cbfb44662351ff31798ec0cd73eb615dd5f3a02"
+   ]
+  ],
+  "537819875": [
+   [
+    "JoaoZaokk/distil-whisper-large-v3-ptbr-ggml",
+    "ggml-distil-whisper-large-v3-ptbr-q5_0.bin",
+    "48be4c4f134d323f5cf10171e10ca0729a93613bcb3fba8dd36cf68e5a843a81"
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-distil-it-v0.2-ggml",
+    "ggml-whisper-large-v3-distil-it-v0.2-q5_0.bin",
+    "78859adfcac034b046ee4a7851e6765ee8830207e3b92e1ea02102678376e9cf"
+   ],
+   [
+    "JoaoZaokk/kotoba-whisper-v2.0-ggml",
+    "ggml-kotoba-whisper-v2.0-q5_0.bin",
+    "4a3b92192b5d3578ff854a5876213e2e27af0c2d357492c2d14271e82c303658"
+   ]
+  ],
+  "818305955": [
+   [
+    "JoaoZaokk/distil-whisper-large-v3-ptbr-ggml",
+    "ggml-distil-whisper-large-v3-ptbr-q8_0.bin",
+    "4ec2198a1b16f3dc8365dac8bde05dda4f39b8f71e9dbcafb01877cfda926c19"
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-distil-it-v0.2-ggml",
+    "ggml-whisper-large-v3-distil-it-v0.2-q8_0.bin",
+    "4c020c7ded3a063dd34d5e8578ec40b3d7a3c062d68dad75443553126f56537c"
+   ],
+   [
+    "JoaoZaokk/kotoba-whisper-v2.0-ggml",
+    "ggml-kotoba-whisper-v2.0-q8_0.bin",
+    "c4071b2f8f0129d463c6c7fd2e72c82f7276f9882a8f9cd9474e0c2b699100c4"
+   ]
+  ],
+  "1266": [
+   [
+    "JoaoZaokk/distil-whisper-large-v3-ptbr-ggml",
+    "upstream-config.json",
+    null
+   ]
+  ],
+  "1923": [
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-latam-ggml",
+    "README.md",
+    null
+   ]
+  ],
+  "15514": [
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-latam-ggml",
+    "UPSTREAM-README.md",
+    null
+   ]
+  ],
+  "1591": [
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-latam-ggml",
+    "VERIFY.txt",
+    null
+   ]
+  ],
+  "1199": [
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-latam-ggml",
+    "upstream-config.json",
+    null
+   ]
+  ],
+  "1950": [
+   [
+    "JoaoZaokk/whisper-large-v3-distil-it-v0.2-ggml",
+    "README.md",
+    null
+   ]
+  ],
+  "15907": [
+   [
+    "JoaoZaokk/whisper-large-v3-distil-it-v0.2-ggml",
+    "UPSTREAM-README.md",
+    null
+   ]
+  ],
+  "1249": [
+   [
+    "JoaoZaokk/whisper-large-v3-distil-it-v0.2-ggml",
+    "upstream-config.json",
+    null
+   ],
+   [
+    "JoaoZaokk/whisper-large-v3-vaani-hindi-ggml",
+    "upstream-config.json",
+    null
+   ]
+  ],
+  "1940": [
+   [
+    "JoaoZaokk/Belle-whisper-large-v3-turbo-zh-ggml",
+    "README.md",
+    null
+   ]
+  ],
+  "3009": [
+   [
+    "JoaoZaokk/Belle-whisper-large-v3-turbo-zh-ggml",
+    "UPSTREAM-README.md",
+    null
+   ]
+  ],
+  "1603": [
+   [
+    "JoaoZaokk/Belle-whisper-large-v3-turbo-zh-ggml",
+    "VERIFY.txt",
+    null
+   ]
+  ],
+  "1256": [
+   [
+    "JoaoZaokk/Belle-whisper-large-v3-turbo-zh-ggml",
+    "upstream-config.json",
+    null
+   ]
+  ],
+  "1856": [
+   [
+    "JoaoZaokk/kotoba-whisper-v2.0-ggml",
+    "README.md",
+    null
+   ]
+  ],
+  "24245": [
+   [
+    "JoaoZaokk/kotoba-whisper-v2.0-ggml",
+    "UPSTREAM-README.md",
+    null
+   ]
+  ],
+  "1310": [
+   [
+    "JoaoZaokk/kotoba-whisper-v2.0-ggml",
+    "VERIFY.txt",
+    null
+   ]
+  ],
+  "1287": [
+   [
+    "JoaoZaokk/kotoba-whisper-v2.0-ggml",
+    "upstream-config.json",
+    null
+   ]
+  ],
+  "1706": [
+   [
+    "JoaoZaokk/Qwen-Image-Edit-2511-W4A8-ConvRot",
+    ".gitattributes",
+    null
+   ]
+  ],
+  "19718": [
+   [
+    "JoaoZaokk/Qwen-Image-Edit-2511-W4A8-ConvRot",
+    "README.md",
+    null
+   ]
+  ],
+  "2096185": [
+   [
+    "JoaoZaokk/Qwen-Image-Edit-2511-W4A8-ConvRot",
+    "images/grade_falhas.png",
+    "3eb72de7680e7b24e3451d09d016d16d29340ee72c76e17da125694837ebc1eb"
+   ]
+  ],
+  "1843590": [
+   [
+    "JoaoZaokk/Qwen-Image-Edit-2511-W4A8-ConvRot",
+    "images/grade_w4a8.png",
+    "692c5d89655b9f7d1a9b83bf34f6b2a3b714cc7aa3deb93441f0ba322838db06"
+   ]
+  ],
+  "3328430": [
+   [
+    "JoaoZaokk/Qwen-Image-Edit-2511-W4A8-ConvRot",
+    "images/lora_lightning_4steps.png",
+    "3de4ba84f4745c265e4cb8717966017ad73d0edd11d748a79c7815ce2e1d0f6e"
+   ]
+  ],
+  "54011": [
+   [
+    "JoaoZaokk/Qwen-Image-Edit-2511-W4A8-ConvRot",
+    "qwen_image_edit_2511_w4a8.quant.json",
+    null
+   ]
+  ],
+  "11581151872": [
+   [
+    "JoaoZaokk/Qwen-Image-Edit-2511-W4A8-ConvRot",
+    "qwen_image_edit_2511_w4a8.safetensors",
+    "48a1b22197e34f72cece91f6e7b096c43715668c2854f07cf2a9419a32e7b654"
+   ]
+  ],
+  "1859": [
+   [
+    "JoaoZaokk/whisper-podlodka-turbo-ggml",
+    "README.md",
+    null
+   ]
+  ],
+  "30560": [
+   [
+    "JoaoZaokk/whisper-podlodka-turbo-ggml",
+    "UPSTREAM-README.md",
+    null
+   ]
+  ],
+  "1559": [
+   [
+    "JoaoZaokk/whisper-podlodka-turbo-ggml",
+    "VERIFY.txt",
+    null
+   ]
+  ],
+  "1252": [
+   [
+    "JoaoZaokk/whisper-podlodka-turbo-ggml",
+    "upstream-config.json",
+    null
+   ]
+  ],
+  "1874": [
+   [
+    "JoaoZaokk/typhoon-whisper-turbo-ggml",
+    "README.md",
+    null
+   ]
+  ],
+  "5473": [
+   [
+    "JoaoZaokk/typhoon-whisper-turbo-ggml",
+    "UPSTREAM-README.md",
+    null
+   ]
+  ],
+  "1887": [
+   [
+    "JoaoZaokk/typhoon-whisper-turbo-ggml",
+    "VERIFY.txt",
+    null
+   ]
+  ],
+  "1229": [
+   [
+    "JoaoZaokk/typhoon-whisper-turbo-ggml",
+    "upstream-config.json",
+    null
+   ]
+  ],
+  "1885": [
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-german-ggml",
+    "README.md",
+    null
+   ]
+  ],
+  "5767": [
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-german-ggml",
+    "UPSTREAM-README.md",
+    null
+   ]
+  ],
+  "1290": [
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-german-ggml",
+    "upstream-config.json",
+    null
+   ]
+  ],
+  "1779": [
+   [
+    "JoaoZaokk/EraX-WoW-Turbo-V1.1-ggml",
+    "README.md",
+    null
+   ]
+  ],
+  "5601": [
+   [
+    "JoaoZaokk/EraX-WoW-Turbo-V1.1-ggml",
+    "UPSTREAM-README.md",
+    null
+   ]
+  ],
+  "864": [
+   [
+    "JoaoZaokk/EraX-WoW-Turbo-V1.1-ggml",
+    "VERIFY.txt",
+    null
+   ]
+  ],
+  "1319": [
+   [
+    "JoaoZaokk/EraX-WoW-Turbo-V1.1-ggml",
+    "upstream-config.json",
+    null
+   ]
+  ],
+  "1983": [
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-arabic-dialectal-v2-ggml",
+    "README.md",
+    null
+   ]
+  ],
+  "11250": [
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-arabic-dialectal-v2-ggml",
+    "UPSTREAM-README.md",
+    null
+   ]
+  ],
+  "871": [
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-arabic-dialectal-v2-ggml",
+    "VERIFY.txt",
+    null
+   ]
+  ],
+  "1253": [
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-arabic-dialectal-v2-ggml",
+    "upstream-config.json",
+    null
+   ]
+  ],
+  "2314": [
+   [
+    "JoaoZaokk/LTX-2.5-22B-distilled-W4A8-ConvRot",
+    ".gitattributes",
+    null
+   ]
+  ],
+  "35143": [
+   [
+    "JoaoZaokk/LTX-2.5-22B-distilled-W4A8-ConvRot",
+    "LICENSE_LTX_2x_COMMUNITY.txt",
+    null
+   ]
+  ],
+  "18257": [
+   [
+    "JoaoZaokk/LTX-2.5-22B-distilled-W4A8-ConvRot",
+    "README.md",
+    null
+   ]
+  ],
+  "800638": [
+   [
+    "JoaoZaokk/LTX-2.5-22B-distilled-W4A8-ConvRot",
+    "av/bf16_original.flac",
+    "03520819ff9ba50ead3cf0522beab178a6cb64fabe3fb73cddd773cb888fd895"
+   ]
+  ],
+  "766733": [
+   [
+    "JoaoZaokk/LTX-2.5-22B-distilled-W4A8-ConvRot",
+    "av/bf16_original.mp4",
+    "3527c32e94862050886b630117aeb8a0d6c03c330562b293ce65497245466168"
+   ]
+  ],
+  "3354": [
+   [
+    "JoaoZaokk/LTX-2.5-22B-distilled-W4A8-ConvRot",
+    "av/comparacao_av.json",
+    null
+   ]
+  ],
+  "635188": [
+   [
+    "JoaoZaokk/LTX-2.5-22B-distilled-W4A8-ConvRot",
+    "av/contato_av.png",
+    "acc1c81b28720e9a55d1d21efc96ead7523b052dd2a3c00c4371832070e4278f"
+   ]
+  ],
+  "796800": [
+   [
+    "JoaoZaokk/LTX-2.5-22B-distilled-W4A8-ConvRot",
+    "av/int8_lightricks.flac",
+    "a7a29214ee5558f47fe2927f2e152d20f6ee3883a944d29ea9e5b0140ecd0164"
+   ]
+  ],
+  "768397": [
+   [
+    "JoaoZaokk/LTX-2.5-22B-distilled-W4A8-ConvRot",
+    "av/int8_lightricks.mp4",
+    "488d125110007b23f4dee8a895097ab36c08ef2464ee8783cb07443e78e89115"
+   ]
+  ],
+  "820783": [
+   [
+    "JoaoZaokk/LTX-2.5-22B-distilled-W4A8-ConvRot",
+    "av/w4a8_this_file.flac",
+    "bea9c9b8b467e8a4ef7a4ee0881564f0d779e9e4c24319a7386b3a0b367fddff"
+   ]
+  ],
+  "779738": [
+   [
+    "JoaoZaokk/LTX-2.5-22B-distilled-W4A8-ConvRot",
+    "av/w4a8_this_file.mp4",
+    "70b650d58e0e5690841b4bdcafe308baa7f58fcf78fa45bceb96e666c465fd30"
+   ]
+  ],
+  "1092417": [
+   [
+    "JoaoZaokk/LTX-2.5-22B-distilled-W4A8-ConvRot",
+    "comparacao_10s_tres_bracos.png",
+    "8e3bb0cade7528a2b15bc864bdde20ded4834c3ddf0ac60635d1a212b3b1b153"
+   ]
+  ],
+  "5540": [
+   [
+    "JoaoZaokk/LTX-2.5-22B-distilled-W4A8-ConvRot",
+    "int8_ours/comparacao_av.json",
+    null
+   ]
+  ],
+  "1067128": [
+   [
+    "JoaoZaokk/LTX-2.5-22B-distilled-W4A8-ConvRot",
+    "int8_ours/contato_av.png",
+    "6d7c465ce34721b500b450981a907c8b959c58c1abcf8093fc0d77604fbf1c3c"
+   ]
+  ],
+  "798044": [
+   [
+    "JoaoZaokk/LTX-2.5-22B-distilled-W4A8-ConvRot",
+    "int8_ours/int8_convrot.flac",
+    "4db3cbe17f0bc105abb35f3ab017e3a3d9c51198da60d05149b930c15679d375"
+   ]
+  ],
+  "775286": [
+   [
+    "JoaoZaokk/LTX-2.5-22B-distilled-W4A8-ConvRot",
+    "int8_ours/int8_convrot.mp4",
+    "142204bef3bbd83a6a299fc9da282f22d3253e7238bb2f4b7d906496cc9abb52"
+   ]
+  ],
+  "802520": [
+   [
+    "JoaoZaokk/LTX-2.5-22B-distilled-W4A8-ConvRot",
+    "int8_ours/int8_no_rotation.flac",
+    "03bbf2fbc474efecd00fb29642950cfdf2b7562fd8860e435596b88dd0a0004e"
+   ]
+  ],
+  "742365": [
+   [
+    "JoaoZaokk/LTX-2.5-22B-distilled-W4A8-ConvRot",
+    "int8_ours/int8_no_rotation.mp4",
+    "2b259b3e92a341a9ececdb0d9377f632e6862bfbedd4555c9db6d243f5cf8bdc"
+   ]
+  ],
+  "639": [
+   [
+    "JoaoZaokk/LTX-2.5-22B-distilled-W4A8-ConvRot",
+    "int8_ours/ltx-2.5-22b-distilled-transformer-bf16_int8.quant.json",
+    null
+   ]
+  ],
+  "21503879904": [
+   [
+    "JoaoZaokk/LTX-2.5-22B-distilled-W4A8-ConvRot",
+    "int8_ours/ltx-2.5-22b-distilled-transformer-bf16_int8.safetensors",
+    "b74e3629051db6c792bd8f68b8cbbce63e398fe9068f73bc262bf326d122663a"
+   ]
+  ],
+  "654": [
+   [
+    "JoaoZaokk/LTX-2.5-22B-distilled-W4A8-ConvRot",
+    "int8_ours/ltx-2.5-22b-distilled-transformer-bf16_int8_convrot.quant.json",
+    null
+   ]
+  ],
+  "21503941832": [
+   [
+    "JoaoZaokk/LTX-2.5-22B-distilled-W4A8-ConvRot",
+    "int8_ours/ltx-2.5-22b-distilled-transformer-bf16_int8_convrot.safetensors",
+    "ef1cf453f6a10bcfac761cff8449b6a08869b14dcdc68506c8fd50e9c46cd42c"
+   ]
+  ],
+  "797": [
+   [
+    "JoaoZaokk/LTX-2.5-22B-distilled-W4A8-ConvRot",
+    "ltx-2.5-22b-distilled-transformer-w4a8.quant.json",
+    null
+   ]
+  ],
+  "12520267816": [
+   [
+    "JoaoZaokk/LTX-2.5-22B-distilled-W4A8-ConvRot",
+    "ltx-2.5-22b-distilled-transformer-w4a8.safetensors",
+    "df0c2f1350aa9c34d2c7417d82d29522f7cd35ab7758986b65f8bc08291e08ae"
+   ]
+  ],
+  "1578": [
+   [
+    "JoaoZaokk/Wan2.2-TI2V-5B-W4A8-ConvRot",
+    ".gitattributes",
+    null
+   ],
+   [
+    "JoaoZaokk/Qwen-Image-2512-W4A8-ConvRot",
+    ".gitattributes",
+    null
+   ]
+  ],
+  "5765": [
+   [
+    "JoaoZaokk/Wan2.2-TI2V-5B-W4A8-ConvRot",
+    "README.md",
+    null
+   ]
+  ],
+  "1619397": [
+   [
+    "JoaoZaokk/Wan2.2-TI2V-5B-W4A8-ConvRot",
+    "images/tres_bracos.png",
+    "d9689dd645573984b213e121e5ff21a2b7178ae819a0f9b5fa78bf800744415a"
+   ]
+  ],
+  "16213": [
+   [
+    "JoaoZaokk/Wan2.2-TI2V-5B-W4A8-ConvRot",
+    "wan2.2_ti2v_5B_w4a8.quant.json",
+    null
+   ]
+  ],
+  "2950547712": [
+   [
+    "JoaoZaokk/Wan2.2-TI2V-5B-W4A8-ConvRot",
+    "wan2.2_ti2v_5B_w4a8.safetensors",
+    "4321ce9d56f5ed42f1ec836647c3495c71188900eb5d0a970c9c827b7e37f6fd"
+   ]
+  ],
+  "5213": [
+   [
+    "JoaoZaokk/Qwen-Image-2512-W4A8-ConvRot",
+    "README.md",
+    null
+   ]
+  ],
+  "2169557": [
+   [
+    "JoaoZaokk/Qwen-Image-2512-W4A8-ConvRot",
+    "images/tres_bracos.png",
+    "4a0838754b0c6b3cbae84740764cfa10bc573b028c7ac8288c5424b6b2192378"
+   ]
+  ],
+  "53957": [
+   [
+    "JoaoZaokk/Qwen-Image-2512-W4A8-ConvRot",
+    "qwen_image_2512_w4a8.quant.json",
+    null
+   ]
+  ],
+  "11581151800": [
+   [
+    "JoaoZaokk/Qwen-Image-2512-W4A8-ConvRot",
+    "qwen_image_2512_w4a8.safetensors",
+    "f9deb51c931a67fdc7f69c93ca4bc7c575becd0023e2cbf7ce99335bc88b6fa6"
+   ]
+  ],
+  "3364": [
+   [
+    "JoaoZaokk/whisper-hu-large-v3-turbo-finetuned-ggml",
+    "UPSTREAM-README.md",
+    null
+   ]
+  ],
+  "909": [
+   [
+    "JoaoZaokk/whisper-hu-large-v3-turbo-finetuned-ggml",
+    "VERIFY.txt",
+    null
+   ]
+  ],
+  "1251": [
+   [
+    "JoaoZaokk/whisper-hu-large-v3-turbo-finetuned-ggml",
+    "upstream-config.json",
+    null
+   ]
+  ],
+  "1932": [
+   [
+    "JoaoZaokk/whisper-large-v3-french-distil-dec16-ggml",
+    "README.md",
+    null
+   ]
+  ],
+  "18273": [
+   [
+    "JoaoZaokk/whisper-large-v3-french-distil-dec16-ggml",
+    "UPSTREAM-README.md",
+    null
+   ]
+  ],
+  "910": [
+   [
+    "JoaoZaokk/whisper-large-v3-french-distil-dec16-ggml",
+    "VERIFY.txt",
+    null
+   ]
+  ],
+  "651998699": [
+   [
+    "JoaoZaokk/whisper-large-v3-french-distil-dec16-ggml",
+    "ggml-whisper-large-v3-french-distil-dec16-q4_0.bin",
+    "e3222a40c0ef54c4410e257fc8c23abbd0b2087512f250a5355593e0f74c44c9"
+   ]
+  ],
+  "791369259": [
+   [
+    "JoaoZaokk/whisper-large-v3-french-distil-dec16-ggml",
+    "ggml-whisper-large-v3-french-distil-dec16-q5_0.bin",
+    "a804330f5cd369fb7447ad2935eb7bf5b1d628ba246a067255ac70775df720e4"
+   ]
+  ],
+  "1209480939": [
+   [
+    "JoaoZaokk/whisper-large-v3-french-distil-dec16-ggml",
+    "ggml-whisper-large-v3-french-distil-dec16-q8_0.bin",
+    "d2812832b8a3a05e6c1effafa955ea4f9b60c58902cb499a4ec8be6a0a2a7788"
+   ]
+  ],
+  "1897": [
+   [
+    "JoaoZaokk/whisper-large-v3-vaani-hindi-ggml",
+    "README.md",
+    null
+   ]
+  ],
+  "2588": [
+   [
+    "JoaoZaokk/whisper-large-v3-vaani-hindi-ggml",
+    "UPSTREAM-README.md",
+    null
+   ]
+  ],
+  "1146": [
+   [
+    "JoaoZaokk/whisper-large-v3-vaani-hindi-ggml",
+    "VERIFY.txt",
+    null
+   ]
+  ],
+  "1917": [
+   [
+    "JoaoZaokk/whisper-large-v3-turkish-general-ggml",
+    "README.md",
+    null
+   ]
+  ],
+  "6379": [
+   [
+    "JoaoZaokk/whisper-large-v3-turkish-general-ggml",
+    "UPSTREAM-README.md",
+    null
+   ]
+  ],
+  "840": [
+   [
+    "JoaoZaokk/whisper-large-v3-turkish-general-ggml",
+    "VERIFY.txt",
+    null
+   ]
+  ],
+  "1248": [
+   [
+    "JoaoZaokk/whisper-large-v3-turkish-general-ggml",
+    "upstream-config.json",
+    null
+   ]
+  ],
+  "1751": [
+   [
+    "JoaoZaokk/kb-whisper-large-ggml",
+    "README.md",
+    null
+   ]
+  ],
+  "16380": [
+   [
+    "JoaoZaokk/kb-whisper-large-ggml",
+    "UPSTREAM-README.md",
+    null
+   ]
+  ],
+  "777": [
+   [
+    "JoaoZaokk/kb-whisper-large-ggml",
+    "VERIFY.txt",
+    null
+   ]
+  ],
+  "1883": [
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-hr-parla-ggml",
+    "README.md",
+    null
+   ]
+  ],
+  "4720": [
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-hr-parla-ggml",
+    "UPSTREAM-README.md",
+    null
+   ]
+  ],
+  "809": [
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-hr-parla-ggml",
+    "VERIFY.txt",
+    null
+   ]
+  ],
+  "1282": [
+   [
+    "JoaoZaokk/whisper-large-v3-turbo-hr-parla-ggml",
+    "upstream-config.json",
+    null
+   ]
+  ],
+  "2178": [
+   [
+    "JoaoZaokk/Krea-2-Turbo-W4A4-ConvRot",
+    ".gitattributes",
+    null
+   ]
+  ],
+  "137711": [
+   [
+    "JoaoZaokk/Krea-2-Turbo-W4A4-ConvRot",
+    "LICENSE_KREA_2_COMMUNITY.pdf",
+    "b82a2805162bde714a4eb27b9063c4fc3345d08a30be055134a6160e5430ba74"
+   ]
+  ],
+  "15026": [
+   [
+    "JoaoZaokk/Krea-2-Turbo-W4A4-ConvRot",
+    "LICENSE_KREA_2_COMMUNITY.txt",
+    null
+   ]
+  ],
+  "1422": [
+   [
+    "JoaoZaokk/Krea-2-Turbo-W4A4-ConvRot",
+    "NOTICE.txt",
+    null
+   ]
+  ],
+  "14871": [
+   [
+    "JoaoZaokk/Krea-2-Turbo-W4A4-ConvRot",
+    "README.md",
+    null
+   ]
+  ],
+  "2828667": [
+   [
+    "JoaoZaokk/Krea-2-Turbo-W4A4-ConvRot",
+    "images/ceiling_groupsize_seed1.png",
+    "8c2be6d7fbee4532bf900ef887628b68ce6ef193b09b66233cdd9587b8060c2a"
+   ]
+  ],
+  "1065706": [
+   [
+    "JoaoZaokk/Krea-2-Turbo-W4A4-ConvRot",
+    "images/edit_int8_vs_w4a4.png",
+    "83ee70e41372b3494cc77ee9901df15ae6f2ac64224435483a667e9d7a7fdeed"
+   ]
+  ],
+  "1217106": [
+   [
+    "JoaoZaokk/Krea-2-Turbo-W4A4-ConvRot",
+    "images/p1_bf16.png",
+    "879f5fe04ad208f7da9a4e4f33a38b0cb1aa40e08673cf49ffcd6ba854754d86"
+   ]
+  ],
+  "1218385": [
+   [
+    "JoaoZaokk/Krea-2-Turbo-W4A4-ConvRot",
+    "images/p1_int8_convrot.png",
+    "4f644e76bc927bb398ec3c26c48a128f082f553ebfa3ac6bbf849ef6628c6441"
+   ]
+  ],
+  "1180426": [
+   [
+    "JoaoZaokk/Krea-2-Turbo-W4A4-ConvRot",
+    "images/p1_mixed.png",
+    "27a1235f81bd9307893cf73f02b6281b09dab81f39ef107c2edb715a995d2e6b"
+   ]
+  ],
+  "1223973": [
+   [
+    "JoaoZaokk/Krea-2-Turbo-W4A4-ConvRot",
+    "images/p1_w4a4.png",
+    "a9587666819295c9ba7cfab97e2e397f5de3876cd65c9b6b241998f77bfb9f0a"
+   ]
+  ],
+  "1337013": [
+   [
+    "JoaoZaokk/Krea-2-Turbo-W4A4-ConvRot",
+    "images/p2_bf16.png",
+    "9c96a60dc814028ab9689fd4ae93f12c1d8d6f64b94953fd4060df78e877dcd8"
+   ]
+  ],
+  "1352086": [
+   [
+    "JoaoZaokk/Krea-2-Turbo-W4A4-ConvRot",
+    "images/p2_int8_convrot.png",
+    "ddf772fddcf5f4d7836c4fa2deaa1ea8ae16c9fa1af132a25eb2aea0c1553f10"
+   ]
+  ],
+  "1391417": [
+   [
+    "JoaoZaokk/Krea-2-Turbo-W4A4-ConvRot",
+    "images/p2_mixed.png",
+    "d5bc35e885ddb735c5444754247b01202a817554f3333d95205a11dd3e5ce8d8"
+   ]
+  ],
+  "1306203": [
+   [
+    "JoaoZaokk/Krea-2-Turbo-W4A4-ConvRot",
+    "images/p2_w4a4.png",
+    "ed7e301f6147f57b6d856db6e17b49193b76a077b7f2db04b0708dfccdfab308"
+   ]
+  ],
+  "11668": [
+   [
+    "JoaoZaokk/Krea-2-Turbo-W4A4-ConvRot",
+    "krea2_turbo_mixed.quant.json",
+    null
+   ]
+  ],
+  "8268671864": [
+   [
+    "JoaoZaokk/Krea-2-Turbo-W4A4-ConvRot",
+    "krea2_turbo_mixed.safetensors",
+    "4d0bba0eec47e7087b352a3edfc1b234691748e8f60260fc43393f5c5e61514a"
+   ]
+  ],
+  "11564": [
+   [
+    "JoaoZaokk/Krea-2-Turbo-W4A4-ConvRot",
+    "krea2_turbo_w4a4.quant.json",
+    null
+   ]
+  ],
+  "8057499632": [
+   [
+    "JoaoZaokk/Krea-2-Turbo-W4A4-ConvRot",
+    "krea2_turbo_w4a4.safetensors",
+    "8632678821f6ad5bf45d2e67fe17c8613142bcb8f4847f13e6e6ff16ef1ff9ad"
+   ]
+  ],
+  "5106": [
+   [
+    "JoaoZaokk/Qwen3-VL-4B-W4A8-ConvRot",
+    "README.md",
+    null
+   ]
+  ],
+  "1057": [
+   [
+    "JoaoZaokk/Qwen3-VL-4B-W4A8-ConvRot",
+    "qwen3vl_4b_w4a4_convrot.quant.json",
+    null
+   ]
+  ],
+  "3430228584": [
+   [
+    "JoaoZaokk/Qwen3-VL-4B-W4A8-ConvRot",
+    "qwen3vl_4b_w4a4_convrot.safetensors",
+    "a5579c234b6d482c7574a6228891c8aea168d1b571c729baf71bad3051a51190"
+   ]
+  ],
+  "723": [
+   [
+    "JoaoZaokk/Qwen3-VL-4B-W4A8-ConvRot",
+    "qwen3vl_4b_w4a8.quant.json",
+    null
+   ]
+  ],
+  "3657400024": [
+   [
+    "JoaoZaokk/Qwen3-VL-4B-W4A8-ConvRot",
+    "qwen3vl_4b_w4a8.safetensors",
+    "aac574a63b8169061bce3f941b9641feac8e4dfa3e5d111eec3fa6eb2aae15e8"
+   ]
+  ],
+  "1596": [
+   [
+    "JoaoZaokk/Gemma-3-12B-it-W4A8-ConvRot",
+    ".gitattributes",
+    null
+   ]
+  ],
+  "9324": [
+   [
+    "JoaoZaokk/Gemma-3-12B-it-W4A8-ConvRot",
+    "README.md",
+    null
+   ]
+  ],
+  "714": [
+   [
+    "JoaoZaokk/Gemma-3-12B-it-W4A8-ConvRot",
+    "gemma_3_12B_it_w4a8.quant.json",
+    null
+   ]
+  ],
+  "8923405898": [
+   [
+    "JoaoZaokk/Gemma-3-12B-it-W4A8-ConvRot",
+    "gemma_3_12B_it_w4a8.safetensors",
+    "3c778c23d9dafbb7fbe9ca0ab46cd5a1f4a286952c008aeadb05a054e49645de"
+   ]
+  ],
+  "3016": [
+   [
+    "JoaoZaokk/Gemma-3-12B-it-W4A8-ConvRot",
+    "ltx23_encoder_test/conditioning_vs_bf16.json",
+    null
+   ]
+  ],
+  "2271": [
+   [
+    "JoaoZaokk/Gemma-3-12B-it-W4A8-ConvRot",
+    "ltx23_encoder_test/render_comparacao_av.json",
+    null
+   ]
+  ],
+  "543959": [
+   [
+    "JoaoZaokk/Gemma-3-12B-it-W4A8-ConvRot",
+    "ltx23_encoder_test/render_contato_av.png",
+    "79206801100f8a4fecae7a9708e63d8d93b346aa94b8ecd09bda1015b52d1b17"
+   ]
+  ]
+ },
+ "locais": [
+  {
+   "path": "C:\\ComfyBench\\ltx-2.3\\ltx-2.3-22b-distilled-1.1-BF16.gguf",
+   "size": 42035412384,
+   "gib": 39.15,
+   "sidecar": false,
+   "hub": []
+  },
+  {
+   "path": "D:\\ComfyUI-Models\\diffusion_models\\ltx-2.5-22b-dev-transformer-comfy-int8-convrot.safetensors",
+   "size": 21504034224,
+   "gib": 20.03,
+   "sidecar": false,
+   "hub": []
+  },
+  {
+   "path": "D:\\ComfyUI-Models\\diffusion_models\\ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors",
+   "size": 21504034224,
+   "gib": 20.03,
+   "sidecar": false,
+   "hub": []
+  },
+  {
+   "path": "D:\\ComfyUI-Models\\diffusion_models\\ltx-2.5-22b-distilled-transformer-bf16_int8_convrot.safetensors",
+   "size": 21503941832,
+   "gib": 20.03,
+   "sidecar": true,
+   "hub": [
+    [
+     "JoaoZaokk/LTX-2.5-22B-distilled-W4A8-ConvRot",
+     "int8_ours/ltx-2.5-22b-distilled-transformer-bf16_int8_convrot.safetensors",
+     "ef1cf453f6a10bcfac761cff8449b6a08869b14dcdc68506c8fd50e9c46cd42c"
+    ]
+   ]
+  },
+  {
+   "path": "D:\\ComfyUI-Models\\diffusion_models\\ltx-2.5-22b-distilled-transformer-bf16_int8.safetensors",
+   "size": 21503879904,
+   "gib": 20.03,
+   "sidecar": true,
+   "hub": [
+    [
+     "JoaoZaokk/LTX-2.5-22B-distilled-W4A8-ConvRot",
+     "int8_ours/ltx-2.5-22b-distilled-transformer-bf16_int8.safetensors",
+     "b74e3629051db6c792bd8f68b8cbbce63e398fe9068f73bc262bf326d122663a"
+    ]
+   ]
+  },
+  {
+   "path": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\diffusion_models\\qwen_image_edit_2511_int8_convrot.safetensors",
+   "size": 20499083824,
+   "gib": 19.09,
+   "sidecar": false,
+   "hub": []
+  },
+  {
+   "path": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\diffusion_models\\wan2.2_animate_14B_int8_convrot.safetensors",
+   "size": 18413068672,
+   "gib": 17.15,
+   "sidecar": false,
+   "hub": []
+  },
+  {
+   "path": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\unet\\ltx-2.3-22b-distilled-1.1-Q6_K.gguf",
+   "size": 17774906400,
+   "gib": 16.55,
+   "sidecar": false,
+   "hub": []
+  },
+  {
+   "path": "P:\\ComfyBench\\checkpoints\\ltx-2.3-22b-distilled-1.1_w4a8.safetensors",
+   "size": 16651422654,
+   "gib": 15.51,
+   "sidecar": true,
+   "hub": [
+    [
+     "JoaoZaokk/LTX-2.3-22B-distilled-1.1-W4A8-ConvRot",
+     "ltx-2.3-22b-distilled-1.1_w4a8.safetensors",
+     "e1d14f103f094882139ddd9b79284ce649245364df17e4c9c491656c3906c866"
+    ]
+   ]
+  },
+  {
+   "path": "W:\\ltx-2.3\\ltx-2.3-22b-distilled-1.1_w4a8_W.safetensors",
+   "size": 16651422654,
+   "gib": 15.51,
+   "sidecar": true,
+   "hub": [
+    [
+     "JoaoZaokk/LTX-2.3-22B-distilled-1.1-W4A8-ConvRot",
+     "ltx-2.3-22b-distilled-1.1_w4a8.safetensors",
+     "e1d14f103f094882139ddd9b79284ce649245364df17e4c9c491656c3906c866"
+    ]
+   ]
+  },
+  {
+   "path": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\diffusion_models\\MiniMax_H3_FL2VA_pruned_mixed_int4_int8_convrot.safetensors",
+   "size": 15903012791,
+   "gib": 14.81,
+   "sidecar": false,
+   "hub": []
+  },
+  {
+   "path": "D:\\ComfyUI-Models\\text_encoders\\gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors",
+   "size": 15372971786,
+   "gib": 14.32,
+   "sidecar": false,
+   "hub": []
+  },
+  {
+   "path": "P:\\ComfyBench\\checkpoints\\ltx-2.3-22b-distilled-1.1_w4a4.safetensors",
+   "size": 15367403670,
+   "gib": 14.31,
+   "sidecar": true,
+   "hub": []
+  },
+  {
+   "path": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\diffusion_models\\MiniMax_H3_Ref2VA_pruned_mixed_int4_int8_convrot.safetensors",
+   "size": 15093774276,
+   "gib": 14.06,
+   "sidecar": false,
+   "hub": []
+  },
+  {
+   "path": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\text_encoders\\qwen3vl_32b_minimax_h3-int4_convrot.safetensors",
+   "size": 14173709116,
+   "gib": 13.2,
+   "sidecar": false,
+   "hub": []
+  },
+  {
+   "path": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\diffusion_models\\krea2_raw_int8_convrot.safetensors",
+   "size": 13492686496,
+   "gib": 12.57,
+   "sidecar": false,
+   "hub": []
+  },
+  {
+   "path": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\diffusion_models\\krea2_turbo_int8_convrot.safetensors",
+   "size": 13492686496,
+   "gib": 12.57,
+   "sidecar": false,
+   "hub": []
+  },
+  {
+   "path": "D:\\ComfyUI-Models\\diffusion_models\\minimax_h3_ref2va_pruned_w4a8_mixed.safetensors",
+   "size": 12540858008,
+   "gib": 11.68,
+   "sidecar": false,
+   "hub": []
+  },
+  {
+   "path": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\diffusion_models\\minimax_h3_fl2va_pruned-w4a8_convrot_pruned.safetensors",
+   "size": 12540857840,
+   "gib": 11.68,
+   "sidecar": false,
+   "hub": []
+  },
+  {
+   "path": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\diffusion_models\\LTX25-distilled-DiT-comfy-w4a8.safetensors",
+   "size": 12520362840,
+   "gib": 11.66,
+   "sidecar": false,
+   "hub": []
+  },
+  {
+   "path": "D:\\ComfyUI-Models\\diffusion_models\\ltx-2.5-22b-distilled-transformer-bf16_w4a8.safetensors",
+   "size": 12520267816,
+   "gib": 11.66,
+   "sidecar": true,
+   "hub": [
+    [
+     "JoaoZaokk/LTX-2.5-22B-distilled-W4A8-ConvRot",
+     "ltx-2.5-22b-distilled-transformer-w4a8.safetensors",
+     "df0c2f1350aa9c34d2c7417d82d29522f7cd35ab7758986b65f8bc08291e08ae"
+    ]
+   ]
+  },
+  {
+   "path": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\diffusion_models\\beyond-reality-zimage-v2_native.safetensors",
+   "size": 12309866400,
+   "gib": 11.46,
+   "sidecar": false,
+   "hub": []
+  },
+  {
+   "path": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\diffusion_models\\qwen_image_edit_2511_w4a8.safetensors",
+   "size": 11581151872,
+   "gib": 10.79,
+   "sidecar": true,
+   "hub": [
+    [
+     "JoaoZaokk/Qwen-Image-Edit-2511-W4A8-ConvRot",
+     "qwen_image_edit_2511_w4a8.safetensors",
+     "48a1b22197e34f72cece91f6e7b096c43715668c2854f07cf2a9419a32e7b654"
+    ]
+   ]
+  },
+  {
+   "path": "P:\\ComfyBench\\diffusion_models\\qwen_image_2512_w4a8.safetensors",
+   "size": 11581151800,
+   "gib": 10.79,
+   "sidecar": true,
+   "hub": [
+    [
+     "JoaoZaokk/Qwen-Image-2512-W4A8-ConvRot",
+     "qwen_image_2512_w4a8.safetensors",
+     "f9deb51c931a67fdc7f69c93ca4bc7c575becd0023e2cbf7ce99335bc88b6fa6"
+    ]
+   ]
+  },
+  {
+   "path": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\diffusion_models\\LTX25-distilled-DiT-comfy-w4a4.safetensors",
+   "size": 11236345048,
+   "gib": 10.46,
+   "sidecar": false,
+   "hub": []
+  },
+  {
+   "path": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\text_encoders\\gemma4-12b-ltx25-comfy-w4a8.safetensors",
+   "size": 10604342914,
+   "gib": 9.88,
+   "sidecar": false,
+   "hub": []
+  },
+  {
+   "path": "P:\\ComfyBench\\diffusion_models\\qwen_image_2512_w4a4.safetensors",
+   "size": 10306850832,
+   "gib": 9.6,
+   "sidecar": true,
+   "hub": []
+  },
+  {
+   "path": "P:\\ComfyBench\\text_encoders\\gemma_3_12B_it_w4a8.safetensors",
+   "size": 8923405898,
+   "gib": 8.31,
+   "sidecar": true,
+   "hub": [
+    [
+     "JoaoZaokk/Gemma-3-12B-it-W4A8-ConvRot",
+     "gemma_3_12B_it_w4a8.safetensors",
+     "3c778c23d9dafbb7fbe9ca0ab46cd5a1f4a286952c008aeadb05a054e49645de"
+    ]
+   ]
+  },
+  {
+   "path": "P:\\ComfyBench\\diffusion_models\\capybara_v0.1_w4a8r.safetensors",
+   "size": 8847634096,
+   "gib": 8.24,
+   "sidecar": true,
+   "hub": [
+    [
+     "JoaoZaokk/HunyuanVideo-1.5-720p-T2V-Quantized",
+     "capybara_v0.1_w4a8r.safetensors",
+     "4317156bea06f76cbb2f8b40c715da063442c52c94c8fb4091e95fa7cb1b1fcc"
+    ]
+   ]
+  },
+  {
+   "path": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\diffusion_models\\krea2_turbo_mixed.safetensors",
+   "size": 8268671864,
+   "gib": 7.7,
+   "sidecar": true,
+   "hub": [
+    [
+     "JoaoZaokk/Krea-2-Turbo-W4A4-ConvRot",
+     "krea2_turbo_mixed.safetensors",
+     "4d0bba0eec47e7087b352a3edfc1b234691748e8f60260fc43393f5c5e61514a"
+    ]
+   ]
+  },
+  {
+   "path": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\text_encoders\\gemma_3_12B_it_heretic_w4a8.safetensors",
+   "size": 8089619138,
+   "gib": 7.53,
+   "sidecar": true,
+   "hub": [
+    [
+     "JoaoZaokk/Gemma-3-12B-it-Heretic-W4A8",
+     "gemma_3_12B_it_heretic_w4a8.safetensors",
+     "7fa24d7e148cc93afa76cd15202f610a07a886b225b6255671831fe6f3226e04"
+    ]
+   ]
+  },
+  {
+   "path": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\diffusion_models\\krea2_turbo_w4a4.safetensors",
+   "size": 8057499632,
+   "gib": 7.5,
+   "sidecar": true,
+   "hub": [
+    [
+     "JoaoZaokk/Krea-2-Turbo-W4A4-ConvRot",
+     "krea2_turbo_w4a4.safetensors",
+     "8632678821f6ad5bf45d2e67fe17c8613142bcb8f4847f13e6e6ff16ef1ff9ad"
+    ]
+   ]
+  },
+  {
+   "path": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\text_encoders\\gemma_3_12B_it_heretic_w4a4_smooth.safetensors",
+   "size": 7417110698,
+   "gib": 6.91,
+   "sidecar": true,
+   "hub": [
+    [
+     "JoaoZaokk/Gemma-3-12B-it-Heretic-W4A8",
+     "w4a4/gemma_3_12B_it_heretic_w4a4_smooth.safetensors",
+     "09982cfd6322bd1b95d17290414d4d85698c0cf1de99f20f47e47a88f54bbf3d"
+    ]
+   ]
+  },
+  {
+   "path": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\text_encoders\\gemma_3_12B_it_heretic_w4a4_convrot.safetensors",
+   "size": 7417110666,
+   "gib": 6.91,
+   "sidecar": true,
+   "hub": [
+    [
+     "JoaoZaokk/Gemma-3-12B-it-Heretic-W4A8",
+     "w4a4/gemma_3_12B_it_heretic_w4a4_convrot.safetensors",
+     "515c3b5a2b6c735e1093b1ebcc79cea5b316237d78fad98b8ea777b73ec0bbd7"
+    ]
+   ]
+  },
+  {
+   "path": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\text_encoders\\qwen_2.5_vl_7b_w4a4_convrot.safetensors",
+   "size": 6802084504,
+   "gib": 6.33,
+   "sidecar": true,
+   "hub": [
+    [
+     "JoaoZaokk/Qwen2.5-VL-7B-W4A4-ConvRot",
+     "qwen_2.5_vl_7b_w4a4_convrot.safetensors",
+     "3db3a47eff36045a3a802700494a8e1a5dd4dffac678c9d7182f6f9d6d5a61a9"
+    ]
+   ]
+  },
+  {
+   "path": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\text_encoders\\gemma4_e2b_it_int8_convrot.safetensors",
+   "size": 5199997904,
+   "gib": 4.84,
+   "sidecar": false,
+   "hub": []
+  },
+  {
+   "path": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\text_encoders\\qwen3vl_4b_w4a8.safetensors",
+   "size": 3657400024,
+   "gib": 3.41,
+   "sidecar": true,
+   "hub": [
+    [
+     "JoaoZaokk/Qwen3-VL-4B-W4A8-ConvRot",
+     "qwen3vl_4b_w4a8.safetensors",
+     "aac574a63b8169061bce3f941b9641feac8e4dfa3e5d111eec3fa6eb2aae15e8"
+    ]
+   ]
+  },
+  {
+   "path": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\text_encoders\\qwen3vl_4b_w4a4_convrot.safetensors",
+   "size": 3430228584,
+   "gib": 3.19,
+   "sidecar": true,
+   "hub": [
+    [
+     "JoaoZaokk/Qwen3-VL-4B-W4A8-ConvRot",
+     "qwen3vl_4b_w4a4_convrot.safetensors",
+     "a5579c234b6d482c7574a6228891c8aea168d1b571c729baf71bad3051a51190"
+    ]
+   ]
+  },
+  {
+   "path": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\diffusion_models\\zimage_turbo_mixed.safetensors",
+   "size": 3409892688,
+   "gib": 3.18,
+   "sidecar": true,
+   "hub": [
+    [
+     "JoaoZaokk/Z-Image-Turbo-W4A4-ConvRot",
+     "zimage_turbo_mixed.safetensors",
+     "abc68440e86c63ec9001f95b1862ef6d398436753c4d48f941e94bcb47acc459"
+    ]
+   ]
+  },
+  {
+   "path": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\diffusion_models\\zimage-v2-mixed.safetensors",
+   "size": 3409277648,
+   "gib": 3.18,
+   "sidecar": true,
+   "hub": [
+    [
+     "JoaoZaokk/Beyond-Reality-Z-Image-v2-W4A4-ConvRot",
+     "zimage-v2-mixed.safetensors",
+     "7ca1925f475c711ef3f6a3cb4d5f00ece0addfd7d4fcd07b30a876cab0046c53"
+    ]
+   ]
+  },
+  {
+   "path": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\diffusion_models\\zimage_deturbo_mixed.safetensors",
+   "size": 3402826136,
+   "gib": 3.17,
+   "sidecar": true,
+   "hub": [
+    [
+     "JoaoZaokk/Z-Image-De-Turbo-W4A4-ConvRot",
+     "zimage_deturbo_mixed.safetensors",
+     "494213ad75c50ca63fd68ed638329eecacea2927565cfd8a8a5109a1f87bea97"
+    ]
+   ]
+  },
+  {
+   "path": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\diffusion_models\\zimage-v2-w4a4.safetensors",
+   "size": 3290988448,
+   "gib": 3.06,
+   "sidecar": true,
+   "hub": [
+    [
+     "JoaoZaokk/Beyond-Reality-Z-Image-v2-W4A4-ConvRot",
+     "zimage-v2-w4a4.safetensors",
+     "b73978d2426666bfd617089d69cb504dd1a5bb3d5491ac1778ba51ae1c5ba556"
+    ],
+    [
+     "JoaoZaokk/Z-Image-Turbo-W4A4-ConvRot",
+     "zimage_turbo_w4a4.safetensors",
+     "d30f2863881eac3fe92c5c0638a9234871f6cd296c187eb9784e89bccd3c5c0d"
+    ],
+    [
+     "JoaoZaokk/Z-Image-De-Turbo-W4A4-ConvRot",
+     "zimage_deturbo_w4a4.safetensors",
+     "c417dc4922efe9f64ae0612466413f35b2f008aeee10e621441413e31bde0384"
+    ]
+   ]
+  },
+  {
+   "path": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\diffusion_models\\zimage_deturbo_w4a4.safetensors",
+   "size": 3290988448,
+   "gib": 3.06,
+   "sidecar": true,
+   "hub": [
+    [
+     "JoaoZaokk/Beyond-Reality-Z-Image-v2-W4A4-ConvRot",
+     "zimage-v2-w4a4.safetensors",
+     "b73978d2426666bfd617089d69cb504dd1a5bb3d5491ac1778ba51ae1c5ba556"
+    ],
+    [
+     "JoaoZaokk/Z-Image-Turbo-W4A4-ConvRot",
+     "zimage_turbo_w4a4.safetensors",
+     "d30f2863881eac3fe92c5c0638a9234871f6cd296c187eb9784e89bccd3c5c0d"
+    ],
+    [
+     "JoaoZaokk/Z-Image-De-Turbo-W4A4-ConvRot",
+     "zimage_deturbo_w4a4.safetensors",
+     "c417dc4922efe9f64ae0612466413f35b2f008aeee10e621441413e31bde0384"
+    ]
+   ]
+  },
+  {
+   "path": "F:\\COMFY_PORTABLE\\ComfyUI\\models\\diffusion_models\\zimage_turbo_w4a4.safetensors",
+   "size": 3290988448,
+   "gib": 3.06,
+   "sidecar": true,
+   "hub": [
+    [
+     "JoaoZaokk/Beyond-Reality-Z-Image-v2-W4A4-ConvRot",
+     "zimage-v2-w4a4.safetensors",
+     "b73978d2426666bfd617089d69cb504dd1a5bb3d5491ac1778ba51ae1c5ba556"
+    ],
+    [
+     "JoaoZaokk/Z-Image-Turbo-W4A4-ConvRot",
+     "zimage_turbo_w4a4.safetensors",
+     "d30f2863881eac3fe92c5c0638a9234871f6cd296c187eb9784e89bccd3c5c0d"
+    ],
+    [
+     "JoaoZaokk/Z-Image-De-Turbo-W4A4-ConvRot",
+     "zimage_deturbo_w4a4.safetensors",
+     "c417dc4922efe9f64ae0612466413f35b2f008aeee10e621441413e31bde0384"
+    ]
+   ]
+  },
+  {
+   "path": "P:\\ComfyBench\\diffusion_models\\wan2.2_ti2v_5B_w4a8.safetensors",
+   "size": 2950547712,
+   "gib": 2.75,
+   "sidecar": true,
+   "hub": [
+    [
+     "JoaoZaokk/Wan2.2-TI2V-5B-W4A8-ConvRot",
+     "wan2.2_ti2v_5B_w4a8.safetensors",
+     "4321ce9d56f5ed42f1ec836647c3495c71188900eb5d0a970c9c827b7e37f6fd"
+    ]
+   ]
+  },
+  {
+   "path": "P:\\ComfyBench\\diffusion_models\\wan2.2_ti2v_5B_w4a4.safetensors",
+   "size": 2643748432,
+   "gib": 2.46,
+   "sidecar": true,
+   "hub": []
+  }
+ ]
+}

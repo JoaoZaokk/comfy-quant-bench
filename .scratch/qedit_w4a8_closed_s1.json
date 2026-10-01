@@ -1,0 +1,17 @@
+{
+  "transformer": "qwen_image_edit_2511_w4a8.safetensors",
+  "encoder": "qwen_2.5_vl_7b.safetensors",
+  "imagem": "edit_placa.png",
+  "instrucao": "change the word on the sign to CLOSED, keep the same enamel sign, the same brick wall and the same lighting",
+  "seed": 1,
+  "steps": 30,
+  "cfg": 2.5,
+  "shift": 3.0,
+  "segundos": 121.09709930419922,
+  "arquivos": [
+    "qedit_w4a8_closed_s1_00001_.png"
+  ],
+  "distorch": false,
+  "alocacao": null,
+  "status": "success"
+}

@@ -1,0 +1,16 @@
+{
+  "source": "F:\\COMFY_PORTABLE\\.scratch\\revisao_2026-09-29\\conv\\prova\\antes\\awq_gemma\\gemma_sint_bf16.safetensors",
+  "source_size": 2400008,
+  "output": "F:\\COMFY_PORTABLE\\.scratch\\revisao_2026-09-29\\conv\\prova\\antes\\awq_gemma\\gemma_sint_bf16_q4_1_awq.safetensors",
+  "output_size": 782224,
+  "architecture": "gemma",
+  "quantization": "awq_w4a16 from gguf-py Q4_1 codes",
+  "group_size": 32,
+  "quantized_tensors": 14,
+  "preserved_tensors": 12,
+  "weight_rel_rmse_mean": 0.0782685572547572,
+  "weight_rel_rmse_max": 0.07850174605846405,
+  "gguf_version": "0.19.0",
+  "torch_version": "2.13.0+cu130",
+  "conversion_seconds": 0.127
+}

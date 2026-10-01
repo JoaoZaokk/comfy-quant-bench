@@ -1,0 +1,93 @@
+  39.1 GiB  2 copias, 1 conteudo(s) distinto(s) -> IGUAIS
+        6aa5a6343bb589f5  D:/ComfyUI-Models/diffusion_models/ltx-2.5-22b-distilled-transformer-bf16.safetensors
+        6aa5a6343bb589f5  W:/ltx-2.5/ltx-2.5-22b-distilled-transformer-bf16.safetensors
+   4.6 GiB  6 copias, 4 conteudo(s) distinto(s) -> PARCIAL
+        2205cf0d1c00592e  F:/tts_lab/release/_teste_reconstrucao/w8/model-00001-of-00002.safetensors
+        0d80fce362468fe7  F:/tts_lab/release/_teste_reconstrucao/w4g128/model-00001-of-00002.safetensors
+        0d80fce362468fe7  F:/tts_lab/models/s2-pro-w4-sim/model-00001-of-00002.safetensors
+        c2ecc80ae0c84804  F:/tts_lab/noite_v9/checkpoints/s2-pro/model-00001-of-00002.safetensors
+        c2ecc80ae0c84804  F:/tts_lab/models/s2-pro/model-00001-of-00002.safetensors
+        6dab53f996675682  F:/tts_lab/models/s2-pro-w8-sim/model-00001-of-00002.safetensors
+   3.9 GiB  6 copias, 4 conteudo(s) distinto(s) -> PARCIAL
+        a7208c83023ceff7  F:/tts_lab/release/_teste_reconstrucao/w8/model-00002-of-00002.safetensors
+        ffa6158ee348eeb4  F:/tts_lab/release/_teste_reconstrucao/w4g128/model-00002-of-00002.safetensors
+        ffa6158ee348eeb4  F:/tts_lab/models/s2-pro-w4-sim/model-00002-of-00002.safetensors
+        dc7732cce9e934a1  F:/tts_lab/noite_v9/checkpoints/s2-pro/model-00002-of-00002.safetensors
+        dc7732cce9e934a1  F:/tts_lab/models/s2-pro/model-00002-of-00002.safetensors
+        35683956d5305f24  F:/tts_lab/models/s2-pro-w8-sim/model-00002-of-00002.safetensors
+   1.7 GiB  6 copias, 1 conteudo(s) distinto(s) -> IGUAIS
+        99ed53cb368471f6  F:/tts_lab/release/_teste_reconstrucao/w8/codec.pth
+        99ed53cb368471f6  F:/tts_lab/release/_teste_reconstrucao/w4g128/codec.pth
+        99ed53cb368471f6  F:/tts_lab/noite_v9/checkpoints/s2-pro/codec.pth
+        99ed53cb368471f6  F:/tts_lab/models/s2-pro-w8-sim/codec.pth
+        99ed53cb368471f6  F:/tts_lab/models/s2-pro-w4-sim/codec.pth
+        99ed53cb368471f6  F:/tts_lab/models/s2-pro/codec.pth
+   7.2 GiB  2 copias, 1 conteudo(s) distinto(s) -> IGUAIS
+        8979a05349964d9f  F:/COMFY_PORTABLE/ComfyUI/models/diffusion_models/klein4b_braco0_ternario_ingenuo_bfl.safetensors
+        8979a05349964d9f  P:/ComfyBench/diffusion_models/klein4b_braco0_ternario_ingenuo_bfl.safetensors
+   7.2 GiB  2 copias, 1 conteudo(s) distinto(s) -> IGUAIS
+        30a10d39c0ffabab  F:/COMFY_PORTABLE/ComfyUI/models/diffusion_models/klein4b_braco1_compensado_bfl.safetensors
+        30a10d39c0ffabab  P:/ComfyBench/diffusion_models/klein4b_braco1_compensado_bfl.safetensors
+   7.2 GiB  2 copias, 1 conteudo(s) distinto(s) -> IGUAIS
+        e4e32cb16de111c6  F:/COMFY_PORTABLE/ComfyUI/models/diffusion_models/klein4b_braco2_bonsai_ternario_bfl.safetensors
+        e4e32cb16de111c6  P:/ComfyBench/diffusion_models/klein4b_braco2_bonsai_ternario_bfl.safetensors
+   7.2 GiB  2 copias, 1 conteudo(s) distinto(s) -> IGUAIS
+        ba907543db5a7a31  F:/COMFY_PORTABLE/ComfyUI/models/diffusion_models/klein4b_braco3_bf16_original_bfl.safetensors
+        ba907543db5a7a31  P:/ComfyBench/diffusion_models/klein4b_braco3_bf16_original_bfl.safetensors
+   7.2 GiB  2 copias, 2 conteudo(s) distinto(s) -> DIFERENTES
+        3738e61f1f9ddd1f  F:/bonsai-re/bonsai-image-ternary-4B-unpacked/transformer/diffusion_pytorch_model.safetensors
+        1e154fc4e4376447  F:/bonsai-re/bonsai-image-binary-4B-unpacked/transformer/diffusion_pytorch_model.safetensors
+   4.7 GiB  2 copias, 1 conteudo(s) distinto(s) -> IGUAIS
+        5e5c40afcb630041  F:/IA/heretic/model-00001-of-00002.safetensors
+        5e5c40afcb630041  F:/IA/heretic/F/model-00001-of-00002.safetensors
+   4.6 GiB  2 copias, 2 conteudo(s) distinto(s) -> DIFERENTES
+        e5a981de544fa605  F:/IA/heretic/models/Qwen3-4B-Thinking-2507-MiniMax-M2.1-Distill/model-00001-of-00002.safetensors
+        94a89786e1f9a3d8  P:/ComfyBench/originais/FLUX.2-klein-4B/text_encoder/model-00001-of-00002.safetensors
+   3.0 GiB  2 copias, 1 conteudo(s) distinto(s) -> IGUAIS
+        f06022cba1961430  F:/qwen38-27b-rtx3090/models/Qwen3.8-27B-W4A16-AutoRound-fast/model-00004-of-00007.safetensors
+        f06022cba1961430  F:/qwen38-27b-rtx3090/models/Qwen3.8-27B-W4A16-AutoRound/model-00004-of-00007.safetensors
+   3.0 GiB  2 copias, 1 conteudo(s) distinto(s) -> IGUAIS
+        363abad4dc5e962b  F:/qwen38-27b-rtx3090/models/Qwen3.8-27B-W4A16-AutoRound-fast/model-00001-of-00007.safetensors
+        363abad4dc5e962b  F:/qwen38-27b-rtx3090/models/Qwen3.8-27B-W4A16-AutoRound/model-00001-of-00007.safetensors
+   3.0 GiB  2 copias, 1 conteudo(s) distinto(s) -> IGUAIS
+        83cdb599f10addd5  F:/qwen38-27b-rtx3090/models/Qwen3.8-27B-W4A16-AutoRound-fast/model-00002-of-00007.safetensors
+        83cdb599f10addd5  F:/qwen38-27b-rtx3090/models/Qwen3.8-27B-W4A16-AutoRound/model-00002-of-00007.safetensors
+   3.0 GiB  2 copias, 1 conteudo(s) distinto(s) -> IGUAIS
+        00759f8c5ae9f959  F:/qwen38-27b-rtx3090/models/Qwen3.8-27B-W4A16-AutoRound-fast/model-00003-of-00007.safetensors
+        00759f8c5ae9f959  F:/qwen38-27b-rtx3090/models/Qwen3.8-27B-W4A16-AutoRound/model-00003-of-00007.safetensors
+   2.9 GiB  2 copias, 2 conteudo(s) distinto(s) -> DIFERENTES
+        782032107c2e9a36  F:/IA/heretic/models/Qwen3-4B-Thinking-2507-MiniMax-M2.1-Distill/model-00002-of-00002.safetensors
+        86b5803f1fc6604d  P:/ComfyBench/originais/FLUX.2-klein-4B/text_encoder/model-00002-of-00002.safetensors
+   2.8 GiB  2 copias, 1 conteudo(s) distinto(s) -> IGUAIS
+        00fa43a7cf35cafc  F:/IA/heretic/model-00002-of-00002.safetensors
+        00fa43a7cf35cafc  F:/IA/heretic/F/model-00002-of-00002.safetensors
+   2.7 GiB  2 copias, 1 conteudo(s) distinto(s) -> IGUAIS
+        6958d669dda31d2c  F:/ptbr-audio-lab/runs/lfm/gold_30m_smoke/final/model.safetensors
+        6958d669dda31d2c  F:/ptbr-audio-lab/runs/lfm/gold_30m_smoke/checkpoints/checkpoint_0/model.safetensors
+   2.1 GiB  2 copias, 1 conteudo(s) distinto(s) -> IGUAIS
+        7d49151d6b8e25b3  F:/COMFY_PORTABLE/ComfyUI/models/text_encoders/ltx-2.3_text_projection_bf16.safetensors
+        7d49151d6b8e25b3  P:/ComfyBench/checkpoints/ltx-2.3_text_projection_bf16.safetensors
+   1.4 GiB  2 copias, 1 conteudo(s) distinto(s) -> IGUAIS
+        7eacc2e06df4930e  D:/ComfyUI-Models/vae/ltx-2.5-video-vae-bf16.safetensors
+        7eacc2e06df4930e  W:/ltx-2.5/ltx-2.5-video-vae-bf16.safetensors
+   1.4 GiB  2 copias, 1 conteudo(s) distinto(s) -> IGUAIS
+        ece3444eec095a84  D:/ComfyUI-Models/vae/ltx-2.5-video-vae-conv-bf16.safetensors
+        ece3444eec095a84  W:/ltx-2.5/ltx-2.5-video-vae-conv-bf16.safetensors
+   1.2 GiB  2 copias, 1 conteudo(s) distinto(s) -> IGUAIS
+        685c333e2fa1c72e  F:/qwen38-27b-rtx3090/models/Qwen3.8-27B-W4A16-AutoRound-fast/model-00006-of-00007.safetensors
+        685c333e2fa1c72e  F:/qwen38-27b-rtx3090/models/Qwen3.8-27B-W4A16-AutoRound/model-00006-of-00007.safetensors
+   0.9 GiB  2 copias, 1 conteudo(s) distinto(s) -> IGUAIS
+        6149b17dcaa1c67c  F:/COMFY_PORTABLE/ComfyUI/models/upscale_models/ltx-2.3-spatial-upscaler-x2-1.1.safetensors
+        6149b17dcaa1c67c  F:/COMFY_PORTABLE/ComfyUI/models/latent_upscale_models/ltx-2.3-spatial-upscaler-x2-1.1.safetensors
+   0.9 GiB  2 copias, 1 conteudo(s) distinto(s) -> IGUAIS
+        699e47f8bb3bfb6c  D:/ComfyUI-Models/latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors
+        699e47f8bb3bfb6c  W:/ltx-2.5/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors
+   0.7 GiB  2 copias, 1 conteudo(s) distinto(s) -> IGUAIS
+        63a982fb160a8c89  F:/qwen38-27b-rtx3090/models/Qwen3.8-27B-W4A16-AutoRound-fast/model-00005-of-00007.safetensors
+        63a982fb160a8c89  F:/qwen38-27b-rtx3090/models/Qwen3.8-27B-W4A16-AutoRound/model-00005-of-00007.safetensors
+   0.3 GiB  2 copias, 1 conteudo(s) distinto(s) -> IGUAIS
+        a71c11866bd47ab4  F:/COMFY_PORTABLE/ComfyUI/models/vae/LTX23_audio_vae_bf16.safetensors
+        a71c11866bd47ab4  P:/ComfyBench/checkpoints/LTX23_audio_vae_bf16.safetensors
+   0.3 GiB  2 copias, 1 conteudo(s) distinto(s) -> IGUAIS
+        a6f43c8e30c21008  D:/ComfyUI-Models/vae/ltx-2.5-audio-vae-bf16.safetensors
+        a6f43c8e30c21008  W:/ltx-2.5/ltx-2.5-audio-vae-bf16.safetensors

@@ -1,0 +1,16 @@
+Cleanup: only the originals and the chosen quant of each model stay on disk; 89.79 GiB freed, each file sha256-matched to the Hub before removal
+
+Owner's order: keep the originals plus the best quant per model; whatever went to the Hub
+is cleared for deletion here. The rule was written before acting (.scratch/limpeza_2026-09-14.py):
+delete only a file that has a sidecar (our conversion), sits on the Hub under the same name
+with the same size and the same LFS sha256 (computed locally, file by file, before os.remove),
+and is not the chosen build of its model — the smallest build the card marks usable. Nothing
+without a sidecar was touched; nothing absent from the Hub was touched.
+
+Ten weights and their sidecars went: the two LTX 2.5 int8 builds (20 GiB each), the duplicate
+P: copy of the LTX 2.3 W4A8 (the W: copy the documented commands use stays), krea2_turbo_mixed,
+the two heretic Gemma W4A4 builds, qwen3vl_4b_w4a4_convrot and the three Z-Image mixed builds.
+Ten of ten matched the Hub's sha. Seventeen builds remain with weights: fourteen chosen ones and
+three that were never published (LTX 2.3 W4A4, Qwen-Image 2512 W4A4, Wan 2.2 W4A4).
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>

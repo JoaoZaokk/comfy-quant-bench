@@ -1,0 +1,76 @@
+{
+ "1": {
+  "class_type": "VAELoader",
+  "inputs": {
+   "vae_name": "LTX23_video_vae_bf16.safetensors"
+  }
+ },
+ "2": {
+  "class_type": "LTXVAudioVAELoader",
+  "inputs": {
+   "ckpt_name": "LTX23_audio_vae_bf16.safetensors"
+  }
+ },
+ "3": {
+  "class_type": "LoadLatent",
+  "inputs": {
+   "latent": "diag_r1_video.latent"
+  }
+ },
+ "4": {
+  "class_type": "LoadLatent",
+  "inputs": {
+   "latent": "diag_r1_audio.latent"
+  }
+ },
+ "5": {
+  "class_type": "LTXVAudioVAEDecode",
+  "inputs": {
+   "samples": [
+    "4",
+    0
+   ],
+   "audio_vae": [
+    "2",
+    0
+   ]
+  }
+ },
+ "6": {
+  "class_type": "AudioAdjustVolume",
+  "inputs": {
+   "volume": 0,
+   "audio": [
+    "5",
+    0
+   ]
+  }
+ },
+ "9": {
+  "class_type": "StreamingTiledDecodeVideoCombine",
+  "inputs": {
+   "samples": [
+    "3",
+    0
+   ],
+   "vae": [
+    "1",
+    0
+   ],
+   "tile_size": 512,
+   "overlap": 64,
+   "temporal_size": 64,
+   "temporal_overlap": 8,
+   "frame_rate": 24.0,
+   "filename_prefix": "Eros/diag_d_stream",
+   "pix_fmt": "yuv420p",
+   "crf": 24,
+   "save_metadata": true,
+   "save_output": true,
+   "audio": [
+    "6",
+    0
+   ]
+  }
+ }
+}

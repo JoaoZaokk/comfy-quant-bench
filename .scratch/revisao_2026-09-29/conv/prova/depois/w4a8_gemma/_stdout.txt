@@ -1,0 +1,8 @@
+Source: F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\fontes\gemma_sint_bf16.safetensors
+Profile: gemma   group_size=16  convrot_groupsize=256
+Selected Linear weights: 14
+Output: F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\depois\w4a8_gemma\saida.safetensors
+Wrote F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\depois\w4a8_gemma\saida.safetensors (710.66 KiB) in 0.1 s
+Wrote F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\depois\w4a8_gemma\saida.quant.json
+
+--- stderr ---
