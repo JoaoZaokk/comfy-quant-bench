@@ -1,0 +1,16 @@
+diff --git a/diffueraser_node.py b/diffueraser_node.py
+index 03e02f7..13ce1fc 100644
+--- a/diffueraser_node.py
++++ b/diffueraser_node.py
+@@ -215,7 +215,10 @@ class DiffuEraser_Sampler(io.ComfyNode):
+         
+         max_img_size=1920
+         model.to(device) 
+-        model.pipeline.enable_xformers_memory_efficient_attention()
++        try:
++            model.pipeline.enable_xformers_memory_efficient_attention()
++        except Exception as e:
++            print(f"[DiffuEraser] xformers indisponivel; usando atencao padrao do diffusers (SDPA). {e}")
+         apply_group_offloading(model.pipeline.unet, onload_device=torch.device("cuda"), offload_type="block_level", num_blocks_per_group=unet_group)
+         apply_group_offloading(model.pipeline.brushnet, onload_device=torch.device("cuda"), offload_type="block_level", num_blocks_per_group=brush_group)
+         image_list=model.forward( copy.deepcopy(conditioning["video_image"]), copy.deepcopy(conditioning["init_mask"]), copy.deepcopy(conditioning["prioris"]),folder_paths.get_output_directory(),positive,load_videobypath=False,

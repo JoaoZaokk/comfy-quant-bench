@@ -1,34 +1,167 @@
-# comfy-kitchen 0.2.35 (on top of comfy_kitchen_w4a8_dequant_fused.patch): fused Triton dequant for AWQ W4A16 at large M.
-# Measured 2026-09-27, RTX 3090, [24576, 4096] group 32: 5.68 ms -> 0.35 ms; dequant+matmul 3% over BF16 matmul.
+# comfy-kitchen 0.2.35 (on top of comfy_kitchen_w4a8_dequant_fused.patch): AWQ W4A16 weight dequant as a registry op.
+# dequantize_awq_w4a16 is registered in the eager backend (the reference, bit-identical to the old torch chain) and in
+# the triton backend (fused kernel, backends/triton/awq.py); the CUDA large-M fallback (M > 256) dispatches to it.
+# ComfyUI disables the triton backend unless started with --enable-triton-backend: without that flag the eager
+# reference runs, exactly as stock 0.2.35. Measured 2026-09-27, RTX 3090, [24576, 4096] group 32, triton kernel:
+# 5.68 ms -> 0.35 ms (measured when the kernel was called directly, before the registry routing).
+# Tests: patches/tests/test_comfy_kitchen_awq.py (CPU; triton parity is opt-in, see the file).
 # Apply from the portable root (F:\COMFY_PORTABLE): git apply -p1 --directory=python_embeded/Lib/site-packages --check <this file>, then without --check. Running git apply inside site-packages silently skips the files (it sits inside the root repo).
 diff --git a/comfy_kitchen/backends/cuda/__init__.py b/comfy_kitchen/backends/cuda/__init__.py
-index dcb0118..397b213 100644
+index dcb0118..76add7d 100644
 --- a/comfy_kitchen/backends/cuda/__init__.py
 +++ b/comfy_kitchen/backends/cuda/__init__.py
-@@ -3560,6 +3560,11 @@ def scaled_mm_svdquant_w4a4(
+@@ -3560,7 +3560,6 @@ def scaled_mm_svdquant_w4a4(
  # this limit and eventually remove the fallback.
  _AWQ_W4A16_MMA_M_LIMIT = 256
  
-+try:
-+    from comfy_kitchen.backends.triton.awq import dequantize_awq_w4a16 as _triton_dequantize_awq_w4a16
-+except ImportError:
-+    _triton_dequantize_awq_w4a16 = None
-+
- 
+-
  def _awq_w4a16_dequant_then_matmul(
      x: torch.Tensor,
-@@ -3574,6 +3579,10 @@ def _awq_w4a16_dequant_then_matmul(
-     `out = x @ W.T`. Same algebra as eager.gemv_awq_w4a16 — used for M values
-     where the in-kitchen MMA kernel is slower than cuBLAS bf16 GEMM.
+     qweight: torch.Tensor,
+@@ -3571,23 +3570,13 @@ def _awq_w4a16_dequant_then_matmul(
+     """Large-M fallback: dequantize qweight to bf16 then bf16 cuBLAS matmul.
+ 
+     qweight (N, K/2) int8 packed uint4 → W (N, K) bf16 via group dequant, then
+-    `out = x @ W.T`. Same algebra as eager.gemv_awq_w4a16 — used for M values
+-    where the in-kitchen MMA kernel is slower than cuBLAS bf16 GEMM.
++    `out = x @ W.T`. Used for M values where the in-kitchen MMA kernel is slower
++    than cuBLAS bf16 GEMM. The dequant goes through the registry: the fused
++    Triton kernel when that backend is enabled, the eager reference otherwise.
      """
-+    if _triton_dequantize_awq_w4a16 is not None:
-+        # One fused dequant pass instead of the unpack/stack/scale torch chain below (~16x faster on a
-+        # [24576, 4096] weight, RTX 3090); the matmul stays in cuBLAS.
-+        return x.matmul(_triton_dequantize_awq_w4a16(qweight, wscales, wzeros, group_size).t())
-     n, k_half = qweight.shape
-     k = k_half * 2
-     g = group_size
-diff --git a/python_embeded/Lib/site-packages/comfy_kitchen/backends/triton/awq.py b/comfy_kitchen/backends/triton/awq.py
+-    n, k_half = qweight.shape
+-    k = k_half * 2
+-    g = group_size
+-    compute_dtype = wscales.dtype
+-
+-    x32 = qweight.to(torch.int32)
+-    lo = (x32 & 0xF).to(torch.int8)
+-    hi = ((x32 >> 4) & 0xF).to(torch.int8)
+-    nibbles = torch.stack([lo, hi], dim=-1).reshape(n, k).to(compute_dtype)
+-    w = (
+-        (nibbles.view(n, k // g, g) - 8.0) * wscales.t().unsqueeze(-1)
+-        + wzeros.t().unsqueeze(-1)
+-    ).view(n, k)
+-    return x.matmul(w.t())
++    kwargs = {"qweight": qweight, "wscales": wscales, "wzeros": wzeros, "group_size": group_size}
++    dequantize = registry.get_implementation("dequantize_awq_w4a16", kwargs=kwargs)
++    return x.matmul(dequantize(**kwargs).t())
+ 
+ 
+ def gemv_awq_w4a16(
+diff --git a/comfy_kitchen/backends/eager/__init__.py b/comfy_kitchen/backends/eager/__init__.py
+index f46c7ab..951100c 100644
+--- a/comfy_kitchen/backends/eager/__init__.py
++++ b/comfy_kitchen/backends/eager/__init__.py
+@@ -32,6 +32,7 @@ __all__ = [
+     "dequantize_convrot_w4a4_weight",
+     "dequantize_w4a8_int8_weight",
+     "gemv_awq_w4a16",
++    "dequantize_awq_w4a16",
+     "convrot_w4a4_linear",
+     "prepare_int4_weight_for_int8_linear",
+     "quantize_mxfp8",
+@@ -66,7 +67,7 @@ from comfy_kitchen.constraints import (
+ from comfy_kitchen.registry import registry
+ 
+ from .adaln import adaln, rms_adaln
+-from .awq import gemv_awq_w4a16
++from .awq import dequantize_awq_w4a16, gemv_awq_w4a16
+ from .conv3d import fp16_conv3d
+ from .convrot_w4a4 import (
+     convrot_w4a4_linear,
+@@ -456,6 +457,14 @@ def _build_constraints() -> dict:
+             },
+             default_devices=all_devices,
+         ),
++        "dequantize_awq_w4a16": FunctionConstraints(
++            params={
++                "qweight": ParamConstraint(dtypes=frozenset({torch.int8}), shape_rules=(ExactDims(2),)),
++                "wscales": ParamConstraint(dtypes=standard_floats, shape_rules=(ExactDims(2),)),
++                "wzeros": ParamConstraint(dtypes=standard_floats, shape_rules=(ExactDims(2),)),
++            },
++            default_devices=all_devices,
++        ),
+     }
+ 
+     out["quantize_int8_tensorwise"] = FunctionConstraints(
+diff --git a/comfy_kitchen/backends/eager/awq.py b/comfy_kitchen/backends/eager/awq.py
+index b9d47bb..eafe42c 100644
+--- a/comfy_kitchen/backends/eager/awq.py
++++ b/comfy_kitchen/backends/eager/awq.py
+@@ -33,6 +33,23 @@ def _unpack_uint4_row_major(packed: torch.Tensor) -> torch.Tensor:
+     return stacked.reshape(*packed.shape[:-1], -1).to(torch.int8)
+ 
+ 
++def dequantize_awq_w4a16(
++    qweight: torch.Tensor,
++    wscales: torch.Tensor,
++    wzeros: torch.Tensor,
++    group_size: int = _DEFAULT_GROUP,
++) -> torch.Tensor:
++    """(N, K // 2) packed uint4 + (K // G, N) scales/zeros -> (N, K) weight in the scales' dtype."""
++    n, k_half = qweight.shape
++    k = k_half * 2
++    w_uint = _unpack_uint4_row_major(qweight).to(wscales.dtype)  # (n, k)
++    w_groups = w_uint.view(n, k // group_size, group_size)
++    # wscales / wzeros are (K/G, N) — transpose to (n, k/g) for broadcasting
++    scales_ng = wscales.t().unsqueeze(-1)  # (n, k/g, 1)
++    zeros_ng = wzeros.t().unsqueeze(-1)
++    return ((w_groups - 8.0) * scales_ng + zeros_ng).view(n, k)
++
++
+ def gemv_awq_w4a16(
+     x: torch.Tensor,
+     qweight: torch.Tensor,
+@@ -67,12 +84,7 @@ def gemv_awq_w4a16(
+     compute_dtype = wscales.dtype
+ 
+     # Dequantize: (qweight - 8) * wscales + wzeros
+-    w_uint = _unpack_uint4_row_major(qweight).to(compute_dtype)  # (n, k)
+-    w_groups = w_uint.view(n, k // group_size, group_size)
+-    # wscales / wzeros are (K/G, N) — transpose to (n, k/g) for broadcasting
+-    scales_ng = wscales.t().unsqueeze(-1)  # (n, k/g, 1)
+-    zeros_ng = wzeros.t().unsqueeze(-1)
+-    w_fp = ((w_groups - 8.0) * scales_ng + zeros_ng).view(n, k)
++    w_fp = dequantize_awq_w4a16(qweight, wscales, wzeros, group_size)
+ 
+     out = x2d.to(compute_dtype) @ w_fp.t()
+     if bias is not None:
+diff --git a/comfy_kitchen/backends/triton/__init__.py b/comfy_kitchen/backends/triton/__init__.py
+index 08bf963..9fc52fc 100644
+--- a/comfy_kitchen/backends/triton/__init__.py
++++ b/comfy_kitchen/backends/triton/__init__.py
+@@ -27,6 +27,7 @@ __all__ = [
+     "quantize_int8_rowwise",
+     "quantize_and_rotate_rowwise",
+     "w4a8_int8_linear",
++    "dequantize_awq_w4a16",
+ ]
+ 
+ # Try to import triton and register if available
+@@ -54,6 +55,7 @@ try:
+     )
+ 
+     from .adaln import adaln, rms_adaln
++    from .awq import dequantize_awq_w4a16
+     from .na import na3d
+     from .quantization import (
+         dequantize_nvfp4,
+@@ -236,6 +238,14 @@ def _build_constraints() -> dict:
+             },
+             default_devices=triton_devices,
+         ),
++        "dequantize_awq_w4a16": FunctionConstraints(
++            params={
++                "qweight": ParamConstraint(dtypes=frozenset({torch.int8}), shape_rules=(ExactDims(2),)),
++                "wscales": ParamConstraint(dtypes=standard_floats, shape_rules=(ExactDims(2),)),
++                "wzeros": ParamConstraint(dtypes=standard_floats, shape_rules=(ExactDims(2),)),
++            },
++            default_devices=cuda_devices,
++        ),
+         "int8_linear": FunctionConstraints(
+             params={
+                 "x": ParamConstraint(dtypes=standard_floats),
+diff --git a/comfy_kitchen/backends/triton/awq.py b/comfy_kitchen/backends/triton/awq.py
 new file mode 100644
 index 0000000..8fc29d8
 --- /dev/null

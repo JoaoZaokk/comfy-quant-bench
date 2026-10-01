@@ -25,10 +25,11 @@ off within a week.
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
-import struct
 from pathlib import Path
+from typing import NamedTuple
 
 logger = logging.getLogger("quant-preflight")
 
@@ -59,31 +60,38 @@ def unresolved(symbol: str, exc: BaseException, consequence: str) -> tuple:
             "NOT RUN. This is a missing check, not a clean result -- most likely an upstream "
             "rename that this package has not caught up with.")
 
-# Formats whose weights carry their own per-layer precision. For these the file has already
-# decided, so a dtype widget is at best redundant.
-WEIGHT_ONLY_FORMATS = {"convrot_w4a4", "asym_w4a8_int8", "int8_tensorwise"}
+class Header(NamedTuple):
+    tensors: dict
+    metadata: dict
+    layers: dict
 
 
-def read_header(path: Path) -> tuple[dict, dict]:
-    """(tensors, metadata) from the safetensors header, bounds-checked.
+def inspect(path: Path) -> Header:
+    """(tensors, metadata, quantized layers) from the safetensors header, read once per file version.
 
-    The bounds check is not decoration: without it a truncated or non-safetensors file makes this
-    allocate whatever the first eight bytes happened to say.
+    Cached on (path, mtime_ns, size): a submission runs the per-widget validator and the graph-level
+    wrapper over the same loader files, and the model roots include network shares. A rewritten file
+    changes mtime or size and is read again. The result is shared between callers; do not mutate it.
     """
-    with path.open("rb") as handle:
-        prefix = handle.read(8)
-        if len(prefix) != 8:
-            raise ValueError("shorter than a safetensors header prefix")
-        size = struct.unpack("<Q", prefix)[0]
-        limit = min(path.stat().st_size - 8, 1024 ** 3)
-        if size <= 2 or size > limit:
-            raise ValueError(f"header size {size} outside 2..{limit}")
-        blob = handle.read(size)
-        if len(blob) != size:
-            raise ValueError("header truncated")
-        header = json.loads(blob)
+    stat = Path(path).stat()
+    return _inspect(str(path), stat.st_mtime_ns, stat.st_size)
+
+
+@functools.lru_cache(maxsize=256)
+def _inspect(path: str, mtime_ns: int, size: int) -> Header:
+    # Bounded before anything is read: without the limit a truncated or non-safetensors file makes
+    # the reader allocate whatever its first eight bytes happened to say.
+    import comfy.utils
+
+    if size < 8:
+        raise ValueError("shorter than a safetensors header prefix")
+    limit = min(size - 8, 1024 ** 3)
+    blob = comfy.utils.safetensors_header(path, max_size=limit)
+    if blob is None or len(blob) <= 2:
+        raise ValueError(f"header size outside 3..{limit}")
+    header = json.loads(blob)
     metadata = header.pop("__metadata__", {}) or {}
-    return header, metadata
+    return Header(header, metadata, quant_layers(header, metadata))
 
 
 def quant_layers(tensors: dict, metadata: dict) -> dict[str, dict]:
@@ -163,48 +171,16 @@ def check_weight_correction_dropped(tensors: dict, metadata: dict, layers: dict)
             "with a systematic offset. There is no error at load; the output is just wrong.")
 
 
-def check_inert_full_precision_flag(tensors: dict, metadata: dict, layers: dict) -> tuple | None:
-    """`full_precision_matrix_mult: true` does nothing for the weight-only formats.
-
-    Provenance: audit finding on `ops.py:1373`, marked unverified. The flag is meant to keep a
-    sensitive layer in BF16; for convrot_w4a4 / asym_w4a8_int8 / int8_tensorwise the weight stays
-    a QuantizedTensor and the kernel runs anyway. A converter that marked adaLN or proj_out as
-    "runs in BF16" is then wrong about its own file.
-
-    WARN, not ERROR: nothing is corrupted, the intent is simply not honoured -- and the finding
-    has not been confirmed by execution.
-
-    The message below says "not confirmed by execution" in the message itself, and states the
-    consequence as *would*, not *does*. It said it as fact once, and a fact in a WARN is how an
-    audit hypothesis becomes repo lore: the person who reads it in the UI does not have this
-    docstring in front of them, and the caveat that lives only next to the source is a caveat that
-    does not travel.
-    """
-    flagged = [name for name, conf in layers.items()
-               if conf.get("full_precision_matrix_mult")
-               and str(conf.get("format")) in WEIGHT_ONLY_FORMATS]
-    if not flagged:
-        return None
-    return (WARN,
-            f"{len(flagged)} layer(s) request full_precision_matrix_mult. Reading ops.py:1373, "
-            f"for {'/'.join(sorted(WEIGHT_ONLY_FORMATS))} that flag would not keep the layer in "
-            "BF16 -- the weight stays a QuantizedTensor and the quantized kernel would run "
-            "regardless, so the file's own intent would not be honoured. Audit finding, not "
-            "confirmed by execution: nothing has been run with the flag set. "
-            "tools/dispatch_census.py on such a file would settle it.")
-
-
 FILE_CHECKS = (
     check_diffusers_named_quantized,
     check_weight_correction_dropped,
-    check_inert_full_precision_flag,
 )
 
 
 def check_file(path: Path) -> list[tuple]:
     """Every file-level check. Returns a list of (severity, message)."""
     try:
-        tensors, metadata = read_header(path)
+        header = inspect(path)
     except Exception as exc:
         # A file we cannot parse is still not a file to block on: GGUF, .pt and friends come
         # through here too, and inventing a verdict for them would get this package uninstalled.
@@ -216,10 +192,9 @@ def check_file(path: Path) -> list[tuple]:
                  f"could not read the safetensors header of {path.name} "
                  f"({type(exc).__name__}: {exc}), so NONE of the file-level checks ran on it. "
                  "Not a clean result -- an unchecked one.")]
-    layers = quant_layers(tensors, metadata)
     found = []
     for check in FILE_CHECKS:
-        result = check(tensors, metadata, layers)
+        result = check(*header)
         if result:
             found.append(result)
     return found
@@ -269,7 +244,7 @@ def check_dtype_widget(path: Path, weight_dtype: str) -> tuple | None:
     if weight_dtype in (None, "", "default"):
         return None
     try:
-        tensors, metadata = read_header(path)
+        layers = inspect(path).layers
     except Exception as exc:
         # This one mattered more than the check_file twin: the user has explicitly set a widget,
         # and a silent None told them the setting was fine on a file whose header was never read.
@@ -277,7 +252,6 @@ def check_dtype_widget(path: Path, weight_dtype: str) -> tuple | None:
                 f"weight_dtype={weight_dtype} was NOT checked against {path.name}: its "
                 f"safetensors header did not read ({type(exc).__name__}: {exc}). If that file is "
                 "quantized, the contradiction this check exists to catch is still there.")
-    layers = quant_layers(tensors, metadata)
     if not layers:
         return None            # BF16/fp16 source: the widget is doing its job.
     formats = formats_present(layers) or {"unknown"}
@@ -293,6 +267,17 @@ def check_dtype_widget(path: Path, weight_dtype: str) -> tuple | None:
 # --------------------------------------------------------------------------------------------
 
 NUNCHAKU_LOADER_MARKERS = ("Nunchaku",)
+# Loaders that build their model inside ComfyUI-nunchaku's local `eager_linear_init()` patch
+# (patches/nunchaku_eager_linear_dynamic_vram.patch), so the lazy Linear never reaches them.
+NUNCHAKU_EAGER_LOADERS = {"NunchakuZImageDiTLoader", "NunchakuQwenImageDiTLoader"}
+
+
+def nunchaku_eager_fix_installed() -> bool:
+    """Whether the loaded ComfyUI-nunchaku carries the `eager_linear_init` patch."""
+    import sys
+    return any(getattr(m, "eager_linear_init", None) is not None
+               and "nunchaku" in (getattr(m, "__file__", "") or "").lower()
+               for m in list(sys.modules.values()))
 
 
 def check_nunchaku_needs_disable_dynamic_vram(class_types: list[str]) -> tuple | None:
@@ -337,6 +322,15 @@ def check_nunchaku_needs_disable_dynamic_vram(class_types: list[str]) -> tuple |
                 "flag; until this package is updated, confirm --disable-dynamic-vram yourself.")
     if not flag:
         return None
+    if nunchaku_eager_fix_installed():
+        untested = sorted(set(nunchaku) - NUNCHAKU_EAGER_LOADERS)
+        if not untested:
+            return None
+        return (WARN,
+                f"this workflow uses {', '.join(untested)} with dynamic VRAM on. The local "
+                "eager_linear_init fix covers the Z-Image and Qwen-Image DiT loaders (measured "
+                "2026-10-01); these nodes were not run with dynamic VRAM. If one fails, restart "
+                "with --disable-dynamic-vram.")
     return (ERROR,
             f"this workflow uses {', '.join(sorted(set(nunchaku)))} and the server is running "
             "without --disable-dynamic-vram. ComfyUI's lazy Linear leaves weight=None until the "

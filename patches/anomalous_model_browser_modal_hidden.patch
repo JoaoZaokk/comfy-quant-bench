@@ -1,0 +1,28 @@
+diff --git a/web/modules/ui_sidebar.js b/web/modules/ui_sidebar.js
+index 950e2b3..c479eb0 100644
+--- a/web/modules/ui_sidebar.js
++++ b/web/modules/ui_sidebar.js
+@@ -1153,6 +1153,9 @@ export function createDOM() {
+         modelSettingsDialog.className = 'anomalous-model-settings-dialog';
+         modelSettingsDialog.setAttribute('role', 'dialog');
+         modelSettingsDialog.setAttribute('aria-modal', 'true');
++        // ComfyUI's isModalOpen() matches [role=dialog][aria-modal=true]:not([hidden]) on the
++        // dialog itself, so hiding only the overlay leaves every shortcut (Ctrl+Z, Ctrl+S) blocked.
++        modelSettingsDialog.hidden = true;
+ 
+         const modelSettingsTitle = document.createElement('h2');
+         const modelSettingsDescription = document.createElement('p');
+@@ -1218,11 +1221,11 @@ export function createDOM() {
+         };
+         refreshModelSettingsText();
+ 
+-        const closeModelSettings = () => { modelSettingsOverlay.hidden = true; };
++        const closeModelSettings = () => { modelSettingsOverlay.hidden = modelSettingsDialog.hidden = true; };
+         modelSettingsBtn.onclick = () => {
+             refreshModelSettingsText();
+             settingsHubModal.style.display = 'none';
+-            modelSettingsOverlay.hidden = false;
++            modelSettingsOverlay.hidden = modelSettingsDialog.hidden = false;
+             videoSetting.select.focus();
+         };
+         modelSettingsClose.onclick = closeModelSettings;

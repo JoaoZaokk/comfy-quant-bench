@@ -346,15 +346,19 @@ def _wrap_validate_prompt() -> None:
             graph_nodes.append((class_type, node.get("inputs")))
             if first_node is None:
                 first_node = node_id
-            for _, file_widget, folder, _ in LOADER_TABLE:
+            # Only the table's own classes: a custom node that happens to name a widget `ckpt_name`
+            # or `clip_name` keeps its files in its own folder, and resolving it here would count
+            # (or fail to read) a file the node never loads.
+            for table_class, file_widget, folder, _ in LOADER_TABLE:
+                if table_class != class_type:
+                    continue
                 value = (node.get("inputs") or {}).get(file_widget)
                 if isinstance(value, str) and value.endswith(".safetensors"):
                     path, failure = _resolve(folder, value)
                     note(failure)
                     if path and path.is_file():
                         try:
-                            tensors, metadata = checks.read_header(path)
-                            if checks.quant_layers(tensors, metadata):
+                            if checks.inspect(path).layers:
                                 quantized_files += 1
                         except Exception as exc:
                             # This count feeds check_lora_over_quantized. Swallowing the failure

@@ -1,5 +1,21 @@
+From 82a4928e3fd5cc17225cf5d64e92b2280e4330f3 Mon Sep 17 00:00:00 2001
+From: JoaoZaokk <joaozaogb@gmail.com>
+Date: Tue, 29 Sep 2026 07:02:45 -0300
+Subject: [PATCH] Build LTX patchifier coordinates without host tensors
+
+latent_to_pixel_coords and get_latent_coords built a tensor from Python
+scalars on every call, an H2D copy that breaks CUDA graph capture. Scale
+per axis with Python scalars instead.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ comfy/ldm/lightricks/symmetric_patchifier.py  | 14 +++---
+ .../comfy_test/test_symmetric_patchifier.py   | 47 +++++++++++++++++++
+ 2 files changed, 53 insertions(+), 8 deletions(-)
+ create mode 100644 tests-unit/comfy_test/test_symmetric_patchifier.py
+
 diff --git a/comfy/ldm/lightricks/symmetric_patchifier.py b/comfy/ldm/lightricks/symmetric_patchifier.py
-index 8f9a41186bf773cab756b95223b6fa46bfb940ba..4390cbe8a14760659f17b0b7a4de08af5fa82c70 100644
+index 8f9a4118..4390cbe8 100644
 --- a/comfy/ldm/lightricks/symmetric_patchifier.py
 +++ b/comfy/ldm/lightricks/symmetric_patchifier.py
 @@ -21,11 +21,9 @@ def latent_to_pixel_coords(
@@ -37,6 +53,7 @@ index 8f9a41186bf773cab756b95223b6fa46bfb940ba..4390cbe8a14760659f17b0b7a4de08af
                  latent_sample_coords_end, "b c f h w -> b c (f h w)", b=batch_size
 diff --git a/tests-unit/comfy_test/test_symmetric_patchifier.py b/tests-unit/comfy_test/test_symmetric_patchifier.py
 new file mode 100644
+index 00000000..ab5960c3
 --- /dev/null
 +++ b/tests-unit/comfy_test/test_symmetric_patchifier.py
 @@ -0,0 +1,47 @@
@@ -87,3 +104,6 @@ new file mode 100644
 +
 +    expected = real_tensor([[[0, 8], [0, 64], [0, 96]]])
 +    assert torch.equal(pixel_coords, expected)
+-- 
+2.54.0.windows.1
+

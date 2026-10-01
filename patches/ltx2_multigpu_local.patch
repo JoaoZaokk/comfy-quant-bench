@@ -1,0 +1,43 @@
+diff --git a/wrappers.py b/wrappers.py
+index b09c2bc..edc51f1 100644
+--- a/wrappers.py
++++ b/wrappers.py
+@@ -24,11 +24,30 @@ def get_current_device():
+     return _current_device
+ 
+ 
++
++def _repassa_ao_multigpu(nome, device):
++    """Repassa a escolha ao ComfyUI-MultiGPU, se ele estiver carregado.
++
++    Este pack carrega ANTES dele (ordem alfabetica), nao o acha no import e cai no modo standalone;
++    depois o ComfyUI-MultiGPU carrega e passa a responder comfy.model_management.text_encoder_device
++    com a variavel DELE. Sem este repasse a escolha do no fica numa variavel que ninguem le e o text
++    encoder vai para cuda:0 (medido 2026-09-24, COMFY_PORTABLE). Original em wrappers.py.orig_20260924."""
++    import sys
++    for mod in list(sys.modules.values()):
++        f = getattr(mod, nome, None)
++        if f is not None and callable(f) and getattr(mod, "__name__", "") != __name__                 and "multigpu" in getattr(mod, "__name__", "").lower() and "ltx2" not in getattr(mod, "__name__", "").lower():
++            try:
++                f(device)
++            except Exception as e:  # noqa: BLE001
++                logger.warning(f"repasse de {nome} ao ComfyUI-MultiGPU falhou: {e}")
++            return
++
+ def set_current_device(device):
+     """Set the current compute device."""
+     global _current_device
+     _current_device = device
+     logger.debug(f"Set current device to: {device}")
++    _repassa_ao_multigpu("set_current_device", device)
+ 
+ 
+ def get_current_text_encoder_device():
+@@ -42,6 +61,7 @@ def set_current_text_encoder_device(device):
+     global _current_text_encoder_device
+     _current_text_encoder_device = device
+     logger.debug(f"Set text encoder device to: {device}")
++    _repassa_ao_multigpu("set_current_text_encoder_device", device)
+ 
+ 
+ def override_class(cls):

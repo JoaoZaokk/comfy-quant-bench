@@ -1,0 +1,99 @@
+diff --git a/models/qwenimage.py b/models/qwenimage.py
+index cf232df..6db3b22 100644
+--- a/models/qwenimage.py
++++ b/models/qwenimage.py
+@@ -401,7 +401,23 @@ class NunchakuQwenImageTransformerBlock(nn.Module):
+             **kwargs,
+         )
+ 
+-    def _modulate(self, x: torch.Tensor, mod_params: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
++    def _apply_gate(self, x: torch.Tensor, residual: torch.Tensor, gate, timestep_zero_index=None):
++        if timestep_zero_index is None:
++            return residual + gate * x
++        return residual + torch.cat(
++            (
++                gate[0] * x[:, :timestep_zero_index],
++                gate[1] * x[:, timestep_zero_index:],
++            ),
++            dim=1,
++        )
++
++    def _modulate(
++        self,
++        x: torch.Tensor,
++        mod_params: torch.Tensor,
++        timestep_zero_index=None,
++    ) -> Tuple[torch.Tensor, torch.Tensor]:
+         """
+         Apply modulation to input tensor.
+ 
+@@ -420,9 +436,21 @@ class NunchakuQwenImageTransformerBlock(nn.Module):
+             Gate tensor for residual connection.
+         """
+         shift, scale, gate = mod_params.chunk(3, dim=-1)
++        if timestep_zero_index is None:
++            if self.scale_shift != 0:
++                scale.add_(self.scale_shift)
++            return x * scale.unsqueeze(1) + shift.unsqueeze(1), gate.unsqueeze(1)
++
++        actual_batch = shift.shape[0] // 2
++        shift, shift_zero = shift[:actual_batch], shift[actual_batch:]
++        scale, scale_zero = scale[:actual_batch], scale[actual_batch:]
++        gate, gate_zero = gate[:actual_batch], gate[actual_batch:]
+         if self.scale_shift != 0:
+             scale.add_(self.scale_shift)
+-        return x * scale.unsqueeze(1) + shift.unsqueeze(1), gate.unsqueeze(1)
++            scale_zero.add_(self.scale_shift)
++        regular = x[:, :timestep_zero_index] * scale.unsqueeze(1) + shift.unsqueeze(1)
++        zero = x[:, timestep_zero_index:] * scale_zero.unsqueeze(1) + shift_zero.unsqueeze(1)
++        return torch.cat((regular, zero), dim=1), (gate.unsqueeze(1), gate_zero.unsqueeze(1))
+ 
+     def forward(
+         self,
+@@ -458,7 +486,8 @@ class NunchakuQwenImageTransformerBlock(nn.Module):
+         """
+         # Get modulation parameters for both streams
+         img_mod_params = self.img_mod(temb)  # [B, 6*dim]
+-        txt_mod_params = self.txt_mod(temb)  # [B, 6*dim]
++        txt_temb = temb.chunk(2, dim=0)[0] if timestep_zero_index is not None else temb
++        txt_mod_params = self.txt_mod(txt_temb)  # [B, 6*dim]
+ 
+         # Nunchaku's mod_params is [B, 6*dim] instead of [B, dim*6]
+         img_mod_params = (
+@@ -473,7 +502,7 @@ class NunchakuQwenImageTransformerBlock(nn.Module):
+ 
+         # Process image stream - norm1 + modulation
+         img_normed = self.img_norm1(hidden_states)
+-        img_modulated, img_gate1 = self._modulate(img_normed, img_mod1)
++        img_modulated, img_gate1 = self._modulate(img_normed, img_mod1, timestep_zero_index)
+ 
+         # Process text stream - norm1 + modulation
+         txt_normed = self.txt_norm1(encoder_hidden_states)
+@@ -491,14 +520,14 @@ class NunchakuQwenImageTransformerBlock(nn.Module):
+         img_attn_output, txt_attn_output = attn_output
+ 
+         # Apply attention gates and add residual (like in Megatron)
+-        hidden_states = hidden_states + img_gate1 * img_attn_output
++        hidden_states = self._apply_gate(img_attn_output, hidden_states, img_gate1, timestep_zero_index)
+         encoder_hidden_states = encoder_hidden_states + txt_gate1 * txt_attn_output
+ 
+         # Process image stream - norm2 + MLP
+         img_normed2 = self.img_norm2(hidden_states)
+-        img_modulated2, img_gate2 = self._modulate(img_normed2, img_mod2)
++        img_modulated2, img_gate2 = self._modulate(img_normed2, img_mod2, timestep_zero_index)
+         img_mlp_output = self.img_mlp(img_modulated2)
+-        hidden_states = hidden_states + img_gate2 * img_mlp_output
++        hidden_states = self._apply_gate(img_mlp_output, hidden_states, img_gate2, timestep_zero_index)
+ 
+         # Process text stream - norm2 + MLP
+         txt_normed2 = self.txt_norm2(encoder_hidden_states)
+@@ -807,6 +836,9 @@ class NunchakuQwenImageTransformer2DModel(NunchakuModelMixin, QwenImageTransform
+             if self.offload:
+                 self.offload_manager.step(compute_stream)
+ 
++        if timestep_zero_index is not None:
++            temb = temb.chunk(2, dim=0)[0]
++
+         hidden_states = self.norm_out(hidden_states, temb)
+         hidden_states = self.proj_out(hidden_states)
+ 

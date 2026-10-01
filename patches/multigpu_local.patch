@@ -1,0 +1,99 @@
+diff --git a/__init__.py b/__init__.py
+index 2d00d58..8706bcd 100644
+--- a/__init__.py
++++ b/__init__.py
+@@ -525,7 +525,7 @@ def _patch_comfy_sample_runtime_device():
+         logger.info("[MultiGPU] Patched comfy.sample.sample_custom with runtime device guard")
+ 
+ def _patch_comfy_kitchen_dlpack_device_guard():
+-    """Guard comfy_kitchen DLPack export with P2P-aware CPU-staging fallback."""
++    """Guard comfy_kitchen DLPack export with the tensor's actual CUDA device."""
+     try:
+         comfy_kitchen_cuda = importlib.import_module("comfy_kitchen.backends.cuda")
+     except ImportError:
+@@ -540,43 +540,16 @@ def _patch_comfy_kitchen_dlpack_device_guard():
+     if getattr(wrap_for_dlpack, "_multigpu_cuda_device_guard", False):
+         return True
+ 
+-    from .p2p_registry import p2p_registry
+-
+     def wrap_for_dlpack_with_device_guard(*args, **kwargs):
+         tensor = args[0] if args else kwargs.get("tensor")
+         tensor_device = getattr(tensor, "device", None)
+-        exec_device = get_current_device()
+-        exec_device = _coerce_torch_device(exec_device)
+-
+-        # Determine if cross-device staging is needed
+-        needs_staging = False
+-        def _valid_cuda(d):
+-            return d is not None and d.type == "cuda" and d.index is not None
+-
+-        if _valid_cuda(tensor_device) and _valid_cuda(exec_device):
+-            if tensor_device.index != exec_device.index and not p2p_registry.can_access_peer(tensor_device.index, exec_device.index):
+-                needs_staging = True
+-
+-        if needs_staging:
+-            logger.info(
+-                f"[MultiGPU DLPack] CPU-staging tensor from cuda:{tensor_device.index} "
+-                f"to cuda:{exec_device.index} (P2P unavailable)"
+-            )
+-            staged_tensor = tensor.to("cpu").to(exec_device)
+-            wrap_for_dlpack_with_device_guard._dlpack_staging_count += 1
+-            with cuda_device_guard(exec_device, reason="comfy_kitchen._wrap_for_dlpack(staged)"):
+-                if args:
+-                    return wrap_for_dlpack(staged_tensor, *args[1:], **kwargs)
+-                else:
+-                    return wrap_for_dlpack(staged_tensor, **kwargs)
+-        else:
+-            with cuda_device_guard(tensor_device, reason="comfy_kitchen._wrap_for_dlpack"):
+-                return wrap_for_dlpack(*args, **kwargs)
++        with cuda_device_guard(tensor_device, reason="comfy_kitchen._wrap_for_dlpack"):
++            return wrap_for_dlpack(*args, **kwargs)
+ 
+     wrap_for_dlpack_with_device_guard._multigpu_cuda_device_guard = True
+     wrap_for_dlpack_with_device_guard._dlpack_staging_count = 0
+     comfy_kitchen_cuda._wrap_for_dlpack = wrap_for_dlpack_with_device_guard
+-    logger.info("[MultiGPU] Applied comfy_kitchen CUDA DLPack device guard patch (P2P-aware)")
++    logger.info("[MultiGPU] Applied comfy_kitchen CUDA DLPack tensor-device guard patch")
+     return True
+ 
+ logger.info("[MultiGPU Core Patching] Patching mm.get_torch_device, mm.text_encoder_device, mm.unet_offload_device")
+diff --git a/p2p_registry.py b/p2p_registry.py
+index c3c677f..5270f3d 100644
+--- a/p2p_registry.py
++++ b/p2p_registry.py
+@@ -6,6 +6,8 @@ repeated CUDA runtime API calls.
+ 
+ import ctypes
+ import logging
++import sys
++from pathlib import Path
+ import torch
+ 
+ logger = logging.getLogger("MultiGPU")
+@@ -14,10 +16,23 @@ _libcudart = None
+ 
+ 
+ def _get_libcudart():
+-    """Load libcudart.so once and cache the handle."""
++    """Load the CUDA runtime bundled with PyTorch and cache the handle."""
+     global _libcudart
+     if _libcudart is None:
+-        _libcudart = ctypes.CDLL("libcudart.so")
++        if sys.platform == "win32":
++            torch_lib = Path(torch.__file__).resolve().parent / "lib"
++            candidates = sorted(torch_lib.glob("cudart64_*.dll"), reverse=True)
++            if not candidates:
++                raise FileNotFoundError(f"No cudart64_*.dll found in {torch_lib}")
++            _libcudart = ctypes.CDLL(str(candidates[0]))
++        else:
++            _libcudart = ctypes.CDLL("libcudart.so")
++        _libcudart.cudaDeviceCanAccessPeer.argtypes = (
++            ctypes.POINTER(ctypes.c_int),
++            ctypes.c_int,
++            ctypes.c_int,
++        )
++        _libcudart.cudaDeviceCanAccessPeer.restype = ctypes.c_int
+     return _libcudart
+ 
+ 

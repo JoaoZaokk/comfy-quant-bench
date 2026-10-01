@@ -1,0 +1,135 @@
+diff --git a/model_patcher/zimage.py b/model_patcher/zimage.py
+index 069e5b9..f2b5b46 100644
+--- a/model_patcher/zimage.py
++++ b/model_patcher/zimage.py
+@@ -93,7 +93,7 @@ def concat_lora_weights(
+ 
+ 
+ class ZImageModelPatcher(ModelPatcher):
+-    def __init__(self, model, load_device, offload_device, size=0, weight_inplace_update=False):
++    def __init__(self, model, load_device, offload_device, size=0, weight_inplace_update=False, **kwargs):
+         """
+         Adapted from comfy.model_patcher.ModelPatcher#clone
+ 
+@@ -102,10 +102,11 @@ class ZImageModelPatcher(ModelPatcher):
+         + Always set `weight_inplace_update` to False
+         + Add `svdq_backup` dict for loading/unloading lora weights for Nunchaku Z-Image model.
+         """
+-        super().__init__(model, load_device, offload_device, size, weight_inplace_update=False)
++        # kwargs: newer ComfyUI passes extra patcher options (e.g. fast_disk) through clone().
++        super().__init__(model, load_device, offload_device, size, weight_inplace_update=False, **kwargs)
+         self.svdq_backup = {}
+ 
+-    def clone(self):
++    def clone(self, *args, **kwargs):
+         """
+         Adapted from comfy.model_patcher.ModelPatcher#clone
+ 
+@@ -113,7 +114,7 @@ class ZImageModelPatcher(ModelPatcher):
+         ----
+         + Clone quantized svdq_backup weights for Nunchaku Z-Image model.
+         """
+-        n = ModelPatcher.clone(self)
++        n = ModelPatcher.clone(self, *args, **kwargs)
+         n.svdq_backup = self.svdq_backup
+         logging.debug("ZImageModelPatcher cloned.")
+         return n
+diff --git a/nodes/models/qwenimage.py b/nodes/models/qwenimage.py
+index e8fdba8..d790e38 100644
+--- a/nodes/models/qwenimage.py
++++ b/nodes/models/qwenimage.py
+@@ -14,7 +14,7 @@ from nunchaku.utils import check_hardware_compatibility, get_gpu_memory, get_pre
+ 
+ from ...model_configs.qwenimage import NunchakuQwenImage
+ from ...model_patcher.common import NunchakuModelPatcher
+-from ..utils import get_filename_list, get_full_path_or_raise
++from ..utils import eager_linear_init, get_filename_list, get_full_path_or_raise
+ 
+ # Get log level from environment variable (default to INFO)
+ log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+@@ -95,9 +95,10 @@ def load_diffusion_model_state_dict(
+     if model_options.get("fp8_optimizations", False):
+         model_config.optimizations["fp8"] = True
+ 
+-    model = model_config.get_model(new_sd, "", load_device)
+-    model = model.to(offload_device)
+-    model.load_model_weights(new_sd, "")
++    with eager_linear_init():
++        model = model_config.get_model(new_sd, "", load_device)
++        model = model.to(offload_device)
++        model.load_model_weights(new_sd, "")
+     return NunchakuModelPatcher(model, load_device=load_device, offload_device=offload_device)
+ 
+ 
+diff --git a/nodes/models/zimage.py b/nodes/models/zimage.py
+index 66a247d..c69bdac 100644
+--- a/nodes/models/zimage.py
++++ b/nodes/models/zimage.py
+@@ -14,7 +14,7 @@ from nunchaku.utils import check_hardware_compatibility, get_precision_from_quan
+ 
+ from ...model_configs.zimage import NunchakuZImage
+ from ...model_patcher.zimage import ZImageModelPatcher
+-from ..utils import get_filename_list, get_full_path_or_raise
++from ..utils import eager_linear_init, get_filename_list, get_full_path_or_raise
+ 
+ 
+ def _patch_state_dict(state_dict: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+@@ -145,13 +145,14 @@ def _load(sd: dict[str, torch.Tensor], metadata: dict[str, str] = {}):
+     model_config.set_inference_dtype(unet_dtype, manual_cast_dtype)
+ 
+     patched_sd = _patch_state_dict(new_sd)
+-    model = model_config.get_model(patched_sd, "", torch_dtype=torch_dtype)
++    with eager_linear_init():
++        model = model_config.get_model(patched_sd, "", torch_dtype=torch_dtype)
+ 
+-    patch_scale_key(model.diffusion_model, patched_sd)
+-    if torch_dtype == torch.float16:
+-        convert_fp16(model.diffusion_model, patched_sd)
++        patch_scale_key(model.diffusion_model, patched_sd)
++        if torch_dtype == torch.float16:
++            convert_fp16(model.diffusion_model, patched_sd)
+ 
+-    model.load_model_weights(patched_sd, "")
++        model.load_model_weights(patched_sd, "")
+     return ZImageModelPatcher(model, load_device=load_device, offload_device=offload_device)
+ 
+ 
+diff --git a/nodes/utils.py b/nodes/utils.py
+index d131e1d..727b364 100644
+--- a/nodes/utils.py
++++ b/nodes/utils.py
+@@ -1,3 +1,4 @@
++import contextlib
+ import sys
+ 
+ folder_paths = None
+@@ -11,4 +12,28 @@ except (ImportError, ModuleNotFoundError):
+ get_filename_list = get_filename_list
+ get_full_path_or_raise = get_full_path_or_raise
+ 
+-__all__ = ["get_filename_list", "get_full_path_or_raise", "folder_paths"]
++
++@contextlib.contextmanager
++def eager_linear_init():
++    """
++    Build ComfyUI layers with real weight/bias tensors even when dynamic VRAM is on.
++
++    With dynamic VRAM, ComfyUI's ``Linear`` leaves ``weight`` and ``bias`` as ``None`` until its state dict
++    loads. The Nunchaku loaders swap those layers for ``SVDQW4A4Linear`` in between, reading
++    ``weight.dtype``/``weight.device`` and ``bias is not None``, so they need the eager layers.
++    The model is then managed by a regular (non-dynamic) ModelPatcher, as before.
++    """
++    try:
++        import comfy.memory_management as memory_management
++    except ImportError:
++        yield
++        return
++    enabled = getattr(memory_management, "aimdo_enabled", False)
++    memory_management.aimdo_enabled = False
++    try:
++        yield
++    finally:
++        memory_management.aimdo_enabled = enabled
++
++
++__all__ = ["get_filename_list", "get_full_path_or_raise", "folder_paths", "eager_linear_init"]

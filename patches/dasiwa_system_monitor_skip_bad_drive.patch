@@ -1,0 +1,22 @@
+# ComfyUI-DaSiWa-Nodes: system monitor skips unreadable/disconnecting drives instead of failing the snapshot.
+# Apply from F:\COMFY_PORTABLE: git apply --directory=ComfyUI/custom_nodes/ComfyUI-DaSiWa-Nodes patches/dasiwa_system_monitor_skip_bad_drive.patch
+diff --git a/nodes/nodes_system_monitor.py b/nodes/nodes_system_monitor.py
+index 1fbc190..3dccc4e 100644
+--- a/nodes/nodes_system_monitor.py
++++ b/nodes/nodes_system_monitor.py
+@@ -261,11 +261,13 @@ class DaSiWaSystemMonitor:
+         target = os.path.normcase(os.path.realpath(path))
+         matches = []
+         for partition in partitions:
+-            mountpoint = os.path.normcase(os.path.realpath(partition.mountpoint))
+             try:
++                # realpath touches the volume: an unreadable or disconnecting drive raises OSError
++                # (WinError 1393) and used to fail the whole snapshot request.
++                mountpoint = os.path.normcase(os.path.realpath(partition.mountpoint))
+                 if os.path.commonpath((target, mountpoint)) == mountpoint:
+                     matches.append(partition)
+-            except ValueError:
++            except (OSError, ValueError):
+                 continue
+         return max(matches, key=lambda partition: len(partition.mountpoint), default=None)
+ 

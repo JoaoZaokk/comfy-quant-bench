@@ -1,39 +1,173 @@
-diff --git a/comfy/memory_management.py b/comfy/memory_management.py
-index e032b7dc..b5a81b60 100644
---- a/comfy/memory_management.py
-+++ b/comfy/memory_management.py
-@@ -1,6 +1,7 @@
- import math
- import ctypes
- import dataclasses
-+import logging
- import torch
- from typing import NamedTuple
+From 8fca0975c15d003c01ad76588ba5a3e1879946b7 Mon Sep 17 00:00:00 2001
+From: JoaoZaokk <joaozaogb@gmail.com>
+Date: Tue, 29 Sep 2026 07:04:03 -0300
+Subject: [PATCH] Fall back to the regular copy when an aimdo file read to the
+ GPU fails
+
+aimdo gives up on the whole slice when one window of a host-to-device read
+fails (CUDA_ERROR_OUT_OF_MEMORY from cuMemcpyHtoDAsync while loading a
+14 GB model from a network share). Unwinding with the error still pending
+aborted the process during cleanup. cast_to_gathered now clears the error
+on the destination card and copies that tensor the regular way, warning
+once. discard_cuda_async_error takes the device to clear.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ comfy/model_management.py                     | 32 +++++--
+ .../test_cast_to_gathered_fallback.py         | 85 +++++++++++++++++++
+ 2 files changed, 111 insertions(+), 6 deletions(-)
+ create mode 100644 tests-unit/comfy_test/test_cast_to_gathered_fallback.py
+
+diff --git a/comfy/model_management.py b/comfy/model_management.py
+index 9aa0a9de..2c4fc62c 100644
+--- a/comfy/model_management.py
++++ b/comfy/model_management.py
+@@ -1531,6 +1531,8 @@ def sync_stream(device, stream):
+     current_stream(device).wait_stream(stream)
  
-@@ -67,11 +68,21 @@ def read_tensor_file_slice_into(tensor, destination, stream=None, destination2=N
-         stream_ptr = getattr(stream, "cuda_stream", 0) if stream is not None else 0
-         device_ptr = destination2.data_ptr() if destination2 is not None else 0
-         with info.lock:
--            hostbuf.read_file_slice(file_obj, info.offset, info.size,
--                                    offset=destination.data_ptr() - hostbuf.get_raw_address(),
--                                    stream=stream_ptr,
--                                    device_ptr=device_ptr,
--                                    device=None if destination2 is None else destination2.device.index)
+ 
++FILE_SLICE_READ_FALLBACK_WARNED = False
++
+ def cast_to_gathered(tensors, r, non_blocking=False, stream=None, r2=None):
+     wf_context = nullcontext()
+     if stream is not None:
+@@ -1546,8 +1548,21 @@ def cast_to_gathered(tensors, r, non_blocking=False, stream=None, r2=None):
+             dest2_view = dest2_views.pop(0) if dest2_views is not None else None
+             if tensor is None:
+                 continue
+-            if comfy.memory_management.read_tensor_file_slice_into(tensor, dest_view, stream=stream, destination2=dest2_view):
+-                continue
 +            try:
-+                hostbuf.read_file_slice(file_obj, info.offset, info.size,
-+                                        offset=destination.data_ptr() - hostbuf.get_raw_address(),
-+                                        stream=stream_ptr,
-+                                        device_ptr=device_ptr,
-+                                        device=None if destination2 is None else destination2.device.index)
++                if comfy.memory_management.read_tensor_file_slice_into(tensor, dest_view, stream=stream, destination2=dest2_view):
++                    continue
 +            except RuntimeError:
-+                # aimdo gives up on the whole slice when one window fails (seen as CUDA_ERROR_OUT_OF_MEMORY from
-+                # cuMemcpyHtoDAsync while loading a 14 GB model from a network share). Clear the CUDA error and
-+                # let cast_to_gathered copy this tensor the regular way, instead of unwinding the sampler with
-+                # the error still pending, which aborted the process during cleanup.
-+                import comfy.model_management
-+                comfy.model_management.discard_cuda_async_error()
-+                logging.warning("aimdo host buffer read failed for a %d byte slice; using the regular copy", info.size)
-+                return False
-         return True
++                # aimdo gives up on the whole slice when one window of a host-to-device read fails (seen as
++                # CUDA_ERROR_OUT_OF_MEMORY from cuMemcpyHtoDAsync reading a 14 GB model from a network share).
++                # Clear the pending error on the destination card and copy this tensor the regular way below.
++                device_dest = dest2_view if dest2_view is not None else dest_view
++                if device_dest is None or device_dest.device.type == "cpu":
++                    raise
++                discard_cuda_async_error(device_dest.device)
++                global FILE_SLICE_READ_FALLBACK_WARNED
++                if not FILE_SLICE_READ_FALLBACK_WARNED:
++                    FILE_SLICE_READ_FALLBACK_WARNED = True
++                    logging.warning("aimdo file read to %s failed; copying through the regular path instead", device_dest.device)
+             storage = tensor._qdata.untyped_storage() if isinstance(tensor, comfy.quant_ops.QuantizedTensor) else tensor.untyped_storage()
+             mark_mmap_dirty(storage)
+             if dest_view is not None:
+@@ -1627,12 +1642,17 @@ def pinned_hostbuf_size(size):
+         return max(0, int(size * 2))
+     return max(0, int(min(size, MAX_PINNED_MEMORY) * 2))
  
-     if not hasattr(file_obj, "seek") or not hasattr(file_obj, "readinto"):
+-def discard_cuda_async_error():
++def discard_cuda_async_error(device=None):
++    if device is None:
++        device = get_torch_device()
+     try:
+-        a = torch.tensor([1], dtype=torch.uint8, device=get_torch_device())
+-        b = torch.tensor([1], dtype=torch.uint8, device=get_torch_device())
++        a = torch.tensor([1], dtype=torch.uint8, device=device)
++        b = torch.tensor([1], dtype=torch.uint8, device=device)
+         _ = a + b
+-        synchronize()
++        if device.type == "cuda":
++            torch.cuda.synchronize(device)
++        else:
++            synchronize()
+     except RuntimeError:
+         #Dump it! We already know about it from the synchronous return
+         pass
+diff --git a/tests-unit/comfy_test/test_cast_to_gathered_fallback.py b/tests-unit/comfy_test/test_cast_to_gathered_fallback.py
+new file mode 100644
+index 00000000..18ef086b
+--- /dev/null
++++ b/tests-unit/comfy_test/test_cast_to_gathered_fallback.py
+@@ -0,0 +1,85 @@
++import logging
++
++import pytest
++import torch
++
++from comfy.cli_args import args
++
++if not torch.cuda.is_available():
++    args.cpu = True
++
++import comfy.memory_management  # noqa: E402
++import comfy.model_management  # noqa: E402
++
++
++class DeviceDestination:
++    """Stands in for a device-side view: records what the regular copy writes into it."""
++
++    def __init__(self, device):
++        self.device = torch.device(device)
++        self.copied = []
++
++    def copy_(self, source, non_blocking=False):
++        self.copied.append(source.clone())
++
++
++def failing_read(*args, **kwargs):
++    raise RuntimeError("HostBuffer.read_file_slice failed")
++
++
++@pytest.fixture
++def fresh_warning(monkeypatch):
++    monkeypatch.setattr(comfy.model_management, "FILE_SLICE_READ_FALLBACK_WARNED", False)
++
++
++def run_gathered(monkeypatch, tensors, dest_views, dest2_views):
++    views = {"r": list(dest_views), "r2": list(dest2_views)}
++    monkeypatch.setattr(comfy.memory_management, "read_tensor_file_slice_into", failing_read)
++    monkeypatch.setattr(comfy.memory_management, "interpret_gathered_like", lambda tensors, r: views[r])
++    discarded = []
++    monkeypatch.setattr(comfy.model_management, "discard_cuda_async_error", discarded.append)
++    comfy.model_management.cast_to_gathered(tensors, "r", r2="r2")
++    return discarded
++
++
++def test_failed_device_read_falls_back_to_regular_copy_and_warns_once(monkeypatch, caplog, fresh_warning):
++    tensors = [torch.arange(8, dtype=torch.float32), torch.arange(8, 16, dtype=torch.float32)]
++    host = [torch.zeros(8), torch.zeros(8)]
++    device = [DeviceDestination("cuda:1"), DeviceDestination("cuda:1")]
++
++    with caplog.at_level(logging.WARNING):
++        discarded = run_gathered(monkeypatch, tensors, host, device)
++
++    assert discarded == [torch.device("cuda:1"), torch.device("cuda:1")]
++    for tensor, host_view, device_view in zip(tensors, host, device):
++        assert torch.equal(host_view, tensor)
++        assert len(device_view.copied) == 1 and torch.equal(device_view.copied[0], tensor)
++    assert len([r for r in caplog.records if "aimdo file read" in r.getMessage()]) == 1
++
++
++def test_failed_read_without_device_destination_propagates(monkeypatch, fresh_warning):
++    tensors = [torch.arange(4, dtype=torch.float32)]
++    with pytest.raises(RuntimeError):
++        run_gathered(monkeypatch, tensors, [torch.zeros(4)], [None])
++
++
++def test_discard_cuda_async_error_uses_the_given_device(monkeypatch):
++    seen = []
++    real_tensor = torch.tensor
++
++    def recording_tensor(data, *args, device=None, **kwargs):
++        seen.append(device)
++        return real_tensor(data, *args, **kwargs)
++
++    monkeypatch.setattr(torch, "tensor", recording_tensor)
++    comfy.model_management.discard_cuda_async_error(torch.device("cpu"))
++    assert seen == [torch.device("cpu"), torch.device("cpu")]
++
++
++def test_device_only_destination_uses_its_device(monkeypatch, fresh_warning):
++    tensors = [torch.arange(4, dtype=torch.float32)]
++    device_view = DeviceDestination("cuda:0")
++    discarded = run_gathered(monkeypatch, tensors, [None], [device_view])
++    assert discarded == [torch.device("cuda:0")]
++    assert torch.equal(device_view.copied[0], tensors[0])
++
+-- 
+2.54.0.windows.1
+

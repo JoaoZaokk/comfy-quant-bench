@@ -5,13 +5,15 @@
 (That is the tracked package at the portable root, not the three-line loader stub under
 ComfyUI\\custom_nodes\\. Editing the tracked copy is what changes what runs.)
 
-Synthetic headers are built for the cases no file here exhibits (a weight_correction tensor, an
-inert full-precision flag), because "we have no example" is not evidence that a check works.
+Synthetic headers are built for the cases no file here exhibits (a weight_correction tensor),
+because "we have no example" is not evidence that a check works.
 
-Nothing here imports torch, ComfyUI, or `nodes`. The tests that need ComfyUI to exist fake it --
-see `fake_comfyui` -- for two reasons: importing the real `nodes` pulls in torch and initialises a
-CUDA context on a card this bench shares, and a fake registry is the only way to exercise the
-upstream-rename paths, which by definition do not occur in the checkout as it stands today.
+Headers are read through `comfy.utils.safetensors_header`, so `comfy.utils` (and torch) is imported;
+run with CUDA hidden (`CUDA_VISIBLE_DEVICES=-1`). Nothing here imports `nodes`. The tests that need
+ComfyUI's node registry fake it -- see `fake_comfyui` -- because importing the real `nodes`
+initialises a CUDA context on a card this bench shares, and a fake registry is the only way to
+exercise the upstream-rename paths, which by definition do not occur in the checkout as it stands
+today.
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ import types
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(1, str(Path(__file__).resolve().parents[2] / "ComfyUI"))
 
 import checks  # noqa: E402
 
@@ -247,22 +250,41 @@ def test_weight_correction_is_caught():
     assert any(s == checks.ERROR and "weight_correction" in m for s, m in found), found
 
 
-def test_inert_full_precision_flag_warns_but_does_not_block():
-    path = write_safetensors(
-        {"layers.0.mlp.weight": ("I8", [8, 4])},
-        {"_quantization_metadata": json.dumps({"layers": {"layers.0.mlp": {
-            "format": "convrot_w4a4", "full_precision_matrix_mult": True}}})})
-    found = checks.check_file(path)
-    assert any(s == checks.WARN and "full_precision" in m for s, m in found), found
-    assert not any(s == checks.ERROR for s, m in found), "a warning must not block"
-
-
 def test_inline_comfy_quant_markers_count_as_quantized():
     """Comfy-Org and Lightricks ship these with no __metadata__ at all."""
     path = write_safetensors({"layers.0.mlp.weight": ("I8", [8, 4]),
                               "layers.0.mlp.comfy_quant": ("U8", [40])})
-    tensors, metadata = checks.read_header(path)
-    assert checks.quant_layers(tensors, metadata), "inline markers were not detected"
+    assert checks.inspect(path).layers, "inline markers were not detected"
+
+
+def test_header_is_read_once_per_file_version():
+    """The validator runs check_file and check_dtype_widget, and the graph wrapper reads the same
+    file again; on a network share that was three header reads per loader per submission."""
+    import comfy.utils
+
+    path = write_safetensors(
+        {"layers.0.mlp.weight": ("I8", [8, 4])},
+        {"_quantization_metadata": json.dumps(
+            {"layers": {"layers.0.mlp": {"format": "convrot_w4a4"}}})})
+    real = comfy.utils.safetensors_header
+    reads = []
+
+    def counting(*args, **kwargs):
+        reads.append(args[0])
+        return real(*args, **kwargs)
+
+    comfy.utils.safetensors_header = counting
+    try:
+        checks.check_file(path)
+        checks.check_dtype_widget(path, "fp8_e4m3fn")
+        assert checks.inspect(path).layers
+        assert len(reads) == 1, reads
+        rewritten = write_safetensors({"layers.0.mlp.weight": ("BF16", [8, 4, 2])})
+        path.write_bytes(rewritten.read_bytes())
+        assert checks.inspect(path).layers == {}, "a rewritten file must be read again"
+        assert len(reads) == 2, reads
+    finally:
+        comfy.utils.safetensors_header = real
 
 
 def test_dtype_widget_default_is_always_silent():
@@ -288,22 +310,6 @@ def test_dtype_widget_on_quantized_file_is_an_error():
     result = checks.check_dtype_widget(path, "fp8_e4m3fn")
     assert result and result[0] == checks.ERROR, result
     assert "convrot_w4a4" in result[1]
-
-
-def test_full_precision_message_says_it_was_not_confirmed_by_execution():
-    """The caveat has to be in the message, not only in the docstring beside it.
-
-    It drifted out once. The user reading this WARN in the ComfyUI log has the message and nothing
-    else, and an audit hypothesis stated as fact in a UI string is how it becomes repo lore.
-    """
-    path = write_safetensors(
-        {"layers.0.mlp.weight": ("I8", [8, 4])},
-        {"_quantization_metadata": json.dumps({"layers": {"layers.0.mlp": {
-            "format": "convrot_w4a4", "full_precision_matrix_mult": True}}})})
-    found = checks.check_file(path)
-    message = next(m for s, m in found if "full_precision" in m)
-    assert "not confirmed by execution" in message.lower(), message
-    assert "dispatch_census" in message, "name the thing that would settle it"
 
 
 def test_unparseable_file_warns_that_nothing_was_checked():
@@ -334,8 +340,7 @@ def test_malformed_quantization_metadata_is_logged_not_swallowed():
     path = write_safetensors({"layers.0.mlp.weight": ("I8", [8, 4])},
                              {"_quantization_metadata": "{not json at all"})
     with capture_logs() as log:
-        tensors, metadata = checks.read_header(path)
-        assert checks.quant_layers(tensors, metadata) == {}
+        assert checks.inspect(path).layers == {}
     assert any("did not parse" in m for m in log.messages()), log.messages()
     assert any("JSONDecodeError" in m or "ValueError" in m for m in log.messages()), \
         "the WARN must name the exception"
@@ -363,6 +368,27 @@ def test_nunchaku_check_still_blocks_when_the_flag_is_actually_on():
         found = checks.check_nunchaku_needs_disable_dynamic_vram(["NunchakuFluxDiTLoader"])
     assert found and found[0] == checks.ERROR, found
     assert "--disable-dynamic-vram" in found[1]
+
+
+def test_nunchaku_check_passes_patched_loaders_and_warns_on_the_rest():
+    """With the local eager_linear_init patch loaded, the two DiT loaders it covers run under
+    dynamic VRAM; any other Nunchaku node is untested there, so it warns instead of blocking."""
+    import sys
+    import types
+    fake = types.ModuleType("fake_nunchaku_utils")
+    fake.__file__ = "custom_nodes/ComfyUI-nunchaku/nodes/utils.py"
+    fake.eager_linear_init = object()
+    sys.modules["fake_nunchaku_utils"] = fake
+    try:
+        with fake_memory_management(aimdo_enabled=True):
+            assert checks.check_nunchaku_needs_disable_dynamic_vram(
+                ["NunchakuZImageDiTLoader", "NunchakuQwenImageDiTLoader"]) is None
+            found = checks.check_nunchaku_needs_disable_dynamic_vram(
+                ["NunchakuQwenImageDiTLoader", "NunchakuFluxDiTLoader"])
+    finally:
+        del sys.modules["fake_nunchaku_utils"]
+    assert found and found[0] == checks.WARN, found
+    assert "NunchakuFluxDiTLoader" in found[1] and "NunchakuQwenImageDiTLoader" not in found[1], found
 
 
 def test_nunchaku_check_is_silent_when_the_flag_is_genuinely_off():
@@ -663,6 +689,24 @@ def test_every_run_states_which_node_types_it_did_not_check():
     assert "opened 1 file widget(s): UNETLoader.unet_name" in scope[0], scope
     assert any("OUTSIDE this package's scope" in m and "GGUFLoader" in m
                for m in log.messages()), log.messages()
+
+
+def test_graph_wrapper_resolves_files_only_for_the_table_classes():
+    """A custom node with a `ckpt_name` widget keeps its files in its own folder; resolving that
+    name under `checkpoints` counted, or failed to read, a file the node never loads."""
+    resolved = []
+
+    def spy(folder, name):
+        resolved.append((folder, name))
+        return None
+
+    prompt = {"1": {"class_type": "SomeCustomLoader", "inputs": {"ckpt_name": "custom.safetensors"}},
+              "2": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "real.safetensors"}}}
+    with capture_logs():
+        with fake_comfyui({"UNETLoader": FakeUNETLoader}, get_full_path=spy) as (_, _n, execution_mod):
+            result = asyncio.run(execution_mod.validate_prompt("p", prompt))
+    assert result[0] is True, result
+    assert resolved == [("checkpoints", "real.safetensors")], resolved
 
 
 def test_scope_is_stated_even_when_the_run_already_failed_elsewhere():

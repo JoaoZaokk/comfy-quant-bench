@@ -1,0 +1,49 @@
+diff --git a/ops.py b/ops.py
+index 88a352e..9774f31 100644
+--- a/ops.py
++++ b/ops.py
+@@ -41,6 +41,28 @@ def get_torch_compiler_disable_decorator():
+ 
+ torch_compiler_disable = get_torch_compiler_disable_decorator()
+ 
++# Intel XPU: bounce large host<->device copies through one reusable pinned buffer. Pageable copies can
++# stall the copy engine (Arc A750 under Xe KMD: ~60 MB/s, then an engine reset and DEVICE_LOST on
++# large transfers), and pinning every weight is no way out either: the same driver stalls once a few
++# GB are pinned, or with many small pinned allocations.
++STAGE_HOST_COPY = comfy.model_management.is_intel_xpu()
++STAGE_MIN_BYTES = 1024 * 1024
++STAGE_BYTES = 64 * 1024 * 1024
++_stage = None
++
++def staged_copy_(dst, src):
++    """dst.copy_(src) for contiguous tensors on host and device, one pinned chunk at a time."""
++    global _stage
++    if _stage is None:
++        _stage = torch.empty(STAGE_BYTES, dtype=torch.uint8, pin_memory=True)
++    d = dst.view(-1).view(torch.uint8)
++    s = src.view(-1).view(torch.uint8)
++    for i in range(0, s.numel(), STAGE_BYTES):
++        n = min(STAGE_BYTES, s.numel() - i)
++        _stage[:n].copy_(s[i:i + n])  # blocking copies: the buffer is free again on return
++        d[i:i + n].copy_(_stage[:n])
++    return dst
++
+ class GGMLTensor(torch.Tensor):
+     """
+     Main tensor-like class for storing quantized weights
+@@ -55,6 +77,15 @@ class GGMLTensor(torch.Tensor):
+         return super().__new__(cls, *args, **kwargs)
+ 
+     def to(self, *args, **kwargs):
++        if STAGE_HOST_COPY and self.nbytes >= STAGE_MIN_BYTES and self.is_contiguous():
++            device, dtype = torch._C._nn._parse_to(*args, **kwargs)[:2]
++            if (device is not None and device.type != self.device.type and "cpu" in (device.type, self.device.type)
++                    and dtype in (None, self.dtype)):
++                out = torch.empty(self.size(), dtype=self.dtype, device=device)
++                staged_copy_(out, self.as_subclass(torch.Tensor))
++                return GGMLTensor(out, tensor_type=getattr(self, "tensor_type", None),
++                                  tensor_shape=getattr(self, "tensor_shape", out.shape),
++                                  patches=getattr(self, "patches", []).copy())
+         new = super().to(*args, **kwargs)
+         new.tensor_type = getattr(self, "tensor_type", None)
+         new.tensor_shape = getattr(self, "tensor_shape", new.data.shape)

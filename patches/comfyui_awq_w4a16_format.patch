@@ -1,7 +1,49 @@
-# ComfyUI 0.37.4: load comfy-kitchen's AWQ W4A16 layout as quant format 'awq_w4a16' (native W4A16, e.g. Q4_1 codes).
-# Upstream PR: see W4A4_PROGRESS Parte 65. Apply from ComfyUI/:  git apply --check <this file> && git apply <this file>
+From d420aa7a616cd35e0c29f81a7e4e9f95928eeb2b Mon Sep 17 00:00:00 2001
+From: JoaoZaokk <joaozaogb@gmail.com>
+Date: Tue, 29 Sep 2026 07:05:00 -0300
+Subject: [PATCH] Support comfy-kitchen's AWQ W4A16 layout as the awq_w4a16
+ quant format
+
+A QUANT_ALGOS entry may now carry params_from_state_dict, which reads the
+layer's scales and config in _load_quantized_module. awq_w4a16 uses it,
+and so can formats registered outside the core, without wrapping the
+loader. group_size is read from the layer config or its params.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ comfy/ops.py                                  |  8 +-
+ comfy/quant_ops.py                            | 26 ++++++
+ .../comfy_quant/test_mixed_precision.py       | 87 +++++++++++++++++++
+ 3 files changed, 120 insertions(+), 1 deletion(-)
+
+diff --git a/comfy/ops.py b/comfy/ops.py
+index f4ac760c..b7783e0d 100644
+--- a/comfy/ops.py
++++ b/comfy/ops.py
+@@ -1207,7 +1207,11 @@ def _load_quantized_module(module, super_load, state_dict, prefix, local_metadat
+         layout_cls = get_layout_class(module.layout_type)
+ 
+         # Per-format scales; fp8 dtype views handle both legacy uint8-on-disk and native fp8.
+-        if module.quant_format in ("float8_e4m3fn", "float8_e5m2"):
++        # A format may bring its own reader as QUANT_ALGOS[format]["params_from_state_dict"].
++        params_from_state_dict = qconfig.get("params_from_state_dict")
++        if params_from_state_dict is not None:
++            scales = params_from_state_dict(layer_name, module, weight, pop_scale, layer_conf)
++        elif module.quant_format in ("float8_e4m3fn", "float8_e5m2"):
+             scales = {"scale": pop_scale("weight_scale")}
+         elif module.quant_format == "mxfp8":
+             bs = pop_scale("weight_scale", torch.float8_e8m0fnu)
+@@ -1322,6 +1326,8 @@ def _quantized_weight_state_dict(module, sd, prefix, extra_quant_conf=None, extr
+         elif module.quant_format == "asym_w4a8_int8":
+             quant_conf["group_size"] = getattr(params, "group_size", 16)
+             quant_conf["convrot_groupsize"] = getattr(params, "convrot_groupsize", 256)
++        elif module.quant_format == "awq_w4a16":
++            quant_conf["group_size"] = getattr(params, "group_size", 64)
+         if extra_quant_conf:
+             quant_conf.update(extra_quant_conf)
+         sd[f"{prefix}comfy_quant"] = torch.tensor(list(json.dumps(quant_conf).encode("utf-8")), dtype=torch.uint8)
 diff --git a/comfy/quant_ops.py b/comfy/quant_ops.py
-index 01dfff3..126d63f 100644
+index 01dfff37..0e0d39cf 100644
 --- a/comfy/quant_ops.py
 +++ b/comfy/quant_ops.py
 @@ -14,6 +14,7 @@ try:
@@ -30,44 +72,131 @@ index 01dfff3..126d63f 100644
  
  QUANT_ALGOS = {
      "float8_e4m3fn": {
-@@ -256,6 +261,13 @@ QUANT_ALGOS["asym_w4a8_int8"] = {
-     "quantize_input": False,
+@@ -257,6 +262,27 @@ QUANT_ALGOS["asym_w4a8_int8"] = {
  }
  
+ 
++def _awq_w4a16_params(layer_name, module, weight, pop_scale, layer_conf):
++    # uint4 weight (packed int8 [N,K/2]), per-group scale and zero [K/G,N]: W = (q - 8) * scale + zeros.
++    scale = pop_scale("weight_scale")
++    zeros = pop_scale("weight_zeros")
++    if scale is None or zeros is None:
++        raise ValueError(f"Missing AWQ W4A16 scale/zeros for layer {layer_name}")
++    params_conf = layer_conf.get("params", {})
++    if not isinstance(params_conf, dict):
++        params_conf = {}
++    return {"scale": scale, "zeros": zeros, "group_size": int(layer_conf.get("group_size", params_conf.get("group_size", 64)))}
++
++
 +QUANT_ALGOS["awq_w4a16"] = {
 +    "storage_t": torch.int8,
 +    "parameters": {"weight_scale"},
 +    "comfy_tensor_layout": "TensorCoreAWQW4A16Layout",
 +    "quantize_input": False,
++    "params_from_state_dict": _awq_w4a16_params,
 +}
 +
- 
++
  # ==============================================================================
  # Re-exports for backward compatibility
-diff --git a/comfy/ops.py b/comfy/ops.py
-index 5688384..dffce80 100644
---- a/comfy/ops.py
-+++ b/comfy/ops.py
-@@ -1268,6 +1268,13 @@ def _load_quantized_module(module, super_load, state_dict, prefix, local_metadat
-                     layer_conf.get("convrot_groupsize", params_conf.get("convrot_groupsize", 256))
-                 ),
-             }
-+        elif module.quant_format == "awq_w4a16":
-+            # uint4 weight (packed int8 [N,K/2]), per-group scale and zero [K/G,N]: W = (q - 8) * scale + zeros.
-+            scale = pop_scale("weight_scale")
-+            zeros = pop_scale("weight_zeros")
-+            if scale is None or zeros is None:
-+                raise ValueError(f"Missing AWQ W4A16 scale/zeros for layer {layer_name}")
-+            scales = {"scale": scale, "zeros": zeros, "group_size": int(layer_conf.get("group_size", 64))}
-         else:
-             raise ValueError(f"Unsupported quantization format: {module.quant_format}")
+ # ==============================================================================
+diff --git a/tests-unit/comfy_quant/test_mixed_precision.py b/tests-unit/comfy_quant/test_mixed_precision.py
+index 03e1b0e6..33949d81 100644
+--- a/tests-unit/comfy_quant/test_mixed_precision.py
++++ b/tests-unit/comfy_quant/test_mixed_precision.py
+@@ -444,5 +444,92 @@ class TestMixedPrecisionOps(unittest.TestCase):
+         self.assertEqual(saved_conf["linear_dtype"], "int8")
+         self.assertNotIn("quant_group_size", saved_conf)
  
-@@ -1322,6 +1329,8 @@ def _quantized_weight_state_dict(module, sd, prefix, extra_quant_conf=None, extr
-         elif module.quant_format == "asym_w4a8_int8":
-             quant_conf["group_size"] = getattr(params, "group_size", 16)
-             quant_conf["convrot_groupsize"] = getattr(params, "convrot_groupsize", 256)
-+        elif module.quant_format == "awq_w4a16":
-+            quant_conf["group_size"] = getattr(params, "group_size", 64)
-         if extra_quant_conf:
-             quant_conf.update(extra_quant_conf)
-         sd[f"{prefix}comfy_quant"] = torch.tensor(list(json.dumps(quant_conf).encode("utf-8")), dtype=torch.uint8)
++    def test_awq_w4a16_loads_into_params(self):
++        """AWQ W4A16 checkpoints load as the kitchen layout and keep their group size through a save."""
++        torch.manual_seed(789)
++        n, k, group_size = 16, 64, 32
++        q = torch.randint(0, 16, (n, k), dtype=torch.int32)
++        qweight = (q[:, 0::2] | (q[:, 1::2] << 4)).to(torch.uint8).view(torch.int8)
++        wscales = torch.rand(k // group_size, n, dtype=torch.bfloat16) * 0.01
++        wzeros = torch.randn(k // group_size, n, dtype=torch.bfloat16) * 0.01
++        bias = torch.randn(n, dtype=torch.bfloat16)
++        state_dict = {
++            "layer.weight": qweight,
++            "layer.bias": bias,
++            "layer.weight_scale": wscales,
++            "layer.weight_zeros": wzeros,
++        }
++        layer_quant_config = {"layer": {"format": "awq_w4a16", "group_size": group_size}}
++        state_dict, _ = comfy.utils.convert_old_quants(
++            state_dict,
++            metadata={"_quantization_metadata": json.dumps({"layers": layer_quant_config})},
++        )
++        model = torch.nn.Module()
++        model.layer = ops.mixed_precision_ops({}).Linear(k, n, device="cpu", dtype=torch.bfloat16)
++        model.load_state_dict(state_dict, strict=False)
++
++        self.assertIsInstance(model.layer.weight, QuantizedTensor)
++        self.assertEqual(model.layer.weight._layout_cls, "TensorCoreAWQW4A16Layout")
++        self.assertEqual(model.layer.weight._params.group_size, group_size)
++
++        weight = ((q.view(n, k // group_size, group_size).to(torch.bfloat16) - 8.0) * wscales.t().unsqueeze(-1)
++                  + wzeros.t().unsqueeze(-1)).view(n, k)
++        input_tensor = torch.randn(4, k, dtype=torch.bfloat16)
++        loaded_out = model.layer(input_tensor)
++        ref_out = torch.nn.functional.linear(input_tensor, weight, bias)
++        self.assertTrue(torch.allclose(loaded_out.float(), ref_out.float(), rtol=1e-2, atol=1e-2))
++
++        saved = model.state_dict()
++        saved_conf = json.loads(saved["layer.comfy_quant"].numpy().tobytes())
++        self.assertEqual(saved_conf, {"format": "awq_w4a16", "group_size": group_size})
++        self.assertTrue(torch.equal(saved["layer.weight_zeros"], wzeros))
++
++    def test_awq_w4a16_reads_group_size_from_params(self):
++        """group_size nested under "params" is honoured like the other formats' fields."""
++        n, k, group_size = 8, 64, 32
++        state_dict = {
++            "layer.weight": torch.zeros(n, k // 2, dtype=torch.int8),
++            "layer.weight_scale": torch.ones(k // group_size, n, dtype=torch.bfloat16),
++            "layer.weight_zeros": torch.zeros(k // group_size, n, dtype=torch.bfloat16),
++        }
++        layer_quant_config = {"layer": {"format": "awq_w4a16", "params": {"group_size": group_size}}}
++        state_dict, _ = comfy.utils.convert_old_quants(
++            state_dict,
++            metadata={"_quantization_metadata": json.dumps({"layers": layer_quant_config})},
++        )
++        model = torch.nn.Module()
++        model.layer = ops.mixed_precision_ops({}).Linear(k, n, bias=False, device="cpu", dtype=torch.bfloat16)
++        model.load_state_dict(state_dict, strict=False)
++        self.assertEqual(model.layer.weight._params.group_size, group_size)
++
++    def test_format_reader_from_quant_algos_builds_params(self):
++        """A format registered with params_from_state_dict is read by it, with nothing else in the loader."""
++        torch.manual_seed(321)
++        weight = torch.randn(16, 64, dtype=torch.bfloat16)
++        q_weight = QuantizedTensor.from_float(weight, "TensorWiseINT8Layout", per_channel=True)
++        calls = []
++
++        def reader(layer_name, module, qdata, pop_scale, layer_conf):
++            calls.append((layer_name, tuple(qdata.shape), layer_conf["format"]))
++            return {"scale": pop_scale("weight_scale")}
++
++        algo = dict(QUANT_ALGOS["int8_tensorwise"], params_from_state_dict=reader)
++        state_dict = {
++            "layer.weight": q_weight._qdata,
++            "layer.weight_scale": q_weight._params.scale,
++            "layer.comfy_quant": torch.tensor(list(json.dumps({"format": "test_reader"}).encode("utf-8")), dtype=torch.uint8),
++        }
++        with unittest.mock.patch.dict(QUANT_ALGOS, {"test_reader": algo}):
++            model = torch.nn.Module()
++            model.layer = ops.mixed_precision_ops({}).Linear(64, 16, bias=False, device="cpu", dtype=torch.bfloat16)
++            missing, unexpected = model.load_state_dict(state_dict, strict=False)
++
++        self.assertEqual(calls, [("layer", (16, 64), "test_reader")])
++        self.assertEqual(missing, [])
++        self.assertEqual(unexpected, [])
++        self.assertIsInstance(model.layer.weight, QuantizedTensor)
++        self.assertTrue(torch.equal(model.layer.weight._qdata, q_weight._qdata))
++        self.assertTrue(torch.equal(model.layer.weight._params.scale, q_weight._params.scale))
++
+ if __name__ == "__main__":
+     unittest.main()
+-- 
+2.54.0.windows.1
+

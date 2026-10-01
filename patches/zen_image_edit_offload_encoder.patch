@@ -1,0 +1,100 @@
+diff --git a/zen_nodes.py b/zen_nodes.py
+index 3729696..92ca929 100644
+--- a/zen_nodes.py
++++ b/zen_nodes.py
+@@ -103,7 +103,11 @@ class ZenImage21Adapter:
+         from transformers import AutoProcessor, AutoTokenizer, Qwen3_5ForConditionalGeneration
+ 
+         dtype = torch.float16 if dtype_name == "fp16" else torch.bfloat16
+-        device = _device()
++        # park on the offload device and move to the GPU only while encoding: on small cards the
++        # encoder must not stay resident next to the DiT
++        self.device = _device()
++        self.offload_device = comfy.model_management.text_encoder_offload_device()
++        device = self.offload_device
+ 
+         local = bool(model_folder) and os.path.isdir(os.path.join(model_folder, "text_encoder"))
+         encoder = os.path.join(model_folder, "text_encoder") if local else text_encoder
+@@ -127,8 +131,56 @@ class ZenImage21Adapter:
+         self.expect_drop = int(config["drop_idx"])
+         self.im_start_id = int(self.tokenizer.convert_tokens_to_ids("<|im_start|>"))
+         self.image_pad_id = int(self.tokenizer.convert_tokens_to_ids("<|image_pad|>"))
++        self.size = sum(p.numel() * p.element_size()
++                        for m in (self.student, self.fusion) for p in m.parameters())
++        # The weights are frozen, so the parked copy is kept for good and offloading just points the
++        # modules back at it (no device->host copy). It lives in pinned RAM: pageable host->device
++        # copies can crawl or stall behind an emulated IOMMU (Arc A750 passed through to a VM with a
++        # vIOMMU: ~60 MB/s and stalls on tensors above ~128 MB, against ~9 GB/s pinned; iommu=pt in the
++        # guest fixes it). Small tensors stay pageable: many ~1 MB pinned allocations stalled the first
++        # submission in the same setup.
++        self._parked = []
++        if self.device != self.offload_device:
++            pin = self.offload_device.type == "cpu"
++            for store, name, t in self._tensors():
++                big = t.data.nbytes >= 2 * 1024**2
++                self._parked.append((store, name, t.data.pin_memory() if pin and big else t.data))
++            self._point_at([host for _, _, host in self._parked])
+         print(f"[zen-image-edit] adapter ready: encoder={encoder}, layers={self.layers}, "
+-              f"dtype={dtype_name}", flush=True)
++              f"dtype={dtype_name}, {self.size / 2**30:.2f} GiB parked on {self.offload_device}", flush=True)
++
++    def _tensors(self):
++        """Every parameter and buffer once (the embedding is tied to lm_head)."""
++        seen = set()
++        for module in (self.student, self.fusion):
++            for sub in module.modules():
++                for store in (sub._parameters, sub._buffers):
++                    for name, t in store.items():
++                        if t is not None and id(t) not in seen:
++                            seen.add(id(t))
++                            yield store, name, t
++
++    def _point_at(self, tensors):
++        for (store, name, _), value in zip(self._parked, tensors):
++            if isinstance(store[name], torch.nn.Parameter):
++                store[name].data = value   # keeps the Parameter, so tied modules follow
++            else:
++                store[name] = value
++
++    def load(self, images=0):
++        """Make room through ComfyUI (unloads the DiT/VAE if needed), then copy to the GPU. Activation headroom
++        measured on an Arc A750 at 1024^2: ~0.03 GiB for text only, +1.1 GiB for one reference, +1.7 GiB for two."""
++        if not self._parked:
++            return
++        comfy.model_management.free_memory(self.size + (512 + 1228 * images) * 1024**2, self.device)
++        self._point_at([host.to(self.device, non_blocking=True) for _, _, host in self._parked])
++        comfy.model_management.synchronize()
++
++    def offload(self):
++        if not self._parked:
++            return
++        self._point_at([host for _, _, host in self._parked])
++        comfy.model_management.soft_empty_cache()
+ 
+     @torch.no_grad()
+     def encode(self, text, images, sizes):
+@@ -207,7 +259,8 @@ def _condition(adapter, text, images, sizes, ref_latents, keep_vision):
+         extras["image_slots"] = slots
+     if ref_latents:
+         extras["reference_latents"] = ref_latents
+-    return [[cond[:, keep.to(cond.device)], extras]]
++    cond = cond[:, keep.to(cond.device)].to(comfy.model_management.intermediate_device())
++    return [[cond, extras]]
+ 
+ 
+ class ZenImage21AdapterLoader(io.ComfyNode):
+@@ -319,8 +372,12 @@ class ZenImage21TextEncode(io.ComfyNode):
+ 
+         if canvas_w >= 32 and canvas_h >= 32:
+             latent_w, latent_h = canvas_w, canvas_h
+-        positive = _condition(adapter, prompt, refs, sizes, ref_latents, keep_vision=vae is None)
+-        negative = _condition(adapter, negative_prompt or "", refs, sizes, ref_latents, keep_vision=vae is None)
++        adapter.load(len(refs))
++        try:
++            positive = _condition(adapter, prompt, refs, sizes, ref_latents, keep_vision=vae is None)
++            negative = _condition(adapter, negative_prompt or "", refs, sizes, ref_latents, keep_vision=vae is None)
++        finally:
++            adapter.offload()
+         latent = torch.zeros([1, 64, latent_h // 16, latent_w // 16],
+                              device=comfy.model_management.intermediate_device())
+         return io.NodeOutput(positive, negative, {"samples": latent})

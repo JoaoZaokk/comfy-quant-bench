@@ -1,79 +1,235 @@
+From fcbfb53710cc3befe3350486d54a68ee41d4b426 Mon Sep 17 00:00:00 2001
+From: JoaoZaokk <joaozaogb@gmail.com>
+Date: Tue, 29 Sep 2026 07:06:09 -0300
+Subject: [PATCH] Run quantized text encoders with their quantized matmul
+
+The float32 upcast of every CLIP force casts each weight, so a quantized
+text encoder saved VRAM and no time. After its weights load, a text
+encoder whose layers can run their quantized matmul on the load device
+skips the upcast and encodes inside use_quantized_matmul, as generate
+already does. Layers marked full_precision_matrix_mult, or in a format the
+device cannot run, keep the old path. --disable-quantized-text-encoder
+restores it everywhere.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ comfy/cli_args.py                             |  2 +
+ comfy/ops.py                                  |  5 +
+ comfy/sd.py                                   | 22 ++++-
+ .../test_text_encoder_quantized_matmul.py     | 95 +++++++++++++++++++
+ 4 files changed, 120 insertions(+), 4 deletions(-)
+ create mode 100644 tests-unit/comfy_quant/test_text_encoder_quantized_matmul.py
+
 diff --git a/comfy/cli_args.py b/comfy/cli_args.py
-index ba89699d..cec3473c 100644
+index ba89699d..fdd012d1 100644
 --- a/comfy/cli_args.py
 +++ b/comfy/cli_args.py
 @@ -108,6 +108,8 @@ fpte_group.add_argument("--fp16-text-enc", action="store_true", help="Store text
  fpte_group.add_argument("--fp32-text-enc", action="store_true", help="Store text encoder weights in fp32.")
  fpte_group.add_argument("--bf16-text-enc", action="store_true", help="Store text encoder weights in bf16.")
  
-+parser.add_argument("--disable-quantized-text-encoder", action="store_true", help="Load a quantized text encoder for its smaller weights but run it dequantized, as builds before this flag did.")
++parser.add_argument("--disable-quantized-text-encoder", action="store_true", help="Run quantized text encoders dequantized in float32 instead of with their quantized matmul.")
 +
  parser.add_argument("--fp16-intermediates", action="store_true", help="Experimental: Use fp16 for intermediate tensors between nodes instead of fp32.")
  
  parser.add_argument("--force-channels-last", action="store_true", help="Force channels last format when inferencing the models.")
 diff --git a/comfy/ops.py b/comfy/ops.py
-index f4ac760c..5688384a 100644
+index b7783e0d..2feca299 100644
 --- a/comfy/ops.py
 +++ b/comfy/ops.py
-@@ -1334,6 +1334,28 @@ def _quantized_weight_state_dict(module, sd, prefix, extra_quant_conf=None, extr
-     return sd
+@@ -1729,6 +1729,11 @@ def get_disabled_quant_formats(device=None):
+     return disabled
  
  
-+def quantized_text_encoder_math(quant_config):
-+    #Two independent things send a text encoder down the dequantized path: sd1_clip asks for
-+    #full precision matmul, and sd.py upcasts every CLIP to float32, which sets
-+    #comfy_force_cast_weights on every module. Either one alone is enough to keep the quantized
-+    #kernel from ever running, so a quantized text encoder used to save VRAM and no time. Both
-+    #are released together, and only for a checkpoint that actually carries quantized layers.
-+    return quant_config is not None and not args.disable_quantized_text_encoder
++def has_quantized_matmul(model, device):
++    disabled = get_disabled_quant_formats(device)
++    return any(isinstance(module, MixedPrecisionOp) and module.can_use_quantized_matmul(disabled) for module in model.modules())
 +
 +
-+def text_encoder_has_quantized_math(model):
-+    #The other half of the release, asked from the built module tree rather than from
-+    #model_options: every text encoder family copies model_options before writing
-+    #quantization_metadata into it, so the key never reaches the CLIP that owns the patcher. The
-+    #tree also answers correctly for the composite encoders that wrap more than one model.
-+    #_full_precision_mm is the marker the layer itself carries: only a MixedPrecisionOps layer has
-+    #it, and it is False only when quantized_text_encoder_math said so.
-+    for module in model.modules():
-+        if getattr(module, "_full_precision_mm", True) is False:
-+            return True
-+    return False
-+
-+
- class MixedPrecisionOp(CastWeightBiasOp):
-     quant_format = None
- 
+ @contextlib.contextmanager
+ def use_quantized_matmul(model, device):
+     disabled = get_disabled_quant_formats(device)
 diff --git a/comfy/sd.py b/comfy/sd.py
-index 32d9f12c..817e8336 100644
+index 32d9f12c..d8490930 100644
 --- a/comfy/sd.py
 +++ b/comfy/sd.py
-@@ -270,8 +270,10 @@ class CLIP:
+@@ -1,9 +1,11 @@
++import contextlib
+ import json
+ import torch
+ from enum import Enum
+ import logging
+ 
+ from comfy import model_management
++from comfy.cli_args import args
+ from comfy.utils import ProgressBar
+ from .ldm.models.autoencoder import AutoencoderKL, AutoencodingEngine
+ from .ldm.cascade.stage_a import StageA
+@@ -238,6 +240,8 @@ def load_bypass_lora_for_models(model, clip, lora, strength_model, strength_clip
+ 
+ 
+ class CLIP:
++    quantized_matmul = False
++
+     def __init__(self, target=None, embedding_directory=None, no_init=False, tokenizer_data={}, parameters=0, state_dict=[], model_options={}, disable_dynamic=False):
+         if no_init:
+             return
+@@ -270,8 +274,6 @@ class CLIP:
          te_disable_dynamic = disable_dynamic or getattr(self.cond_stage_model, "disable_offload", False)
          ModelPatcher = comfy.model_patcher.ModelPatcher if te_disable_dynamic else comfy.model_patcher.CoreModelPatcher
          self.patcher = ModelPatcher(self.cond_stage_model, load_device=load_device, offload_device=offload_device, fast_disk=comfy.storage.state_dict_fast_disk(state_dict))
 -        #Match torch.float32 hardcode upcast in TE implemention
 -        self.patcher.set_model_compute_dtype(torch.float32)
-+        #Match torch.float32 hardcode upcast in TE implemention. A quantized text encoder is the
-+        #exception: the upcast sets force_cast_weights, and that alone keeps its kernel unreachable.
-+        if not comfy.ops.text_encoder_has_quantized_math(self.cond_stage_model):
-+            self.patcher.set_model_compute_dtype(torch.float32)
          self.patcher.hook_mode = comfy.hooks.EnumHookMode.MinVram
          self.patcher.is_clip = True
          self.apply_hooks_to_conds = None
-diff --git a/comfy/sd1_clip.py b/comfy/sd1_clip.py
-index 01651bd2..68c21529 100644
---- a/comfy/sd1_clip.py
-+++ b/comfy/sd1_clip.py
-@@ -111,8 +111,9 @@ class SDClipModel(torch.nn.Module, ClipTokenWeightEncoder):
+@@ -296,6 +298,12 @@ class CLIP:
+                 if len(u) > 0:
+                     logging.debug("clip unexpected {}:".format(u))
  
-         if operations is None:
-             if quant_config is not None:
--                operations = comfy.ops.mixed_precision_ops(quant_config, dtype, full_precision_mm=True)
--                logging.info("Using MixedPrecisionOps for text encoder")
-+                quantized_math = comfy.ops.quantized_text_encoder_math(quant_config)
-+                operations = comfy.ops.mixed_precision_ops(quant_config, dtype, full_precision_mm=not quantized_math)
-+                logging.info("Using MixedPrecisionOps for text encoder, quantized math {}".format("on" if quantized_math else "off"))
-             else:
-                 operations = comfy.ops.manual_cast
++        #Match torch.float32 hardcode upcast in TE implemention. The upcast force casts every weight, so a TE
++        #whose loaded layers can run their quantized matmul on this device skips it and runs them natively.
++        self.quantized_matmul = not args.disable_quantized_text_encoder and comfy.ops.has_quantized_matmul(self.cond_stage_model, load_device)
++        if not self.quantized_matmul:
++            self.patcher.set_model_compute_dtype(torch.float32)
++
+         if params['device'] == load_device:
+             model_management.load_models_gpu([self.patcher], force_full_load=True)
+         self.layer_idx = None
+@@ -312,8 +320,14 @@ class CLIP:
+         n.tokenizer_options = self.tokenizer_options.copy()
+         n.use_clip_schedule = self.use_clip_schedule
+         n.apply_hooks_to_conds = self.apply_hooks_to_conds
++        n.quantized_matmul = self.quantized_matmul
+         return n
  
++    def quantized_matmul_context(self, device):
++        if self.quantized_matmul:
++            return comfy.ops.use_quantized_matmul(self.cond_stage_model, device)
++        return contextlib.nullcontext()
++
+     def add_patches(self, patches, strength_patch=1.0, strength_model=1.0):
+         return self.patcher.add_patches(patches, strength_patch, strength_model)
+ 
+@@ -364,7 +378,7 @@ class CLIP:
+             if show_pbar:
+                 pbar = ProgressBar(len(scheduled_keyframes))
+ 
+-            with model_management.cuda_device_context(device):
++            with model_management.cuda_device_context(device), self.quantized_matmul_context(device):
+                 for scheduled_opts in scheduled_keyframes:
+                     t_range = scheduled_opts[0]
+                     # don't bother encoding any conds outside of start_percent and end_percent bounds
+@@ -412,7 +426,7 @@ class CLIP:
+         device = self.patcher.load_device
+         self.cond_stage_model.set_clip_options({"execution_device": device})
+ 
+-        with model_management.cuda_device_context(device):
++        with model_management.cuda_device_context(device), self.quantized_matmul_context(device):
+             o = self.cond_stage_model.encode_token_weights(tokens)
+ 
+         cond, pooled = o[:2]
+diff --git a/tests-unit/comfy_quant/test_text_encoder_quantized_matmul.py b/tests-unit/comfy_quant/test_text_encoder_quantized_matmul.py
+new file mode 100644
+index 00000000..c6212048
+--- /dev/null
++++ b/tests-unit/comfy_quant/test_text_encoder_quantized_matmul.py
+@@ -0,0 +1,95 @@
++import json
++import os
++import sys
++from types import SimpleNamespace
++from unittest import mock
++
++import torch
++
++sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
++
++from comfy.cli_args import args  # noqa: E402
++
++if not torch.cuda.is_available():
++    args.cpu = True
++
++import comfy.sd  # noqa: E402
++from comfy import ops  # noqa: E402
++from comfy.quant_ops import QuantizedTensor  # noqa: E402
++
++
++def quantized_state_dict(layer_conf):
++    weight = torch.randn(16, 64, dtype=torch.bfloat16, generator=torch.Generator().manual_seed(7))
++    q_weight = QuantizedTensor.from_float(weight, "TensorWiseINT8Layout", per_channel=True)
++    return {
++        "layer.weight": q_weight._qdata,
++        "layer.weight_scale": q_weight._params.scale,
++        "layer.comfy_quant": torch.tensor(list(json.dumps(layer_conf).encode("utf-8")), dtype=torch.uint8),
++        "plain.weight": torch.randn(16, 16, dtype=torch.bfloat16),
++    }
++
++
++class TinyTextEncoder(torch.nn.Module):
++    """One quantized linear and one plain linear, built the way sd1_clip builds a quantized TE."""
++
++    def __init__(self, device="cpu", dtype=None, model_options={}):
++        super().__init__()
++        operations = ops.mixed_precision_ops({}, torch.bfloat16, full_precision_mm=True)
++        self.layer = operations.Linear(64, 16, bias=False, device=device, dtype=torch.bfloat16)
++        self.plain = operations.Linear(16, 16, bias=False, device=device, dtype=torch.bfloat16)
++        self.dtypes = {torch.bfloat16}
++
++
++class TinyTokenizer:
++    def __init__(self, embedding_directory=None, tokenizer_data={}):
++        pass
++
++
++def build(layer_conf, disabled=frozenset()):
++    target = SimpleNamespace(params={}, clip=TinyTextEncoder, tokenizer=TinyTokenizer)
++    with mock.patch.object(ops, "get_disabled_quant_formats", return_value=set(disabled)):
++        return comfy.sd.CLIP(target, state_dict=quantized_state_dict(layer_conf), model_options={"initial_device": torch.device("meta")})
++
++
++def test_full_precision_matrix_mult_layer_keeps_the_float32_upcast():
++    clip = build({"format": "int8_tensorwise", "full_precision_matrix_mult": True})
++    assert clip.quantized_matmul is False
++    assert clip.patcher.force_cast_weights is True
++
++
++def test_quantized_layer_runs_natively_without_the_upcast():
++    clip = build({"format": "int8_tensorwise"})
++    assert clip.quantized_matmul is True
++    assert clip.patcher.force_cast_weights is False
++    assert clip.clone().quantized_matmul is True
++
++
++def test_format_disabled_on_the_device_keeps_the_upcast():
++    clip = build({"format": "int8_tensorwise"}, disabled={"int8_tensorwise"})
++    assert clip.quantized_matmul is False
++    assert clip.patcher.force_cast_weights is True
++
++
++def test_disable_quantized_text_encoder_flag_keeps_the_upcast(monkeypatch):
++    monkeypatch.setattr(args, "disable_quantized_text_encoder", True)
++    clip = build({"format": "int8_tensorwise"})
++    assert clip.quantized_matmul is False
++    assert clip.patcher.force_cast_weights is True
++
++
++def test_quantized_matmul_is_only_switched_on_while_encoding():
++    clip = build({"format": "int8_tensorwise"})
++    layer = clip.cond_stage_model.layer
++    assert layer._full_precision_mm is True
++    with mock.patch.object(ops, "get_disabled_quant_formats", return_value=set()):
++        with clip.quantized_matmul_context(torch.device("cpu")):
++            assert layer._full_precision_mm is False
++            assert clip.cond_stage_model.plain._full_precision_mm is True
++    assert layer._full_precision_mm is True
++
++
++def test_plain_layers_alone_do_not_count_as_quantized():
++    model = torch.nn.Module()
++    model.plain = ops.mixed_precision_ops({}, torch.bfloat16, full_precision_mm=False).Linear(8, 8, device="cpu", dtype=torch.bfloat16)
++    with mock.patch.object(ops, "get_disabled_quant_formats", return_value=set()):
++        assert ops.has_quantized_matmul(model, torch.device("cpu")) is False
+-- 
+2.54.0.windows.1
+

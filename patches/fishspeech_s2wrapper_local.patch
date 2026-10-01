@@ -1,0 +1,195 @@
+diff --git a/config.py b/config.py
+index 14734c0..ea68e03 100644
+--- a/config.py
++++ b/config.py
+@@ -81,6 +81,8 @@ _ENV_MAP: dict[str, str] = {
+     "half_precision":   "FISH_SPEECH_HALF_PRECISION",
+     "max_seq_len":      "FISH_SPEECH_MAX_SEQ_LEN",
+     "startup_timeout":  "FISH_SPEECH_STARTUP_TIMEOUT",
++    "device":           "FISH_SPEECH_DEVICE",
++    "compile":          "FISH_SPEECH_COMPILE",
+ }
+ 
+ 
+@@ -171,6 +173,16 @@ class FishSpeechConfig:
+         except (TypeError, ValueError):
+             return 240
+ 
++    @property
++    def device(self) -> str:
++        return str(self._resolve("device") or "cuda")
++
++    @property
++    def compile(self) -> bool:
++        return str(self._resolve("compile") or "disable").lower() in {
++            "1", "true", "yes", "on", "enable", "enabled",
++        }
++
+ 
+ # ---------------------------------------------------------------------------
+ # 便捷函数
+diff --git a/nodes.py b/nodes.py
+index 85c0ef9..97c9fe6 100644
+--- a/nodes.py
++++ b/nodes.py
+@@ -1,4 +1,5 @@
+ import hashlib
++import io
+ import json
+ import os
+ import re
+@@ -13,6 +14,7 @@ from pathlib import Path
+ 
+ import torch
+ import torchaudio
++import soundfile as sf
+ from comfy_api.latest import IO
+ 
+ from .config import cfg, is_windows
+@@ -131,24 +133,6 @@ def _check_health(api_url: str, timeout: int = 3) -> bool:
+         return False
+ 
+ 
+-def _probe_max_seq_len_support(venv_python: str, fish_root: str) -> bool:
+-    """检测 fish-speech api_server.py 是否支持 --max-seq-len 参数（S2+ 新增）。
+-
+-    默认返回 True（新版行为）。仅在 --help 明确不含该参数时返回 False 并提示升级。
+-    """
+-    try:
+-        result = subprocess.run(
+-            [venv_python, str(Path(fish_root) / "tools" / "api_server.py"), "--help"],
+-            capture_output=True, text=True, timeout=30, cwd=fish_root,
+-        )
+-        if "--max-seq-len" in result.stdout:
+-            return True
+-        _log("⚠ 当前 fish-speech 版本不支持 --max-seq-len，建议升级到 S2+ (main 分支): cd {} && git pull".format(fish_root))
+-        return False
+-    except Exception:
+-        return True  # 探测失败时默认按新版处理，不降级
+-
+-
+ def _ensure_server(
+     fish_root: str,
+     venv_python: str,
+@@ -183,7 +167,7 @@ def _ensure_server(
+             listen = f"{host}:{port}"
+             cmd = [
+                 venv_python,
+-                str(Path(fish_root) / "tools" / "api_server.py"),
++                str(Path(__file__).resolve().parent / "fish_api_server_clamped.py"),
+                 "--listen",
+                 listen,
+                 "--llama-checkpoint-path",
+@@ -192,13 +176,14 @@ def _ensure_server(
+                 codec_path,
+                 "--max-text-length",
+                 "0",
++                "--device",
++                cfg().device,
+             ]
+-            if _probe_max_seq_len_support(venv_python, fish_root):
+-                cmd.extend(["--max-seq-len", str(max(1024, int(max_seq_len)))])
+-            else:
+-                _log("跳过 --max-seq-len（旧版不支持）。注意：旧版上下文窗口固定，长文本可能截断。")
++            cmd.extend(["--max-seq-len", str(max(1024, int(max_seq_len)))])
+             if use_half:
+                 cmd.append("--half")
++            if cfg().compile:
++                cmd.append("--compile")
+             env = os.environ.copy()
+             env["PYTHONUTF8"] = "1"
+             env["PYTHONIOENCODING"] = "utf-8"
+@@ -339,17 +324,11 @@ def _request_tts(api_url: str, payload: dict, timeout: int = 600) -> bytes:
+ 
+ 
+ def _decode_audio_bytes(audio_bytes: bytes, fmt: str) -> dict:
+-    with tempfile.NamedTemporaryFile(delete=False, suffix=f".{fmt}") as f:
+-        tmp = f.name
+-        f.write(audio_bytes)
+-    try:
+-        waveform, sample_rate = torchaudio.load(tmp)
+-        return {"waveform": waveform.unsqueeze(0).to(torch.float32), "sample_rate": int(sample_rate)}
+-    finally:
+-        try:
+-            os.remove(tmp)
+-        except Exception:
+-            pass
++    samples, sample_rate = sf.read(
++        io.BytesIO(audio_bytes), dtype="float32", always_2d=True
++    )
++    waveform = torch.from_numpy(samples.T.copy()).unsqueeze(0)
++    return {"waveform": waveform, "sample_rate": int(sample_rate)}
+ 
+ 
+ def _parse_tagged_dialogue(text: str) -> list[dict]:
+@@ -895,7 +874,7 @@ class FishSpeechStudioNovelSynthesize(IO.ComfyNode):
+                 IO.String.Input("codec_path", default=c.codec_path, tooltip="codec 权重路径。"),
+                 IO.Combo.Input("half_precision", options=["enable", "disable"], default=c.half_precision, tooltip="16GB 显存建议开启。"),
+                 IO.Int.Input("max_seq_len", default=c.max_seq_len, min=512, max=32768, step=256, tooltip="服务上下文长度。"),
+-                IO.Combo.Input("format", options=["wav", "flac", "mp3"], default="wav", tooltip="输出格式。"),
++                IO.Combo.Input("format", options=["wav", "mp3", "opus"], default="wav", tooltip="输出格式。"),
+                 IO.Combo.Input("strict_consistency", options=["enable", "disable"], default="enable", tooltip="开启后，没有真实音色 ID 的角色会直接报错。"),
+                 IO.Combo.Input("allow_text_only_profile", options=["disable", "enable"], default="disable", tooltip="如果启用，允许没有 reference_id 的角色直接裸文本合成，但不保证固定声音。"),
+                 IO.Int.Input("hard_token_cap", default=480, min=64, max=2048, step=16, tooltip="token 安全上限。"),
+@@ -1004,4 +983,4 @@ class FishSpeechStudioNovelSynthesize(IO.ComfyNode):
+             final = torch.cat(waveforms, dim=2)
+         if server_strategy == "oneshot":
+             _stop_server(norm)
+-        return IO.NodeOutput({"waveform": final.to(torch.float32), "sample_rate": int(sr)}, "\n".join(status))
+\ No newline at end of file
++        return IO.NodeOutput({"waveform": final.to(torch.float32), "sample_rate": int(sr)}, "\n".join(status))
+diff --git a/fish_api_server_clamped.py b/fish_api_server_clamped.py
+new file mode 100644
+index 0000000..24a3f5f
+--- /dev/null
++++ b/fish_api_server_clamped.py
+@@ -0,0 +1,49 @@
++"""Launch the installed Fish API with a bounded S2 Pro KV cache.
++
++Fish 2.0.0 does not expose max_seq_len on api_server.py. This tiny launcher
++keeps the vendor checkout untouched and applies the same in-memory clamp used
++by this machine's validated inference scripts before delegating to the official
++server entrypoint.
++"""
++
++from __future__ import annotations
++
++import runpy
++import sys
++from pathlib import Path
++
++
++def pop_int_option(name: str, default: int) -> int:
++    if name not in sys.argv:
++        return default
++    index = sys.argv.index(name)
++    try:
++        value = int(sys.argv[index + 1])
++    except (IndexError, ValueError) as exc:
++        raise SystemExit(f"{name} requires an integer") from exc
++    del sys.argv[index : index + 2]
++    return value
++
++
++fish_root = Path.cwd()
++sys.path.insert(0, str(fish_root))
++max_seq_len = max(1024, pop_int_option("--max-seq-len", 4096))
++
++from fish_speech.models.text2semantic import inference as text2semantic  # noqa: E402
++
++original_init_model = text2semantic.init_model
++
++
++def init_model_clamped(*args, **kwargs):
++    model, decode_one_token = original_init_model(*args, **kwargs)
++    if model.config.max_seq_len > max_seq_len:
++        print(
++            f"[FishSpeechStudio] KV-cache: {model.config.max_seq_len} -> {max_seq_len}",
++            flush=True,
++        )
++        model.config.max_seq_len = max_seq_len
++    return model, decode_one_token
++
++
++text2semantic.init_model = init_model_clamped
++runpy.run_path(str(fish_root / "tools" / "api_server.py"), run_name="__main__")
