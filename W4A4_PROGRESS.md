@@ -6408,3 +6408,91 @@ ModelPatcher e exige hqq/gemlite; foi criado um novo: `custom_nodes/comfy-lowbit
   ternário 2,47; `--novram` BF16 0,93 x ternário 1,59 x binário 1,65; DiT na 3080 Ti 2,07.
 - `--novram` muda a imagem igual para BF16 e ternário (MS-SSIM 0,9974 vs fase principal): efeito do modo.
 - Não coberto: LoRA, render em CPU, Arc A770 (sem placa). Kernel com ativação int8 (ganho real de velocidade) não feito.
+
+## Parte 67 -- 2026-09-27 (noite): zen-image-edit (Qwen3.5-0.8B + adaptador) como TE do Qwen-Image 2.1
+
+Pedido dele: testar o text encoder pequeno. Adaptador v12 (0,64 GB) + Qwen3.5-0.8B (1,7 GB) em `P:\ComfyBench\zen_test`;
+transformers 5.17 isolado em `C:\ComfyBench\zen_test\pydeps` e ComfyUI de teste com só esse nó (o principal segue no
+4.57.6). Mesma bateria de 12 (DiT BF16), só troca o nó de texto. 12/12 sem erro, 1,05 it/s; MS-SSIM 0,841 (mín 0,703)
+contra a referência com TE nativo W4A8; visual 11/12: letreiro com números erra ("9WEN", linha de lixo), "SLOW
+MORNINGS" certo. Detalhes: `.scratch/zen_2026-09-27/resultado.md`.
+
+## Parte 68 -- 2026-09-28: Qwen-Image 2.1 leve na Arc A750 (VM `ssh arc`), Xe vs i915
+
+Pedido dele: instalar o conjunto leve na Arc, fazer o patch do zen, testar e comparar Xe e i915. Instalado ComfyUI-GGUF
+e zen-image-edit no ComfyUI XPU da VM; DiT Q4_1 GGUF + VAE + zen copiados (SHA256 conferidos). Patch do zen: encoder
+parqueado na RAM, sobe só no encode (`patches/zen_image_edit_offload_encoder.patch`).
+
+- Causa das travas: IOMMU emulado da VM (`viommu=intel`, domínio traduzido) -> cópia paginável 60 MB/s e resets do
+  motor de cópia. `iommu=pt` no guest: 6,6-7,3 GB/s. Timeout do bcs no Xe só vai a 10 s e não resolve.
+- Xe + iommu=pt renderiza sem erro mas a imagem sai lixo (2/2); i915 + iommu=pt sai correta. Escolhido i915, persistido.
+  ComfyUI com `--reserve-vram 1.0` (sem isso, GPU HANG com DiT+VAE residentes). llama.cpp igual nos dois (13,1-13,2 tok/s).
+- Bateria de 12 no i915: 12/12, ~0,30 it/s, ~90 s por imagem quente; MS-SSIM 0,928 contra a 3090 com DiT BF16 + zen.
+  Detalhes: `.scratch/arc_2026-09-28/resultado.md`.
+
+- Mesmo dia, depois: LoRAs de poucos passos (Viggle v0.1 4 passos, v0.2.1 6/8, Turbo8) e edição (25/4/6/8 passos) com
+  workflows salvos na Arc; referências de edição em 768 (em 1024 saem "HDR queimado"). Swap de 8 GB, `--cache-ram 4`,
+  `--reserve-vram 1.6`. Em 29/09: 1 render preto (NaN, status success) em 13 repetições do mesmo grafo turbo 4 passos;
+  causa não investigada. Detalhes no mesmo `resultado.md`.
+
+## Parte 69 -- 2026-09-29: revisão estrita de tudo que tocamos + `--enable-triton-backend` nos launchers
+
+Pedido dele: revisão "thermo-nuclear" do core patchado, conversores, harness, custom nodes/QAT e Arc; depois "faça
+tudo"; depois medir na GPU e pôr a flag do triton nos launchers. Achados e correções:
+`.scratch/revisao_2026-09-29/` (`revisao.md`, `criterio_*.md`, `resultado_{core,conversao,harness,qat}.md`).
+
+- Core: patch do TE refeito sobre `can_use_quantized_matmul`/`use_quantized_matmul` (decisão depois do load);
+  costura única `QUANT_ALGOS[fmt]["params_from_state_dict"]` (awq + lowbit sem monkeypatch); fallback do aimdo em
+  `cast_to_gathered`; branch local `local/0.37.4` no checkout (um commit por patch), `tools/verifica_patches.py`.
+- Conversores: `_profiles.py` + `_formats.py`, todos em streaming, sidecar no commit atômico, commit livre na guarda;
+  saída byte a byte igual ao código antigo nos sintéticos (exceto smooth, agora do FP32).
+- Harness: `tools/comfy_client.py` (cliente único, só stdlib, prazo obrigatório, node_errors, JSONL por prompt_id);
+  bench_server lia o lock no caminho errado (sempre "livre"); `comfy_server.ps1`; 10 probes em `tools/_arquivo/`.
+- QAT: `qat_klein/` (entrada fina com a mesma CLI), `lowbit_canon.py`, checkpoint remoto não é mais sobrescrito por
+  erro de rede, shards por conteúdo, estado completo no checkpoint; scripts de subida do Colab por manifesto.
+- Triton (`.scratch/triton_2026-09-29/resultado.md`): 16/16 renders com e sem a flag; sem a flag a saída é idêntica
+  pixel a pixel às referências anteriores à revisão (K1, K2, Q3, Q4, Q5). Com a flag o AWQ Q4_1 vai de 0,71 a
+  1,02 it/s (=27/09); o rope fp32 do TE passa ao triton (1 ulp de diferença, mesma precisão) e muda as imagens: com a
+  flag, comparar só contra referências com a flag. O multigpu-orchestrator sobe workers sem `-s` e sem as flags do
+  launcher: agora os launchers passam `COMFYUI_MGPU_WORKER_FLAGS` e `PYTHONNOUSERSITE=1` (provado no worker).
+
+## Parte 70 -- 2026-09-29: upgrade pip (transformers 5), launcher único, Manager novo
+
+- 155 pacotes atualizados; torch/triton/comfy-kitchen/frontend ficaram fixos. Destaques: transformers 4.57.6 → 5.17.0, huggingface_hub 0.36 → 1.33, numpy 2.5.3, opencv 5.0.
+  Backup integral em `python_embeded_backup_20260929`.
+- Medido:
+  - importação: 98 pacotes, 0 falhas (antes 2, corrigidas);
+  - tokenizadores do core: 66/66 com ids idênticos;
+  - render K1/K2/Z1/Z2/Q1/Q3/Q4/Q5, frio e quente: 16/16 idênticos pixel a pixel ao ambiente antigo;
+  - `pip check` limpo.
+  - O frio dos Qwen (NAS) saiu 3-8× mais lento com o quente igual: ainda sem explicação, não atribuído ao upgrade.
+  - Detalhes: `.scratch/pip_2026-09-29/resultado.md`.
+- O `comfyui-nuvu` forçava transformers 4.57.6 / hub<1.0 a cada subida. Patch local em prestartup, pre_launch, requirements e no METADATA instalado.
+- Os 12 `run_*.bat` viraram modos de `iniciar_comfy.bat` (antigos em `_launchers_antigos/`).
+  - Duplicata WhatDreamsCost-ComfyUI movida para `custom_nodes/.disabled/`; LTXDirector-Extender, o fork, fica ativo; nenhum workflow salvo usa os nós exclusivos do WhatDreamsCost.
+  - Manager: o dono preferiu a UI nova (`--enable-manager`, `Comfy.UseNewMenu=Top`) à legacy.
+
+## Parte 71 -- 2026-10-01: Nunchaku com dynamic VRAM, OOM do LTX, Ctrl+Z, NAS lento
+
+- Correções à Parte 70:
+  - O dono tirou o `--enable-manager` (2026-09-30), porque o Manager embutido bloqueia o `custom_nodes/ComfyUI-Manager`, que é o que ele usa.
+  - Os modos de `iniciar_comfy.bat` continuam todos em `--listen 0.0.0.0`.
+- OOM do LTX em 2026-09-30 (lido no log do dono): o modo `video` subiu sem `--disable-dynamic-vram`.
+  - O LTXAV passou pelo caminho dinâmico e morreu no primeiro passo, em `model_prefetch` → `cast_to_gathered` (`CUDA error: out of memory`).
+  - Flag devolvida ao `video`; dry-run conferido.
+  - Hipótese não medida: o `ModelMemoryUsageFactorOverride` do workflow (0,077 → 0,046) agrava o caso.
+- Nunchaku Z-Image e Qwen-Image passam a rodar com dynamic VRAM. Patch local `patches/nunchaku_eager_linear_dynamic_vram.patch`, com duas causas:
+  - lazy Linear com `weight`/`bias` em `None` durante a troca por `SVDQW4A4Linear`;
+  - `fast_disk` que o `clone()` do 0.37.4 passa ao `ZImageModelPatcher`. Essa segunda independe do dynamic.
+- O preflight libera os dois loaders consertados e só avisa para os outros nós Nunchaku (41/41 testes).
+- Medido: 20/20 renders.
+  - Dyn × nodyn diverge tanto quanto o mesmo braço repetido: o Nunchaku não é determinístico (NZ ~14 dB, NQ ~32 dB).
+  - O Z-Image comum sai idêntico pixel a pixel com e sem dynamic.
+  - `.scratch/dynamic_2026-10-01/resultado.md`.
+- Ctrl+Z: o `Anomalous_Model_Browser` deixa no `body` um `role=dialog aria-modal=true` sem `hidden` (só o pai fica `hidden`).
+  - O `isModalOpen()` do frontend 1.52.7 trata isso como modal aberto e ignora todos os atalhos.
+  - Patch: `patches/anomalous_model_browser_modal_hidden.patch`.
+  - Removidos os remapeamentos Ctrl+Z/C/V de `Comfy.Keybinding.NewBindings`, que dariam desfazer em dobro; estão guardados em `.scratch/dynamic_2026-10-01/atalhos_removidos.json`.
+  - Falta confirmar no navegador do dono.
+- NAS lento (2026-09-29): `ComfyUI/utils/extra_config.py` pula a seção do `extra_model_paths.yaml` que não responde em 10 s. Patch: `patches/comfyui_extra_paths_timeout.patch`.
+- O patch local preexistente de `ComfyUI-nunchaku/models/qwenimage.py` (+46 linhas, origem anterior) foi exportado para `patches/nunchaku_models_qwenimage_preexistente.patch`.

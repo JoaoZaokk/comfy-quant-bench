@@ -4,8 +4,8 @@ How the engineering skills should consume this repo's domain documentation.
 
 **Layout: single-context.** One `CONTEXT.md` at the repo root and one `docs/adr/` beside it. No
 `CONTEXT-MAP.md` — checked 2026-08-22 and found no monorepo signals (no `pnpm-workspace.yaml`, no
-`workspaces` field, no populated `packages/*`). The tracked tree is one flat `tools/` plus a single
-custom-node package.
+`workspaces` field, no populated `packages/*`). The root owns quantization/benchmark tools and
+its local custom-node sources; list the current tracked tree instead of quoting the old count.
 
 ## Before exploring, read these
 
@@ -18,10 +18,11 @@ gets resolved.
 
 ## Read these too — they are load-bearing here in a way a generic repo's docs are not
 
-`CLAUDE.md` and `AGENTS.md` at the root are not onboarding prose. They carry hard rules that
+`AGENTS.md` is the single instruction source and `CLAUDE.md` imports it. They carry hard rules that
 override defaults (only `python_embeded\python.exe`; never overwrite an original model; never
-mass-upgrade the stack; never touch WSL) and a section — *"Say which one it was: traced, or
-executed"* — that governs how every conclusion in this repo must be written down.
+mass-upgrade the stack; never touch WSL). The historical section *"Say which one it was: traced,
+or executed"* is preserved under `.agent-reference/comfy/`; its distinction between reading and
+execution still governs how conclusions are recorded.
 
 Then, per area:
 

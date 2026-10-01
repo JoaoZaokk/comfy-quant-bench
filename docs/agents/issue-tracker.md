@@ -1,12 +1,14 @@
 # Issue tracker: local markdown
 
-This repo has **no git remote** (`git remote -v` is empty, checked 2026-08-22). There is no
-GitHub issue list to write to, and `gh issue create` would have nowhere to land. Issues live as
-markdown files under `.scratch/`, which is the convention this repo already grew on its own —
+Issues stay local by project convention. The old observation that this repo had no remote was
+from 2026-08-22; a remote exists as of 2026-09-24. Its existence does not authorize remote issues.
+Issues live as markdown files under `.scratch/`, which is the convention this repo already grew on its own —
 `.scratch/estado-entregavel/` was in use before this file existed, with `map.md`, a `triagem-*.md`
 and one file per ticket under `issues/`.
 
-`.scratch/` is **tracked**, not ignored. The `.gitignore` comment records why: it was ignored for
+Tickets and source in `.scratch/` are eligible for tracking; model/checkpoint payloads are ignored.
+Inspect the tracked set and ignore rules rather than treating the entire tree as tracked.
+The `.gitignore` comment records why: it was ignored for
 four days, during which 26 tickets and the map existed only on disk, one `git clean -xdf` from
 gone.
 
@@ -31,7 +33,7 @@ close is the owner's, not an agent's. See the memory `criterio-previo`.
 ## When a skill says "publish to the issue tracker"
 
 Create a file under `.scratch/<effort-slug>/` (creating the directory if needed). Do not open a
-GitHub issue — there is no remote, and GitHub issues are explicitly out of scope for this bench
+GitHub issue — GitHub issues are explicitly out of scope for this bench
 (memory `mapa-estado-entregavel`).
 
 ## When a skill says "fetch the relevant ticket"
@@ -56,4 +58,4 @@ Used by `/wayfinder`. The **map** is a file with one **child** file per ticket.
 
 ## PRs as a request surface
 
-Off. There is no remote, so there are no incoming PRs to triage.
+Off. A remote now exists; enabling PR triage is a separate decision, not an implication of that remote.
