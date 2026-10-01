@@ -40,13 +40,8 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from quant_w4a8 import (  # same directory
-    HIGH_PRECISION_DTYPES,
-    PROFILE_PATTERNS,
-    detect_profile,
-    read_header,
-    read_tensor,
-)
+from _conversion import read_header, read_tensor  # noqa: E402
+from _profiles import HIGH_PRECISION_DTYPES, PROFILE_PATTERNS, detect_profile  # noqa: E402
 
 INT4_MAX = 7
 LEVELS = 2 * INT4_MAX + 1  # -7..7, what quantize_signed_int4_rowwise clamps to

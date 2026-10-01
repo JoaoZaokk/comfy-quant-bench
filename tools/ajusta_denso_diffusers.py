@@ -47,28 +47,22 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from pathlib import Path
 
 import torch
 
-BLOCO = re.compile(r"^(?P<pilha>[A-Za-z_][\w.]*?)\.(?P<i>\d+)\.")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import _conversion as C  # noqa: E402
+from lowbit_canon import BLOCO, pilhas_reais  # noqa: E402  (fonte canônica)
+
 PROMPTS = [
     "a red apple on a weathered wooden table, soft window light",
     "a portrait of an elderly fisherman, deep wrinkles, overcast light",
     "a neon-lit night market in the rain, puddles reflecting signs",
     "a single ice crystal on dark slate, macro, fine internal structure",
 ]
-
-
-def pilhas_reais(nomes) -> set[str]:
-    ind: dict[str, set[str]] = {}
-    for k in nomes:
-        m = BLOCO.match(k)
-        if m:
-            ind.setdefault(m.group("pilha"), set()).add(m.group("i"))
-    return {n for n, i in ind.items() if len(i) >= 2}
 
 
 def nomes_densos(chaves) -> list[str]:
@@ -80,23 +74,18 @@ def nomes_densos(chaves) -> list[str]:
 
 def carrega_transformer(caminho: Path, config: Path, dtype, dev):
     from diffusers import Flux2Transformer2DModel
-    from safetensors.torch import load_file
     cfg = json.loads(config.read_text(encoding="utf-8"))
     m = Flux2Transformer2DModel.from_config(cfg)
-    sd = load_file(str(caminho))
+    # Era `load_file` (safe_open + mmap), contra a regra de streaming (revisao 2026-09-29, achado
+    # 1). O modelo inteiro vai para a memoria de qualquer jeito -- e treinado --, mas lido faixa a
+    # faixa, sem o mapeamento que neste host compromete ate 2x o arquivo.
+    with C.LazyTensors(caminho) as fonte:
+        sd = {k: fonte[k] for k in fonte}
     falta, sobra = m.load_state_dict(sd, strict=False)
     if falta or sobra:
         raise RuntimeError(f"state_dict nao casa: {len(falta)} faltando, {len(sobra)} sobrando; "
                            f"primeiros {list(falta)[:3]} / {list(sobra)[:3]}")
     return m.to(device=dev, dtype=dtype).eval()
-
-
-def ler_metadata(p: Path) -> dict[str, str] | None:
-    """`__metadata__` do safetensors, lendo SO o header. Devolve None se nao houver."""
-    import struct
-    with p.open("rb") as f:
-        n = struct.unpack("<Q", f.read(8))[0]
-        return json.loads(f.read(n)).get("__metadata__")
 
 
 def classe_do_pipeline(raiz: Path):
@@ -179,6 +168,29 @@ def grava_professor(raiz: Path, ref_transformer: Path, n_prompts, sementes, pass
     return capt
 
 
+def grava_saida(conv: C.Conversion, treinaveis, relatorio: dict) -> None:
+    """O aluno com os densos treinados, mais o relatorio `.json`, num commit atomico so.
+
+    Tudo que nao foi treinado e copiado verbatim da fonte (streaming, sem materializar o modelo);
+    os treinados vao no dtype que a fonte tem para eles. A ordem dos tensores e a do `save_file`
+    que este script usava (dtype, depois nome), entao o layout nao muda.
+
+    O `__metadata__` DA ORIGEM VIAJA. `save_file` sem `metadata=` grava None, e foi assim que o
+    controle `zero` saiu com os 169 tensores byte a byte identicos e o ARQUIVO diferente do braco
+    0 por 32 bytes -- exatamente o `{"format": "pt"}` que o escritor de la grava. Perder isso e
+    perder proveniencia num artefato que pode ser publicado. As chaves saem ordenadas: o
+    `save_file` as ordenava por um HashMap de semente aleatoria (`_conversion.save_file_metadata`).
+    """
+    header = conv.header
+    treinados = {k: v.detach().to("cpu", C.TORCH_DTYPES[header[k]["dtype"]]).clone() for k, v in treinaveis}
+    entradas = [C.plan_write(k, treinados[k]) if k in treinados else C.plan_copy(k, info)
+                for k, info in header.items()]
+    entradas = C.save_file_order(entradas)
+    meta = C.save_file_metadata(conv.metadata or None)
+    conv.guard(conv.planned_size(entradas, meta))
+    conv.commit(entradas, meta, sidecar=relatorio)
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--raiz", required=True, help="pasta do pipeline (model_index.json etc)")
@@ -203,6 +215,14 @@ def main() -> int:
                         "estocastico (`torchao.optim._AdamW`, weight_decay 0 = Adam).")
     p.add_argument("--device", type=int, default=0)
     a = p.parse_args()
+
+    # Pelo nucleo desde 2026-09-29 (revisao, achado 2). A saida era recusada so DEPOIS do
+    # professor e do treino, gravada com `save_file` num `.partial` sem recusa de parcial antigo e
+    # sem fsync, e o relatorio `.json` com `write_text` (sobrescrevendo). Agora as recusas vem antes
+    # de qualquer trabalho, e modelo + relatorio entram juntos no commit atomico.
+    sai = Path(a.saida)
+    conv = C.Conversion(Path(a.aluno_transformer), sai, sai.with_suffix(".json"))
+    conv.refuse_unsafe(allow_quantized_source=True)
 
     dev = torch.device(f"cuda:{a.device}")
     raiz = Path(a.raiz)
@@ -311,31 +331,14 @@ def main() -> int:
     desvio = max(por_tensor.values(), default=0.0)
     print(f"  densos mudados: {mudou}/{len(antes)}   maior desvio rel-L2 {desvio:.3e}")
 
-    from safetensors.torch import load_file, save_file
-    sai = Path(a.saida)
-    if sai.exists():
-        print(f"RECUSADO: {sai} ja existe.", file=sys.stderr)
-        return 2
-    base = load_file(str(a.aluno_transformer))
-    for k, v in treinaveis:
-        base[k] = v.detach().to("cpu", base[k].dtype).clone()
-    # O `__metadata__` DA ORIGEM VIAJA. `save_file` sem `metadata=` grava None, e foi assim que o
-    # controle `zero` saiu com os 169 tensores byte a byte identicos e o ARQUIVO diferente do braco
-    # 0 por 32 bytes -- exatamente o `{"format": "pt"}` que o escritor de la grava. Perder isso e
-    # perder proveniencia num artefato que pode ser publicado.
-    meta = ler_metadata(Path(a.aluno_transformer))
-    parcial = sai.with_suffix(sai.suffix + ".partial")
-    save_file(base, str(parcial), metadata=meta)
-    parcial.replace(sai)
-    print(f"  escrito {sai}  {sai.stat().st_size:,} B")
-
     rel = {"modo": a.modo, "mestre": a.mestre, "elementos_mudados_frac": el_mud / n_el,
            "n_exemplos": len(prof), "epocas": a.epocas, "lr": a.lr,
            "treinaveis": len(treinaveis), "params_treinaveis": n_par,
            "densos_mudados": mudou, "maior_desvio_rel_l2": desvio,
            "desvios_por_tensor": por_tensor,
            "perda_inicial": hist[0] if hist else None, "perda_final": hist[-1] if hist else None}
-    sai.with_suffix(".json").write_text(json.dumps(rel, indent=2), encoding="utf-8")
+    grava_saida(conv, treinaveis, rel)
+    print(f"  escrito {sai}  {sai.stat().st_size:,} B")
 
     print("\n=== NAO COBERTO ===")
     print("  Nenhuma imagem. Isto otimiza e mede PREVISAO em entradas casadas pelo pipeline.")

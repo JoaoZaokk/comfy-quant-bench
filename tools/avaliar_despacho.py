@@ -53,7 +53,9 @@ USO
 from __future__ import annotations
 
 import argparse
+import importlib.metadata
 import json
+import os
 import subprocess
 import sys
 import time
@@ -63,6 +65,12 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parent.parent
 PY = RAIZ / "python_embeded" / "python.exe"
 PROBE = RAIZ / "tools" / "probe_quant_dispatch.py"
+
+sys.path.insert(0, str(RAIZ / "tools"))
+import gpu_lock  # noqa: E402
+
+# Variavel de modulo para o teste apontar para um arquivo temporario.
+LOCK_PATH = gpu_lock.LOCK_PATH
 
 DESPACHA = "DESPACHA"
 MISTO = "MISTO"
@@ -109,6 +117,55 @@ def alvos_da_camada1(dir_laudos: Path) -> list[Alvo]:
                           int(fatos["camadas_quantizadas"]),
                           fatos.get("formatos") or {}))
     return saida
+
+
+def lock_vivo(dono: str | None = None) -> tuple[bool, str, dict]:
+    """(ok, motivo, estado). Este lote carrega um checkpoint por vez na GPU, dezenas em sequencia,
+    e ate a revisao de 2026-09-29 nao olhava lock nenhum. Ele nao TOMA o lock (a regra: fora do
+    `_timing.compare()`/BenchGuard, quem roda GPU segura o lock com `Assert-GpuLock` antes); ele
+    EXIGE que haja um lock vivo -- pid vivo e heartbeat dentro do limite do protocolo -- e, com
+    `dono`, que seja aquele. Sem isso recusa, em vez de disputar a placa com quem esta medindo."""
+    estado = gpu_lock.read_state(LOCK_PATH)
+    if estado is None:
+        return False, (f"sem lock em {LOCK_PATH}. Tome antes: . tools/gpu_lock.ps1; "
+                       "Assert-GpuLock -Owner 'comfy:avaliar_despacho'"), {}
+    if not estado:
+        return False, f"{LOCK_PATH} existe mas nao pode ser lido", {}
+    descricao = gpu_lock.describe(estado)
+    try:
+        vivo = gpu_lock._pid_alive(int(estado.get("pid", "")))
+        idade = time.time() - int(estado.get("hb", ""))
+    except ValueError:
+        return False, f"lock sem pid/hb legiveis: {descricao}", estado
+    if not vivo or idade > gpu_lock.STALE_LIMIT_SEC:
+        return False, f"lock nao esta vivo (pid morto ou heartbeat velho): {descricao}", estado
+    if dono and estado.get("dono") != dono:
+        return False, f"lock e de outro dono, nao de {dono!r}: {descricao}", estado
+    return True, descricao, estado
+
+
+def controles_da_execucao(device: int, descricao_lock: str) -> dict:
+    """O que um laudo precisa dizer para ser comparavel: placa, lock, versoes, arvore do ComfyUI.
+    A camada 1 ja avisa que o backend do sidecar e 'o registro de uma conversao passada'; um laudo
+    da camada 2 sem as versoes de AGORA tem o mesmo defeito."""
+    versoes = {}
+    for dist in ("torch", "comfy-kitchen", "triton-windows"):
+        try:
+            versoes[dist] = importlib.metadata.version(dist)
+        except importlib.metadata.PackageNotFoundError:
+            versoes[dist] = None
+    try:
+        cabeca = subprocess.run(["git", "-C", str(RAIZ / "ComfyUI"), "rev-parse", "HEAD"],
+                                capture_output=True, text=True, timeout=20, check=False).stdout.strip() or None
+        sujo = bool(subprocess.run(["git", "-C", str(RAIZ / "ComfyUI"), "status", "--porcelain",
+                                    "--untracked-files=no"], capture_output=True, text=True,
+                                   timeout=60, check=False).stdout.strip())
+    except (OSError, subprocess.TimeoutExpired):
+        cabeca, sujo = None, None
+    return {"quando": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "device": device,
+            "CUDA_VISIBLE_DEVICES": os.environ.get("CUDA_VISIBLE_DEVICES"),
+            "lock": descricao_lock, "versoes": versoes, "comfyui_head": cabeca,
+            "comfyui_com_alteracoes_locais": sujo, "python": sys.version.split()[0]}
 
 
 def rodar_probe(alvo: Alvo, device: int, segundos: int) -> tuple[dict | None, str]:
@@ -233,6 +290,8 @@ def main() -> int:
     p.add_argument("--refazer", action="store_true", help="ignora resultados ja gravados")
     p.add_argument("--segundos", type=int, default=900, help="teto por checkpoint")
     p.add_argument("--device", type=int, default=0)
+    p.add_argument("--dono", default=None,
+                   help="exige que o lock vivo seja deste dono (o -Owner do Assert-GpuLock)")
     a = p.parse_args()
 
     if not a.laudos.is_dir():
@@ -254,6 +313,17 @@ def main() -> int:
         return 2
 
     a.saida.mkdir(parents=True, exist_ok=True)
+    vai_rodar = [x for x in alvos if x.modo is not None
+                 and (a.refazer or not (a.saida / f"{x.caminho.stem}.json").is_file())]
+    controles_exec = None
+    if vai_rodar:
+        ok, motivo, _estado = lock_vivo(a.dono)
+        if not ok:
+            print(f"RECUSADO: {len(vai_rodar)} checkpoint(s) iriam para a GPU e {motivo}",
+                  file=sys.stderr)
+            return 3
+        controles_exec = controles_da_execucao(a.device, motivo)
+        print(f"lock vivo: {motivo}")
     linhas, contagem, controles_vistos = [], {}, {}
     for i, alvo in enumerate(alvos, 1):
         destino = a.saida / f"{alvo.caminho.stem}.json"
@@ -270,7 +340,8 @@ def main() -> int:
             destino.write_text(json.dumps(
                 {"arquivo": str(alvo.caminho), "modo": alvo.modo, "camadas_no_arquivo": alvo.camadas,
                  "formatos": alvo.formatos, "veredito": veredito, "mensagem": mensagem,
-                 "numeros": numeros, "segundos": round(segundos, 1)},
+                 "numeros": numeros, "segundos": round(segundos, 1),
+                 "controles": controles_exec},
                 indent=2, ensure_ascii=False), encoding="utf-8")
 
         contagem[veredito] = contagem.get(veredito, 0) + 1

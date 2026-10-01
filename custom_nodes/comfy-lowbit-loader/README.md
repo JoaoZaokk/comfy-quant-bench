@@ -50,7 +50,10 @@ way to go faster, and is not implemented.
 
 ## Files
 
-- `layout.py`: the layout, its registration, and the one wrapped loader function (`comfy.ops._load_quantized_module`).
+- `layout.py`: the layout, its registration, and the reader `comfy.ops._load_quantized_module` calls through
+  `QUANT_ALGOS["lowbit_affine"]["params_from_state_dict"]` (hook added by the local ComfyUI patch
+  `patches/comfyui_awq_w4a16_format.patch`; without it lowbit files fail to load and the boot log says so).
 - `kernel.py`: Triton and torch dequantization, code packing.
 - `formats.py`: detection, the four readers, lossless packing, diffusers→BFL renaming.
-- `test_lowbit.py`: `python_embeded\python.exe -s custom_nodes\comfy-lowbit-loader\test_lowbit.py`.
+- `test_lowbit.py`: `python_embeded\python.exe -s custom_nodes\comfy-lowbit-loader\test_lowbit.py`
+  (the GPU test runs only with `LOWBIT_TEST_CUDA=1` and an explicit `LOWBIT_TEST_DEVICE=cuda:N`).

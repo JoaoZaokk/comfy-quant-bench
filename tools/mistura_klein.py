@@ -1,6 +1,6 @@
 """Híbrido de dois checkpoints BFL do Klein com as MESMAS chaves e shapes: cada tensor vem de `--base`,
-exceto os que casam `--regex`, que vêm de `--doador`. Escrita em streaming, `.partial` -> `os.replace`,
-recusa saída existente. Não quantiza nada.
+exceto os que casam `--regex`, que vêm de `--doador`. Escrita em streaming pelo núcleo `_conversion`
+(`.partial` exclusivo -> fsync -> `os.replace`), recusa saída existente. Não quantiza nada.
 
     python_embeded\\python.exe -s tools/mistura_klein.py --base b6.safetensors --doador bf16.safetensors \\
         --regex "double_blocks\\.\\d+\\.txt_(attn\\.(qkv|proj)|mlp\\.\\d)\\.weight" --saida H1.safetensors --esperadas 20
@@ -8,36 +8,30 @@ recusa saída existente. Não quantiza nada.
 from __future__ import annotations
 
 import argparse
-import json
-import os
 import re
-import struct
+import sys
 from pathlib import Path
 
-BLOCO = 64 << 20
+import torch
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import _conversion as C  # noqa: E402
+
 DT = {"BF16": "bfloat16", "F16": "float16", "F32": "float32"}
 
 
 def rtn4(raw: bytes, dtype: str, shape: list[int], grupo: int, bits: int = 4) -> bytes:
+    """RTN absmax por grupo (`lowbit_canon.rtn_simetrico`), de bytes para bytes no dtype da fonte."""
     import torch
-    t = torch.frombuffer(bytearray(raw), dtype=getattr(torch, DT[dtype])).reshape(shape).float()
-    n, k = t.shape
-    if k % grupo:
-        raise SystemExit(f"K={k} nao divisivel pelo grupo {grupo}")
-    g = t.reshape(n, k // grupo, grupo)
-    lv = 2 ** (bits - 1) - 1  # 4 bits -> -7..7, 3 bits -> -3..3, 2 bits -> -1..1
-    s = g.abs().amax(dim=-1, keepdim=True).clamp_min(1e-12) / lv
-    q = (g / s).round().clamp(-lv, lv) * s
-    out = q.reshape(n, k).to(getattr(torch, DT[dtype])).contiguous()
+    from lowbit_canon import rtn_simetrico
+    t = torch.frombuffer(bytearray(raw), dtype=getattr(torch, DT[dtype])).reshape(shape)
+    try:
+        q = rtn_simetrico(t, grupo, bits)
+    except ValueError as e:
+        raise SystemExit(str(e)) from None
+    out = q.to(getattr(torch, DT[dtype])).contiguous()
     return out.view(torch.uint8).numpy().tobytes() if dtype != "F32" else out.numpy().tobytes()
-
-
-def cabecalho(p: Path):
-    with p.open("rb") as f:
-        n = struct.unpack("<Q", f.read(8))[0]
-        h = json.loads(f.read(n))
-    meta = h.pop("__metadata__", None)
-    return h, meta, 8 + n
 
 
 def main() -> int:
@@ -54,59 +48,47 @@ def main() -> int:
                    help="bits do RTN simulado de --rtn4 (niveis simetricos +-(2^(b-1)-1))")
     args = a.parse_args()
 
-    hb, meta, base_b = cabecalho(args.base)
-    hd, _, base_d = cabecalho(args.doador)
+    hb, meta_b = C.read_header(args.base)
+    hd, _ = C.read_header(args.doador)
+    meta = meta_b or None  # sem __metadata__ na base, a saida tambem sai sem
     if set(hb) != set(hd) or any(hb[k]["shape"] != hd[k]["shape"] or hb[k]["dtype"] != hd[k]["dtype"] for k in hb):
         raise SystemExit("recusado: base e doador nao tem as mesmas chaves/shapes/dtypes")
     rx = re.compile(args.regex)
     do_doador = sorted(k for k in hb if rx.fullmatch(k))
     if args.esperadas is not None and len(do_doador) != args.esperadas:
         raise SystemExit(f"recusado: regex casou {len(do_doador)} tensores, esperado {args.esperadas}")
-    if args.saida.exists():
-        raise SystemExit(f"recusado: saida ja existe {args.saida}")
-    parcial = args.saida.with_suffix(args.saida.suffix + ".partial")
-    if parcial.exists():
-        raise SystemExit(f"recusado: parcial antigo {parcial}")
+    # Pelo nucleo desde 2026-09-29 (revisao, achado 2): recusa saida existente, parcial antigo e
+    # fonte == saida; `.partial` exclusivo, fsync, bytes conferidos, os.replace. Era uma copia a
+    # mao correta do mesmo contrato.
+    conv = C.Conversion(args.base, args.saida)
+    conv.refuse_unsafe(allow_quantized_source=True)
+    doador = C.LazyTensors(args.doador, hd)
+
+    def rtn_do_doador(k: str):
+        def produz():
+            ini, fim = hd[k]["data_offsets"]
+            with args.doador.open("rb") as f:
+                f.seek(doador.start + ini)
+                dados = rtn4(f.read(fim - ini), hd[k]["dtype"], hd[k]["shape"], args.rtn4, args.bits)
+            return torch.frombuffer(bytearray(dados), dtype=C.TORCH_DTYPES[hd[k]["dtype"]]).reshape(hd[k]["shape"])
+        return produz
 
     ordem = sorted(hb, key=lambda k: hb[k]["data_offsets"][0])
-    novo, off = {}, 0
-    if meta is not None:
-        novo["__metadata__"] = dict(meta, mistura_doador=args.doador.name, mistura_regex=args.regex,
-                                    **({"mistura_rtn_grupo": str(args.rtn4), "mistura_rtn_bits": str(args.bits)} if args.rtn4 else {}))
+    entradas = []
     for k in ordem:
-        tam = hb[k]["data_offsets"][1] - hb[k]["data_offsets"][0]
-        novo[k] = {"dtype": hb[k]["dtype"], "shape": hb[k]["shape"], "data_offsets": [off, off + tam]}
-        off += tam
-    blob = json.dumps(novo, separators=(",", ":"), ensure_ascii=False).encode()
-    blob += b" " * ((8 - len(blob) % 8) % 8)
-
-    out = open(parcial, "xb")
-    try:
-        with args.base.open("rb") as fb, args.doador.open("rb") as fd, out:
-            out.write(struct.pack("<Q", len(blob)))
-            out.write(blob)
-            for k in ordem:
-                fonte, h, base = (fd, hd, base_d) if k in do_doador else (fb, hb, base_b)
-                ini, fim = h[k]["data_offsets"]
-                fonte.seek(base + ini)
-                resta = fim - ini
-                if args.rtn4 and k in do_doador:
-                    dados = rtn4(fonte.read(resta), h[k]["dtype"], h[k]["shape"], args.rtn4, args.bits)
-                    assert len(dados) == resta, k
-                    out.write(dados)
-                    continue
-                while resta:
-                    pedaco = fonte.read(min(BLOCO, resta))
-                    if not pedaco:
-                        raise EOFError(k)
-                    out.write(pedaco)
-                    resta -= len(pedaco)
-            out.flush()
-            os.fsync(out.fileno())
-        os.replace(parcial, args.saida)
-    finally:
-        if parcial.exists():
-            parcial.unlink()
+        if k not in do_doador:
+            entradas.append(C.plan_copy(k, hb[k]))
+        elif args.rtn4:
+            entradas.append(C.plan_lazy(k, hd[k]["dtype"], hd[k]["shape"],
+                                        hd[k]["data_offsets"][1] - hd[k]["data_offsets"][0], rtn_do_doador(k)))
+        else:
+            entradas.append(C.plan_copy_from(k, hd[k], args.doador))
+    novo_meta = None
+    if meta is not None:
+        novo_meta = dict(meta, mistura_doador=args.doador.name, mistura_regex=args.regex,
+                         **({"mistura_rtn_grupo": str(args.rtn4), "mistura_rtn_bits": str(args.bits)} if args.rtn4 else {}))
+    conv.guard(conv.planned_size(entradas, novo_meta))
+    conv.commit(entradas, novo_meta)
     print(f"{args.saida.name}: {len(do_doador)} tensores do doador, {len(ordem) - len(do_doador)} da base")
     return 0
 

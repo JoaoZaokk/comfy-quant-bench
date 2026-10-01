@@ -47,6 +47,11 @@ class QuadrosPreguicosos:
         return self._cache0[0]
 
     def __iter__(self):
+        # Uma segunda iteracao decodificaria o video inteiro de novo, calada; se o VHS mudar e iterar duas
+        # vezes, falhar alto e' melhor que dobrar o tempo sem ninguem ver.
+        if getattr(self, "_iterado", False):
+            raise RuntimeError("QuadrosPreguicosos so pode ser iterado uma vez (evita decodificar o video duas vezes)")
+        self._iterado = True
         for trecho in self._trechos():
             yield from trecho  # trecho [t, H, W, C]
 

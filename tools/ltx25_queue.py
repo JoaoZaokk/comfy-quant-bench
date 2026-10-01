@@ -18,18 +18,24 @@ builds the API-format prompt and posts it, rather than reimplementing the pipeli
         --unet ltx-2.5-22b-distilled-transformer-bf16_int8_convrot.safetensors \\
         --donor cuda:1 --virtual-vram 8
 
-Start the server first; `run_nvidia_gpu_8190_loopback.bat` is the one this defaults to.
+Start the server first; `iniciar_comfy.bat video` (port 8190; LTX 2.5 needs --disable-dynamic-vram) is the one this defaults to.
+
+HTTP goes through `comfy_client.py` (review of 2026-09-29). The previous inline loop had its own
+`get()` inside the poll with no exception handling (one network hiccup killed the run) and polled
+only the submitted server -- but this graph uses DisTorch2, i.e. ComfyUI-MultiGPU, whose workers
+record the result in THEIR /history, so the client could report "still running" over a finished
+render. `run_and_wait` polls the workers too, with the same deadline.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
-import time
+import sys
 import urllib.error
-import urllib.request
-import uuid
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import comfy_client as cc  # noqa: E402
 
 PORTABLE_ROOT = Path(__file__).resolve().parent.parent
 
@@ -82,19 +88,6 @@ def build_prompt(args) -> dict:
     }
 
 
-def post(url: str, payload: dict) -> dict:
-    data = json.dumps(payload).encode("utf-8")
-    request = urllib.request.Request(url, data=data,
-                                     headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(request, timeout=60) as response:
-        return json.loads(response.read())
-
-
-def get(url: str) -> dict:
-    with urllib.request.urlopen(url, timeout=60) as response:
-        return json.loads(response.read())
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--server", default="http://127.0.0.1:8190")
@@ -127,13 +120,13 @@ def main() -> int:
     parser.add_argument("--timeout", type=int, default=1800)
     args = parser.parse_args()
 
+    comfy = cc.Comfy(args.server)
     try:
-        get(f"{args.server}/system_stats")
-    except (urllib.error.URLError, OSError) as exc:
+        comfy.system_stats()
+    except cc.REDE as exc:
         raise SystemExit(f"no ComfyUI at {args.server} ({exc}). Start "
-                         f"run_nvidia_gpu_8190_loopback.bat first.")
+                         f"iniciar_comfy.bat video first.")
 
-    client_id = str(uuid.uuid4())
     prompt = build_prompt(args)
     print(f"queueing {args.unet}\n  {args.width}x{args.height}x{args.length} @ {args.frame_rate} "
           f"fps, seed {args.seed}, sigmas {args.sigmas}")
@@ -141,46 +134,35 @@ def main() -> int:
           f"{args.expert or f'{args.virtual_vram} GiB from {args.donor}'}", flush=True)
 
     try:
-        queued = post(f"{args.server}/prompt", {"prompt": prompt, "client_id": client_id})
+        entry = cc.run_and_wait(comfy, prompt, args.timeout, poll_s=3.0)
     except urllib.error.HTTPError as exc:
         # The server validates the whole graph before running a step, and this is the reason to
-        # use it: a bad link or a missing file comes back here as a named node and a reason,
-        # rather than as an exception thrown after a 39 GiB read.
-        detail = exc.read().decode("utf-8", "replace")
-        print(f"the server refused the graph ({exc.code}):")
-        try:
-            parsed = json.loads(detail)
-            print(json.dumps(parsed, indent=2)[:4000])
-        except Exception:
-            print(detail[:4000])
+        # use it: a bad link or a missing file comes back as a named node and a reason (printed
+        # by comfy_client), rather than as an exception thrown after a 39 GiB read.
+        print(f"the server refused the graph ({exc.code})")
+        return 1
+    except cc.PromptRefused as exc:
+        print(f"the server refused part of the graph: {exc}")
+        return 1
+    except cc.PollTimeout:
+        print(f"still running after {args.timeout}s; check the server console")
         return 1
 
-    prompt_id = queued["prompt_id"]
-    print(f"  prompt_id {prompt_id}", flush=True)
-
-    started = time.perf_counter()
-    while time.perf_counter() - started < args.timeout:
-        history = get(f"{args.server}/history/{prompt_id}")
-        if prompt_id in history:
-            entry = history[prompt_id]
-            status = entry.get("status", {})
-            elapsed = time.perf_counter() - started
-            if not status.get("completed", False):
-                print(f"finished unsuccessfully after {elapsed:.1f}s: "
-                      f"{json.dumps(status)[:1500]}")
-                return 1
-            images = [i for out in entry.get("outputs", {}).values()
-                      for i in out.get("images", [])]
-            print(f"completed in {elapsed:.1f}s, {len(images)} frame(s)")
-            for image in images[:4]:
-                print(f"  {image.get('subfolder','')}/{image.get('filename')}")
-            if len(images) > 4:
-                print(f"  ... and {len(images) - 4} more")
-            return 0
-        time.sleep(3)
-
-    print(f"still running after {args.timeout}s; check the server console")
-    return 1
+    if entry.status != "success":
+        print(f"finished unsuccessfully after {entry.wall:.1f}s: {entry.erro}")
+        return 1
+    images = [i for out in (entry.hist.get("outputs") or {}).values()
+              for i in out.get("images", [])]
+    print(f"completed in {entry.wall:.1f}s (server-side {entry.server_side_s}s), "
+          f"{len(images)} frame(s)")
+    for image in images[:4]:
+        print(f"  {image.get('subfolder','')}/{image.get('filename')}")
+    if len(images) > 4:
+        print(f"  ... and {len(images) - 4} more")
+    if entry.cache_hit:
+        print("  CACHE HIT: server-side execution under the threshold -- this timed nothing")
+        return 5
+    return 0
 
 
 if __name__ == "__main__":

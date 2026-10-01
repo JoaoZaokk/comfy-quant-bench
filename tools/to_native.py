@@ -50,10 +50,6 @@ import torch  # noqa: E402
 # so. Dai `plan_copy_many`.
 import _conversion as C  # noqa: E402
 
-TORCH_DTYPES = {"BF16": torch.bfloat16, "F16": torch.float16, "F32": torch.float32,
-                "I8": torch.int8, "U8": torch.uint8}
-
-
 def build_map(arch: str, header: dict) -> dict:
     """Return {diffusers_key: native_key | (native_key, offset)} using ComfyUI's own builder."""
     import comfy.utils

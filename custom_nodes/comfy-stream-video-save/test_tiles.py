@@ -60,3 +60,22 @@ def test_trecho_maximo_e_uma_janela():
     lat = torch.randn(1, 4, 46, 6, 6)
     tam = [t.shape[2] for t in quadros_em_tiles(lat, decode_falso, (8, 4, 4), (1, 2, 2), UPSCALE, 3, "cpu", INDICE)]
     assert sum(tam) == 46 * 8 - 7 and max(tam) <= 57, tam
+
+
+def test_quadros_preguicosos_recusam_segunda_iteracao():
+    """Uma segunda iteracao decodificaria o video inteiro de novo; tem de falhar alto."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("svs_no", os.path.join(AQUI, "__init__.py"))
+    no = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(no)
+    chamadas = []
+
+    def gerar():
+        chamadas.append(1)
+        yield torch.zeros(2, 4, 4, 3)
+        yield torch.ones(1, 4, 4, 3)
+    q = no.QuadrosPreguicosos(gerar, 3)
+    assert len(q) == 3 and q[0].shape == (4, 4, 3)
+    assert len(list(q)) == 3 and len(chamadas) == 1  # o quadro 0 nao decodificou duas vezes
+    with pytest.raises(RuntimeError):
+        list(q)

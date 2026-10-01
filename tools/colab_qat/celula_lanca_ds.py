@@ -1,16 +1,15 @@
 """Celula (colab exec): lanca o gerador do dataset do professor em background (setsid nohup)."""
-import subprocess
 import sys
+import time
 from pathlib import Path
 
 Q = Path("/content/qat")
-for f in ("qat_ternario_klein.py", "ajusta_denso_diffusers.py", "gera_dataset_klein.py", "ds_config.json"):
-    if not (Q / f).is_file():
-        print(f"FALTA {f}")
-        raise SystemExit(1)
+sys.path.insert(0, str(Q))
+import colab_ops
+
+colab_ops.exige([Q / f for f in colab_ops.ARQUIVOS_QAT] + [Q / "gera_dataset_klein.py", Q / "ds_config.json"])
 print("token de escrita presente:", Path("/root/.cache/huggingface/token").is_file())
-Path("/content/ds").mkdir(parents=True, exist_ok=True)
-log = open("/content/ds/ds.log", "ab")
-p = subprocess.Popen(["setsid", "nohup", sys.executable, "-u", str(Q / "gera_dataset_klein.py")],
-                     stdout=log, stderr=subprocess.STDOUT, cwd=str(Q), start_new_session=True)
-print(f"DATASET LANCADO pid={p.pid}")
+for velho in (Path("/content/ds/ds.log"), Path("/content/ds/status.json")):
+    if velho.is_file():  # senao o probe le o FIM velho e declara DONE na hora
+        velho.rename(velho.with_name(f"{velho.stem}.{time.strftime('%H%M%S')}{velho.suffix}"))
+colab_ops.lanca([sys.executable, "-u", Q / "gera_dataset_klein.py"], Path("/content/ds/ds.log"))

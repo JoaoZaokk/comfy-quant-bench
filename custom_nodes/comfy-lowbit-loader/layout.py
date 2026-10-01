@@ -1,13 +1,13 @@
 """The `lowbit_affine` quantization format: a comfy-kitchen layout plus its ComfyUI registration.
 
 Weights stay packed (1, 2 or 4 bits) in VRAM and in the offload copy; each linear dequantizes to the
-compute dtype right before a regular matmul. Nothing here edits a ComfyUI file: the layout is
-registered through `comfy.quant_ops`, and the one closed `if/elif` in the loader
-(`comfy.ops._load_quantized_module`) is wrapped so that only `lowbit_affine` layers take the new
-branch. Saving needs no hook: bits and group size are recovered from the tensor shapes.
+compute dtype right before a regular matmul. The layout is registered through `comfy.quant_ops`, and the
+loader reads a layer's scales through `QUANT_ALGOS[format]["params_from_state_dict"]`, the reader hook
+`comfy.ops._load_quantized_module` calls (local ComfyUI patch `patches/comfyui_awq_w4a16_format.patch`).
+Saving needs no hook: bits and group size are recovered from the tensor shapes.
 """
 
-import json
+import inspect
 import logging
 from dataclasses import dataclass
 
@@ -15,7 +15,7 @@ import torch
 
 import comfy.ops
 import comfy.quant_ops
-from comfy.quant_ops import QUANT_ALGOS, QuantizedTensor
+from comfy.quant_ops import QUANT_ALGOS
 from comfy_kitchen.tensor.base import BaseLayoutParams, QuantizedLayout
 
 from . import kernel
@@ -67,33 +67,13 @@ def shape_params(qdata, scale, k):
     return bits, k // scale.shape[1]
 
 
-_original_load = comfy.ops._load_quantized_module
-
-
-def _load_quantized_module(module, super_load, state_dict, prefix, local_metadata, strict,
-                           missing_keys, unexpected_keys, error_msgs, load_extra_params=False):
-    conf = state_dict.get(f"{prefix}comfy_quant")
-    if conf is None or json.loads(conf.numpy().tobytes()).get("format") != FORMAT:
-        return _original_load(module, super_load, state_dict, prefix, local_metadata, strict,
-                              missing_keys, unexpected_keys, error_msgs, load_extra_params=load_extra_params)
-
-    device = module.factory_kwargs["device"]
-    keys = [f"{prefix}{name}" for name in ("comfy_quant", "weight", "weight_scale", "weight_zeros")]
-    _, qdata, scale, zero = (state_dict.pop(key) for key in keys)
-    bits, group_size = shape_params(qdata, scale, module._orig_shape[1])
-    params = LowBitAffineLayout.Params(
-        scale=scale.to(device=device), zero=zero.to(device=device), bits=bits, group_size=group_size,
-        orig_dtype=module.factory_kwargs["dtype"], orig_shape=module._orig_shape,
-    )
-    module.quant_format = FORMAT
-    module.layout_type = LAYOUT
-    module._full_precision_mm_config = False
-    module.weight = torch.nn.Parameter(QuantizedTensor(qdata.to(device=device, dtype=torch.uint8), LAYOUT, params), requires_grad=False)
-
-    super_load(state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs)
-    for key in keys:
-        if key in missing_keys:
-            missing_keys.remove(key)
+def params_from_state_dict(layer_name, module, weight, pop_scale, layer_conf):
+    """Layout params for one layer: scale and zero from the file, bits and group size from the shapes."""
+    scale, zero = pop_scale("weight_scale"), pop_scale("weight_zeros")
+    if scale is None or zero is None:
+        raise ValueError(f"lowbit_affine: missing weight_scale/weight_zeros for layer {layer_name}")
+    bits, group_size = shape_params(weight, scale, module._orig_shape[1])
+    return {"scale": scale, "zero": zero, "bits": bits, "group_size": group_size}
 
 
 def register():
@@ -103,7 +83,9 @@ def register():
         "parameters": {"weight_scale", "weight_zeros"},
         "comfy_tensor_layout": LAYOUT,
         "quantize_input": False,
+        "params_from_state_dict": params_from_state_dict,
     }
-    if comfy.ops._load_quantized_module is not _load_quantized_module:
-        comfy.ops._load_quantized_module = _load_quantized_module
+    if "params_from_state_dict" not in inspect.getsource(comfy.ops._load_quantized_module):
+        logging.error("lowbit_affine: this ComfyUI has no params_from_state_dict reader hook "
+                      "(patches/comfyui_awq_w4a16_format.patch is not applied); lowbit files will fail to load")
     logging.info("lowbit_affine registered (%s kernel on CUDA)", kernel.kernel_for("cuda") if torch.cuda.is_available() else "torch")

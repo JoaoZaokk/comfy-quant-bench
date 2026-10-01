@@ -36,7 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "ComfyUI"))
 
 import _conversion as C  # noqa: E402
 from quant_int8 import quantize  # noqa: E402
-from quant_w4a8 import read_header, read_tensor  # noqa: E402
+from _conversion import read_header, read_tensor  # noqa: E402
 
 REGEX_AUDIO = r"(?:^|\.)(?:audio_attn\d+|audio_ff|audio_to_video_attn|video_to_audio_attn)\."
 

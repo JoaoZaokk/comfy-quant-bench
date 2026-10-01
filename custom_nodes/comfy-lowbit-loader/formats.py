@@ -211,13 +211,18 @@ def _rename(name):
 
 def diffusers_flux2_to_bfl(dense, lowbit):
     """Rename modules/tensors; fuse q/k/v (packed rows concatenate like dense rows); swap the two halves
-    of the final modulation, which diffusers stores as [shift, scale] and BFL as [scale, shift]."""
+    of the final modulation, which diffusers stores as [shift, scale] and BFL as [scale, shift].
+
+    q/k/v are grouped per (fused module, tensor suffix): a file already saved as lowbit_affine carries
+    `weight`, `weight_scale`, `weight_zeros` and `comfy_quant` for each of the three, and each suffix
+    fuses on its own (`comfy_quant` is one config, not a concatenation). Reader-packed layers use the
+    suffix None."""
     fused, out_dense, out_lowbit = {}, {}, {}
     for name, layer in lowbit.items():
         for pattern, dst in _FUSED:
             m = pattern.match(name)
             if m:
-                fused.setdefault(pattern.sub(dst, name), {})[m.group(2)] = layer
+                fused.setdefault((pattern.sub(dst, name), None), {})[m.group(2)] = layer
                 break
         else:
             out_lowbit[_rename(name)] = layer
@@ -225,20 +230,27 @@ def diffusers_flux2_to_bfl(dense, lowbit):
         module, _, suffix = key.rpartition(".")
         hit = next(((p, dst) for p, dst in _FUSED if p.match(module)), None)
         if hit:
-            fused.setdefault(hit[0].sub(hit[1], module), {})[hit[0].match(module).group(2)] = value
+            fused.setdefault((hit[0].sub(hit[1], module), suffix), {})[hit[0].match(module).group(2)] = value
             continue
         new = _rename(key) if key.endswith(("norm_k.weight", "norm_q.weight", "norm_added_k.weight", "norm_added_q.weight")) else f"{_rename(module)}.{suffix}"
         if module == "norm_out.linear":
             value = torch.cat(value.chunk(2, dim=0)[::-1], dim=0)
         out_dense[new] = value
-    for dst, parts in fused.items():
+    for (dst, suffix), parts in fused.items():
+        missing = {"q", "k", "v"} - set(parts)
+        if missing:
+            raise ValueError(f"{dst}.{suffix or 'weight'}: no {'/'.join(sorted(missing))} to fuse with")
         q, k, v = parts["q"], parts["k"], parts["v"]
-        if isinstance(q, LowBit):
+        if suffix is None:
             if len({(p.bits, p.group_size) for p in (q, k, v)}) != 1:
                 raise ValueError(f"{dst}: q/k/v packed with different bits or group size")
             out_lowbit[dst] = LowBit(*(torch.cat([getattr(p, f) for p in (q, k, v)], 0) for f in ("qdata", "scale", "zero")), q.bits, q.group_size)
+        elif suffix == "comfy_quant":
+            if not (torch.equal(q, k) and torch.equal(q, v)):
+                raise ValueError(f"{dst}: q/k/v carry different quantization configs")
+            out_dense[f"{dst}.comfy_quant"] = q
         else:
-            out_dense[f"{dst}.weight"] = torch.cat([q, k, v], 0)
+            out_dense[f"{dst}.{suffix}"] = torch.cat([q, k, v], 0)
     return out_dense, out_lowbit
 
 

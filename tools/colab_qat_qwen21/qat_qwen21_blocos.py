@@ -107,13 +107,31 @@ class LinearW4A4(torch.nn.Module):
         return (xq @ wq.t()).to(dt)
 
 
-def codigos(w):
-    """Codigos e escalas finais a partir do mestre FP32 -- mesma conta do quantize_convrot_w4a4_weight."""
+def _codigos_simulados(w):
+    """A mesma conta da simulacao do treino (gira + absmax/7 por linha), empacotada como o ck. So' serve para
+    provar que o que o treino simulou e' o que o exportador grava (`verifica_kernel`) e de reserva sem ck."""
     wr = gira(w.float(), CONVROT)
     s = wr.abs().amax(-1, keepdim=True).clamp(min=1e-10) / INT4_MAX
     q = (wr / s).round().clamp(-INT4_MAX, INT4_MAX).to(torch.int32)
     lo, hi = q[:, 0::2] & 0x0F, q[:, 1::2] & 0x0F
     return (lo | (hi << 4)).to(torch.int8).contiguous(), s.reshape(-1).float().contiguous()
+
+
+_AVISOU_SEM_CK = []
+
+
+def codigos(w):
+    """Codigos e escalas finais a partir do mestre FP32 pelo `quantize_convrot_w4a4_weight` do comfy-kitchen
+    (a fonte canonica, a mesma que o conversor usa). Sem ck importavel, a reimplementacao local, registrada."""
+    try:
+        from comfy_kitchen.backends.eager.convrot_w4a4 import quantize_convrot_w4a4_weight
+    except ImportError as e:
+        if not _AVISOU_SEM_CK:
+            log(f"AVISO: comfy_kitchen nao importou ({e}); codigos pela reimplementacao local")
+            _AVISOU_SEM_CK.append(1)
+        return _codigos_simulados(w)
+    q, s = quantize_convrot_w4a4_weight(w.detach().float(), CONVROT, 64)
+    return q.to(torch.int8).contiguous(), s.reshape(-1).float().contiguous()
 
 
 def troca_lineares(bloco):
@@ -459,14 +477,19 @@ def main():
 def verifica_kernel(modelo, cods, device):
     """Smoke: a Linear simulada tem de dar o mesmo que o kernel eager do comfy-kitchen com os codigos exportados."""
     import comfy_kitchen.backends.eager.convrot_w4a4 as ck
-    nome, (q, s) = next(iter(cods.items()))
-    m = modelo.get_submodule(nome)
-    x = torch.randn(5, m.in_features, dtype=torch.bfloat16, device=device)
-    sim = m(x).float()
-    ref = ck.convrot_w4a4_linear(x, q.to(device), s.to(device), None, CONVROT, 64).float()
-    qk, sk = ck.quantize_convrot_w4a4_weight(m.weight.detach().float(), CONVROT, 64)
-    log(f"smoke {nome}: codigos iguais ao quantizador do ck {bool((qk == q).all())}, escalas {float((sk - s).abs().max()):.2e}, "
-        f"simulado x kernel rel {erro_rel(sim, ref):.2e}")
+    for nome, (q, s) in cods.items():
+        m = modelo.get_submodule(nome)
+        qs, ss = _codigos_simulados(m.weight)
+        iguais, dif_esc = bool((qs == q).all()), float((ss - s).abs().max())
+        x = torch.randn(5, m.in_features, dtype=torch.bfloat16, device=device)
+        sim = m(x).float()
+        ref = ck.convrot_w4a4_linear(x, q.to(device), s.to(device), None, CONVROT, 64).float()
+        rel = erro_rel(sim, ref)
+        log(f"smoke {nome}: codigos simulados = ck {iguais}, escalas {dif_esc:.2e}, simulado x kernel rel {rel:.2e}")
+        # criterio (medido 2026-09-29 no smoke CPU: codigos iguais, escalas 0, rel 3,2e-3): o treino simula o
+        # que o kernel executa e o exportador grava o que o treino simulou
+        assert iguais and dif_esc <= 1e-6 * float(s.abs().max()), f"{nome}: simulacao != quantizador do ck"
+        assert rel < 2e-2, f"{nome}: simulado x kernel rel {rel:.2e} >= 2e-2"
 
 
 if __name__ == "__main__":

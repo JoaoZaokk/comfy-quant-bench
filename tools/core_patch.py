@@ -1,9 +1,16 @@
-"""Back up, inspect and revert edits to ComfyUI core files.
+"""Back up, inspect and revert edits to files under ComfyUI/ that its git checkout does not track.
+
+RETIRED for ComfyUI core files (anything the ComfyUI checkout tracks: comfy/, comfy_extras/, ...).
+Core edits are commits on the local branch `local/0.37.4` of the ComfyUI checkout, one commit per
+change on top of the release tag; `patches/comfyui_*.patch` are generated from those commits with
+`git format-patch`, and `tools/verifica_patches.py` checks that they are applied. Git already
+records the original of a tracked file, so `backup` refuses tracked paths. What is left here is for
+untracked files such as blueprints/.
 
 Every backup records the file's SHA-256 and a timestamp, so a later ComfyUI update that
 rewrites the same file is detected instead of being silently reverted over.
 
-    core_patch.py backup comfy/ops.py --note "convrot dtype dequant"
+    core_patch.py backup blueprints/some.json --note "why"
     core_patch.py status
     core_patch.py diff comfy/ops.py
     core_patch.py revert comfy/ops.py
@@ -16,6 +23,7 @@ import difflib
 import hashlib
 import json
 import shutil
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -77,10 +85,19 @@ def resolve(target: str) -> tuple[str, Path]:
     return key, path
 
 
+def tracked_by_comfy_git(key: str) -> bool:
+    proc = subprocess.run(["git", "ls-files", "--error-unmatch", key], cwd=COMFY_ROOT,
+                          capture_output=True, text=True, check=False)
+    return proc.returncode == 0
+
+
 def command_backup(args) -> int:
     key, path = resolve(args.target)
     if not path.is_file():
         raise SystemExit(f"Not a file: {path}")
+    if tracked_by_comfy_git(key):
+        raise SystemExit(f"{key} is tracked by the ComfyUI checkout: commit the change on its local branch "
+                         "(see this file's docstring) instead of backing it up here.")
 
     ledger = load_ledger()
     entry = ledger.get(key)
@@ -113,7 +130,8 @@ def command_backup(args) -> int:
 def command_status(args) -> int:
     ledger = load_ledger()
     if not ledger:
-        print("No ComfyUI core file is tracked. Core is untouched.")
+        print("No file is tracked here. Core edits are commits on the ComfyUI branch local/0.37.4: "
+              "git -C ComfyUI log --oneline v0.37.4..local/0.37.4")
         return 0
     for key, entry in sorted(ledger.items()):
         _, path = resolve(key)

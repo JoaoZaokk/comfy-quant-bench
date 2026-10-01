@@ -1,0 +1,19 @@
+# GERADO de colab_ops.ARQUIVOS_QAT por `colab_ops.py monta` -- nao editar a mao.
+# origem (relativa a raiz da bancada):destino (relativo a /content/qat); lido por .scratch/sobe_qat_comum.sh
+tools/qat_ternario_klein.py:qat_ternario_klein.py
+tools/qat_klein/__init__.py:qat_klein/__init__.py
+tools/qat_klein/config.py:qat_klein/config.py
+tools/qat_klein/modulos.py:qat_klein/modulos.py
+tools/qat_klein/professor.py:qat_klein/professor.py
+tools/qat_klein/estado.py:qat_klein/estado.py
+tools/qat_klein/hf_sync.py:qat_klein/hf_sync.py
+tools/qat_klein/avalia.py:qat_klein/avalia.py
+tools/qat_klein/exporta.py:qat_klein/exporta.py
+tools/qat_klein/status.py:qat_klein/status.py
+tools/qat_klein/treino.py:qat_klein/treino.py
+tools/qat_klein/util.py:qat_klein/util.py
+tools/lowbit_canon.py:lowbit_canon.py
+tools/ajusta_denso_diffusers.py:ajusta_denso_diffusers.py
+tools/colab_qat/colab_ops.py:colab_ops.py
+tools/colab_qat/probe_job.py:probe_job.py
+custom_nodes/comfy-lowbit-loader/kernel.py:lowbit_kernel.py

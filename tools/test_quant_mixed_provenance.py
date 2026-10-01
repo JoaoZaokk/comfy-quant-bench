@@ -28,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import torch  # noqa: E402
 
+import _conversion as C  # noqa: E402
 import quant_mixed as qm  # noqa: E402
 from calibrate_activations import (  # noqa: E402
     IDENTITY_SAMPLE_BYTES,
@@ -42,7 +43,7 @@ def write_safetensors(path: Path, tensors: dict[str, torch.Tensor], metadata=Non
     blobs = []
     for name, tensor in tensors.items():
         blob = memoryview(tensor.contiguous().numpy()).cast("B").tobytes()
-        header[name] = {"dtype": qm.SAFETENSORS_DTYPE[tensor.dtype],
+        header[name] = {"dtype": C.SAFETENSORS_DTYPE[tensor.dtype],
                         "shape": list(tensor.shape),
                         "data_offsets": [offset, offset + len(blob)]}
         blobs.append(blob)

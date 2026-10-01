@@ -26,14 +26,15 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import struct
 import sys
 from pathlib import Path
 
 import torch
 
-BLOCO = re.compile(r"^(?P<pilha>[A-Za-z_][\w.]*?)\.(?P<i>\d+)\.")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lowbit_canon import BLOCO, pilhas_reais  # fonte canonica
+
 DT = {"BF16": torch.bfloat16, "F16": torch.float16, "F32": torch.float32}
 
 
@@ -53,14 +54,6 @@ class Leitor:
             f.seek(self.base + a)
             buf = bytearray(f.read(b - a))
         return torch.frombuffer(buf, dtype=DT[m["dtype"]]).reshape(m["shape"]).float()
-
-
-def pilhas_reais(nomes) -> set[str]:
-    ind: dict[str, set[str]] = {}
-    for k in nomes:
-        if (m := BLOCO.match(k)):
-            ind.setdefault(m.group("pilha"), set()).add(m.group("i"))
-    return {n for n, i in ind.items() if len(i) >= 2}
 
 
 def main() -> int:

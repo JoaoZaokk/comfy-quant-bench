@@ -51,9 +51,6 @@ import argparse
 import importlib.metadata
 import json
 import math
-import os
-import shutil
-import struct
 import sys
 import time
 from pathlib import Path
@@ -63,17 +60,14 @@ sys.path.insert(0, str(PORTABLE_ROOT / "ComfyUI"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import _conversion as C  # noqa: E402
+import _formats as F  # noqa: E402
 
-import psutil  # noqa: E402
 import torch  # noqa: E402
-import torch.nn.functional as F  # noqa: E402
+import torch.nn.functional as F_nn  # noqa: E402
 
 from _native_probe import native_backend_ready  # noqa: E402
-from calibrate_activations import (  # noqa: E402,F401
-    PROFILE_FILE_PATTERNS,
-    PROFILE_PATTERNS,
-    safetensors_identity_digest,
-)
+from _profiles import MODULE_PATTERNS as PROFILE_PATTERNS, select_layers  # noqa: E402
+from calibrate_activations import safetensors_identity_digest  # noqa: E402
 
 # The error measurement runs at bf16, always, and never at the checkpoint's dtype.
 #
@@ -94,24 +88,10 @@ MEASURE_DTYPE = torch.bfloat16
 
 ERROR_METRICS = ("err_bf16", "err_w4a4", "err_w4a8")
 
-SAFETENSORS_DTYPE = {
-    torch.int8: "I8", torch.uint8: "U8", torch.float32: "F32",
-    torch.bfloat16: "BF16", torch.float16: "F16",
-}
-HIGH_PRECISION_DTYPES = {"BF16", "F16", "F32"}
-TORCH_DTYPES = {"BF16": torch.bfloat16, "F16": torch.float16, "F32": torch.float32}
-
 # The ops that must resolve to CUDA before any number produced here means anything.
 REQUIRED_OPS = ("quantize_convrot_w4a4_weight", "convrot_w4a4_linear",
                 "quantize_w4a8_int8_weight", "w4a8_int8_linear")
 
-
-def human_size(size: int) -> str:
-    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
-        if size < 1024 or unit == "TiB":
-            return f"{size:.2f} {unit}" if unit != "B" else f"{size} B"
-        size /= 1024
-    return f"{size:.2f} TiB"
 
 
 def mixed_probe_ops(args: argparse.Namespace) -> dict:
@@ -157,51 +137,6 @@ def mixed_probe_ops(args: argparse.Namespace) -> dict:
                          "REQUIRED_OPS says must resolve to CUDA before any number here means "
                          "anything")
     return ops
-
-
-def read_header(path: Path) -> tuple[dict, dict[str, str]]:
-    with path.open("rb") as handle:
-        size = struct.unpack("<Q", handle.read(8))[0]
-        header = json.loads(handle.read(size))
-    metadata = header.pop("__metadata__", {}) or {}
-    return header, metadata
-
-
-def read_tensor(handle, offset: int, size: int, dtype: str, shape: list[int]) -> torch.Tensor:
-    handle.seek(offset)
-    raw = handle.read(size)
-    if len(raw) != size:
-        raise RuntimeError(f"short read: wanted {size}, got {len(raw)}")
-    return torch.frombuffer(bytearray(raw), dtype=TORCH_DTYPES[dtype]).reshape(shape)
-
-
-def copy_range(source_handle, output_handle, offset: int, size: int) -> None:
-    source_handle.seek(offset)
-    remaining = size
-    chunk = 16 * 1024 * 1024
-    while remaining:
-        block = source_handle.read(min(chunk, remaining))
-        if not block:
-            raise RuntimeError("unexpected end of source while copying")
-        output_handle.write(block)
-        remaining -= len(block)
-
-
-def selected_layers(header: dict, profile: str, convrot_groupsize: int) -> list[str]:
-    # File-key pattern, not the module pattern: for HunyuanVideo the checkpoint says
-    # img_attn_qkv where the loaded module says img_attn.qkv, and matching the wrong one
-    # selects nothing while looking like a profile that simply found no layers.
-    pattern = PROFILE_FILE_PATTERNS[profile]
-    names = []
-    for name, info in header.items():
-        if not name.endswith(".weight") or not pattern.match(name.removesuffix(".weight")):
-            continue
-        if info["dtype"] not in HIGH_PRECISION_DTYPES or len(info["shape"]) != 2:
-            continue
-        if info["shape"][1] % convrot_groupsize:
-            continue
-        names.append(name)
-    return names
 
 
 def relative(reference: torch.Tensor, got: torch.Tensor,
@@ -353,9 +288,9 @@ def measure_layer(layer: str, weight: torch.Tensor, x: torch.Tensor, ck,
             f"weight={weight.dtype} x={x.dtype}. Taking the dtype from the checkpoint is the "
             "344064-vs-65504 overflow described at MEASURE_DTYPE; cast to MEASURE_DTYPE at the "
             "read, not here.")
-    reference = F.linear(x.float(), weight.float())
+    reference = F_nn.linear(x.float(), weight.float())
     result = {"err_bf16": finite(layer, "err_bf16",
-                                 relative(reference, F.linear(x, weight), weights))}
+                                 relative(reference, F_nn.linear(x, weight), weights))}
 
     # FP32 na entrada do quantizador (26/09): a rotacao ConvRot em BF16 muda ~8% dos codigos int8 em +-1-2.
     # Comfy-Org (int8-convrot) e NidAll (W4A8) quantizam do peso em FP32 -- conferido: 99,9999% dos codigos
@@ -455,6 +390,320 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def selected_layers(header: dict, profile: str, convrot_groupsize: int) -> list[str]:
+    # File-key pattern, not the module pattern: for HunyuanVideo the checkpoint says
+    # img_attn_qkv where the loaded module says img_attn.qkv, and matching the wrong one
+    # selects nothing while looking like a profile that simply found no layers.
+    # `_profiles.WEIGHT_PATTERNS` is FILE_PATTERNS + `.weight`, so this is the same match.
+    return select_layers(header, profile, F.ConvrotW4A4(convrot_groupsize).accepts)
+
+
+def load_analysis(args, source: Path, source_digest: str, header: dict):
+    """O ramo `--analysis`: carrega e confere uma medicao gravada. Devolve (analysis, profile).
+
+    Toda chave de proveniencia e obrigatoria (`required`), e a analise e recusada se descrever
+    outro checkpoint, outros groupsizes, outro dtype de medicao ou outra ponderacao de sigma.
+    """
+    origin = f"analysis {args.analysis}"
+    analysis = json.loads(args.analysis.read_text(encoding="utf-8"))
+    profile = args.profile or required(analysis, "profile", origin)
+    # The measurement branch refuses a calibration captured from a different checkpoint. The
+    # --analysis branch checked nothing at all, so a saved analysis could be replayed against
+    # another model, or with different group sizes than it was measured under, and the
+    # per-layer errors would silently describe a different computation than the one being
+    # written.
+    recorded_source = Path(required(analysis, "source", origin)).name
+    recorded_digest = required(analysis, "source_identity_sha256", origin)
+    # ORed, not swapped. The digest samples the body and is strictly better than a basename at
+    # telling two *different* files apart -- but it is still a sample, and the check it
+    # replaced was already refusing every pairing later measured to collide. Keeping both
+    # means the weaker signal can only ever ADD a refusal, never remove one. A legitimate
+    # rename or copy still passes, through --foreign-analysis, which is a flag and not a wall.
+    foreign = recorded_digest != source_digest or recorded_source != source.name
+    if foreign and not args.foreign_analysis:
+        raise SystemExit(
+            f"The analysis was measured on {recorded_source!r} (identity "
+            f"{recorded_digest[:16]}) but the input is {source.name!r} "
+            f"({source_digest[:16]}). These are not the same checkpoint even if the names "
+            f"match. Re-measure with --calibration, or pass --foreign-analysis if the two "
+            f"are the same architecture -- see its help text for what that buys and what it "
+            f"costs.")
+    if foreign:
+        # Loud, every run. The whole risk of this flag is that someone forgets which
+        # measurement produced the file they are shipping.
+        print(f"--foreign-analysis: promoting layers of {source.name!r} "
+              f"({source_digest[:16]}) using errors measured on {recorded_source!r} "
+              f"({recorded_digest[:16]}).")
+    # Required, not `is not None`: the whole point of item 2 of this ticket is that an
+    # analysis missing the field it would be checked on used to pass by having nothing to
+    # check.
+    for field, current in (("group_size", args.group_size),
+                           ("convrot_groupsize", args.convrot_groupsize)):
+        recorded = required(analysis, field, origin)
+        if recorded != current:
+            raise SystemExit(
+                f"The analysis was measured with {field}={recorded} but this run uses "
+                f"{current}. The per-layer errors would not describe what gets written; "
+                f"pass --{field.replace('_', '-')} {recorded} or re-measure.")
+    # No flag to reconcile this one: a measurement taken at the checkpoint's dtype -- which
+    # is what this tool did before MEASURE_DTYPE existed -- is not reusable at any setting,
+    # because on an fp16 checkpoint it is the 344064-vs-65504 overflow.
+    recorded_dtype = required(analysis, "measure_dtype", origin)
+    if recorded_dtype != str(MEASURE_DTYPE):
+        raise SystemExit(
+            f"The analysis was measured at {recorded_dtype} and this tool measures at "
+            f"{MEASURE_DTYPE}. Re-measure with --calibration; see MEASURE_DTYPE for why the "
+            "measurement dtype is not negotiable.")
+    # Uma analise gravada com outra ponderacao de sigma descreve outra metrica, e as
+    # colunas tem o mesmo nome nas duas. Sem esta checagem, reusar uma analise antiga com
+    # `--sigma-weight sigma2` produziria uma decisao "ponderada" feita de numeros nao
+    # ponderados, sem nenhum sinal na saida. Analise sem o campo e pre-2026-08-31 e portanto
+    # 'none' -- o que e verdade, e nao uma suposicao conveniente: a ponderacao nao existia.
+    recorded_sw = analysis.get("sigma_weight", "none")
+    if recorded_sw != args.sigma_weight:
+        raise SystemExit(
+            f"A analise foi medida com --sigma-weight {recorded_sw!r} e esta execucao pede "
+            f"{args.sigma_weight!r}. Os campos err_* tem o mesmo nome nos dois casos e "
+            "significam coisas diferentes. Re-meca com --calibration.")
+    validate_analysis_rows(analysis.get("layers"), origin, metricas_exigidas(args))
+    shapes = {row["layer"]: tuple(row["shape"]) for row in analysis["layers"]}
+    for name, info in header.items():
+        stem = name.removesuffix(".weight")
+        if stem in shapes and tuple(info["shape"]) != shapes[stem]:
+            raise SystemExit(
+                f"{stem}: the analysis recorded shape {list(shapes[stem])} but the input has "
+                f"{info['shape']}. These are not the same weights.")
+    if foreign:
+        # Same shapes where both have a layer is not enough when the analysis comes from
+        # another file: a layer the analysis never measured would fall to --uncalibrated
+        # handling silently, and a layer the analysis has but the input lacks means the two
+        # are not the architecture this transfer was measured on. Both must be empty.
+        # selected_layers returns tensor names; the analysis keys layers without the suffix.
+        present = {n.removesuffix(".weight")
+                   for n in selected_layers(header, profile, args.convrot_groupsize)}
+        missing = sorted(set(shapes) - present)
+        extra = sorted(present - set(shapes))
+        if missing or extra:
+            raise SystemExit(
+                f"--foreign-analysis requires the same layer set. "
+                f"{len(missing)} in the analysis but not in the input "
+                f"(e.g. {missing[:2]}), {len(extra)} the other way (e.g. {extra[:2]}). "
+                f"These are different architectures; measure this one.")
+    return analysis, profile
+
+
+def load_calibration(args, source: Path, source_digest: str):
+    """O ramo `--calibration`: carrega o .calib.pt e confere a proveniencia. Devolve
+    (calibration_meta, activations, profile)."""
+    origin = f"calibration {args.calibration}"
+    blob = torch.load(args.calibration, map_location="cpu", weights_only=False)
+    calibration_meta = blob["meta"]
+    activations = blob["layers"]
+    profile = args.profile or required(calibration_meta, "profile", origin)
+    recorded_source = Path(required(calibration_meta, "source", origin)).name
+    recorded_digest = required(calibration_meta, "source_identity_sha256", origin)
+    if recorded_digest != source_digest or recorded_source != source.name:
+        # Calibrating on one checkpoint and converting another produces a file that looks
+        # fine and is tuned for the wrong activations. Refuse rather than warn. This compared
+        # basenames until 2026-08-22, and a basename is not an identity here: outputs are
+        # written beside their source and D:/ComfyUI-Models is mounted alongside
+        # ComfyUI/models, so the same name in two directories is the normal case, not a
+        # corner one.
+        #
+        # But the digest did not REPLACE the basename, it was ORed with it, and that is the
+        # correction of 2026-08-22 rather than the change: a header-only digest let three
+        # different Z-Image checkpoints -- and the two halves of a Wan i2v pair, and the two
+        # passes of one conversion -- compare equal, so for those the basename check being
+        # dropped turned a refusal into a silent acceptance. The digest now samples the body
+        # too, but it is still a sample, and a weaker signal ORed in can only ever add a
+        # refusal. See safetensors_identity_digest for the measurement.
+        raise SystemExit(
+            f"Calibration was captured from {recorded_source!r} (identity "
+            f"{recorded_digest[:16]}) but the input is {source.name!r} "
+            f"({source_digest[:16]}). Even with the same filename these are different "
+            f"checkpoints. Recalibrate against this file.")
+    return calibration_meta, activations, profile
+
+
+def measure_all(args, source: Path, conv, selected: list[str], activations: dict, ck,
+                calibration_meta: dict, profile: str, source_digest: str) -> dict:
+    """Mede cada camada selecionada nas ativacoes gravadas; devolve a analise (e a grava, se pedido)."""
+    header = conv.header
+    missing = [n for n in selected if n.removesuffix(".weight") not in activations]
+    if missing and args.uncalibrated == "fail":
+        raise SystemExit(f"{len(missing)} selected layer(s) absent from the calibration, "
+                         f"e.g. {missing[:3]}")
+    started = time.perf_counter()
+    rows = []
+    with conv.tensors() as fonte:
+        for index, name in enumerate(selected, 1):
+            info = header[name]
+            stem = name.removesuffix(".weight")
+            entry = activations.get(stem)
+            if entry is None or entry["sample"].shape[0] == 0:
+                rows.append({"layer": stem, "shape": info["shape"], "calibrated": False})
+                continue
+            # Both operands are cast to MEASURE_DTYPE at the read. The activation used to be
+            # cast to `weight.dtype`, i.e. the checkpoint's -- read MEASURE_DTYPE for what
+            # that does to a layer whose activations reach 344064 on an fp16 checkpoint.
+            weight = fonte[name].to(device="cuda", dtype=MEASURE_DTYPE)
+            x = entry["sample"].to(device="cuda", dtype=MEASURE_DTYPE)
+            if not torch.isfinite(x).all():
+                # A calibration that already contains inf/nan is a broken calibration, not a
+                # layer with an interesting error: routing it to --uncalibrated would hide a
+                # capture bug behind a per-layer format choice. Name the layer and stop.
+                raise SystemExit(
+                    f"{stem}: the calibration sample contains inf or nan. The reservoir is "
+                    "bf16 precisely so real activations (up to 344064 on Z-Image) cannot "
+                    "overflow the way fp16's 65504 does, so this is a capture bug, not a "
+                    f"property of the layer. Recapture with tools/calibrate_activations.py.")
+            w = sigma_weights(args.sigma_weight, entry.get("sample_sigma"), stem)
+            measured = measure_layer(stem, weight, x, ck,
+                                     args.group_size, args.convrot_groupsize, w,
+                                     somente_w4a4=args.somente_w4a4)
+            measured.update({"layer": stem, "shape": info["shape"], "calibrated": True,
+                             "rows": int(entry["rows"]),
+                             "sigma_weight": args.sigma_weight,
+                             "crest_p99": float(entry["crest_p99"])})
+            if w is not None:
+                s = entry["sample_sigma"].float()
+                measured["sigma_span"] = [float(s.min()), float(s.max())]
+                measured["sigma_weight_mass_top_half"] = float(
+                    w[s >= s.median()].sum() / w.sum())
+            rows.append(measured)
+            del weight, x
+            torch.cuda.empty_cache()
+            if index % 24 == 0 or index == len(selected):
+                print(f"[{index}/{len(selected)}] measured", flush=True)
+    analysis = {
+        "profile": profile, "source": str(source),
+        # Written so a reused analysis can be checked against the checkpoint it describes
+        # instead of against a filename, and so the sidecar of any file built from it can
+        # carry the same identity forward. Both are what item 1 of the ticket is for.
+        "source_identity_sha256": source_digest,
+        "measure_dtype": str(MEASURE_DTYPE),
+        "sigma_weight": args.sigma_weight,
+        "calibration": calibration_meta,
+        "group_size": args.group_size, "convrot_groupsize": args.convrot_groupsize,
+        "seconds": round(time.perf_counter() - started, 2),
+        "layers": rows,
+    }
+    if args.save_analysis:
+        args.save_analysis.parent.mkdir(parents=True, exist_ok=True)
+        args.save_analysis.write_text(json.dumps(analysis, indent=2), encoding="utf-8")
+        print(f"wrote analysis to {args.save_analysis}")
+    return analysis
+
+
+def decide(selected: list[str], by_layer: dict, *, uncalibrated: str, somente_w4a4: bool,
+           keep_bf16_error: float | None, promote_error: float,
+           budget: float) -> tuple[dict[str, str], list[str]]:
+    """O formato de cada camada. FUNCAO PURA: devolve (decisao, linhas para imprimir).
+
+    Separada do `main()` (revisao de 2026-09-29, achado 9) porque os dois defeitos documentados
+    desta ferramenta moravam exatamente aqui -- `--uncalibrated=fail` so valendo no ramo de medicao
+    e o `inf` que o corte do orcamento alcancava -- e ate entao so eram testaveis rodando o `main()`.
+    `tools/test_quant_mixed_decide.py` a exercita por tabela.
+    """
+    decision: dict[str, str] = {}
+    for name in selected:
+        stem = name.removesuffix(".weight")
+        row = by_layer.get(stem)
+        if row is None or not row.get("calibrated"):
+            # `fail` used to be checked only inside the measurement branch, so reusing a saved
+            # analysis with --analysis turned "refuse if any layer is uncalibrated" into a
+            # silent bf16 passthrough -- the opposite of what the flag asks for.
+            if uncalibrated == "fail":
+                raise SystemExit(
+                    f"{stem} has no usable measurement and --uncalibrated=fail was given. "
+                    "Recalibrate, or choose --uncalibrated w4a8 (safe) or bf16 (unquantized).")
+            decision[stem] = ("asym_w4a8_int8"
+                              if uncalibrated == "w4a8" and not somente_w4a4
+                              else "bf16")
+            continue
+        if somente_w4a4:
+            # Sem `err_w4a8` nao ha o que promover nem contra o que comparar: toda camada
+            # calibrada vai a W4A4. Os dois ramos abaixo LEEM `row["err_w4a8"]`, entao sem este
+            # desvio o modo novo decidia promocoes a partir de uma chave inexistente.
+            decision[stem] = "convrot_w4a4"
+        elif keep_bf16_error is not None and row["err_w4a8"] > keep_bf16_error:
+            decision[stem] = "bf16"
+        elif row["err_w4a4"] > promote_error:
+            decision[stem] = "asym_w4a8_int8"
+        else:
+            decision[stem] = "convrot_w4a4"
+
+    # Budget caps promotions, keeping the ones where the promotion removes the most error.
+    # Uncalibrated layers are held out of the ranking entirely rather than given gain=inf. The
+    # inf trick looked safe -- "never demote something that was never measured" -- but the cut is
+    # a fixed-size slice, `sorted(...)[:len(promoted) - allowed]`, so once the budget is tight
+    # enough the slice runs past the measured layers and reaches the inf keys anyway. Simulated:
+    # 170 layers, 12 uncalibrated, --budget 0.05 demotes exactly the layers the comment promised
+    # to protect.
+    notes: list[str] = []
+    promoted = [s for s, f in decision.items() if f == "asym_w4a8_int8"]
+    measured = [s for s in promoted
+                if by_layer.get(s) is not None and by_layer[s].get("calibrated")]
+    unmeasured_promoted = [s for s in promoted if s not in set(measured)]
+    allowed = int(len(selected) * budget)
+    if len(promoted) > allowed:
+        room = max(0, allowed - len(unmeasured_promoted))
+
+        def gain(stem: str) -> float:
+            row = by_layer[stem]
+            return row["err_w4a4"] - row["err_w4a8"]
+        demoted = sorted(measured, key=gain)[:max(0, len(measured) - room)]
+        for stem in demoted:
+            decision[stem] = "convrot_w4a4"
+        notes.append(f"budget {budget:.2f} capped promotions at {allowed}; "
+                     f"demoted {len(demoted)} measured layer(s) with the smallest error removed")
+        if unmeasured_promoted:
+            notes.append(f"  {len(unmeasured_promoted)} uncalibrated layer(s) kept at W4A8 and "
+                         f"excluded from the ranking; they consume budget but are never demoted "
+                         f"by it")
+        if len(unmeasured_promoted) > allowed:
+            notes.append(f"  warning: uncalibrated layers alone ({len(unmeasured_promoted)}) "
+                         f"exceed the budget of {allowed}. The budget cannot be honoured without "
+                         "demoting a layer that was never measured; it is being exceeded instead.")
+        notes.append("")
+    return decision, notes
+
+
+def report(analysis: dict, decision: dict[str, str], uncalibrated: str) -> dict[str, int]:
+    """As tabelas de decisao impressas antes de escrever. Devolve a contagem por formato."""
+    counts = {"convrot_w4a4": 0, "asym_w4a8_int8": 0, "bf16": 0}
+    for fmt in decision.values():
+        counts[fmt] += 1
+    print(f"{'format':<20}{'layers':>8}")
+    for fmt, count in counts.items():
+        print(f"{fmt:<20}{count:>8}")
+
+    unmeasured = [row for row in analysis["layers"] if not row.get("calibrated")]
+    if unmeasured:
+        print(f"\n{len(unmeasured)} layer(s) were not measured and took --uncalibrated="
+              f"{uncalibrated}:")
+        for row in unmeasured[:10]:
+            print(f"  {row['layer']}: {row.get('reason', 'absent from the calibration')}")
+
+    measured_rows = [r for r in analysis["layers"] if r.get("calibrated")]
+    if measured_rows:
+        worst = sorted(measured_rows, key=lambda r: -r["err_w4a4"])[:12]
+        # `w4a8` so entra no cabecalho quando foi medido: uma coluna de tracos passa por
+        # "zero" numa leitura rapida, e uma coluna ausente nao passa por nada.
+        tem8 = all("err_w4a8" in r for r in worst)
+        c8 = f"{'w4a8':>9}" if tem8 else ""
+        print(f"\n{'layer':<40}{'bf16':>9}{'w4a4':>9}{c8}{'crest p99':>11}  format")
+        for row in worst:
+            v8 = f"{row['err_w4a8']:>9.4f}" if tem8 else ""
+            print(f"{row['layer']:<40}{row['err_bf16']:>9.4f}{row['err_w4a4']:>9.4f}"
+                  f"{v8}{row['crest_p99']:>11.2f}  {decision[row['layer']]}")
+        w4a4_rows = [r for r in measured_rows if decision[r["layer"]] == "convrot_w4a4"]
+        if w4a4_rows:
+            print(f"\nworst W4A4 error left in the model: "
+                  f"{max(r['err_w4a4'] for r in w4a4_rows):.4f}")
+    return counts
+
+
 def main() -> int:
     args = parse_args()
     source = args.input.resolve()
@@ -480,14 +729,11 @@ def main() -> int:
     sidecar = output.with_suffix(".quant.json")
     # `refuse_unsafe()` e INCONDICIONAL -- este era o unico conversor que condicionava a recusa de
     # saida existente a `not args.dry_run`, e isso faz o ensaio seco pular a checagem que a
-    # execucao real faria, que e a unica coisa que um ensaio serve para ser.
+    # execucao real faria, que e a unica coisa que um ensaio serve para ser. Ela tambem recusa os
+    # `.comfy_quant` inline (a checagem duplicada que este arquivo carregava saiu).
     conv = C.Conversion(source, output, sidecar)
     conv.refuse_unsafe()
     header, metadata = conv.header, conv.metadata
-    inline_quant = sum(1 for name in header if name.endswith(".comfy_quant"))
-    if inline_quant:
-        raise SystemExit(f"Refusing to requantize: source carries {inline_quant} inline "
-                         "'.comfy_quant' markers, so it is already quantized")
 
     # A diffusers-named checkpoint would match only the feed_forward third of the profile and
     # produce a file whose attention scales land under names no module reads. That failure is
@@ -508,123 +754,11 @@ def main() -> int:
     # four groups of checkpoints in this install share a header byte for byte.
     source_digest = safetensors_identity_digest(source)
 
-    analysis = None
+    analysis = activations = None
     if args.analysis:
-        origin = f"analysis {args.analysis}"
-        analysis = json.loads(args.analysis.read_text(encoding="utf-8"))
-        profile = args.profile or required(analysis, "profile", origin)
-        calibration_meta = analysis.get("calibration", {})
-        activations = None
-        # The measurement branch refuses a calibration captured from a different checkpoint. The
-        # --analysis branch checked nothing at all, so a saved analysis could be replayed against
-        # another model, or with different group sizes than it was measured under, and the
-        # per-layer errors would silently describe a different computation than the one being
-        # written.
-        recorded_source = Path(required(analysis, "source", origin)).name
-        recorded_digest = required(analysis, "source_identity_sha256", origin)
-        # ORed, not swapped. The digest samples the body and is strictly better than a basename at
-        # telling two *different* files apart -- but it is still a sample, and the check it
-        # replaced was already refusing every pairing later measured to collide. Keeping both
-        # means the weaker signal can only ever ADD a refusal, never remove one. A legitimate
-        # rename or copy still passes, through --foreign-analysis, which is a flag and not a wall.
-        foreign = recorded_digest != source_digest or recorded_source != source.name
-        if foreign and not args.foreign_analysis:
-            raise SystemExit(
-                f"The analysis was measured on {recorded_source!r} (identity "
-                f"{recorded_digest[:16]}) but the input is {source.name!r} "
-                f"({source_digest[:16]}). These are not the same checkpoint even if the names "
-                f"match. Re-measure with --calibration, or pass --foreign-analysis if the two "
-                f"are the same architecture -- see its help text for what that buys and what it "
-                f"costs.")
-        if foreign:
-            # Loud, every run. The whole risk of this flag is that someone forgets which
-            # measurement produced the file they are shipping.
-            print(f"--foreign-analysis: promoting layers of {source.name!r} "
-                  f"({source_digest[:16]}) using errors measured on {recorded_source!r} "
-                  f"({recorded_digest[:16]}).")
-        # Required, not `is not None`: the whole point of item 2 of this ticket is that an
-        # analysis missing the field it would be checked on used to pass by having nothing to
-        # check.
-        for field, current in (("group_size", args.group_size),
-                               ("convrot_groupsize", args.convrot_groupsize)):
-            recorded = required(analysis, field, origin)
-            if recorded != current:
-                raise SystemExit(
-                    f"The analysis was measured with {field}={recorded} but this run uses "
-                    f"{current}. The per-layer errors would not describe what gets written; "
-                    f"pass --{field.replace('_', '-')} {recorded} or re-measure.")
-        # No flag to reconcile this one: a measurement taken at the checkpoint's dtype -- which
-        # is what this tool did before MEASURE_DTYPE existed -- is not reusable at any setting,
-        # because on an fp16 checkpoint it is the 344064-vs-65504 overflow.
-        recorded_dtype = required(analysis, "measure_dtype", origin)
-        if recorded_dtype != str(MEASURE_DTYPE):
-            raise SystemExit(
-                f"The analysis was measured at {recorded_dtype} and this tool measures at "
-                f"{MEASURE_DTYPE}. Re-measure with --calibration; see MEASURE_DTYPE for why the "
-                "measurement dtype is not negotiable.")
-        # Uma analise gravada com outra ponderacao de sigma descreve outra metrica, e as
-        # colunas tem o mesmo nome nas duas. Sem esta checagem, reusar uma analise antiga com
-        # `--sigma-weight sigma2` produziria uma decisao "ponderada" feita de numeros nao
-        # ponderados, sem nenhum sinal na saida. Analise sem o campo e pre-2026-08-31 e portanto
-        # 'none' -- o que e verdade, e nao uma suposicao conveniente: a ponderacao nao existia.
-        recorded_sw = analysis.get("sigma_weight", "none")
-        if recorded_sw != args.sigma_weight:
-            raise SystemExit(
-                f"A analise foi medida com --sigma-weight {recorded_sw!r} e esta execucao pede "
-                f"{args.sigma_weight!r}. Os campos err_* tem o mesmo nome nos dois casos e "
-                "significam coisas diferentes. Re-meca com --calibration.")
-        validate_analysis_rows(analysis.get("layers"), origin, metricas_exigidas(args))
-        shapes = {row["layer"]: tuple(row["shape"]) for row in analysis["layers"]}
-        for name, info in header.items():
-            stem = name.removesuffix(".weight")
-            if stem in shapes and tuple(info["shape"]) != shapes[stem]:
-                raise SystemExit(
-                    f"{stem}: the analysis recorded shape {list(shapes[stem])} but the input has "
-                    f"{info['shape']}. These are not the same weights.")
-        if foreign:
-            # Same shapes where both have a layer is not enough when the analysis comes from
-            # another file: a layer the analysis never measured would fall to --uncalibrated
-            # handling silently, and a layer the analysis has but the input lacks means the two
-            # are not the architecture this transfer was measured on. Both must be empty.
-            # selected_layers returns tensor names; the analysis keys layers without the suffix.
-            present = {n.removesuffix(".weight")
-                       for n in selected_layers(header, profile, args.convrot_groupsize)}
-            missing = sorted(set(shapes) - present)
-            extra = sorted(present - set(shapes))
-            if missing or extra:
-                raise SystemExit(
-                    f"--foreign-analysis requires the same layer set. "
-                    f"{len(missing)} in the analysis but not in the input "
-                    f"(e.g. {missing[:2]}), {len(extra)} the other way (e.g. {extra[:2]}). "
-                    f"These are different architectures; measure this one.")
+        analysis, profile = load_analysis(args, source, source_digest, header)
     else:
-        origin = f"calibration {args.calibration}"
-        blob = torch.load(args.calibration, map_location="cpu", weights_only=False)
-        calibration_meta = blob["meta"]
-        activations = blob["layers"]
-        profile = args.profile or required(calibration_meta, "profile", origin)
-        recorded_source = Path(required(calibration_meta, "source", origin)).name
-        recorded_digest = required(calibration_meta, "source_identity_sha256", origin)
-        if recorded_digest != source_digest or recorded_source != source.name:
-            # Calibrating on one checkpoint and converting another produces a file that looks
-            # fine and is tuned for the wrong activations. Refuse rather than warn. This compared
-            # basenames until 2026-08-22, and a basename is not an identity here: outputs are
-            # written beside their source and D:/ComfyUI-Models is mounted alongside
-            # ComfyUI/models, so the same name in two directories is the normal case, not a
-            # corner one.
-            #
-            # But the digest did not REPLACE the basename, it was ORed with it, and that is the
-            # correction of 2026-08-22 rather than the change: a header-only digest let three
-            # different Z-Image checkpoints -- and the two halves of a Wan i2v pair, and the two
-            # passes of one conversion -- compare equal, so for those the basename check being
-            # dropped turned a refusal into a silent acceptance. The digest now samples the body
-            # too, but it is still a sample, and a weaker signal ORed in can only ever add a
-            # refusal. See safetensors_identity_digest for the measurement.
-            raise SystemExit(
-                f"Calibration was captured from {recorded_source!r} (identity "
-                f"{recorded_digest[:16]}) but the input is {source.name!r} "
-                f"({source_digest[:16]}). Even with the same filename these are different "
-                f"checkpoints. Recalibrate against this file.")
+        calibration_meta, activations, profile = load_calibration(args, source, source_digest)
 
     selected = selected_layers(header, profile, args.convrot_groupsize)
     if not selected:
@@ -651,76 +785,9 @@ def main() -> int:
 
     import comfy_kitchen as ck
 
-    # ---- measurement -------------------------------------------------------------------------
     if analysis is None:
-        missing = [n for n in selected if n.removesuffix(".weight") not in activations]
-        if missing and args.uncalibrated == "fail":
-            raise SystemExit(f"{len(missing)} selected layer(s) absent from the calibration, "
-                             f"e.g. {missing[:3]}")
-        started = time.perf_counter()
-        rows = []
-        with source.open("rb") as handle:
-            header_size = struct.unpack("<Q", handle.read(8))[0]
-            data_start = 8 + header_size
-            for index, name in enumerate(selected, 1):
-                info = header[name]
-                start, end = info["data_offsets"]
-                stem = name.removesuffix(".weight")
-                entry = activations.get(stem)
-                if entry is None or entry["sample"].shape[0] == 0:
-                    rows.append({"layer": stem, "shape": info["shape"], "calibrated": False})
-                    continue
-                # Both operands are cast to MEASURE_DTYPE at the read. The activation used to be
-                # cast to `weight.dtype`, i.e. the checkpoint's -- read MEASURE_DTYPE for what
-                # that does to a layer whose activations reach 344064 on an fp16 checkpoint.
-                weight = read_tensor(handle, data_start + start, end - start,
-                                     info["dtype"], info["shape"]).to(device="cuda",
-                                                                      dtype=MEASURE_DTYPE)
-                x = entry["sample"].to(device="cuda", dtype=MEASURE_DTYPE)
-                if not torch.isfinite(x).all():
-                    # A calibration that already contains inf/nan is a broken calibration, not a
-                    # layer with an interesting error: routing it to --uncalibrated would hide a
-                    # capture bug behind a per-layer format choice. Name the layer and stop.
-                    raise SystemExit(
-                        f"{stem}: the calibration sample contains inf or nan. The reservoir is "
-                        "bf16 precisely so real activations (up to 344064 on Z-Image) cannot "
-                        "overflow the way fp16's 65504 does, so this is a capture bug, not a "
-                        f"property of the layer. Recapture with tools/calibrate_activations.py.")
-                w = sigma_weights(args.sigma_weight, entry.get("sample_sigma"), stem)
-                measured = measure_layer(stem, weight, x, ck,
-                                         args.group_size, args.convrot_groupsize, w,
-                                         somente_w4a4=args.somente_w4a4)
-                measured.update({"layer": stem, "shape": info["shape"], "calibrated": True,
-                                 "rows": int(entry["rows"]),
-                                 "sigma_weight": args.sigma_weight,
-                                 "crest_p99": float(entry["crest_p99"])})
-                if w is not None:
-                    s = entry["sample_sigma"].float()
-                    measured["sigma_span"] = [float(s.min()), float(s.max())]
-                    measured["sigma_weight_mass_top_half"] = float(
-                        w[s >= s.median()].sum() / w.sum())
-                rows.append(measured)
-                del weight, x
-                torch.cuda.empty_cache()
-                if index % 24 == 0 or index == len(selected):
-                    print(f"[{index}/{len(selected)}] measured", flush=True)
-        analysis = {
-            "profile": profile, "source": str(source),
-            # Written so a reused analysis can be checked against the checkpoint it describes
-            # instead of against a filename, and so the sidecar of any file built from it can
-            # carry the same identity forward. Both are what item 1 of the ticket is for.
-            "source_identity_sha256": source_digest,
-            "measure_dtype": str(MEASURE_DTYPE),
-            "sigma_weight": args.sigma_weight,
-            "calibration": calibration_meta,
-            "group_size": args.group_size, "convrot_groupsize": args.convrot_groupsize,
-            "seconds": round(time.perf_counter() - started, 2),
-            "layers": rows,
-        }
-        if args.save_analysis:
-            args.save_analysis.parent.mkdir(parents=True, exist_ok=True)
-            args.save_analysis.write_text(json.dumps(analysis, indent=2), encoding="utf-8")
-            print(f"wrote analysis to {args.save_analysis}")
+        analysis = measure_all(args, source, conv, selected, activations, ck, calibration_meta,
+                               profile, source_digest)
 
     # Both branches land here, and nothing downstream reads an error metric before this line.
     # The measurement branch cannot produce a non-finite one (`measure_layer` refuses), but a
@@ -728,239 +795,91 @@ def main() -> int:
     validate_analysis_rows(analysis["layers"], "analysis", metricas_exigidas(args))
 
     by_layer = {row["layer"]: row for row in analysis["layers"]}
-
-    # ---- decision ----------------------------------------------------------------------------
-    decision: dict[str, str] = {}
-    for name in selected:
-        stem = name.removesuffix(".weight")
-        row = by_layer.get(stem)
-        if row is None or not row.get("calibrated"):
-            # `fail` used to be checked only inside the measurement branch, so reusing a saved
-            # analysis with --analysis turned "refuse if any layer is uncalibrated" into a
-            # silent bf16 passthrough -- the opposite of what the flag asks for.
-            if args.uncalibrated == "fail":
-                raise SystemExit(
-                    f"{stem} has no usable measurement and --uncalibrated=fail was given. "
-                    "Recalibrate, or choose --uncalibrated w4a8 (safe) or bf16 (unquantized).")
-            decision[stem] = ("asym_w4a8_int8"
-                              if args.uncalibrated == "w4a8" and not args.somente_w4a4
-                              else "bf16")
-            continue
-        if args.somente_w4a4:
-            # Sem `err_w4a8` nao ha o que promover nem contra o que comparar: toda camada
-            # calibrada vai a W4A4. Os dois ramos abaixo LEEM `row["err_w4a8"]`, entao sem este
-            # desvio o modo novo decidia promocoes a partir de uma chave inexistente.
-            decision[stem] = "convrot_w4a4"
-        elif args.keep_bf16_error is not None and row["err_w4a8"] > args.keep_bf16_error:
-            decision[stem] = "bf16"
-        elif row["err_w4a4"] > args.promote_error:
-            decision[stem] = "asym_w4a8_int8"
-        else:
-            decision[stem] = "convrot_w4a4"
-
-    # Budget caps promotions, keeping the ones where the promotion removes the most error.
-    # Uncalibrated layers are held out of the ranking entirely rather than given gain=inf. The
-    # inf trick looked safe -- "never demote something that was never measured" -- but the cut is
-    # a fixed-size slice, `sorted(...)[:len(promoted) - allowed]`, so once the budget is tight
-    # enough the slice runs past the measured layers and reaches the inf keys anyway. Simulated:
-    # 170 layers, 12 uncalibrated, --budget 0.05 demotes exactly the layers the comment promised
-    # to protect.
-    promoted = [s for s, f in decision.items() if f == "asym_w4a8_int8"]
-    measured = [s for s in promoted
-                if by_layer.get(s) is not None and by_layer[s].get("calibrated")]
-    unmeasured_promoted = [s for s in promoted if s not in set(measured)]
-    allowed = int(len(selected) * args.budget)
-    if len(promoted) > allowed:
-        room = max(0, allowed - len(unmeasured_promoted))
-        def gain(stem: str) -> float:
-            row = by_layer[stem]
-            return row["err_w4a4"] - row["err_w4a8"]
-        demoted = sorted(measured, key=gain)[:max(0, len(measured) - room)]
-        for stem in demoted:
-            decision[stem] = "convrot_w4a4"
-        print(f"budget {args.budget:.2f} capped promotions at {allowed}; "
-              f"demoted {len(demoted)} measured layer(s) with the smallest error removed")
-        if unmeasured_promoted:
-            print(f"  {len(unmeasured_promoted)} uncalibrated layer(s) kept at W4A8 and excluded "
-                  f"from the ranking; they consume budget but are never demoted by it")
-        if len(unmeasured_promoted) > allowed:
-            print(f"  warning: uncalibrated layers alone ({len(unmeasured_promoted)}) exceed the "
-                  f"budget of {allowed}. The budget cannot be honoured without demoting a layer "
-                  "that was never measured; it is being exceeded instead.")
-        print()
-
-    counts = {"convrot_w4a4": 0, "asym_w4a8_int8": 0, "bf16": 0}
-    for fmt in decision.values():
-        counts[fmt] += 1
-    print(f"{'format':<20}{'layers':>8}")
-    for fmt, count in counts.items():
-        print(f"{fmt:<20}{count:>8}")
-
-    unmeasured = [row for row in analysis["layers"] if not row.get("calibrated")]
-    if unmeasured:
-        print(f"\n{len(unmeasured)} layer(s) were not measured and took --uncalibrated="
-              f"{args.uncalibrated}:")
-        for row in unmeasured[:10]:
-            print(f"  {row['layer']}: {row.get('reason', 'absent from the calibration')}")
-
-    measured_rows = [r for r in analysis["layers"] if r.get("calibrated")]
-    if measured_rows:
-        worst = sorted(measured_rows, key=lambda r: -r["err_w4a4"])[:12]
-        # `w4a8` so entra no cabecalho quando foi medido: uma coluna de tracos passa por
-        # "zero" numa leitura rapida, e uma coluna ausente nao passa por nada.
-        tem8 = all("err_w4a8" in r for r in worst)
-        c8 = f"{'w4a8':>9}" if tem8 else ""
-        print(f"\n{'layer':<40}{'bf16':>9}{'w4a4':>9}{c8}{'crest p99':>11}  format")
-        for row in worst:
-            v8 = f"{row['err_w4a8']:>9.4f}" if tem8 else ""
-            print(f"{row['layer']:<40}{row['err_bf16']:>9.4f}{row['err_w4a4']:>9.4f}"
-                  f"{v8}{row['crest_p99']:>11.2f}  {decision[row['layer']]}")
-        w4a4_rows = [r for r in measured_rows if decision[r["layer"]] == "convrot_w4a4"]
-        if w4a4_rows:
-            print(f"\nworst W4A4 error left in the model: "
-                  f"{max(r['err_w4a4'] for r in w4a4_rows):.4f}")
+    decision, notes = decide(selected, by_layer, uncalibrated=args.uncalibrated,
+                             somente_w4a4=args.somente_w4a4, keep_bf16_error=args.keep_bf16_error,
+                             promote_error=args.promote_error, budget=args.budget)
+    for line in notes:
+        print(line)
+    counts = report(analysis, decision, args.uncalibrated)
 
     if args.dry_run:
         return 0
 
-    # ---- quantize ----------------------------------------------------------------------------
+    # ---- quantize + write, in one streaming pass --------------------------------------------
     quant_names = [n for n in selected if decision[n.removesuffix(".weight")] != "bf16"]
     if not quant_names:
         raise SystemExit("Every layer was left at bf16; there is nothing to write")
-    # This converter is two-pass: every selected layer is quantized into `quantized` and only
-    # then written. The old guard was `largest * 3 + 2 GiB`, copied from quant_w4a4.py, which is
-    # correct for a streaming design and understates a two-pass one by the layer count -- it
-    # asked for 2.25 GiB against an accumulation of 2.92 GiB on the smallest model in this
-    # project, and would understate a large model by several times.
-    from _ram_guard import convrot_w4a4_bytes, w4a8_bytes
-
-    accumulated = 0
-    for name in quant_names:
-        rows, cols = header[name]["shape"]
-        if decision[name.removesuffix(".weight")] == "convrot_w4a4":
-            accumulated += convrot_w4a4_bytes(rows, cols)
-        else:
-            accumulated += w4a8_bytes(rows, cols, args.group_size, codebook=True)
-    conv.guard(source.stat().st_size, accumulated=accumulated, label="mixed conversion")
+    w4a4 = F.ConvrotW4A4(args.convrot_groupsize)
+    # measure_layer() always measures with codebook=True, so the written layers carry one too.
+    w4a8 = F.AsymW4A8(args.group_size, args.convrot_groupsize, codebook=True)
+    formats = {name: (w4a4 if decision[name.removesuffix(".weight")] == "convrot_w4a4" else w4a8)
+               for name in quant_names}
+    out_meta = F.quant_metadata(metadata, F.layer_configs(formats),
+                                "mixed convrot_w4a4 / asym_w4a8_int8")
 
     started = time.perf_counter()
-    quantized: dict[str, dict] = {}
-    with source.open("rb") as handle:
-        header_size = struct.unpack("<Q", handle.read(8))[0]
-        data_start = 8 + header_size
-        for index, name in enumerate(quant_names, 1):
-            info = header[name]
-            start, end = info["data_offsets"]
-            stem = name.removesuffix(".weight")
+    feitas = {"n": 0}
+
+    def contou(_name: str, _extra: dict) -> None:
+        feitas["n"] += 1
+        if feitas["n"] % 24 == 0 or feitas["n"] == len(quant_names):
+            print(f"[{feitas['n']}/{len(quant_names)}] quantized", flush=True)
+
+    with conv.tensors() as fonte:
+        def peso(name: str) -> torch.Tensor:
             # FP32 na entrada do quantizador (26/09): ver `measure_layer`.
-            weight = read_tensor(handle, data_start + start, end - start,
-                                 info["dtype"], info["shape"]).to("cuda", dtype=torch.float32)
-            if decision[stem] == "convrot_w4a4":
-                qdata, scale = ck.quantize_convrot_w4a4_weight(
-                    weight, args.convrot_groupsize, 64)
-                quantized[name] = {"format": "convrot_w4a4",
-                                   "qdata": qdata.cpu().contiguous(),
-                                   "scale": scale.cpu().contiguous()}
-                del qdata, scale
-            else:
-                qdata, s_rel, s_channel, correction, codebook = ck.quantize_w4a8_int8_weight(
-                    weight, group_size=args.group_size,
-                    convrot_groupsize=args.convrot_groupsize, symmetric=True,
-                    scale_dtype=torch.float8_e4m3fn, codebook=True,
-                    codebook_tensor=None, stochastic_rounding=0)
-                if correction is not None:
-                    raise SystemExit("symmetric=True returned a correction tensor; "
-                                     "ComfyUI would drop it")
-                quantized[name] = {"format": "asym_w4a8_int8",
-                                   "qdata": qdata.cpu().contiguous(),
-                                   "s_rel": s_rel.cpu().contiguous(),
-                                   "s_channel": s_channel.cpu().contiguous(),
-                                   "codebook": None if codebook is None
-                                   else codebook.cpu().contiguous()}
-                del qdata, s_rel, s_channel, codebook
-            del weight
-            torch.cuda.empty_cache()
-            if index % 24 == 0 or index == len(quant_names):
-                print(f"[{index}/{len(quant_names)}] quantized", flush=True)
+            return fonte[name].to("cuda", dtype=torch.float32)
 
-    # ---- write -------------------------------------------------------------------------------
-    layers_meta = {}
-    for name in quant_names:
-        stem = name.removesuffix(".weight")
-        if decision[stem] == "convrot_w4a4":
-            layers_meta[stem] = {"format": "convrot_w4a4",
-                                 "convrot_groupsize": args.convrot_groupsize}
-        else:
-            layers_meta[stem] = {"format": "asym_w4a8_int8",
-                                 "group_size": args.group_size,
-                                 "convrot_groupsize": args.convrot_groupsize}
-    output_metadata = dict(metadata)
-    output_metadata["_quantization_metadata"] = json.dumps(
-        {"format_version": "1.0", "layers": layers_meta}, separators=(",", ":"))
-    output_metadata["quantization"] = "mixed convrot_w4a4 / asym_w4a8_int8"
+        entradas = F.plan_model(header, formats, peso, ck, on_quantized=contou)
+        # Transmite desde 2026-09-29; a guarda de duas passadas pedia 2,25 GiB contra 2,92 GiB
+        # acumulados no menor modelo daqui.
+        conv.guard(conv.planned_size(entradas, out_meta),
+                   accumulated=F.streaming_peak(header, quant_names), label="mixed conversion")
 
-    # Duas formas por camada, na mesma ordem de antes. O `.view(torch.uint8)` que o codigo manual
-    # fazia para fp8 saiu: `header_dtype` ja devolve "U8" para float8_e4m3fn e `as_bytes` ja usa a
-    # view -- e a forma declarada continua a do tensor original, porque a view de fp8 para uint8
-    # tem exatamente a mesma forma.
-    entradas = []
-    quant_set = set(quant_names)
-    for name, info in header.items():
-        if name not in quant_set:
-            entradas.append(C.plan_copy(name, info))
-            continue
-        stem = name.removesuffix(".weight")
-        entry = quantized[name]
-        entradas.append(C.plan_write(name, entry["qdata"]))
-        if entry["format"] == "convrot_w4a4":
-            entradas.append(C.plan_write(f"{stem}.weight_scale", entry["scale"]))
-        else:
-            entradas.append(C.plan_write(f"{stem}.weight_s_rel", entry["s_rel"]))
-            entradas.append(C.plan_write(f"{stem}.weight_s_channel", entry["s_channel"]))
-            if entry["codebook"] is not None:
-                entradas.append(C.plan_write(f"{stem}.weight_codebook", entry["codebook"]))
+        def manifesto() -> dict:
+            return {
+                "source": str(source), "source_size": source.stat().st_size,
+                # The ticket's actual complaint: given only a produced checkpoint there was no way
+                # to tell whether the analysis it was built from described that checkpoint. These
+                # three answer it -- `analysis_source_identity_sha256` differs from
+                # `source_identity_sha256` only under --foreign-analysis, and then it names which
+                # measurement was borrowed.
+                "source_identity_sha256": source_digest,
+                "analysis_source_identity_sha256": analysis.get("source_identity_sha256"),
+                "measure_dtype": str(MEASURE_DTYPE),
+                "output": str(output), "output_size": conv.output_size,
+                "architecture": profile,
+                "quantization": "mixed convrot_w4a4 / asym_w4a8_int8",
+                "selection": {
+                    "promote_error": args.promote_error,
+                    "keep_bf16_error": args.keep_bf16_error,
+                    "budget": args.budget,
+                    "uncalibrated": args.uncalibrated,
+                    "somente_w4a4": bool(args.somente_w4a4),
+                    "sigma_weight": args.sigma_weight,
+                },
+                "layer_counts": counts,
+                "calibration": analysis.get("calibration", {}),
+                "group_size": args.group_size, "convrot_groupsize": args.convrot_groupsize,
+                # {op: module}, the same shape this sidecar has always carried -- not the whole
+                # probe payload, which would put a `native_ready` flag next to it that reads as a
+                # second claim.
+                "backend": resolved,
+                "preserved_tensors": len(header) - len(quant_names),
+                "comfy_kitchen_version": importlib.metadata.version("comfy-kitchen"),
+                "torch_version": torch.__version__, "cuda_version": torch.version.cuda,
+                "gpu": torch.cuda.get_device_name(0),
+                "conversion_seconds": round(time.perf_counter() - started, 3),
+                "layers": {stem: fmt for stem, fmt in sorted(decision.items())},
+            }
 
-    conv.commit(entradas, output_metadata)
+        conv.commit(entradas, out_meta, sidecar=manifesto)
 
     elapsed = time.perf_counter() - started
-    manifest = {
-        "source": str(source), "source_size": source.stat().st_size,
-        # The ticket's actual complaint: given only a produced checkpoint there was no way to
-        # tell whether the analysis it was built from described that checkpoint. These three
-        # answer it -- `analysis_source_identity_sha256` differs from `source_identity_sha256` only
-        # under --foreign-analysis, and then it names which measurement was borrowed.
-        "source_identity_sha256": source_digest,
-        "analysis_source_identity_sha256": analysis.get("source_identity_sha256"),
-        "measure_dtype": str(MEASURE_DTYPE),
-        "output": str(output), "output_size": output.stat().st_size,
-        "architecture": profile,
-        "quantization": "mixed convrot_w4a4 / asym_w4a8_int8",
-        "selection": {
-            "promote_error": args.promote_error,
-            "keep_bf16_error": args.keep_bf16_error,
-            "budget": args.budget,
-            "uncalibrated": args.uncalibrated,
-            "somente_w4a4": bool(args.somente_w4a4),
-            "sigma_weight": args.sigma_weight,
-        },
-        "layer_counts": counts,
-        "calibration": analysis.get("calibration", {}),
-        "group_size": args.group_size, "convrot_groupsize": args.convrot_groupsize,
-        # {op: module}, the same shape this sidecar has always carried -- not the whole probe
-        # payload, which would put a `native_ready` flag next to it that reads as a second claim.
-        "backend": resolved,
-        "preserved_tensors": len(header) - len(quant_names),
-        "comfy_kitchen_version": importlib.metadata.version("comfy-kitchen"),
-        "torch_version": torch.__version__, "cuda_version": torch.version.cuda,
-        "gpu": torch.cuda.get_device_name(0),
-        "conversion_seconds": round(elapsed, 3),
-        "layers": {stem: fmt for stem, fmt in sorted(decision.items())},
-    }
-    sidecar.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     source_size = source.stat().st_size
     out_size = output.stat().st_size
-    print(f"\nWrote {output} ({human_size(out_size)}) in {elapsed:.1f} s")
-    print(f"{human_size(source_size)} -> {human_size(out_size)}   "
+    print(f"\nWrote {output} ({C.human_size(out_size)}) in {elapsed:.1f} s")
+    print(f"{C.human_size(source_size)} -> {C.human_size(out_size)}   "
           f"{source_size / out_size:.2f}x lighter")
     print(f"Wrote {sidecar}")
     return 0

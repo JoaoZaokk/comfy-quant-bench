@@ -4,9 +4,15 @@
 
 Not collected by pytest on purpose: pytest imports the package `__init__.py` first, and that imports
 ComfyUI's model management, which initialises a CUDA context on a card this bench shares.
+
+The one GPU test runs only when asked, on the card named explicitly (take the GPU lock first):
+
+    set LOWBIT_TEST_CUDA=1 & set LOWBIT_TEST_DEVICE=cuda:1 & python_embeded/python.exe -s custom_nodes/comfy-lowbit-loader/test_lowbit.py
 """
 
 import importlib.util
+import json
+import os
 import pathlib
 import sys
 import types
@@ -122,11 +128,72 @@ def test_diffusers_qkv_fuse_concatenates_packed_rows():
     assert "double_stream_modulation_img.lin.weight" in out_dense
 
 
+def test_diffusers_qkv_fuse_keeps_each_suffix_of_a_saved_lowbit_file():
+    """A lowbit_affine file in diffusers names carries weight/weight_scale/weight_zeros/comfy_quant per
+    projection; grouping by the q/k/v letter alone let the suffixes overwrite one another."""
+    sd, parts = {}, {}
+    for i, c in enumerate("qkv"):
+        codes, scale, zero, _ = _affine(16, 256, 2, 128, 3, seed=10 + i)
+        parts[c] = (kernel.pack_codes(codes, 2), scale, zero)
+        prefix = f"transformer_blocks.0.attn.to_{c}"
+        sd[f"{prefix}.weight"], sd[f"{prefix}.weight_scale"], sd[f"{prefix}.weight_zeros"] = parts[c]
+        sd[f"{prefix}.comfy_quant"] = formats._conf_tensor({"format": layout.FORMAT})
+    sd["double_stream_modulation_img.linear.weight"] = torch.zeros(4, 4)
+    dense, lowbit = formats.diffusers_flux2_to_bfl(sd, {})
+    assert lowbit == {}
+    base = "double_blocks.0.img_attn.qkv"
+    for suffix, field in (("weight", 0), ("weight_scale", 1), ("weight_zeros", 2)):
+        fused = dense[f"{base}.{suffix}"]
+        assert fused.shape[0] == 48, (suffix, fused.shape)
+        for i, c in enumerate("qkv"):
+            assert torch.equal(fused[16 * i:16 * (i + 1)], parts[c][field]), (suffix, c)
+    assert json.loads(dense[f"{base}.comfy_quant"].numpy().tobytes()) == {"format": layout.FORMAT}
+    assert not any("to_q" in k or "to_k" in k or "to_v" in k for k in dense)
+
+
+def test_diffusers_qkv_fuse_of_dense_weights_is_unchanged():
+    ws = {c: torch.randn(8, 16, generator=torch.Generator().manual_seed(i)) for i, c in enumerate("qkv")}
+    sd = {f"transformer_blocks.0.attn.to_{c}.weight": w for c, w in ws.items()}
+    sd["double_stream_modulation_img.linear.weight"] = torch.zeros(4, 4)
+    dense, _ = formats.diffusers_flux2_to_bfl(sd, {})
+    assert torch.equal(dense["double_blocks.0.img_attn.qkv.weight"], torch.cat([ws["q"], ws["k"], ws["v"]], 0))
+
+
+@cases([(1, 2), (2, 3), (4, 16)])
+def test_layer_loads_through_the_core_reader_hook_byte_for_byte(bits, levels):
+    import comfy.ops
+    from comfy.quant_ops import QuantizedTensor
+
+    layout.register()
+    codes, scale, zero, w = _affine(32, 512, bits, 128, levels)
+    qdata = kernel.pack_codes(codes, bits)
+    conf = torch.tensor(list(json.dumps({"format": layout.FORMAT}).encode("utf-8")), dtype=torch.uint8)
+    sd = {"layer.weight": qdata, "layer.weight_scale": scale, "layer.weight_zeros": zero, "layer.comfy_quant": conf}
+    model = torch.nn.Module()
+    model.layer = comfy.ops.mixed_precision_ops({}).Linear(512, 32, bias=False, device="cpu", dtype=torch.bfloat16)
+    missing, unexpected = model.load_state_dict(sd, strict=False)
+    assert missing == [] and unexpected == [], (missing, unexpected)
+    weight = model.layer.weight
+    assert isinstance(weight, QuantizedTensor) and weight._layout_cls == layout.LAYOUT
+    assert torch.equal(weight._qdata, qdata) and weight._qdata.dtype == torch.uint8
+    assert torch.equal(weight._params.scale, scale) and torch.equal(weight._params.zero, zero)
+    assert (weight._params.bits, weight._params.group_size) == (bits, 128)
+    assert torch.equal(weight.dequantize().float(), w.to(torch.bfloat16).float())
+
+
+def _gpu_test_device():
+    device = os.environ.get("LOWBIT_TEST_DEVICE", "")
+    if not device.startswith("cuda:"):
+        raise AssertionError("LOWBIT_TEST_DEVICE must name the card explicitly, e.g. cuda:1")
+    return torch.device(device)
+
+
 @needs_cuda
 @cases([(1, 2), (2, 3)])
 def test_triton_matches_torch_bit_for_bit(bits, levels):
+    device = _gpu_test_device()
     codes, scale, zero, _ = _affine(3072, 3072, bits, 128, levels)
-    q, s, z = kernel.pack_codes(codes, bits).cuda(), scale.cuda(), zero.cuda()
+    q, s, z = kernel.pack_codes(codes, bits).to(device), scale.to(device), zero.to(device)
     for dtype in (torch.bfloat16, torch.float16, torch.float32):
         assert torch.equal(kernel.dequantize_triton(q, s, z, bits, 128, dtype), kernel.dequantize_torch(q, s, z, bits, 128, dtype))
 
@@ -135,6 +202,9 @@ if __name__ == "__main__":
     failed = 0
     for name, fn in list(globals().items()):
         if not name.startswith("test_"):
+            continue
+        if getattr(fn, "needs_cuda", False) and os.environ.get("LOWBIT_TEST_CUDA") != "1":
+            print(f"SKIP {name} (GPU test: set LOWBIT_TEST_CUDA=1 and LOWBIT_TEST_DEVICE=cuda:N)")
             continue
         if getattr(fn, "needs_cuda", False) and (kernel.triton is None or not torch.cuda.is_available()):
             print(f"SKIP {name} (needs CUDA + Triton)")

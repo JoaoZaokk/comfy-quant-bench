@@ -26,39 +26,17 @@ import argparse
 import json
 import mmap
 import os
-import re
 import struct
 import sys
 from pathlib import Path
 
 import torch
 
-BLOCO = re.compile(r"^(?P<pilha>[A-Za-z_][\w.]*?)\.(?P<i>\d+)\.")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lowbit_canon import BLOCO, pilhas_reais, ternariza  # fonte canonica
+
 DT = {"F16": torch.float16, "BF16": torch.bfloat16, "F32": torch.float32}
 TAM = {"F16": 2, "BF16": 2, "F32": 4}
-
-
-def pilhas_reais(nomes) -> set[str]:
-    """Uma pilha precisa de >= 2 indices distintos: `adaLN_modulation.1` nao e pilha."""
-    ind: dict[str, set[str]] = {}
-    for k in nomes:
-        m = BLOCO.match(k)
-        if m:
-            ind.setdefault(m.group("pilha"), set()).add(m.group("i"))
-    return {n for n, i in ind.items() if len(i) >= 2}
-
-
-def ternariza(w: torch.Tensor, grupo: int) -> torch.Tensor:
-    """absmean estilo BitNet b1.58 por grupo de `grupo` no eixo K (o ultimo), escala por minimo L2."""
-    n, k = w.shape
-    g = w.float().reshape(n, k // grupo, grupo)
-    d = g.abs().mean(dim=2, keepdim=True).clamp(min=1e-30)
-    t = (g / d).clamp(-1, 1).round()
-    # escala otima dado o codigo: s* = <w,t>/<t,t>, por grupo. Nao usar d cru: d nao minimiza L2.
-    num = (g * t).sum(dim=2, keepdim=True)
-    den = (t * t).sum(dim=2, keepdim=True)
-    s = torch.where(den > 0, num / den, torch.zeros_like(num))
-    return (t * s).reshape(n, k).to(w.dtype)
 
 
 def main() -> int:

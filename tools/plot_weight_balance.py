@@ -32,13 +32,8 @@ import torch  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from quant_w4a8 import (  # noqa: E402
-    HIGH_PRECISION_DTYPES,
-    PROFILE_PATTERNS,
-    detect_profile,
-    read_header,
-    read_tensor,
-)
+from _conversion import read_header, read_tensor  # noqa: E402
+from _profiles import HIGH_PRECISION_DTYPES, PROFILE_PATTERNS, detect_profile  # noqa: E402
 from weight_balance import INT4_MAX, LEVELS, rel_l2, uniform_int4  # noqa: E402
 
 MAG_EDGES = np.linspace(0.0, 32.0, 321)  # |w| / rms

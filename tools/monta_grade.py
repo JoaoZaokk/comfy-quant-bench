@@ -5,6 +5,11 @@ demais para um card. Um card precisa de uma grade com a mesma escala em todas as
 rotulo DENTRO da imagem -- este repo ja publicou um card em que as imagens viajaram soltas com o
 rotulo so no markdown e a referencia de uma semente estava quebrada sem ninguem notar.
 
+`--layout comfy` le direto da saida do ComfyUI (`<dir>/<braco>/p<N>_s<S>_NNNNN_.png`, o formato
+das baterias via /prompt), resolvendo o contador com `metricas_imagem.imagem_unica` em vez de supor
+`_00001_`: um grafo rodado de novo grava `_00002_`, e uma folha montada do `_00001_` fixo mostra a
+imagem ANTIGA. Substitui a `folha_contato.py` que cada bateria copiava (revisao 2026-09-29).
+
 NAO COBERTO: so recorta, reduz e cola. Nao decodifica, nao mede nada.
 """
 from __future__ import annotations
@@ -16,6 +21,13 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 RAIZ = Path(__file__).resolve().parent.parent
+
+
+def imagem_unica(pasta: Path, prefixo: str) -> Path:
+    """`metricas_imagem.imagem_unica`, importado so no modo comfy (ele puxa torch no import)."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from metricas_imagem import imagem_unica as _unica
+    return _unica(pasta, prefixo)
 
 
 def main() -> int:
@@ -33,6 +45,10 @@ def main() -> int:
                         "corrida de um prompt so. Ate 2026-09-12 so o segundo existia, e "
                         "apontar a ferramenta para uma pasta de 6 prompts dava uma folha 3x2 "
                         "vazia com 6 celulas ausentes em vez de erro.")
+    p.add_argument("--layout", choices=("decodificado", "comfy"), default="decodificado",
+                   help="decodificado: <dir>/<braco>__p<N>_s<S>.png (padrao, formato antigo); "
+                        "comfy: <dir>/<braco>/p<N>_s<S>_NNNNN_.png, contador resolvido sem supor")
+    p.add_argument("--corte", help="recorte relativo x0,y0,x1,y1 em fracao, ex 0.3,0.3,0.6,0.6")
     p.add_argument("--lado", type=int, default=384)
     p.add_argument("--saida", type=Path, required=True)
     a = p.parse_args()
@@ -55,13 +71,26 @@ def main() -> int:
     for cx, (braco, rot) in enumerate(zip(a.bracos, a.rotulos)):
         d.text((margem + cx * a.lado + 6, 8), rot, fill=(255, 255, 255))
         for cy, (prompt, semente) in enumerate(linhas):
-            nome = (f"{braco}_s{semente}.png" if prompt is None
-                    else f"{braco}__p{prompt}_s{semente}.png")
-            f = a.dir / nome
-            if not f.exists():
-                faltando.append(f.name)
-                continue
-            im = Image.open(f).convert("RGB").resize((a.lado, a.lado), Image.LANCZOS)
+            if a.layout == "comfy":
+                chave = f"p{prompt if prompt is not None else 0}_s{semente}"
+                try:
+                    f = imagem_unica(a.dir / braco, chave)
+                except FileNotFoundError:
+                    faltando.append(f"{braco}/{chave}")
+                    continue
+            else:
+                nome = (f"{braco}_s{semente}.png" if prompt is None
+                        else f"{braco}__p{prompt}_s{semente}.png")
+                f = a.dir / nome
+                if not f.exists():
+                    faltando.append(f.name)
+                    continue
+            im = Image.open(f).convert("RGB")
+            if a.corte:
+                x0, y0, x1, y1 = map(float, a.corte.split(","))
+                w, h = im.size
+                im = im.crop((int(x0 * w), int(y0 * h), int(x1 * w), int(y1 * h)))
+            im = im.resize((a.lado, a.lado), Image.LANCZOS)
             folha.paste(im, (margem + cx * a.lado, faixa + cy * a.lado))
     for cy, (prompt, semente) in enumerate(linhas):
         # prompt e semente escritos na margem: a folha tem de dizer o que e sem o markdown

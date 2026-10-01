@@ -1,10 +1,17 @@
 """Verify a ComfyUI quantized checkpoint against its high-precision source.
 
-Three output formats produced by this bench are understood:
+Five output formats produced by this bench are understood:
 
     convrot_w4a4     quant_w4a4.py, quant_w4a4_smooth.py, quant_mixed.py
     asym_w4a8_int8   quant_w4a8.py, quant_mixed.py
-    int8_tensorwise  quant_int8.py  (both --convrot and --no-convrot)
+    int8_tensorwise  quant_int8.py  (both --convrot and --no-convrot), quant_te_residuos.py --format int8
+    awq_w4a16        quant_awq_w4a16.py            (structure and source bytes only; no smoke)
+    float8_e4m3fn    quant_te_residuos.py --format fp8   (structure and source bytes only; no smoke)
+
+The format NAMES come from `_formats.py`, the same module the writers build their layers with, and
+`tools/test_formats_e2e.py` checks that every tensor a writer plans passes the spec below. The specs
+here stay deliberately wider than what our writers emit (other producers' dtypes and scale ranks are
+accepted), so the relation is writer-output SUBSET-OF verifier-acceptance, not equality.
 
 The file is still named verify_w4a4.py because scripts, notes and the two handoff documents refer
 to it by that name; only `validate_structure`'s per-layer expectations were ever W4A4-specific.
@@ -49,6 +56,8 @@ from typing import Callable
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import _conversion as C  # noqa: E402
+import _formats as QF  # noqa: E402
 from _native_probe import (  # noqa: E402
     LOADER_LINEAR_DTYPE,
     LOADER_QUANT_GROUP_SIZE,
@@ -114,7 +123,9 @@ class Format:
     # layer name + its own metadata config -> {tensor name: TensorSpec}
     tensors: Callable[[str, dict], dict[str, TensorSpec]]
     # comfy-kitchen op that executes this format, used both by the backend probe and the smoke.
-    linear_op: str
+    # None for the formats this file verifies structurally only (awq_w4a16, float8_e4m3fn): the
+    # backend probe and --kernel-smoke skip them and say so in the coverage block.
+    linear_op: str | None
     # (a layer's own metadata config, the set of tensor suffixes that layer actually has in the
     # header) -> {op name: the kwargs config to resolve it under}, handed straight to
     # `_native_probe.native_backend_ready`. The second argument exists because at least one kwarg
@@ -125,7 +136,7 @@ class Format:
     # not a bug fix).
     probe_ops: Callable[[dict], dict]
     # (layer, config, load, x, options) -> kwargs for `linear_op`
-    smoke_kwargs: Callable[..., dict]
+    smoke_kwargs: Callable[..., dict] | None
 
     def expected_tensors(self, layer: str, config: dict) -> dict[str, TensorSpec]:
         return self.tensors(layer, config)
@@ -351,30 +362,86 @@ def _int8_smoke(layer, config, load, x, options) -> dict:
     }
 
 
+# ---- awq_w4a16 ------------------------------------------------------------------------------
+# Escrito por quant_awq_w4a16.py (`_formats.AwqW4A16`): codigos Q4_1 reempacotados.
+#   <l>.weight        I8   [N, K/2]
+#   <l>.weight_scale  BF16 [K/G, N]    d
+#   <l>.weight_zeros  BF16 [K/G, N]    m + 8 d
+# Ate 2026-09-29 este verificador nao conhecia o formato e recusava todo arquivo do awq como
+# "unexpected format" (revisao 2026-09-29, achado 7). So a estrutura: o smoke e o preflight de
+# backend nao cobrem este formato (ver `linear_op=None` abaixo).
+def _awq_tensors(layer: str, config: dict) -> dict[str, TensorSpec]:
+    group = config.get("group_size")
+    if not group:
+        raise SystemExit(
+            f"{layer}: awq_w4a16 metadata has no 'group_size', so the expected shape of its "
+            f"scales cannot be computed. Metadata present: {sorted(config)}.")
+
+    def por_grupo(packed: list[int], cfg: dict) -> list[list[int]]:
+        return [[(packed[1] * 2) // int(group), packed[0]]]
+
+    return {
+        f"{layer}.weight": TensorSpec(frozenset({"I8"}), 2),
+        f"{layer}.weight_scale": TensorSpec(frozenset({"BF16", "F16", "F32"}), 2, shapes=por_grupo),
+        f"{layer}.weight_zeros": TensorSpec(frozenset({"BF16", "F16", "F32"}), 2, shapes=por_grupo),
+    }
+
+
+# ---- float8_e4m3fn --------------------------------------------------------------------------
+# Escrito por quant_te_residuos.py --format fp8 (embedding e projecao de texto): peso F8_E4M3 na
+# forma da fonte e UMA escala F32 por tensor. So a estrutura, como o awq.
+def _fp8_tensors(layer: str, config: dict) -> dict[str, TensorSpec]:  # noqa: ARG001
+    return {
+        f"{layer}.weight": TensorSpec(frozenset({"F8_E4M3"}), 2),
+        f"{layer}.weight_scale": TensorSpec(frozenset({"F32", "F16", "BF16"}),
+                                            shapes=lambda packed, cfg: [[], [1]]),
+    }
+
+
+def _sem_probe(config: dict, present: frozenset[str]) -> dict:  # noqa: ARG001
+    return {}
+
+
 FORMATS: dict[str, Format] = {
-    "convrot_w4a4": Format(
-        name="convrot_w4a4",
+    QF.ConvrotW4A4.name: Format(
+        name=QF.ConvrotW4A4.name,
         packed_shape=lambda shape: [shape[0], shape[1] // 2],
         tensors=_w4a4_tensors,
         linear_op="convrot_w4a4_linear",
         probe_ops=_w4a4_probe_ops,
         smoke_kwargs=_w4a4_smoke,
     ),
-    "asym_w4a8_int8": Format(
-        name="asym_w4a8_int8",
+    QF.AsymW4A8.name: Format(
+        name=QF.AsymW4A8.name,
         packed_shape=lambda shape: [shape[0], shape[1] // 2],
         tensors=_w4a8_tensors,
         linear_op="w4a8_int8_linear",
         probe_ops=_w4a8_probe_ops,
         smoke_kwargs=_w4a8_smoke,
     ),
-    "int8_tensorwise": Format(
-        name="int8_tensorwise",
+    QF.Int8Tensorwise.name: Format(
+        name=QF.Int8Tensorwise.name,
         packed_shape=lambda shape: list(shape),
         tensors=_int8_tensors,
         linear_op="int8_linear",
         probe_ops=_int8_probe_ops,
         smoke_kwargs=_int8_smoke,
+    ),
+    QF.AwqW4A16.name: Format(
+        name=QF.AwqW4A16.name,
+        packed_shape=lambda shape: [shape[0], shape[1] // 2],
+        tensors=_awq_tensors,
+        linear_op=None,
+        probe_ops=_sem_probe,
+        smoke_kwargs=None,
+    ),
+    "float8_e4m3fn": Format(
+        name="float8_e4m3fn",
+        packed_shape=lambda shape: list(shape),
+        tensors=_fp8_tensors,
+        linear_op=None,
+        probe_ops=_sem_probe,
+        smoke_kwargs=None,
     ),
 }
 
@@ -383,12 +450,7 @@ FORMATS: dict[str, Format] = {
 # Format-agnostic machinery
 # --------------------------------------------------------------------------------------------
 
-def read_header(path: Path) -> tuple[dict, dict[str, str]]:
-    with path.open("rb") as handle:
-        header_size = struct.unpack("<Q", handle.read(8))[0]
-        raw = json.loads(handle.read(header_size))
-    metadata = dict(raw.pop("__metadata__", {}) or {})
-    return raw, metadata
+read_header = C.read_header  # erro_por_camada.py e refina_escalas.py importam daqui
 
 
 def load_tensor_cuda(path: Path, info: dict, view: str | None = None):
@@ -436,6 +498,11 @@ def probe_ops_for(layers: dict, first_layer: dict[str, str], header: dict) -> di
                             if key.startswith(layer_name + "."))
         ops.update(FORMATS[fmt_name].probe_ops(layers[layer_name], present))
     return ops
+
+
+def structural_only_formats(counts: dict[str, int]) -> list[str]:
+    """Formatos presentes que este verificador so confere na estrutura (sem probe e sem smoke)."""
+    return sorted(name for name in counts if FORMATS[name].linear_op is None)
 
 
 def resolve_source(model: Path, explicit_source: Path | None) -> Path | None:
@@ -524,9 +591,7 @@ def validate_structure(model_header: dict, metadata: dict, source_header: dict |
     return errors
 
 
-def data_start(path: Path) -> int:
-    with path.open("rb") as handle:
-        return 8 + struct.unpack("<Q", handle.read(8))[0]
+data_start = C.data_start
 
 
 def compare_ranges(left_handle, left_start: int, right_handle, right_start: int, size: int) -> bool:
@@ -548,18 +613,25 @@ def normas_suavizadas(model: Path, source_header: dict | None) -> frozenset[str]
     acrescentar um terceiro grupo la, esta verificacao acompanha sozinha. Copiar os dois nomes
     para ca seria a mesma divergencia que o ticket 08 passou o dia inteiro desfazendo.
 
-    O gatilho e o campo `quantization` do sidecar. Um arquivo sem sidecar, ou com sidecar que nao
-    diz SmoothQuant, cai no conjunto vazio e a regra estrita continua valendo para tudo -- que e o
-    lado seguro: na duvida, cobra byte-identidade.
+    O gatilho e a chave `smoothquant_alpha` no `__metadata__` do PROPRIO arquivo, que o
+    `quant_w4a4_smooth` sempre gravou. Ate 2026-09-29 era a substring "smoothquant" no campo de
+    texto livre `quantization` do sidecar (revisao, achado 7): sem sidecar -- o caso que o sidecar
+    fora do commit atomico produzia -- a regra estrita reprovava um arquivo bom. O sidecar continua
+    valendo como segundo sinal. Nenhum dos dois: conjunto vazio e regra estrita para tudo -- o lado
+    seguro, na duvida cobra byte-identidade.
     """
+    if source_header is None:
+        return frozenset()
+    _, metadata = read_header(model)
+    suavizado = "smoothquant_alpha" in metadata
     sidecar = model.with_suffix(".quant.json")
-    if not sidecar.is_file() or source_header is None:
-        return frozenset()
-    try:
-        manifesto = json.loads(sidecar.read_text(encoding="utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        return frozenset()
-    if "smoothquant" not in str(manifesto.get("quantization", "")).lower():
+    if not suavizado and sidecar.is_file():
+        try:
+            manifesto = json.loads(sidecar.read_text(encoding="utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            manifesto = {}
+        suavizado = "smoothquant" in str(manifesto.get("quantization", "")).lower()
+    if not suavizado:
         return frozenset()
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from quant_w4a4_smooth import GROUPS, LAYER_RE
@@ -804,8 +876,16 @@ def run(args: argparse.Namespace, coverage: Coverage) -> int:
                       "metadata and the preserved byte ranges were touched.")
         return 0
 
-    backend = native_backend_ready(portable_root,
-                                   probe_ops_for(layers, first_layer, model_header))
+    so_estrutura = structural_only_formats(counts)
+    if so_estrutura:
+        coverage.note(f"formats verified structurally only (no backend probe, no smoke): "
+                      f"{', '.join(so_estrutura)}.")
+    ops = probe_ops_for(layers, first_layer, model_header)
+    if not ops:
+        coverage.note("no format present has a backend probe here, so backend resolution did not "
+                      "run at all.")
+        return 0
+    backend = native_backend_ready(portable_root, ops)
     for op, module in sorted(backend["resolved"].items()):
         print(f"Normal ComfyUI backend: {op} -> {module}")
     if not backend["native_ready"]:
@@ -836,6 +916,8 @@ def run(args: argparse.Namespace, coverage: Coverage) -> int:
     smoked = []
     smoke_errors = []
     for fmt_name in sorted(counts):
+        if FORMATS[fmt_name].linear_op is None:
+            continue
         layer_name = first_layer[fmt_name]
         result = kernel_smoke(model, source, layer_name, layers[layer_name],
                               model_header, source_header, options)

@@ -11,46 +11,30 @@ Each Linear weight of the profile is quantized from FP32 with gguf-py's Q4_1 (ui
 
 Activations stay BF16. Needs the local ComfyUI patch that registers `awq_w4a16` and, for speed at DiT batch sizes,
 the comfy-kitchen patch with the fused Triton dequant. Output goes beside the source as `<stem>_q4_1_awq.safetensors`
-(+ `.quant.json`), written to `.partial` and renamed.
+(+ `.quant.json`), written to `.partial` and renamed together.
+
+Streams since 2026-09-29: each layer is quantized inside the write loop (`_formats.AwqW4A16`), one
+tensor in memory at a time, instead of the whole quantized model held in a dict before writing.
 """
+
 from __future__ import annotations
 
 import argparse
 import importlib.metadata
-import json
-import struct
 import sys
 import time
 from pathlib import Path
 
-import numpy as np
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import _conversion as C  # noqa: E402
-from quant_w4a8 import HIGH_PRECISION_DTYPES, PROFILE_PATTERNS, detect_profile, read_tensor  # noqa: E402
+import _formats as F  # noqa: E402
+from _profiles import PROFILE_PATTERNS, detect_profile, select_layers  # noqa: E402
 
 G = 32
-
-
-def q4_1_awq(weight: torch.Tensor):
-    import gguf
-
-    n, k = weight.shape
-    x = weight.to(torch.float32).numpy()
-    blocos = gguf.quants.quantize(x, gguf.GGMLQuantizationType.Q4_1).reshape(n, k // G, 20)
-    d = blocos[..., 0:2].copy().view(np.float16)[..., 0].astype(np.float32)
-    m = blocos[..., 2:4].copy().view(np.float16)[..., 0].astype(np.float32)
-    qs = blocos[..., 4:20]
-    vals = np.concatenate([qs & 0x0F, qs >> 4], axis=-1).reshape(n, k)  # ggml: low nibbles hold j, high hold j + 16
-    packed = (vals[:, 0::2] | (vals[:, 1::2] << 4)).astype(np.uint8)
-    scale = torch.from_numpy(d.T.copy()).to(torch.bfloat16)
-    zeros = torch.from_numpy((m + 8.0 * d).T.copy()).to(torch.bfloat16)
-    deq = ((torch.from_numpy(vals).view(n, k // G, G).float() - 8.0) * scale.float().t().unsqueeze(-1)
-           + zeros.float().t().unsqueeze(-1)).view(n, k)
-    rel = float((deq - weight.float()).norm() / weight.float().norm())
-    return torch.from_numpy(packed.view(np.int8)), scale, zeros, rel
+q4_1_awq = F.q4_1_awq  # re-exportado: o nome antigo continua importavel
 
 
 def main() -> int:
@@ -68,56 +52,46 @@ def main() -> int:
     conv.refuse_unsafe()
     header, metadata = conv.header, conv.metadata
     profile = detect_profile(source, list(header)) if args.profile == "auto" else args.profile
-    pattern = PROFILE_PATTERNS[profile]
-    selected = [n for n, i in header.items()
-                if pattern.fullmatch(n) and i["dtype"] in HIGH_PRECISION_DTYPES and len(i["shape"]) == 2
-                and i["shape"][1] % G == 0]
+    fmt = F.AwqW4A16(G)
+    selected = select_layers(header, profile, fmt.accepts)
     if not selected:
         raise SystemExit(f"Profile {profile!r} selected no compatible layers")
-    quant_bytes = sum(header[n]["shape"][0] * header[n]["shape"][1] * (1 / 2 + 4 / G) for n in selected)
     print(f"Source: {source}\nProfile: {profile}  Q4_1 -> awq_w4a16 (group {G})  quantized={len(selected)}  "
           f"kept={len(header) - len(selected)}\nOutput: {output}")
     if args.dry_run:
         return 0
-    conv.guard(int(quant_bytes) + source.stat().st_size // 4, accumulated=int(quant_bytes), label="AWQ W4A16 conversion")
 
     started = time.perf_counter()
-    feitos, erros = {}, {}
-    with source.open("rb") as handle:
-        start0 = 8 + struct.unpack("<Q", handle.read(8))[0]
-        for index, name in enumerate(selected, 1):
-            info = header[name]
-            a, b = info["data_offsets"]
-            weight = read_tensor(handle, start0 + a, b - a, info["dtype"], info["shape"])
-            q, scale, zeros, erros[name] = q4_1_awq(weight)
-            feitos[name] = (q, scale, zeros)
-            if index % 48 == 0 or index == len(selected):
-                print(f"[{index}/{len(selected)}] quantized", flush=True)
+    formats = {name: fmt for name in selected}
+    novo = F.quant_metadata(metadata, F.layer_configs(formats), "awq_w4a16 (Q4_1 codes, group 32)")
+    erros: dict[str, float] = {}
+    feitas = {"n": 0}
 
-    entradas = []
-    for name, info in header.items():
-        if name not in feitos:
-            entradas.append(C.plan_copy(name, info))
-            continue
-        q, scale, zeros = feitos[name]
-        base = name.removesuffix(".weight")
-        entradas += [C.plan_write(name, q), C.plan_write(f"{base}.weight_scale", scale),
-                     C.plan_write(f"{base}.weight_zeros", zeros)]
-    layers = {n.removesuffix(".weight"): {"format": "awq_w4a16", "group_size": G} for n in selected}
-    novo = dict(metadata)
-    novo["_quantization_metadata"] = json.dumps({"format_version": "1.0", "layers": layers}, separators=(",", ":"))
-    novo["quantization"] = "awq_w4a16 (Q4_1 codes, group 32)"
-    conv.commit(entradas, novo)
+    def anota(name: str, extra: dict) -> None:
+        erros[name] = extra["rel"]
+        feitas["n"] += 1
+        if feitas["n"] % 48 == 0 or feitas["n"] == len(selected):
+            print(f"[{feitas['n']}/{len(selected)}] quantized", flush=True)
+
+    with conv.tensors() as fonte:
+        entradas = F.plan_model(header, formats, lambda name: fonte[name], None, on_quantized=anota)
+        conv.guard(conv.planned_size(entradas, novo), accumulated=F.streaming_peak(header, selected),
+                   label="AWQ W4A16 conversion")
+
+        def manifesto() -> dict:
+            rel = sorted(erros.values())
+            return {
+                "source": str(source), "source_size": source.stat().st_size,
+                "output": str(output), "output_size": conv.output_size,
+                "architecture": profile, "quantization": "awq_w4a16 from gguf-py Q4_1 codes", "group_size": G,
+                "quantized_tensors": len(selected), "preserved_tensors": len(header) - len(selected),
+                "weight_rel_rmse_mean": sum(rel) / len(rel), "weight_rel_rmse_max": rel[-1],
+                "gguf_version": importlib.metadata.version("gguf"), "torch_version": torch.__version__,
+                "conversion_seconds": round(time.perf_counter() - started, 3),
+            }
+
+        conv.commit(entradas, novo, sidecar=manifesto)
     rel = sorted(erros.values())
-    conv.write_sidecar({
-        "source": str(source), "source_size": source.stat().st_size,
-        "output": str(output), "output_size": output.stat().st_size,
-        "architecture": profile, "quantization": "awq_w4a16 from gguf-py Q4_1 codes", "group_size": G,
-        "quantized_tensors": len(selected), "preserved_tensors": len(header) - len(selected),
-        "weight_rel_rmse_mean": sum(rel) / len(rel), "weight_rel_rmse_max": rel[-1],
-        "gguf_version": importlib.metadata.version("gguf"), "torch_version": torch.__version__,
-        "conversion_seconds": round(time.perf_counter() - started, 3),
-    })
     print(f"Wrote {output} ({C.human_size(output.stat().st_size)}); weight rel-RMSE mean {sum(rel) / len(rel):.4f}")
     return 0
 

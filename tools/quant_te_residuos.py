@@ -31,7 +31,6 @@ import argparse
 import importlib.metadata
 import json
 import re
-import struct
 import sys
 import time
 from pathlib import Path
@@ -43,7 +42,7 @@ sys.path.insert(0, str(AQUI))
 sys.path.insert(0, str(AQUI.parent / "ComfyUI"))
 
 import _conversion as C  # noqa: E402
-from quant_w4a8 import HIGH_PRECISION_DTYPES, human_size, read_tensor  # noqa: E402
+from _profiles import HIGH_PRECISION_DTYPES  # noqa: E402
 
 ALVO = re.compile(r"(.+\.)?embed_tokens\.weight"
                   r"|text_embedding_projection\.((video_|audio_)?aggregate_embed\.)?weight")
@@ -145,59 +144,73 @@ def main() -> int:
     if args.dry_run:
         return 0
 
-    elem = sum(header[n]["shape"][0] * header[n]["shape"][1] for n in selecionados)
-    # fonte bf16 + saida 1 byte, por tensor, mais um bloco fp32 de trabalho
-    conv.guard(source.stat().st_size, accumulated=elem * 3 + LINHAS_POR_BLOCO * 16,
-               label="quant residuos TE")
-
-    inicio = time.perf_counter()
-    quantizados: dict[str, tuple[torch.Tensor, torch.Tensor]] = {}
-    medidas: dict[str, dict] = {}
-    with source.open("rb") as handle:
-        base = 8 + struct.unpack("<Q", handle.read(8))[0]
-        for n in selecionados:
-            info = header[n]
-            a, b = info["data_offsets"]
-            peso = read_tensor(handle, base + a, b - a, info["dtype"], info["shape"])
-            q, escala = quantiza(peso, args.format)
-            medidas[n] = confere(n, peso, q, escala, args.format)
-            print(f"  {n}: {medidas[n]}", flush=True)
-            quantizados[n] = (q.contiguous(), escala.contiguous())
-            del peso
-
-    entradas = []
-    for n, info in header.items():
-        if n not in quantizados:
-            entradas.append(C.plan_copy(n, info))
-            continue
-        q, escala = quantizados[n]
-        if args.format == "fp8":
-            # PESO fp8 com dtype fp8 no header (ver ARMADILHA no topo); plan_write o gravaria como U8
-            entradas.append(C.Entry(n, "F8_E4M3", list(q.shape), ("write", q), q.numel()))
-        else:
-            entradas.append(C.plan_write(n, q))
-        entradas.append(C.plan_write(f"{n}_scale", escala))
-
     for n in selecionados:
         quant_meta["layers"][n.removesuffix(".weight")] = {"format": FORMATO[args.format]}
     out_meta = dict(metadata)
     out_meta["_quantization_metadata"] = json.dumps(quant_meta, separators=(",", ":"))
     out_meta["te_residuos"] = FORMATO[args.format]
-    conv.commit(entradas, out_meta)
+
+    inicio = time.perf_counter()
+    medidas: dict[str, dict] = {}
+    escalas: dict[str, torch.Tensor] = {}
+    selecionados_set = set(selecionados)
+
+    with conv.tensors() as fonte:
+        def produz_peso(n: str):
+            def f() -> torch.Tensor:
+                peso = fonte[n]
+                q, escala = quantiza(peso, args.format)
+                medidas[n] = confere(n, peso, q, escala, args.format)
+                print(f"  {n}: {medidas[n]}", flush=True)
+                escalas[n] = escala.contiguous()
+                return q.contiguous()
+            return f
+
+        def produz_escala(n: str):
+            def f() -> torch.Tensor:
+                if n not in escalas:
+                    raise RuntimeError(f"{n}_scale: produtor chamado antes do peso")
+                return escalas.pop(n)
+            return f
+
+        # Transmite desde 2026-09-29: um tensor quantizado por vez, dentro do laco de escrita. As
+        # formas sao analiticas -- int8: I8 [N, K] + escala por linha F32 [N, 1]; fp8: peso F8_E4M3
+        # [N, K] + UMA escala F32 escalar [] -- e o nucleo confere forma e dtype de cada uma.
+        entradas = []
+        for n, info in header.items():
+            if n not in selecionados_set:
+                entradas.append(C.plan_copy(n, info))
+                continue
+            linhas, colunas = info["shape"]
+            # PESO fp8 com dtype fp8 no header (ver ARMADILHA no topo); plan_write o gravaria como U8
+            dt_peso = "F8_E4M3" if args.format == "fp8" else "I8"
+            forma_escala = [] if args.format == "fp8" else [linhas, 1]
+            entradas.append(C.plan_lazy(n, dt_peso, [linhas, colunas], linhas * colunas, produz_peso(n)))
+            entradas.append(C.plan_lazy(f"{n}_scale", "F32", forma_escala,
+                                        C.nbytes_of("F32", forma_escala), produz_escala(n)))
+
+        maior = max(header[n]["shape"][0] * header[n]["shape"][1] for n in selecionados)
+        # fonte bf16 + saida 1 byte do maior tensor, mais um bloco fp32 de trabalho
+        conv.guard(conv.planned_size(entradas, out_meta), accumulated=maior * 3 + LINHAS_POR_BLOCO * 16,
+                   label="quant residuos TE")
+
+        def manifesto() -> str:
+            return json.dumps({
+                "source": str(source), "source_size": source.stat().st_size,
+                "output": str(output), "output_size": conv.output_size,
+                "quantization": FORMATO[args.format],
+                "escala": "por linha" if args.format == "int8" else "por tensor",
+                "quantized_tensors": selecionados,
+                "erro_contra_fonte": medidas,
+                "comfy_kitchen_version": importlib.metadata.version("comfy-kitchen"),
+                "torch_version": torch.__version__,
+                "conversion_seconds": round(time.perf_counter() - inicio, 3),
+            }, indent=2, ensure_ascii=False)
+
+        conv.commit(entradas, out_meta, sidecar=manifesto)
 
     segundos = time.perf_counter() - inicio
-    sidecar.write_text(json.dumps({
-        "source": str(source), "source_size": source.stat().st_size,
-        "output": str(output), "output_size": output.stat().st_size,
-        "quantization": FORMATO[args.format],
-        "escala": "por linha" if args.format == "int8" else "por tensor",
-        "quantized_tensors": selecionados,
-        "erro_contra_fonte": medidas,
-        "comfy_kitchen_version": importlib.metadata.version("comfy-kitchen"),
-        "torch_version": torch.__version__,
-        "conversion_seconds": round(segundos, 3),
-    }, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"gravado {output} ({human_size(output.stat().st_size)}) em {segundos:.0f} s\ngravado {sidecar}")
+    print(f"gravado {output} ({C.human_size(output.stat().st_size)}) em {segundos:.0f} s\ngravado {sidecar}")
     return 0
 
 

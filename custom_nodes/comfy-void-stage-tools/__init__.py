@@ -32,26 +32,56 @@ def _loaded_models() -> list[dict[str, str]]:
     return rows
 
 
+def _nvml():
+    try:
+        import pynvml
+
+        pynvml.nvmlInit()
+        return pynvml
+    except Exception:  # noqa: BLE001 -- sem NVML: so as placas ja inicializadas neste processo
+        return None
+
+
+def _gpus() -> list[dict[str, Any]]:
+    """Memoria de cada placa SEM criar contexto CUDA nas que este processo nao usa.
+
+    `torch.cuda.mem_get_info(i)` cria um contexto (~300-500 MB) na placa i; numa bancada com duas placas isso
+    ocupava a placa que o lock tinha dado a outro trabalho. Livre/total vem da NVML (casada pelo UUID, sem
+    contexto); sem NVML, `mem_get_info` so onde o alocador deste processo ja reservou memoria."""
+    devices: list[dict[str, Any]] = []
+    if not torch.cuda.is_available():
+        return devices
+    nvml = _nvml()
+    for index in range(torch.cuda.device_count()):
+        props = torch.cuda.get_device_properties(index)
+        row: dict[str, Any] = {
+            "index": index,
+            "name": props.name,
+            "allocated": torch.cuda.memory_allocated(index),
+            "reserved": torch.cuda.memory_reserved(index),
+            "global_free": None,
+            "total": props.total_memory,
+            "fonte": "indisponivel",
+        }
+        if nvml is not None:
+            try:
+                info = nvml.nvmlDeviceGetMemoryInfo(nvml.nvmlDeviceGetHandleByUUID(f"GPU-{props.uuid}"))
+                row.update(global_free=info.free, total=info.total, fonte="nvml")
+            except Exception as e:  # noqa: BLE001 -- placa sem NVML: cai no caminho abaixo
+                row["nvml_erro"] = type(e).__name__
+        if row["fonte"] == "indisponivel" and row["reserved"] > 0:
+            free_bytes, total_bytes = torch.cuda.mem_get_info(index)
+            row.update(global_free=free_bytes, total=total_bytes, fonte="mem_get_info")
+        devices.append(row)
+    return devices
+
+
 def _snapshot(stage: str, phase: str) -> dict[str, Any]:
     process = psutil.Process()
     process_memory = process.memory_info()
     system_memory = psutil.virtual_memory()
     swap_memory = psutil.swap_memory()
-    devices = []
-    if torch.cuda.is_available():
-        for index in range(torch.cuda.device_count()):
-            with torch.cuda.device(index):
-                free_bytes, total_bytes = torch.cuda.mem_get_info(index)
-                devices.append(
-                    {
-                        "index": index,
-                        "name": torch.cuda.get_device_name(index),
-                        "allocated": torch.cuda.memory_allocated(index),
-                        "reserved": torch.cuda.memory_reserved(index),
-                        "global_free": free_bytes,
-                        "total": total_bytes,
-                    }
-                )
+    devices = _gpus()
     return {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "stage": stage,
@@ -67,96 +97,82 @@ def _snapshot(stage: str, phase: str) -> dict[str, Any]:
     }
 
 
-def _record(stage: str, phase: str) -> None:
-    audit_dir = Path(folder_paths.base_path).parent / ".scratch" / "void_audit"
-    audit_dir.mkdir(parents=True, exist_ok=True)
-    with (audit_dir / "runtime_barriers.jsonl").open("a", encoding="utf-8") as handle:
+def _audit_dir(override: str = "") -> Path | None:
+    """Input `audit_dir` do no > $VOID_AUDIT_DIR > o padrao de sempre (`<base>/../.scratch/void_audit`).
+    `off` em qualquer um dos dois desliga a auditoria."""
+    escolha = (override or os.environ.get("VOID_AUDIT_DIR", "")).strip().strip('"')
+    if escolha.lower() == "off":
+        return None
+    return Path(escolha) if escolha else Path(folder_paths.base_path).parent / ".scratch" / "void_audit"
+
+
+def _record(stage: str, phase: str, audit_dir: str = "") -> None:
+    pasta = _audit_dir(audit_dir)
+    if pasta is None:
+        return
+    pasta.mkdir(parents=True, exist_ok=True)
+    with (pasta / "runtime_barriers.jsonl").open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(_snapshot(stage, phase), ensure_ascii=False) + "\n")
 
 
-def _unload(model: Any, stage: str) -> None:
+def _unload(model: Any, stage: str, audit_dir: str = "") -> None:
     if model is None or not hasattr(model, "clone_base_uuid"):
         raise TypeError(f"{stage}: connected object is not a ComfyUI ModelPatcher")
-    _record(stage, "before")
+    _record(stage, "before", audit_dir)
     model_management.unload_model_and_clones(model, all_devices=True)
     gc.collect()
     model_management.soft_empty_cache(force=True)
-    _record(stage, "after")
+    _record(stage, "after", audit_dir)
 
 
-class VoidUnloadModelImage:
+class _VoidUnload:
+    """Descarrega `ALVO` (um ModelPatcher) e devolve `PASSA` intacto -- a barreira entre estagios. As tres
+    classes registradas abaixo so escolhem os tipos (os nomes antigos continuam nos workflows salvos)."""
+
+    PASSA = ("image", "IMAGE")
+    ALVO = ("model", "MODEL")
+    STAGE = "after_pass_1"
+    FUNCTION = "unload"
+    CATEGORY = "VOID/Memory"
+
+    def __init_subclass__(cls, **kw):
+        super().__init_subclass__(**kw)
+        cls.RETURN_TYPES = (cls.PASSA[1],)
+        cls.RETURN_NAMES = (cls.PASSA[0],)
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "image": ("IMAGE",),
-                "model": ("MODEL",),
-                "stage": ("STRING", {"default": "after_pass_1"}),
-            }
+                cls.PASSA[0]: (cls.PASSA[1],),
+                cls.ALVO[0]: (cls.ALVO[1],),
+                "stage": ("STRING", {"default": cls.STAGE}),
+            },
+            "optional": {
+                "audit_dir": ("STRING", {"default": "", "tooltip": "Pasta do runtime_barriers.jsonl; vazio = "
+                                         "$VOID_AUDIT_DIR ou <raiz>/.scratch/void_audit; 'off' desliga."}),
+            },
         }
-
-    RETURN_TYPES = ("IMAGE",)
-    RETURN_NAMES = ("image",)
-    FUNCTION = "unload"
-    CATEGORY = "VOID/Memory"
 
     @classmethod
     def IS_CHANGED(cls, **_kwargs):
         return math.nan
 
-    def unload(self, image, model, stage):
-        _unload(model, stage)
-        return (image,)
+    def unload(self, stage, audit_dir="", **entradas):
+        _unload(entradas[self.ALVO[0]], stage, audit_dir)
+        return (entradas[self.PASSA[0]],)
 
 
-class VoidUnloadModelLatent:
-    @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "latent": ("LATENT",),
-                "model": ("MODEL",),
-                "stage": ("STRING", {"default": "after_pass_2"}),
-            }
-        }
-
-    RETURN_TYPES = ("LATENT",)
-    RETURN_NAMES = ("latent",)
-    FUNCTION = "unload"
-    CATEGORY = "VOID/Memory"
-
-    @classmethod
-    def IS_CHANGED(cls, **_kwargs):
-        return math.nan
-
-    def unload(self, latent, model, stage):
-        _unload(model, stage)
-        return (latent,)
+class VoidUnloadModelImage(_VoidUnload):
+    PASSA, ALVO, STAGE = ("image", "IMAGE"), ("model", "MODEL"), "after_pass_1"
 
 
-class VoidUnloadOpticalFlowLatent:
-    @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "latent": ("LATENT",),
-                "optical_flow": ("OPTICAL_FLOW",),
-                "stage": ("STRING", {"default": "after_raft"}),
-            }
-        }
+class VoidUnloadModelLatent(_VoidUnload):
+    PASSA, ALVO, STAGE = ("latent", "LATENT"), ("model", "MODEL"), "after_pass_2"
 
-    RETURN_TYPES = ("LATENT",)
-    RETURN_NAMES = ("latent",)
-    FUNCTION = "unload"
-    CATEGORY = "VOID/Memory"
 
-    @classmethod
-    def IS_CHANGED(cls, **_kwargs):
-        return math.nan
-
-    def unload(self, latent, optical_flow, stage):
-        _unload(optical_flow, stage)
-        return (latent,)
+class VoidUnloadOpticalFlowLatent(_VoidUnload):
+    PASSA, ALVO, STAGE = ("latent", "LATENT"), ("optical_flow", "OPTICAL_FLOW"), "after_raft"
 
 
 class VoidSliceVideoByFrame:

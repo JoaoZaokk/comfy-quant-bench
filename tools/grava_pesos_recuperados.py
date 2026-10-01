@@ -26,31 +26,16 @@ uma ve a entrada limpa, nao a ja degradada pelas anteriores.
 from __future__ import annotations
 
 import argparse
-import json
-import struct
 import sys
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ / "ComfyUI"))
+sys.path.insert(0, str(RAIZ / "tools"))
 
-import torch
-from safetensors.torch import save_file
+import torch  # noqa: E402
 
-
-def cabecalho(modelo: Path) -> tuple[dict, int]:
-    with modelo.open("rb") as f:
-        n = struct.unpack("<Q", f.read(8))[0]
-        return json.loads(f.read(n)), 8 + n
-
-
-def ler_peso(modelo: Path, head: dict, base: int, chave: str) -> torch.Tensor:
-    info = head[chave]
-    with modelo.open("rb") as f:
-        a, b = info["data_offsets"]
-        f.seek(base + a)
-        cru = bytearray(f.read(b - a))
-    return torch.frombuffer(cru, dtype=torch.bfloat16).reshape(info["shape"]).cuda()
+import _conversion as C  # noqa: E402
 
 
 def mascara_elemento(criterio: torch.Tensor) -> torch.Tensor:
@@ -118,11 +103,15 @@ def main() -> int:
     p.add_argument("--saida", type=Path, required=True)
     a = p.parse_args()
 
-    if a.saida.exists():
-        raise SystemExit(f"{a.saida} ja existe; este script nao sobrescreve")
+    # Pelo nucleo desde 2026-09-29 (revisao, achado 2): gravava com `save_file` DIRETO no nome
+    # final -- sem `.partial`, sem fsync, e uma queda no meio deixava um arquivo truncado com o nome
+    # definitivo. Recusas (saida existente, parcial antigo, saida == modelo) agora antes do calculo.
+    conv = C.Conversion(a.modelo, a.saida)
+    conv.refuse_unsafe(allow_quantized_source=True)
     torch.backends.cuda.matmul.allow_tf32 = False
 
-    head, base = cabecalho(a.modelo)
+    head = conv.header
+    fonte = conv.tensors()
     d = torch.load(a.calib, map_location="cpu", weights_only=False)
     camadas = d["layers"]
 
@@ -134,7 +123,7 @@ def main() -> int:
         if chave not in head or not torch.is_tensor(x):
             puladas += 1
             continue
-        w = ler_peso(a.modelo, head, base, chave)
+        w = fonte[chave].cuda()
         if w.dim() != 2 or w.shape[1] % 4 or x.shape[-1] != w.shape[1]:
             puladas += 1
             del w
@@ -171,7 +160,11 @@ def main() -> int:
             "nao_coberto": ("reconstrucao por camada INDEPENDENTE; camadas sem amostra sao "
                             "PULADAS e ficam com o peso original, nao podadas")}
     a.saida.parent.mkdir(parents=True, exist_ok=True)
-    save_file(saida, str(a.saida), metadata=meta)
+    # Mesma ordem e mesmo `__metadata__` ordenado que o `save_file` usava, entao os bytes nao mudam.
+    entradas = C.save_file_order(C.plan_write(k, t) for k, t in saida.items())
+    meta = C.save_file_metadata(meta)
+    conv.guard(conv.planned_size(entradas, meta))
+    conv.commit(entradas, meta)
     tam = a.saida.stat().st_size / (1 << 30)
     print(f"gravado {a.saida} ({tam:.2f} GiB): {len(saida)} camadas, {puladas} puladas")
     print("NAO COBERTO: nao mede nada e nao renderiza. Camadas sem amostra ficam com o peso")

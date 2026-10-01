@@ -28,20 +28,45 @@ WHAT THIS DOES NOT CHECK, printed again at the end of every run:
   - that the output is correct. It reports that files were written, not that
     they show what the prompt asked for. Look at them.
   - it cannot separate weight-load time from execution when the server is cold.
-    Run `--warm` twice and compare, or read the two numbers it prints.
+    Run it twice with a different `--seed` the second time (an identical prompt is answered
+    by ComfyUI's node cache and exits 5), and compare the two server-side numbers.
+
+API-FORMAT GRAPHS (review of 2026-09-29): `--api-prompt FILE` runs one API-format graph and
+`--lista ordem.txt` runs one per line, skipping the UI conversion. `--saida x.jsonl` appends one
+record per graph: grafo, prompt_id, status, erro, server_side_s, wall, cache_hit, files, and the
+server's card/argv/versions from /system_stats. Exit 0 all rendered, 1 any failure/refusal/
+timeout, 5 some cache hit. These modes go through `comfy_client.roda_lista`.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import time
-import urllib.error
-import urllib.request
-import uuid
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
+
+# The HTTP client (Comfy, run_and_wait, Entry, bases_irmas, the cache-hit threshold) moved to
+# `comfy_client.py` in the review of 2026-09-29 so that the battery scripts can import it instead of
+# re-implementing it; it is re-exported here under the same names this module always had.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from comfy_client import (  # noqa: E402,F401  (re-exported)
+    CACHE_HIT_THRESHOLD_S,
+    Comfy,
+    Entry,
+    PollTimeout,
+    PromptRefused,
+    bases_irmas,
+    codigo_de_saida,
+    controles,
+    grava_jsonl,
+    http_get,
+    http_post,
+    le_lista,
+    roda_lista,
+    run_and_wait,
+)
 
 # The API-format prompt has exactly one central type: a node input is EITHER a literal value
 # OR a wire to another node's output slot -- `["origin_id", slot]` in the JSON ComfyUI reads.
@@ -118,187 +143,7 @@ def prompt_to_api(prompt: dict[str, Node]) -> dict[str, dict]:
     return {nid: node.to_api() for nid, node in prompt.items()}
 
 
-def _request(base: str, path: str, payload: dict | None = None, timeout: float = 30.0) -> Any:
-    """The one place an HTTP call to a ComfyUI server is actually made, GET or POST alike.
-
-    Before this (ticket 06), `http_post` had ~20 lines decoding a 400's `node_errors` JSON body
-    into a readable message, and `http_get` had none -- so `/object_info` answering 500 dumped a
-    raw urllib traceback while `/prompt` answering 400 named the offending node and input. Both
-    verbs now share this decoding, so there is exactly one place that answers "what did the
-    server say was wrong", not one good path and one silent one.
-    """
-    if payload is None:
-        req = urllib.request.Request(f"http://{base}{path}")
-    else:
-        data = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(
-            f"http://{base}{path}", data=data, headers={"Content-Type": "application/json"}
-        )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            return json.loads(r.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        # ComfyUI answers a rejected graph with 400 and a JSON body naming the
-        # node and the input it did not like. urllib raises before that body is
-        # read, so without this the only thing on screen is "HTTP Error 400:
-        # Bad Request" -- which says a graph was refused but not what for, and
-        # each retry costs another 77 s of server start.
-        body = e.read().decode("utf-8", "replace")
-        try:
-            err = json.loads(body)
-            print(f"  server refused ({e.code}): {err.get('error')}")
-            for nid, ne in (err.get("node_errors") or {}).items():
-                print(f"    node {nid} ({ne.get('class_type')}):")
-                for d in ne.get("errors") or []:
-                    print(f"      {d.get('type')}: {d.get('message')} -- {d.get('details')}")
-        except json.JSONDecodeError:
-            print(f"  server refused ({e.code}): {body[:4000]}")
-        raise
-
-
-def http_get(base: str, path: str, timeout: float = 30.0) -> Any:
-    return _request(base, path, payload=None, timeout=timeout)
-
-
-def http_post(base: str, path: str, payload: dict, timeout: float = 60.0) -> Any:
-    return _request(base, path, payload=payload, timeout=timeout)
-
-
-class Comfy:
-    """The HTTP boundary to one ComfyUI server. Every socket this module opens goes through one
-    of these five methods -- nothing else in the file knows the server speaks HTTP at all.
-
-    Deliberately a thin, literal wrapper: no retries beyond what each method documents, no
-    caching. `main()` decides what a failure means for the process's exit code; these methods
-    only decide what a failure means for the *value returned* -- none of them calls `sys.exit`
-    or raises `SystemExit`. `wait_up` used to (`wait_for_server`, pre-ticket-06): a library
-    function killing the interpreter is a decision that belongs to `main()`, not to the
-    boundary that only knows about one HTTP call.
-    """
-
-    def __init__(self, base: str) -> None:
-        self.base = base
-
-    def wait_up(self, limit_s: float) -> float:
-        """Block until /system_stats answers. Returns seconds waited.
-
-        Raises `TimeoutError` if the server never answered inside `limit_s` -- it does NOT call
-        `sys.exit`/`SystemExit`; the caller decides whether that is fatal and what code to exit
-        with."""
-        t0 = time.time()
-        while time.time() - t0 < limit_s:
-            try:
-                http_get(self.base, "/system_stats", timeout=5.0)
-                return time.time() - t0
-            except (urllib.error.URLError, OSError, TimeoutError):
-                time.sleep(2.0)
-        raise TimeoutError(f"server {self.base} did not answer /system_stats in {limit_s:.0f}s")
-
-    def object_info(self, timeout: float = 120.0) -> dict:
-        return http_get(self.base, "/object_info", timeout=timeout)
-
-    def submit(self, api_prompt: dict, client_id: str) -> str:
-        """POST an API-format prompt. Returns the `prompt_id`.
-
-        Raises `ValueError` if the server's response has no `prompt_id` -- a refusal that did
-        not raise `HTTPError` (an empty/malformed 200, say). A 400 refusal is decoded and
-        re-raised as `HTTPError` by `_request` before this method ever sees a response."""
-        resp = http_post(self.base, "/prompt", {"prompt": api_prompt, "client_id": client_id})
-        pid = resp.get("prompt_id")
-        if not pid:
-            raise ValueError(f"server refused the prompt: {json.dumps(resp)[:2000]}")
-        return pid
-
-    def history(self, pid: str) -> dict | None:
-        """GET /history/{pid}'s entry for `pid`, or `None` if the prompt is not in /history yet
-        -- including when the request itself failed (a network hiccup mid-poll is not fatal; the
-        poll loop just tries again on the next tick), which is why this method swallows the same
-        exception tuple `wait_up` does rather than propagating it."""
-        try:
-            hist = http_get(self.base, f"/history/{pid}", timeout=30.0)
-        except (urllib.error.URLError, OSError, TimeoutError):
-            return None
-        return hist.get(pid)
-
-    def queue(self) -> tuple[int, int]:
-        """GET /queue -> (running, pending) counts, for the poll loop's periodic progress line."""
-        q = http_get(self.base, "/queue", timeout=10.0)
-        return len(q.get("queue_running", [])), len(q.get("queue_pending", []))
-
-
-def bases_irmas(base: str) -> list[str]:
-    """Todo servidor ComfyUI deste host, com `base` -- a quem se submeteu -- sempre na frente.
-
-    MEDIDO 2026-09-12, nao deduzido. `ComfyUI-MultiGPU` sobe UM PROCESSO POR DEVICE
-    (`main.py --port N --cuda-device K`, porta alta) e o resultado de um prompt aparece no
-    `/history` DO WORKER QUE O EXECUTOU, nunca no do pai a quem se submeteu. Quatro edicoes
-    identicas menos a semente: a primeira caiu em 27715 e a segunda em 27716. Um cliente que
-    so consulta o pai fica pendurado ate o timeout enquanto a imagem ja esta gravada em disco
-    -- e reporta TIMEOUT, que le como "o modelo nao gerou".
-
-    A descoberta LE A LINHA DE COMANDO dos processos em vez de assumir portas, porque a porta
-    do worker e escolhida pela extensao em tempo de execucao e nao esta escrita em lugar nenhum
-    que o cliente conheca. E e chamada DENTRO do laco de poll, nao uma vez no inicio: o worker
-    e criado sob demanda pelo primeiro prompt que precisa daquele device, entao no instante da
-    submissao ele pode ainda nao existir.
-
-    Sem `psutil` (nao e dependencia deste arquivo em nenhum outro ponto) devolve so `[base]` --
-    degrada para o comportamento antigo em vez de morrer.
-    """
-    achadas: list[str] = [base]
-    try:
-        import psutil
-    except ImportError:
-        return achadas
-    try:
-        procs = list(psutil.process_iter(["cmdline"]))
-    except Exception:  # noqa: BLE001 -- varredura de processos e best-effort, nunca fatal
-        return achadas
-    lidos = ilegiveis = 0
-    for proc in procs:
-        try:
-            argv = proc.info.get("cmdline") or []
-        # Logar cada excecao aqui imprimiria uma linha por processo a cada 10 s dentro do laco
-        # de poll. A falha individual e normal -- o processo morre entre listar e ler. O que
-        # importa e a CEGUEIRA TOTAL: se NENHUMA linha de comando foi lida, a lista saiu vazia
-        # por nao enxergar, nao por nao haver worker, e essas duas situacoes sao indistinguiveis
-        # na saida. Essa, sim, e reportada, uma vez, depois do laco.
-        except Exception:  # noqa: BLE001
-            ilegiveis += 1
-            continue
-        lidos += 1
-        if not any(a.endswith("main.py") for a in argv):
-            continue
-        if "--port" not in argv:
-            continue
-        porta = argv[argv.index("--port") + 1]
-        if not porta.isdigit():
-            continue
-        # `--listen` do worker e sempre 127.0.0.1 nesta bancada; um worker remoto nao seria
-        # alcancavel por este cliente de qualquer forma, entao nao se inventa host aqui.
-        alvo = f"http://127.0.0.1:{porta}"
-        if alvo not in achadas:
-            achadas.append(alvo)
-    if lidos == 0 and ilegiveis:
-        print(f"  aviso: nenhum dos {ilegiveis} processos teve a linha de comando lida -- a "
-              "descoberta de workers esta CEGA, nao vazia; so o servidor submetido sera "
-              "consultado, e um resultado que caia num worker vai parecer TIMEOUT")
-    return achadas
-
-
 SCALAR_TYPES = {"INT", "FLOAT", "STRING", "BOOLEAN", "COMBO"}
-
-# Ticket 04. The server's own execution_start -> execution_success span, in
-# seconds, below which "outputs came back" means "the per-node result cache
-# answered", not "this rendered". This used to be a bare `5.0` compared
-# against CLIENT wall-clock (queue POST -> /history seeing the prompt_id) --
-# a value that also includes this process's 2s poll interval and network
-# round trip, so it could not tell a genuine 4s render from a cache hit
-# either. The threshold now compares against the SERVER's own reported
-# duration (see `Entry.server_side_s`, ticket 06 -- this lived inline in
-# main() before that), which is what the server itself printed as "Prompt
-# executed in 0.01 seconds" for the cache-hit run that prompted this ticket.
-CACHE_HIT_THRESHOLD_S = 5.0
 
 
 def is_widget(typ: Any, opts: dict) -> bool:
@@ -563,119 +408,6 @@ def ui_to_api(wf: dict, object_info: dict) -> tuple[dict[str, Node], list[Note]]
     return prompt, notes
 
 
-class PollTimeout(Exception):
-    """`run_and_wait` did not see `pid` show up in /history within `timeout_s` seconds.
-
-    A plain exception, not `SystemExit` -- `run_and_wait` is a library function (ticket 06); it
-    reports what happened and lets `main()` decide the process's exit code."""
-
-    def __init__(self, pid: str, timeout_s: float) -> None:
-        self.pid = pid
-        self.timeout_s = timeout_s
-        super().__init__(f"TIMEOUT after {timeout_s:.0f}s -- prompt {pid} still not in /history")
-
-
-@dataclass
-class Entry:
-    """One /history entry for a submitted prompt, plus this client's wall-clock measurement of
-    the same span (`wall`: queue POST -> /history first showing `pid`, padded by the poll
-    interval). `status`, `files`, `server_side_s` and `cache_hit` are derived from the raw
-    `hist` dict on read rather than precomputed, so there is exactly one place each is computed
-    -- here, not scattered across `main()` printing code the way it was before ticket 06."""
-
-    pid: str
-    hist: dict
-    wall: float
-
-    @property
-    def status(self) -> str:
-        return (self.hist.get("status") or {}).get("status_str", "?")
-
-    @property
-    def files(self) -> list[str]:
-        outputs = self.hist.get("outputs") or {}
-        return [
-            f"{v.get('subfolder', '')}/{v.get('filename', '')}"
-            for out in outputs.values()
-            for key in ("images", "gifs", "audio", "video")
-            for v in (out.get(key) or [])
-        ]
-
-    @property
-    def server_side_s(self) -> float | None:
-        """The server's own execution_start -> execution_success span, in seconds (ticket 04).
-        `main()`'s WALL is this CLIENT's estimate of the same span, padded by the 2s poll
-        interval and network round trip; this is what the server itself printed as "Prompt
-        executed in 0.01 seconds" for the cache-hit run that prompted ticket 04, and is what
-        `cache_hit` below is computed from instead of `wall`."""
-        msgs = self.hist.get("status", {}).get("messages") or []
-        starts: dict[str, float] = {}
-        server_side_s: float | None = None
-        for m in msgs:
-            if not (isinstance(m, (list, tuple)) and len(m) >= 2):
-                continue
-            kind, data = m[0], m[1]
-            if kind == "execution_start":
-                starts["_t0"] = data.get("timestamp")
-            elif kind == "execution_success" and "_t0" in starts and data.get("timestamp"):
-                server_side_s = (data["timestamp"] - starts["_t0"]) / 1000.0
-        return server_side_s
-
-    @property
-    def cache_hit(self) -> bool:
-        """A cache hit and a fast render are the same two numbers on WALL -- wall cannot tell
-        them apart, which is why this is built from `server_side_s`, the server's own account of
-        the same span, and never from `wall` (ticket 04's regression)."""
-        return (bool(self.files) and self.server_side_s is not None
-                and self.server_side_s < CACHE_HIT_THRESHOLD_S)
-
-
-def run_and_wait(comfy: Comfy, api_prompt: dict, timeout: float) -> Entry:
-    """Submit `api_prompt` and poll /history until the server has an entry for it. Prints its
-    own progress (the queued line, and a running/pending line at most every 30s) -- this is
-    orchestration with a stopwatch, not a pure function, by design: the caller wants to see time
-    pass during a render that can run for hours.
-
-    Raises `PollTimeout` if `timeout` seconds pass with no /history entry. Never calls
-    `sys.exit`; `main()` decides what a timeout means for the process's exit code."""
-    client_id = str(uuid.uuid4())
-    t0 = time.time()
-    pid = comfy.submit(api_prompt, client_id)
-    print(f"queued prompt_id={pid}")
-
-    last_note = 0.0
-    ultima_varredura = 0.0
-    # O servidor a quem se submeteu vem sempre primeiro; os irmaos entram na varredura.
-    clientes: dict[str, Comfy] = {comfy.base: comfy}
-    while True:
-        if time.time() - t0 > timeout:
-            raise PollTimeout(pid, timeout)
-        agora = time.time()
-        if agora - ultima_varredura >= 10.0:
-            ultima_varredura = agora
-            for b in bases_irmas(comfy.base):
-                clientes.setdefault(b, Comfy(b))
-        hist_entry = None
-        for cliente in list(clientes.values()):
-            hist_entry = cliente.history(pid)
-            if hist_entry is not None:
-                if cliente.base != comfy.base:
-                    print(f"  resultado veio de {cliente.base}, nao de {comfy.base} "
-                          f"(worker do ComfyUI-MultiGPU)")
-                break
-        if hist_entry is not None:
-            return Entry(pid=pid, hist=hist_entry, wall=time.time() - t0)
-        now = time.time()
-        if now - last_note >= 30.0:
-            last_note = now
-            try:
-                running, pending = comfy.queue()
-                print(f"  [{now - t0:6.1f}s] running={running} pending={pending}")
-            except (urllib.error.URLError, OSError, TimeoutError):
-                print(f"  [{now - t0:6.1f}s] waiting")
-        time.sleep(2.0)
-
-
 def report(entry: Entry, wall: float, label: str) -> None:
     """Print the human-readable summary of a finished run: status, timings, output files, the
     ticket-04 cache-hit call-out, and the fixed "NOT covered by this run" block. Pure printing --
@@ -727,7 +459,11 @@ def build_argparser() -> argparse.ArgumentParser:
     out the DECLARATION, which is why main() still did not fit after them.
     """
     ap = argparse.ArgumentParser()
-    ap.add_argument("--workflow", required=True)
+    fonte = ap.add_mutually_exclusive_group(required=True)
+    fonte.add_argument("--workflow", help="UI-format workflow (converted via /object_info)")
+    fonte.add_argument("--api-prompt", help="API-format graph JSON, submitted as is")
+    fonte.add_argument("--lista", help="text file, one API-format graph path per line")
+    ap.add_argument("--saida", help="append one JSONL record per graph (--api-prompt/--lista)")
     ap.add_argument("--server", default="127.0.0.1:8190")
     ap.add_argument("--wait-server", type=float, default=900.0)
     ap.add_argument("--timeout", type=float, default=5400.0)
@@ -816,8 +552,26 @@ def refuse_on_fatal(notes: list["Note"], force: bool) -> bool:
     return True
 
 
+def main_api(args: argparse.Namespace) -> int:
+    """`--api-prompt` / `--lista`: no conversion, straight to `comfy_client.roda_lista`."""
+    comfy = Comfy(args.server)
+    try:
+        waited = comfy.wait_up(args.wait_server)
+    except TimeoutError as e:
+        print(str(e))
+        return 1
+    print(f"server {comfy.base} up after {waited:.1f}s")
+    grafos = [Path(args.api_prompt)] if args.api_prompt else le_lista(Path(args.lista))
+    return roda_lista(comfy, grafos, Path(args.saida) if args.saida else None, args.timeout)
+
+
 def main() -> int:
     args = build_argparser().parse_args()
+    if args.api_prompt or args.lista:
+        if args.seed is not None or args.dump_api or args.object_info_file:
+            print("--seed/--dump-api/--object-info-file only apply to --workflow")
+            return 2
+        return main_api(args)
     # `utf-8-sig`, nao `utf-8`: le os dois casos. Sem BOM os dois codecs sao identicos; COM BOM o
     # `utf-8` entrega ﻿ como primeiro caractere e o `json.loads` levanta
     # `Unexpected UTF-8 BOM (decode using utf-8-sig)` antes de ver um unico no.
@@ -852,7 +606,7 @@ def main() -> int:
 
     try:
         entry = run_and_wait(comfy, prompt_to_api(prompt), args.timeout)
-    except ValueError as e:      # Comfy.submit: POST accepted but no prompt_id came back
+    except ValueError as e:      # Comfy.submit: no prompt_id, or node_errors on an HTTP 200
         print(str(e))
         return 2
     except PollTimeout as e:     # run_and_wait: pid never reached /history in time
@@ -860,6 +614,13 @@ def main() -> int:
         return 3
 
     report(entry, entry.wall, args.label)
+    if args.saida:
+        registro = {"grafo": args.workflow, "prompt_id": entry.pid, "status": entry.status,
+                    "erro": entry.erro, "server_side_s": entry.server_side_s,
+                    "wall": round(entry.wall, 3), "cache_hit": entry.cache_hit,
+                    "files": entry.files, "onde": entry.onde, "rotulo": args.label}
+        registro.update(controles(comfy))
+        grava_jsonl(Path(args.saida), registro)
     if entry.status != "success":
         return 1
     if entry.cache_hit:

@@ -144,8 +144,9 @@ LOG = open("/content/comfy.log", "a")
 try:
     urllib.request.urlopen("http://127.0.0.1:8188/queue", timeout=2); print("ja estava no ar")
 except Exception:
+    # start_new_session: cancelar uma celula (Ctrl+M I / botao parar) NAO derruba o ComfyUI junto
     subprocess.Popen([sys.executable, "main.py", "--listen", "127.0.0.1", "--port", "8188"], cwd="/content/ComfyUI",
-                     stdout=LOG, stderr=subprocess.STDOUT)
+                     stdout=LOG, stderr=subprocess.STDOUT, start_new_session=True)
     for _ in range(120):
         try:
             urllib.request.urlopen("http://127.0.0.1:8188/queue", timeout=2); break
@@ -199,18 +200,25 @@ except urllib.error.HTTPError as e:
     print(e.read().decode()[:3000]); raise
 print("enviado", pid, "- acompanhe abaixo (a 1a vez le 43 GB do disco, demora)")
 t0, visto = time.time(), len(open("/content/comfy.log", errors="replace").read())
-while True:
-    time.sleep(15)
-    log = open("/content/comfy.log", errors="replace").read()
-    novo = log[visto:]; visto = len(log)
-    for l in novo.splitlines():
-        if any(s in l for s in ("loaded", "Requested", "Prompt executed", "Error", "Traceback", "out of memory")):
-            print(f"[{time.time()-t0:5.0f}s] {l[:200]}")
-    h = json.loads(urllib.request.urlopen(f"http://127.0.0.1:8188/history/{pid}").read())
-    if pid in h:
-        st = h[pid]["status"]; print("status:", st.get("status_str"), f"em {time.time()-t0:.0f} s")
-        if st.get("status_str") != "success": print(json.dumps(st.get("messages", []))[-3000:])
-        break
+def cancela():
+    # parar a celula so para de acompanhar; isto cancela a geracao no ComfyUI sem matar o servidor
+    urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:8188/interrupt", data=b"", method="POST"))
+    print("geracao cancelada no ComfyUI (servidor continua no ar)")
+try:
+  while True:
+      time.sleep(15)
+      log = open("/content/comfy.log", errors="replace").read()
+      novo = log[visto:]; visto = len(log)
+      for l in novo.splitlines():
+          if any(s in l for s in ("loaded", "Requested", "Prompt executed", "Error", "Traceback", "out of memory")):
+              print(f"[{time.time()-t0:5.0f}s] {l[:200]}")
+      h = json.loads(urllib.request.urlopen(f"http://127.0.0.1:8188/history/{pid}").read())
+      if pid in h:
+          st = h[pid]["status"]; print("status:", st.get("status_str"), f"em {time.time()-t0:.0f} s")
+          if st.get("status_str") != "success": print(json.dumps(st.get("messages", []))[-3000:])
+          break
+except KeyboardInterrupt:
+    cancela(); raise
 novos = sorted(set(glob.glob("/content/ComfyUI/output/Eros/BF16_*.mp4")) - antes)
 final = [f for f in novos if "firstpass" not in f and not f.endswith("-audio.mp4")] or novos
 for f in final:

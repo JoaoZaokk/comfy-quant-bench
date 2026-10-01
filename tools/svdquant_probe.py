@@ -44,7 +44,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import torch  # noqa: E402
 
-from quant_w4a8 import read_header, read_tensor  # noqa: E402
+from _conversion import read_header, read_tensor  # noqa: E402
 
 # transformer.model.layers.3.self_attn.q_proj -> model.layers.3.self_attn.q_proj.weight
 MODULE_TO_KEY = re.compile(r"(model\.layers\.\d+\.(?:self_attn|mlp)\.\w+)$")

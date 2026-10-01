@@ -721,18 +721,19 @@ def _travas_do_encoder_soltas() -> tuple[bool, dict]:
     motivo de ela existir), entao a unica pergunta barata que ela pode fazer e se o codigo que
     prende o kernel ainda esta la.
 
-    Pergunta pelos TRES pontos, porque soltar so um nao adianta -- qualquer uma das travas sozinha
-    ja manda a matematica para o caminho dequantizado, e isso custou uma medicao aqui: a primeira
-    tentativa mexeu so em `sd1_clip.py` e a contagem de forwards continuou em zero.
+    Pergunta pelas DUAS travas, porque soltar so uma nao adianta -- qualquer uma sozinha ja manda
+    a matematica para o caminho dequantizado, e isso custou uma medicao aqui: a primeira tentativa
+    mexeu so em `sd1_clip.py` e a contagem de forwards continuou em zero.
+
+    Marcas do patch reescrito em 2026-09-29 (lidas em ops.py:1732-1748, sd.py:303,328): trava 1 =
+    `has_quantized_matmul` pula o upcast float32; trava 2 = `use_quantized_matmul` desliga
+    `_full_precision_mm` no encode. `sd1_clip.py` voltou ao v0.37.4 e deixou de ser marca.
     """
     raiz = Path(__file__).resolve().parent.parent / "ComfyUI" / "comfy"
-    marcas = {
-        "ops.py": "def quantized_text_encoder_math",
-        "sd1_clip.py": "quantized_text_encoder_math(",
-        "sd.py": "text_encoder_has_quantized_math(",
-    }
+    marcas = [("ops.py", "def has_quantized_matmul"), ("ops.py", "def use_quantized_matmul"),
+              ("sd.py", "has_quantized_matmul("), ("sd.py", "use_quantized_matmul(")]
     evidencia, todas = {}, True
-    for arquivo, marca in marcas.items():
+    for arquivo, marca in marcas:
         caminho = raiz / arquivo
         try:
             tem = marca in caminho.read_text(encoding="utf-8", errors="replace")
@@ -741,7 +742,7 @@ def _travas_do_encoder_soltas() -> tuple[bool, dict]:
             # que e o estado em que a esmagadora maioria das instalacoes esta, e registra que a
             # resposta veio da ausencia do arquivo e nao de uma leitura.
             return False, {"comfy_nao_encontrado": str(caminho)}
-        evidencia[arquivo] = tem
+        evidencia[f"{arquivo}:{marca}"] = tem
         todas = todas and tem
     evidencia["lido_no_fonte"] = True
     return todas, evidencia
@@ -760,14 +761,16 @@ def checar_armadilha(ck: Checkpoint) -> Iterator[Achado]:
     nulo -- concatena mascara de uns e aplica em forca total. O FP16 sem quantizacao nenhuma sai
     destruido igual. Custou quatro renderizacoes ate alguem olhar o braco de referencia.
 
-    Text encoder: `comfy/sd.py` chama `set_model_compute_dtype(torch.float32)` para todo CLIP,
-    o que liga `comfy_force_cast_weights`, e `comfy/sd1_clip.py` fixa `full_precision_mm=True`.
+    Text encoder: DE FABRICA `comfy/sd.py` chama `set_model_compute_dtype(torch.float32)` para
+    todo CLIP, o que liga `comfy_force_cast_weights`, e `comfy/sd1_clip.py` fixa
+    `full_precision_mm=True`.
     Duas travas independentes: o peso fica 4 bits na VRAM e a **matematica e dequantizada**.
     Memoria economizada, tempo nao, kernel nunca alcancado.
 
     Isso descreve o ComfyUI DE FABRICA, e em 2026-09-12 esta instalacao deixou de ser de fabrica:
     as duas travas foram soltas juntas (`patches/comfyui_text_encoder_quantized_math.patch`) e
-    medidas -- 3,77x mais rapido com 1,11x menos fidelidade num encoder real. Enquanto este
+    medidas -- 3,77x mais rapido com 1,11x menos fidelidade num encoder real (patch reescrito em
+    2026-09-29; marcas atualizadas em `_travas_do_encoder_soltas`). Enquanto este
     achado era incondicional, a ferramenta afirmava sobre ESTA maquina uma coisa que o patch ao
     lado dela ja refutava. `_travas_do_encoder_soltas()` pergunta a arvore em vez de assumir.
     """

@@ -60,10 +60,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import time
+import sys
 import urllib.error
-import urllib.request
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import comfy_client as cc  # noqa: E402
 
 # Lightricks, README do Lightricks/LTX-2.5: destilado, 3 passos, cfg 1.
 SIGMAS_DESTILADO_25 = "0.909375, 0.725, 0.421875, 0.0"
@@ -236,64 +238,22 @@ def monta_prompt(a) -> dict:
     return g
 
 
-def posta(base: str, prompt: dict) -> str:
-    dados = json.dumps({"prompt": prompt}).encode()
-    req = urllib.request.Request(f"{base}/prompt", data=dados,
-                                 headers={"Content-Type": "application/json"})
+def roda(base: str, prompt: dict, limite_s: int) -> cc.Entry:
+    """Submete e espera pelo cliente canonico (`comfy_client.run_and_wait`): prazo, node_errors num
+    200 recusado, e o /history dos workers do ComfyUI-MultiGPU consultado junto.
+
+    Ate a revisao de 2026-09-29 este arquivo tinha seu proprio `posta`/`espera` e achava os workers
+    lendo `ComfyUI/logs/mgpu-workers/gpu-*.log` (copia identica em `qwen_edit_test.py`), enquanto o
+    canonico le a linha de comando dos processos. Uma forma so agora. O caso que custou uma corrida
+    aqui continua coberto: GPU em 85%, a fila do 8190 zerada, e o resultado no /history DO WORKER."""
     try:
-        with urllib.request.urlopen(req, timeout=120) as r:
-            return json.load(r)["prompt_id"]
+        return cc.run_and_wait(cc.Comfy(base), prompt, limite_s, poll_s=5.0)
     except urllib.error.HTTPError as e:
-        corpo = e.read().decode("utf-8", "replace")
-        raise SystemExit(f"o servidor RECUSOU o grafo ({e.code}):\n{corpo[:2000]}") from None
-
-
-def portas_worker(raiz: Path) -> list[str]:
-    """As portas que o ComfyUI-MultiGPU escolheu em tempo de execucao, lidas dos logs dele.
-
-    Quando `COMFYUI_MGPU_DISABLED` NAO esta em 1, o pacote sobe um worker por placa em portas
-    decididas na hora e o servidor principal encaminha o trabalho para la. O resultado aparece no
-    `/history` DO WORKER, e o principal fica com a fila vazia -- o que e indistinguivel de "ja
-    terminou" e de "nunca comecou". Isto custou uma corrida aqui: a GPU em 85%, a fila do 8190
-    zerada, e o script esperando um id que nunca ia aparecer.
-    """
-    portas = []
-    for log in sorted((raiz / "ComfyUI" / "logs" / "mgpu-workers").glob("gpu-*.log")):
-        try:
-            texto = log.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        for pedaco in texto.split("http://127.0.0.1:")[1:]:
-            porta = pedaco.split()[0].split("/")[0].strip(",)")
-            if porta.isdigit() and porta not in portas:
-                portas.append(porta)
-    return portas
-
-
-def espera(base: str, pid: str, limite_s: int, raiz: Path) -> dict:
-    """Espera no /history, e tambem no dos workers do MultiGPU se eles existirem."""
-    bases = [base] + [f"http://127.0.0.1:{p}" for p in portas_worker(raiz)]
-    if len(bases) > 1:
-        print(f"  tambem olhando os workers do MultiGPU: {bases[1:]}", flush=True)
-    t0 = time.time()
-    ultimo = 0.0
-    while time.time() - t0 < limite_s:
-        for b in bases:
-            try:
-                with urllib.request.urlopen(f"{b}/history/{pid}", timeout=60) as r:
-                    h = json.load(r)
-            except Exception:  # noqa: BLE001 -- worker pode nao estar de pe
-                continue
-            if pid in h:
-                if b != base:
-                    print(f"  resultado veio do worker {b}, nao do servidor principal", flush=True)
-                return h[pid]
-        agora = time.time() - t0
-        if agora - ultimo >= 60:
-            ultimo = agora
-            print(f"  ... {agora / 60:.1f} min", flush=True)
-        time.sleep(5)
-    raise SystemExit(f"passou de {limite_s}s sem terminar")
+        raise SystemExit(f"o servidor RECUSOU o grafo ({e.code}); detalhes acima") from None
+    except cc.PromptRefused as e:
+        raise SystemExit(f"o servidor RECUSOU parte do grafo: {e}") from None
+    except cc.PollTimeout as e:
+        raise SystemExit(f"passou de {limite_s}s sem terminar (prompt {e.pid})") from None
 
 
 def arquivos_de_saida(saida: dict) -> dict[str, list[str]]:
@@ -418,11 +378,8 @@ def main() -> int:
     if a.distorch:
         print(f"distorch    : {a.alocacao or f'cuda:1,{a.doar_gb}gb;cpu,*'}", flush=True)
 
-    t0 = time.time()
-    pid = posta(a.servidor, prompt)
-    print(f"prompt_id {pid}", flush=True)
-    saida = espera(a.servidor, pid, a.limite, Path(__file__).resolve().parent.parent)
-    segundos = time.time() - t0
+    entrada = roda(a.servidor, prompt, a.limite)
+    saida, segundos = entrada.hist, entrada.wall
 
     arq = arquivos_de_saida(saida)
     estado = saida.get("status", {})
@@ -455,7 +412,9 @@ def main() -> int:
            "quadros": arq["quadros"], "audio": arq["audio"], "video": arq["video"],
            "distorch": a.distorch,
            "alocacao": (a.alocacao or f"cuda:1,{a.doar_gb}gb;cpu,*") if a.distorch else None,
-           "status": estado.get("status_str")}
+           "status": estado.get("status_str"), "prompt_id": entrada.pid,
+           "server_side_s": entrada.server_side_s, "cache_hit": entrada.cache_hit,
+           "onde": entrada.onde, "erro": entrada.erro, **cc.controles(cc.Comfy(a.servidor))}
     if a.json:
         Path(a.json).write_text(json.dumps(reg, indent=2), encoding="utf-8")
         print(f"registro em {a.json}", flush=True)
@@ -465,7 +424,8 @@ def main() -> int:
           "transformer. Nao le o log do servidor, entao um LoRA com chaves que nao casam passa "
           "aqui em silencio -- `probe_lora_requant.py` conta as chaves. O tempo inclui carga "
           "do modelo (`--cache-none` no servidor), nao e custo marginal por quadro.", flush=True)
-    return 0
+    # Antes saia 0 mesmo com status != success; quem encadeia bracos precisa ver a falha.
+    return cc.codigo_de_saida([{"status": estado.get("status_str"), "cache_hit": entrada.cache_hit}])
 
 
 if __name__ == "__main__":

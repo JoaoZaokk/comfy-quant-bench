@@ -33,7 +33,8 @@ import torch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import _conversion as C  # noqa: E402
-from quant_w4a8 import PROFILE_PATTERNS, HIGH_PRECISION_DTYPES, detect_profile, read_header, read_tensor  # noqa: E402
+from _conversion import read_header, read_tensor  # noqa: E402
+from _profiles import HIGH_PRECISION_DTYPES, PROFILE_PATTERNS, detect_profile  # noqa: E402
 
 TIPOS = {"Q8_0": (34, 32), "Q4_1": (20, 32), "Q4_0": (18, 32), "Q5_0": (22, 32)}  # bytes per block, block size
 ARCH = {"qwen_image21": "qwen_image"}  # ComfyUI-GGUF's IMG_ARCH_LIST; the model itself is detected from the keys

@@ -90,9 +90,9 @@ from __future__ import annotations
 
 import argparse
 import json
-import struct
 import sys
 import time
+from collections.abc import Mapping
 from pathlib import Path
 
 PORTABLE_ROOT = Path(__file__).resolve().parent.parent
@@ -139,17 +139,42 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_reference(path: Path) -> dict:
-    """Load original weights from a file or a sharded diffusers directory."""
-    from safetensors.torch import load_file
+class _Reference(Mapping):
+    """Os pesos originais de um arquivo ou de um diretorio diffusers em shards, lidos UM por vez.
 
+    Era `load_file` de cada shard num dict so -- o modelo de referencia INTEIRO em memoria, via
+    safe_open/mmap, contra a regra de streaming da bancada (revisao de 2026-09-29, achado 1); uma
+    referencia BF16 de Flux ou Qwen-Image passa de 20 GiB. Agora so os headers sao lidos de inicio,
+    e `match_reference` puxa o tensor que precisa. Chave repetida entre shards: vale a do ultimo,
+    como no `dict.update` de antes.
+    """
+
+    def __init__(self, shards: list[Path]):
+        self._owner: dict[str, C.LazyTensors] = {}
+        for shard in shards:
+            lazy = C.LazyTensors(shard)
+            for key in lazy:
+                self._owner[key] = lazy
+
+    def __getitem__(self, key: str) -> torch.Tensor:
+        return self._owner[key][key]
+
+    def __iter__(self):
+        return iter(self._owner)
+
+    def __len__(self) -> int:
+        return len(self._owner)
+
+    def __contains__(self, key: object) -> bool:
+        return key in self._owner
+
+
+def load_reference(path: Path) -> Mapping:
+    """Original weights from a file or a sharded diffusers directory, read lazily by byte range."""
     shards = sorted(path.glob("**/*.safetensors")) if path.is_dir() else [path]
     if not shards:
         raise SystemExit(f"no .safetensors under {path}")
-    merged: dict = {}
-    for shard in shards:
-        merged.update(load_file(str(shard)))
-    return merged
+    return _Reference(shards)
 
 
 def match_reference(reference: dict, stem: str) -> torch.Tensor | None:
@@ -194,13 +219,6 @@ def match_reference(reference: dict, stem: str) -> torch.Tensor | None:
             return torch.cat([reference[k] for k in keys], dim=0)
         return None
     return None
-
-
-def read_header(path: Path) -> tuple[dict, int]:
-    with open(path, "rb") as handle:
-        length = struct.unpack("<Q", handle.read(8))[0]
-        header = json.loads(handle.read(length))
-    return header, 8 + length
 
 
 def resolve(name: str) -> Path:
@@ -488,8 +506,6 @@ def main() -> int:
         print("no CUDA device: the recovery runs the Nunchaku kernel, which needs one")
         return 1
 
-    from safetensors.torch import load_file
-
     src = resolve(args.input)
     out = Path(args.output)
     partial = out.with_suffix(out.suffix + ".partial")
@@ -503,8 +519,7 @@ def main() -> int:
         print(f"refusing to overwrite stale partial output: {partial}")
         return 1
 
-    header, data_start = read_header(src)
-    metadata = header.pop("__metadata__", None)
+    header, metadata = C.read_header(src)
     stems = sorted({k.rsplit(".", 1)[0] for k in header if k.endswith(".qweight")})
     if not stems:
         print("no .qweight tensors: this does not look like an SVDQuant checkpoint")
@@ -544,8 +559,10 @@ def main() -> int:
     # open low-confidence finding; the norms are not the ones at risk here. What IS hardcoded is
     # the dtype the Nunchaku layer is built with, below.
     dtype = torch.bfloat16
-    print("loading source into RAM", flush=True)
-    tensors = load_file(str(src))
+    # Era `load_file(src)`: o checkpoint inteiro via safe_open/mmap, contra a regra de streaming
+    # (revisao de 2026-09-29, achado 1). `recover_weight` le seis ou sete tensores por camada pelo
+    # nome; `LazyTensors` entrega cada um lido por faixa de bytes, e so quando pedido.
+    tensors = C.LazyTensors(src, header)
 
     # Anything that is not part of a quantised layer is carried over untouched. The six suffixes
     # below are consumed by the recovery and must not appear in the output; `bias` is kept,

@@ -64,11 +64,11 @@ def main() -> int:
     novo = dict(metadata)
     novo["_quantization_metadata"] = json.dumps(quant, separators=(",", ":"))
     novo["quantization"] = f"{metadata.get('quantization', '')} weight-only ({execucao})".strip()
-    conv.guard(source.stat().st_size)
-    conv.commit([C.plan_copy(name, info) for name, info in header.items()], novo)
-    conv.write_sidecar({
+    entradas = [C.plan_copy(name, info) for name, info in header.items()]
+    conv.guard(conv.planned_size(entradas, novo))
+    conv.commit(entradas, novo, sidecar=lambda: {
         "source": str(source), "source_size": source.stat().st_size,
-        "output": str(output), "output_size": output.stat().st_size,
+        "output": str(output), "output_size": conv.output_size,
         "execution": execucao, "layers": dict(formatos),
         "change": "full_precision_matrix_mult=true on every quantized layer; tensors copied byte for byte",
         "conversion_seconds": round(time.perf_counter() - started, 3),

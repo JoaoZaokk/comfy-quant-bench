@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from metricas_imagem import carrega  # noqa: E402
+from metricas_imagem import carrega, cria_lpips, medir  # noqa: E402
 
 
 def main() -> int:
@@ -28,12 +28,7 @@ def main() -> int:
     p.add_argument("--saida", type=Path)
     a = p.parse_args()
 
-    from torchmetrics.functional.image import peak_signal_noise_ratio as psnr
-    from torchmetrics.functional.image import structural_similarity_index_measure as ssim
-    lp = None
-    if (Path.home() / ".cache/torch/hub/checkpoints/vgg16-397923af.pth").is_file():
-        from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
-        lp = LearnedPerceptualImagePatchSimilarity(net_type="vgg", normalize=True).eval()
+    lp, _aviso = cria_lpips("so_cache")     # nunca baixa
 
     out = {}
     for spec in a.lado:
@@ -45,10 +40,7 @@ def main() -> int:
             linhas = []
             for k in a.chaves:
                 r, x = carrega(d / f"{ref}__{k}.png"), carrega(d / f"{b}__{k}.png")
-                v = {"ssim": float(ssim(x, r, data_range=1.0)), "psnr": float(psnr(x, r, data_range=1.0))}
-                if lp is not None:
-                    v["lpips"] = float(lp(x, r))
-                linhas.append(v)
+                linhas.append(medir(x, r, lp, quais=("ssim", "psnr")))
             out[nome][b] = {m: statistics.fmean(l[m] for l in linhas) for m in linhas[0]}
             out[nome][b]["por_chave"] = dict(zip(a.chaves, linhas))
             print(f"{nome:10} {b:40} " + "  ".join(f"{m} {out[nome][b][m]:.4f}" for m in linhas[0]))

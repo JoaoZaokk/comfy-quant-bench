@@ -47,6 +47,15 @@ RAIZ = Path(__file__).resolve().parent.parent
 TOOLS = RAIZ / "tools"
 sys.path.insert(0, str(TOOLS))
 
+import gpu_lock  # noqa: E402
+
+# O lock compartilhado, lido e tomado SO pela API de `gpu_lock.py`. A versao anterior lia
+# `RAIZ / "GPU_BENCH.lock"` (= F:/COMFY_PORTABLE/GPU_BENCH.lock, arquivo que ninguem escreve; o
+# lock e F:/GPU_BENCH.lock) e procurava a chave `owner=` (o protocolo grava `dono=`): `_lock()`
+# respondia "livre" SEMPRE, e a trava de uma conversao real nunca disparava (revisao 2026-09-29).
+# Variavel de modulo para que o teste aponte para um arquivo temporario.
+LOCK_PATH = gpu_lock.LOCK_PATH
+
 PROTOCOLO = "2025-06-18"
 SESSOES: dict[str, dict] = {}
 PERMITIR_ESCRITA = False
@@ -227,12 +236,30 @@ def _como_medir_pt() -> str:
 
 
 def _lock() -> dict:
-    f = RAIZ / "GPU_BENCH.lock"
-    if not f.is_file():
-        return {"livre": True}
-    txt = f.read_text(encoding="utf-8", errors="replace")
-    d = dict(re.findall(r"^(\w+)=(.*)$", txt, re.M))
-    return {"livre": False, "dono": d.get("owner", "?"), "pid": d.get("pid", "?"), "cru": txt[:400]}
+    """Estado do lock da GPU, sem tomar nada. `read_state` devolve {} quando o arquivo existe mas
+    nao pode ser lido -- isso conta como OCUPADO, nunca como livre."""
+    estado = gpu_lock.read_state(LOCK_PATH)
+    if estado is None:
+        return {"livre": True, "caminho": str(LOCK_PATH)}
+    return {"livre": False, "caminho": str(LOCK_PATH),
+            "dono": estado.get("dono") or "?", "pid": estado.get("pid") or "?",
+            "descricao": gpu_lock.describe(estado)}
+
+
+def _toma_lock(subcomando: str) -> tuple["gpu_lock.GpuLock | None", dict | None]:
+    """Toma o lock para uma conversao real, ou devolve a recusa. Tomar (criacao exclusiva do
+    arquivo) em vez de olhar-e-depois-agir: entre olhar "livre" e comecar, outro job podia entrar.
+    O lock fica com o pid DESTE servidor, com heartbeat, ate o subprocesso terminar."""
+    trava = gpu_lock.GpuLock(f"bench_server:{subcomando}", path=LOCK_PATH)
+    try:
+        trava.__enter__()
+    except gpu_lock.GpuLockBusy:
+        estado = _lock()
+        return None, {"recusado": True,
+                      "porque": f"O lock da GPU esta ocupado ({estado.get('descricao', '?')}). "
+                                "Uma conversao disputaria a placa com quem esta medindo. Espere "
+                                "ou fale com o dono do lock."}
+    return trava, None
 
 
 # ------------------------------------------------------------------ conversao de verdade
@@ -332,13 +359,11 @@ def _converter(a: dict) -> dict:
                           "gigabytes, e isso nao deve comecar porque alguem clicou.",
                 "linha_de_comando": " ".join(argv[2:])}
 
-    lock = _lock()
-    if not seco and not lock["livre"]:
-        return {"recusado": True,
-                "porque": f"O lock da GPU esta com {lock['dono']!r} (pid {lock['pid']}). "
-                          "Uma conversao disputaria a placa com quem esta medindo. Espere ou "
-                          "fale com o dono do lock.",
-                "linha_de_comando": " ".join(argv[2:])}
+    trava = None
+    if not seco:
+        trava, recusa = _toma_lock(subcomando)
+        if recusa is not None:
+            return {**recusa, "linha_de_comando": " ".join(argv[2:])}
 
     tid = uuid.uuid4().hex[:12]
     TRABALHOS[tid] = {"id": tid, "subcomando": subcomando, "seco": seco,
@@ -363,8 +388,17 @@ def _converter(a: dict) -> dict:
             t["estado"] = "falhou"
             t["saida"].append(f"{type(exc).__name__}: {exc}")
             t["codigo"] = -1
+        finally:
+            # So depois de o subprocesso ter terminado (proc.wait acima) ou de nunca ter subido.
+            if trava is not None:
+                trava.__exit__(None, None, None)
 
-    asyncio.get_running_loop().create_task(roda())
+    try:
+        asyncio.get_running_loop().create_task(roda())
+    except BaseException:
+        if trava is not None:
+            trava.__exit__(None, None, None)
+        raise
     return {"id": tid, "estado": "rodando", "seco": seco,
             "linha_de_comando": " ".join(argv[2:]),
             "como_acompanhar": f"estado_do_trabalho com id={tid}"}

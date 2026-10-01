@@ -34,10 +34,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import time
+import sys
 import urllib.error
-import urllib.request
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import comfy_client as cc  # noqa: E402
 
 
 def monta_prompt(a) -> dict:
@@ -109,47 +111,19 @@ def monta_prompt(a) -> dict:
     return g
 
 
-def portas_worker(raiz: Path) -> list[str]:
-    """Ver tools/ltx_video.py: com os workers do MultiGPU ligados o resultado cai no /history
-    DELES e o do servidor principal fica vazio, o que e indistinguivel de 'nunca comecou'."""
-    portas = []
-    d = raiz / "ComfyUI" / "logs" / "mgpu-workers"
-    for log in sorted(d.glob("gpu-*.log")) if d.is_dir() else []:
-        try:
-            texto = log.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        for pedaco in texto.split("http://127.0.0.1:")[1:]:
-            porta = pedaco.split()[0].split("/")[0].strip(",)")
-            if porta.isdigit() and porta not in portas:
-                portas.append(porta)
-    return portas
-
-
-def roda(a, base: str, raiz: Path) -> dict:
-    dados = json.dumps({"prompt": monta_prompt(a)}).encode()
-    req = urllib.request.Request(f"{base}/prompt", data=dados,
-                                 headers={"Content-Type": "application/json"})
+def roda(a, base: str) -> dict:
+    """Submete e espera pelo cliente canonico (`comfy_client`), que consulta tambem o /history dos
+    workers do ComfyUI-MultiGPU. Ate 2026-09-29 havia aqui uma copia de `posta`/`portas_worker`/
+    `espera` de `ltx_video.py`, achando workers pelos logs em vez da linha de comando."""
     try:
-        with urllib.request.urlopen(req, timeout=120) as r:
-            pid = json.load(r)["prompt_id"]
-    except urllib.error.HTTPError as e:
-        raise SystemExit(f"o servidor RECUSOU o grafo ({e.code}):\n"
-                         f"{e.read().decode('utf-8', 'replace')[:1800]}") from None
-
-    bases = [base] + [f"http://127.0.0.1:{p}" for p in portas_worker(raiz)]
-    t0 = time.time()
-    while time.time() - t0 < a.limite:
-        for b in bases:
-            try:
-                with urllib.request.urlopen(f"{b}/history/{pid}", timeout=60) as r:
-                    h = json.load(r)
-            except Exception:  # noqa: BLE001
-                continue
-            if pid in h:
-                return {"saida": h[pid], "segundos": time.time() - t0, "onde": b}
-        time.sleep(4)
-    raise SystemExit(f"passou de {a.limite}s sem terminar")
+        e = cc.run_and_wait(cc.Comfy(base), monta_prompt(a), a.limite, poll_s=4.0)
+    except urllib.error.HTTPError as exc:
+        raise SystemExit(f"o servidor RECUSOU o grafo ({exc.code}); detalhes acima") from None
+    except cc.PromptRefused as exc:
+        raise SystemExit(f"o servidor RECUSOU parte do grafo: {exc}") from None
+    except cc.PollTimeout:
+        raise SystemExit(f"passou de {a.limite}s sem terminar") from None
+    return {"saida": e.hist, "segundos": e.wall, "onde": e.onde, "entrada": e}
 
 
 def main() -> int:
@@ -190,7 +164,7 @@ def main() -> int:
     if a.lora:
         print(f"lora        : {a.lora} x{a.lora_strength} "
               f"({'bypass' if a.lora_bypass else 'fusao + requantizacao'})", flush=True)
-    r = roda(a, a.servidor, Path(__file__).resolve().parent.parent)
+    r = roda(a, a.servidor)
     imagens = [i.get("filename")
                for no in r["saida"].get("outputs", {}).values()
                for i in no.get("images", [])]
@@ -206,7 +180,9 @@ def main() -> int:
              "lora_bypass": bool(a.lora and a.lora_bypass),
              "segundos": r["segundos"], "arquivos": imagens,
              "distorch": a.distorch, "alocacao": a.alocacao if a.distorch else None,
-             "status": st}, indent=2), encoding="utf-8")
+             "status": st, "prompt_id": r["entrada"].pid,
+             "server_side_s": r["entrada"].server_side_s, "cache_hit": r["entrada"].cache_hit,
+             "onde": r["onde"], **cc.controles(cc.Comfy(a.servidor))}, indent=2), encoding="utf-8")
     return 0 if st == "success" else 1
 
 

@@ -31,6 +31,12 @@ padrao da literatura, usadas aqui como padrao da literatura. Todas comparam cont
 escolhida, entao dizem "quao longe do alvo", nunca "boa". Duas imagens podem estar igualmente longe
 por motivos diferentes. E imagem de trajetoria livre continua sendo o que ja foi medido que e: um
 teste de quebrou-ou-nao, e uma metrica melhor nao conserta a trajetoria ter divergido.
+
+COMO BIBLIOTECA (revisao 2026-09-29): `medir(x, r)` devolve as mesmas colunas que o `main` imprime,
+`identica(x, r)` compara pixels, `cria_lpips(politica)` decide se LPIPS baixa pesos, e
+`imagem_unica(pasta, prefixo)` acha a imagem de um prompt sem supor `_00001_` (um grafo rodado de
+novo grava `_00002_`, e ler `_00001_` fixo mede a imagem ANTIGA). Quatro scripts reimportavam o
+torchmetrics e recalculavam por conta propria, com politicas de LPIPS diferentes.
 """
 from __future__ import annotations
 
@@ -53,6 +59,83 @@ def grao(x: torch.Tensor) -> float:
     cinza = (0.299 * x[:, 0] + 0.587 * x[:, 1] + 0.114 * x[:, 2])[:, None]
     k = torch.tensor([[0., 1., 0.], [1., -4., 1.], [0., 1., 0.]])[None, None]
     return float(torch.nn.functional.conv2d(cinza, k, padding=1).std())
+
+
+VGG16_CACHE = Path.home() / ".cache/torch/hub/checkpoints/vgg16-397923af.pth"
+METRICAS = ("psnr", "ssim", "msssim", "grao")
+
+
+def identica(x: torch.Tensor, r: torch.Tensor) -> bool:
+    """Mesmos pixels. (O PNG leva o grafo nos metadados, entao bytes do arquivo sempre diferem.)"""
+    return x.shape == r.shape and bool(torch.equal(x, r))
+
+
+def sha_pixels(x: torch.Tensor) -> str:
+    import hashlib
+    return hashlib.sha256(x.numpy().tobytes()).hexdigest()
+
+
+def cria_lpips(politica: str = "nunca") -> tuple[object | None, str]:
+    """(fn, aviso). `nunca`: nao mede. `so_cache`: mede so se os pesos VGG16 ja estao em cache --
+    NUNCA baixa. `baixar`: pode baixar 528 MB (so com pedido explicito, ver docstring do modulo)."""
+    if politica not in ("nunca", "so_cache", "baixar"):
+        raise ValueError(f"politica de LPIPS desconhecida: {politica!r}")
+    if politica == "nunca" or (politica == "so_cache" and not VGG16_CACHE.is_file()):
+        return None, ("LPIPS nao medido. Ele exige VGG16 (528 MB)"
+                      + (", que JA esta em cache aqui." if VGG16_CACHE.is_file()
+                         else ", fora do cache; so --com-lpips baixa."))
+    try:
+        from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
+        fn = LearnedPerceptualImagePatchSimilarity(net_type="vgg", normalize=True)
+        fn.eval()
+        return fn, ""
+    except Exception as exc:  # noqa: BLE001
+        return None, f"LPIPS falhou ({type(exc).__name__}: {str(exc)[:140]})"
+
+
+def medir(x: torch.Tensor, r: torch.Tensor, lpips_fn=None, quais=METRICAS,
+          grao_ref: float | None = None) -> dict:
+    """As metricas de `x` contra a referencia `r`, na ordem de `quais` (+ `lpips` se `lpips_fn`).
+    Levanta ValueError se as formas diferem -- medir imagens de tamanhos diferentes nao e uma
+    distancia, e um erro de quem montou a comparacao."""
+    if x.shape != r.shape:
+        raise ValueError(f"forma diferente da referencia: {tuple(x.shape)} contra {tuple(r.shape)}")
+    from torchmetrics.functional.image import (
+        multiscale_structural_similarity_index_measure as msssim,
+        peak_signal_noise_ratio as psnr,
+        structural_similarity_index_measure as ssim,
+    )
+    calc = {"psnr": lambda: float(psnr(x, r, data_range=1.0)),
+            "ssim": lambda: float(ssim(x, r, data_range=1.0)),
+            "msssim": lambda: float(msssim(x, r, data_range=1.0)),
+            "grao": lambda: grao(x) / (grao_ref if grao_ref is not None else grao(r))}
+    v = {m: calc[m]() for m in quais}
+    if lpips_fn is not None:
+        with torch.no_grad():
+            v["lpips"] = float(lpips_fn(x.clamp(0, 1), r.clamp(0, 1)))
+    return v
+
+
+def _sha_arquivo_pixels(p: Path) -> str:
+    import hashlib
+    return hashlib.sha256(np.asarray(Image.open(p).convert("RGB")).tobytes()).hexdigest()
+
+
+def imagem_unica(pasta: Path, prefixo: str) -> Path:
+    """A imagem `<prefixo>_NNNNN_.png` de `pasta`, sem supor o contador.
+
+    Uma: devolve. Nenhuma: FileNotFoundError. Varias (o grafo rodou de novo): se todas tem os
+    MESMOS pixels, tanto faz qual -- devolve a de maior contador; se diferem, ValueError, porque
+    escolher uma seria escolher o resultado. Quem tem o JSONL do executor deve usar os `files`
+    dele em vez disto."""
+    achadas = sorted(Path(pasta).glob(f"{prefixo}_[0-9][0-9][0-9][0-9][0-9]_.png"))
+    if not achadas:
+        raise FileNotFoundError(f"nenhuma {prefixo}_NNNNN_.png em {pasta}")
+    if len(achadas) > 1 and len({_sha_arquivo_pixels(a) for a in achadas}) > 1:
+        raise ValueError(f"{len(achadas)} imagens DIFERENTES para {prefixo} em {pasta}: "
+                         + ", ".join(a.name for a in achadas)
+                         + " -- passe o JSONL do executor para saber qual e de qual execucao")
+    return achadas[-1]
 
 
 def main() -> int:
@@ -80,25 +163,10 @@ def main() -> int:
     if not imagens:
         raise SystemExit("nenhuma imagem para medir")
 
-    from torchmetrics.functional.image import (
-        multiscale_structural_similarity_index_measure as msssim,
-        peak_signal_noise_ratio as psnr,
-        structural_similarity_index_measure as ssim,
-    )
-
-    lpips_fn = None
-    aviso_lpips = ""
-    if a.com_lpips:
-        try:
-            from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
-            lpips_fn = LearnedPerceptualImagePatchSimilarity(net_type="vgg", normalize=True)
-            lpips_fn.eval()
-        except Exception as exc:  # noqa: BLE001
-            aviso_lpips = f"LPIPS falhou ({type(exc).__name__}: {str(exc)[:140]})"
-    else:
-        cache = Path.home() / ".cache/torch/hub/checkpoints/vgg16-397923af.pth"
+    lpips_fn, aviso_lpips = cria_lpips("baixar" if a.com_lpips else "nunca")
+    if not a.com_lpips:
         aviso_lpips = ("LPIPS nao medido. Passe --com-lpips para incluir; ele exige VGG16 (528 MB)"
-                       + (", que JA esta em cache aqui." if cache.is_file()
+                       + (", que JA esta em cache aqui." if VGG16_CACHE.is_file()
                           else ", e ele SERA BAIXADO na primeira vez."))
 
     r = carrega(ref)
@@ -117,15 +185,7 @@ def main() -> int:
         if x.shape != r.shape:
             print(f"{img.name[:46]:46} forma diferente da referencia, pulando")
             continue
-        v = {"nome": img.name,
-             "psnr": float(psnr(x, r, data_range=1.0)),
-             "ssim": float(ssim(x, r, data_range=1.0)),
-             "msssim": float(msssim(x, r, data_range=1.0)),
-             "grao": grao(x) / g_ref}
-        if lpips_fn is not None:
-            with torch.no_grad():
-                v["lpips"] = float(lpips_fn(x.clamp(0, 1), r.clamp(0, 1)))
-        linhas.append(v)
+        linhas.append({"nome": img.name, **medir(x, r, lpips_fn, grao_ref=g_ref)})
 
     for v in sorted(linhas, key=lambda z: -z["msssim"]):
         s = (f"{v['nome'][:46]:46} {v['psnr']:7.2f} {v['ssim']:7.4f} "

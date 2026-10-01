@@ -72,6 +72,22 @@ class Qwen21NunchakuPatcher(comfy.model_patcher.ModelPatcher):
         self.load(device_to)
         return self.model_size()
 
+    # `load` acima nao aplica patches de peso: uma LoRA seria aceita (nas camadas BF16 que casam) e ignorada
+    # sem aviso. Recusar e' o comportamento honesto enquanto LoRA nao for suportado.
+    def add_patches(self, patches, strength_patch=1.0, strength_model=1.0):
+        if patches:
+            raise RuntimeError("Qwen-Image 2.1 Nunchaku INT4: LoRA/patches de peso nao sao suportados "
+                               "(o carregamento inteiro para a placa nao os aplica)")
+        return []
+
+    def add_hook_patches(self, hook, patches, strength_patch=1.0, strength_model=1.0):
+        if patches:
+            raise RuntimeError("Qwen-Image 2.1 Nunchaku INT4: patches de peso por hook nao sao suportados")
+        return []
+
+    def add_weight_wrapper(self, name, function):
+        raise RuntimeError("Qwen-Image 2.1 Nunchaku INT4: wrappers de peso nao sao suportados")
+
 
 class Qwen21NunchakuLoader:
     @classmethod

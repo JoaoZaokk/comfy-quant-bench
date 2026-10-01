@@ -13,7 +13,8 @@ Então há três transplantes, a partir de um PTQ (A) e de um braço treinado (B
 CONTROLE OBRIGATÓRIO (C0): o mesmo construtor, pedido "códigos de X · escalas de X" para X = A e X = B,
 tem de reproduzir X byte a byte em todo tensor de corpo. Se falhar, nenhum arquivo é escrito.
 
-Escrita em streaming (.partial + fsync + os.replace), um tensor por vez, sem safe_open (2x commit aqui).
+Escrita em streaming pelo nucleo `_conversion` (.partial exclusivo + fsync + os.replace), um tensor por
+vez, sem safe_open (2x commit aqui); uma passada por variante.
 O cabeçalho é o do braço B (mesmos nomes, dtypes, formas e offsets). Corpo = 2-D dentro das pilhas de
 blocos (a mesma regra de compara_codigos_bonsai); grupos no eixo K, então BFL fundido serve.
 
@@ -22,16 +23,15 @@ NÃO COBRE: nenhuma imagem. T2 usa a escala de B, que é ótima para os códigos
 from __future__ import annotations
 
 import argparse
-import json
-import os
-import struct
 import sys
 from pathlib import Path
 
 import torch
 
 sys.path.insert(0, str(Path(__file__).parent))
-from compara_codigos_bonsai import BLOCO, Leitor, pilhas_reais  # noqa: E402
+import _conversion as C  # noqa: E402
+from compara_codigos_bonsai import Leitor  # noqa: E402
+from lowbit_canon import BLOCO, pilhas_reais  # noqa: E402  (fonte canônica)
 
 G = 128
 
@@ -107,32 +107,46 @@ def main() -> int:
     }
     saidas = {t: v for t, v in saidas.items() if t in a.variantes}
     ordem = sorted(B.h, key=lambda k: B.h[k]["data_offsets"][0])
-    arqs = {}
-    for t, (desc, _) in saidas.items():
+    # Pelo nucleo desde 2026-09-29 (revisao, achado 2). A escrita a mao abria os tres `.partial` em
+    # "wb" depois de um `exists()` (janela de corrida), conferia tamanho com `assert` (que some com
+    # `-O`) e deixava os parciais no disco se falhasse no meio. Custo da troca: cada variante e uma
+    # passada propria sobre A e B, em vez de uma passada escrevendo as tres ao mesmo tempo.
+    convs = {}
+    for t in saidas:
         dest = a.dir / f"klein4b_transp_{t}_{a.rotulo_b}_bfl.safetensors"
-        if dest.exists() or dest.with_suffix(".safetensors.partial").exists():
-            print(f"RECUSADO: {dest} ja existe", file=sys.stderr)
+        conv = C.Conversion(Path(a.b), dest)
+        try:
+            conv.refuse_unsafe(allow_quantized_source=True)
+        except SystemExit as exc:
+            print(f"RECUSADO: {exc}", file=sys.stderr)
             return 2
-        hd = dict(B.h)
-        hd["__metadata__"] = {"transplante": desc, "a": str(a.a), "b": str(a.b)}
-        hb = json.dumps(hd, separators=(",", ":")).encode()
-        hb += b" " * (-len(hb) % 8)
-        f = dest.with_suffix(".safetensors.partial").open("wb")
-        f.write(struct.pack("<Q", len(hb)) + hb)
-        arqs[t] = (f, dest)
-    for i, k in enumerate(ordem):
-        xa = A.get(k) if k in corpo else None
-        xb = B.get(k) if k in corpo else None
-        for t, (_, fn) in saidas.items():
+        convs[t] = conv
+
+    def produtor(fn, k: str):
+        def produz() -> torch.Tensor:
+            xa = A.get(k) if k in corpo else None
+            xb = B.get(k) if k in corpo else None
             by = fn(k, xa, xb)
-            assert len(by) == B.h[k]["data_offsets"][1] - B.h[k]["data_offsets"][0], (t, k)
-            arqs[t][0].write(by)
-        if i % 30 == 0:
-            print(f"  {i}/{len(ordem)}", flush=True)
-    for t, (f, dest) in arqs.items():
-        f.flush(); os.fsync(f.fileno()); f.close()
-        os.replace(dest.with_suffix(".safetensors.partial"), dest)
-        print(f"escrito {dest}  {dest.stat().st_size:,} B  ({saidas[t][0]})")
+            return torch.frombuffer(bytearray(by), dtype=C.TORCH_DTYPES[B.h[k]["dtype"]]).reshape(B.h[k]["shape"])
+        return produz
+
+    for t, (desc, fn) in saidas.items():
+        conv = convs[t]
+        entradas = [C.plan_lazy(k, B.h[k]["dtype"], B.h[k]["shape"],
+                                B.h[k]["data_offsets"][1] - B.h[k]["data_offsets"][0], produtor(fn, k))
+                    for k in ordem]
+        meta = {"transplante": desc, "a": str(a.a), "b": str(a.b)}
+
+        def progresso(i: int, _n: int, _k: str) -> None:
+            if (i - 1) % 30 == 0:
+                print(f"  {t} {i - 1}/{len(ordem)}", flush=True)
+
+        conv.guard(conv.planned_size(entradas, meta))
+        # O cabecalho e o do braco B (mesmos nomes, dtypes, formas e offsets); este script sempre
+        # gravou o `__metadata__` DEPOIS dos tensores e com o `json.dumps` padrao -- mantido, para
+        # a saida sair byte a byte igual a de antes.
+        conv.commit(entradas, meta, progress=progresso, metadata_last=True, ensure_ascii=True)
+        print(f"escrito {conv.output}  {conv.output.stat().st_size:,} B  ({desc})")
     print("\n=== NAO COBERTO ===\n  Nenhuma imagem. T2 usa a escala de B, otima para os codigos de B, nao os de A.")
     return 0
 

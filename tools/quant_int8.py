@@ -21,6 +21,8 @@ SM 8.6, so it runs natively on Ampere; nvfp4 and mxfp8 do not.
 
 Same safety rules as the other converters: streaming writes, atomic replace, refuses to overwrite a
 source, an existing output, a stale partial, or to requantize an already-quantized checkpoint.
+The `.quant.json` is placed together with the model inside the atomic commit, and each layer is
+quantized inside the write loop (one tensor in memory at a time).
 
     python tools/quant_int8.py --input ltx-2.5-...-bf16.safetensors --convrot --dry-run
 """
@@ -29,32 +31,18 @@ from __future__ import annotations
 
 import argparse
 import importlib.metadata
-import json
-import os
-import shutil
-import struct
 import sys
 import time
 from pathlib import Path
 
-import psutil
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import _conversion as C  # noqa: E402
-
+import _formats as F  # noqa: E402
 from _native_probe import native_backend_ready  # noqa: E402
-from quant_w4a8 import (  # noqa: E402
-    HIGH_PRECISION_DTYPES,
-    PROFILE_PATTERNS,
-    SAFETENSORS_DTYPE,
-    copy_range,
-    detect_profile,
-    human_size,
-    read_header,
-    read_tensor,
-)
+from _profiles import HIGH_PRECISION_DTYPES, PROFILE_PATTERNS, detect_profile, select_layers  # noqa: E402,F401
 
 
 def parse_args() -> argparse.Namespace:
@@ -75,21 +63,14 @@ def parse_args() -> argparse.Namespace:
 
 
 def selected_layers(header: dict, profile: str, convrot: bool, groupsize: int) -> list[str]:
-    pattern = PROFILE_PATTERNS[profile]
-    out = []
-    for name, info in header.items():
-        shape = info["shape"]
-        if not (pattern.fullmatch(name) and info["dtype"] in HIGH_PRECISION_DTYPES
-                and len(shape) == 2):
-            continue
-        # Rotation needs K divisible by the Hadamard size; plain int8 has no such constraint.
-        if convrot and shape[1] % groupsize:
-            continue
-        out.append(name)
-    return out
+    return select_layers(header, profile, F.Int8Tensorwise(convrot, groupsize).accepts)
 
 
 def quantize(weight: torch.Tensor, convrot: bool, groupsize: int):
+    """(qdata, scale) crus do comfy-kitchen, como sempre -- `quant_misto_w4a8_int8` importa isto.
+
+    O caminho de escrita deste arquivo usa `_formats.Int8Tensorwise`, que chama exatamente o mesmo.
+    """
     from comfy_kitchen.backends.eager import quantization as eager
     import comfy_kitchen as ck
 
@@ -157,9 +138,7 @@ def main() -> int:
     # natively or fall back silently. `--convrot` is the only mode that goes through the
     # registry at all (see quantize() and int8_probe_ops() above), so that is what gets
     # checked; `--no-convrot` is unconditionally eager by this file's own design and prints why
-    # instead of pretending to preflight a path that never touches the registry. Both branches
-    # below are unchanged by the ticket-05 consolidation: the exemption is deliberate and stays
-    # an exemption, and the `--convrot` branch keeps refusing on exactly the same condition.
+    # instead of pretending to preflight a path that never touches the registry.
     backend = None
     if args.device == "cuda":
         if args.convrot:
@@ -176,74 +155,47 @@ def main() -> int:
                   "preflight applies here.")
 
     started = time.perf_counter()
+    fmt = F.Int8Tensorwise(args.convrot, args.convrot_groupsize)
+    formats = {name: fmt for name in selected}
+    out_meta = F.quant_metadata(metadata, F.layer_configs(formats),
+                                f"int8_tensorwise{'+convrot' if args.convrot else ''}")
 
-    selected_set = set(selected)
-    # Two-pass design, not streaming. The old `largest * 3 + 2 GiB` came from quant_w4a4.py and
-    # is the worst offender here: measured at 2.375 GiB asked against 19.144 GiB accumulated on
-    # LTX-2.5, an 8.1x understatement. A guard that passes and then thrashes is worse than none.
-    from _ram_guard import int8_bytes
+    with conv.tensors() as fonte:
+        def peso(name: str) -> torch.Tensor:
+            # FP32 na entrada (26/09): em BF16 a rotacao muda ~8% dos codigos; a Comfy-Org quantiza
+            # do FP32 (99,99999% dos codigos iguais aos dela com FP32, 91% com BF16).
+            return fonte[name].to(args.device, torch.float32)
 
-    accumulated = sum(int8_bytes(*header[n]["shape"]) for n in selected)
-    conv.guard(source.stat().st_size, accumulated=accumulated, label="INT8 conversion")
+        # Transmite desde 2026-09-29. Antes: duas passadas, com a guarda de RAM medida em 2,375
+        # GiB pedidos contra 19,144 GiB acumulados no LTX-2.5 (8,1x).
+        entradas = F.plan_model(header, formats, peso, None)
+        conv.guard(conv.planned_size(entradas, out_meta),
+                   accumulated=F.streaming_peak(header, selected), label="INT8 conversion")
 
-    quantized: dict[str, dict] = {}
-    with source.open("rb") as handle:
-        data_start = 8 + struct.unpack("<Q", handle.read(8))[0]
-        for index, name in enumerate(selected, 1):
-            info = header[name]
-            start, end = info["data_offsets"]
-            weight = read_tensor(handle, data_start + start, end - start,
-                                 info["dtype"], info["shape"]).to(args.device, torch.float32)
-            # FP32 na entrada (26/09): em BF16 a rotacao muda ~8% dos codigos; a Comfy-Org quantiza do FP32
-            # (99,99999% dos codigos iguais aos dela com FP32, 91% com BF16).
-            qdata, scale = quantize(weight, args.convrot, args.convrot_groupsize)
-            quantized[name] = {"qdata": qdata.cpu().contiguous(),
-                               "scale": scale.cpu().contiguous().float()}
-            del weight, qdata, scale
-            if args.device == "cuda":
-                torch.cuda.empty_cache()
-            if index % 120 == 0 or index == len(selected):
-                print(f"[{index}/{len(selected)}] quantized", flush=True)
+        def progresso(indice: int, total: int, chave: str) -> None:
+            if chave in formats and (indice % 120 == 0 or indice == total):
+                print(f"[{indice}/{total}] quantized", flush=True)
 
-    layers = {name.removesuffix(".weight"): {"format": "int8_tensorwise",
-                                             **({"convrot": True,
-                                                 "convrot_groupsize": args.convrot_groupsize}
-                                                if args.convrot else {})}
-              for name in selected}
-    output_metadata = dict(metadata)
-    output_metadata["_quantization_metadata"] = json.dumps(
-        {"format_version": "1.0", "layers": layers}, separators=(",", ":"))
-    output_metadata["quantization"] = f"int8_tensorwise{'+convrot' if args.convrot else ''}"
+        def manifesto() -> dict:
+            return {
+                "source": str(source), "source_size": source.stat().st_size,
+                "output": str(output), "output_size": conv.output_size,
+                "architecture": profile,
+                "quantization": f"int8_tensorwise{'+convrot' if args.convrot else ''}",
+                "convrot": args.convrot, "convrot_groupsize": args.convrot_groupsize,
+                "quantized_tensors": len(selected), "preserved_tensors": len(header) - len(selected),
+                "quantized_on": args.device,
+                # None on the CPU path and on --no-convrot, both of which skip the probe by design.
+                "backend": backend["resolved"]["quantize_int8_convrot_weight"] if backend else None,
+                "comfy_kitchen_version": importlib.metadata.version("comfy-kitchen"),
+                "torch_version": torch.__version__,
+                "conversion_seconds": round(time.perf_counter() - started, 3),
+            }
 
-    # A chave da escala aqui e `{name}_scale`, com sublinhado e SEM ponto -- diferente do
-    # `.weight_scale` do w4a4 e do `.weight_s_rel` do w4a8. Preservada exatamente como estava.
-    entradas = []
-    for name, info in header.items():
-        if name not in selected_set:
-            entradas.append(C.plan_copy(name, info))
-            continue
-        entry = quantized[name]
-        entradas.append(C.plan_write(name, entry["qdata"]))
-        entradas.append(C.plan_write(f"{name}_scale", entry["scale"]))
-
-    conv.commit(entradas, output_metadata)
+        conv.commit(entradas, out_meta, progress=progresso, sidecar=manifesto)
 
     elapsed = time.perf_counter() - started
-    sidecar.write_text(json.dumps({
-        "source": str(source), "source_size": source.stat().st_size,
-        "output": str(output), "output_size": output.stat().st_size,
-        "architecture": profile,
-        "quantization": f"int8_tensorwise{'+convrot' if args.convrot else ''}",
-        "convrot": args.convrot, "convrot_groupsize": args.convrot_groupsize,
-        "quantized_tensors": len(selected), "preserved_tensors": len(header) - len(selected),
-        "quantized_on": args.device,
-        # None on the CPU path and on --no-convrot, both of which skip the probe by design.
-        "backend": backend["resolved"]["quantize_int8_convrot_weight"] if backend else None,
-        "comfy_kitchen_version": importlib.metadata.version("comfy-kitchen"),
-        "torch_version": torch.__version__,
-        "conversion_seconds": round(elapsed, 3),
-    }, indent=2), encoding="utf-8")
-    print(f"Wrote {output} ({human_size(output.stat().st_size)}) in {elapsed / 60:.1f} min")
+    print(f"Wrote {output} ({C.human_size(output.stat().st_size)}) in {elapsed / 60:.1f} min")
     print(f"Wrote {sidecar}")
     return 0
 

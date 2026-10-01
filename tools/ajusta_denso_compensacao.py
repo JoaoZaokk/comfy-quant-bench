@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -67,22 +66,15 @@ import comfy.sample
 import comfy.sd
 import folder_paths
 
-BLOCO = re.compile(r"^(?P<pilha>[A-Za-z_][\w.]*?)\.(?P<i>\d+)\.")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lowbit_canon import BLOCO, pilhas_reais  # fonte canonica
+
 PROMPTS = [
     "a red apple on a weathered wooden table, soft window light",
     "a portrait of an elderly fisherman, deep wrinkles, overcast light",
     "a neon-lit night market in the rain, puddles reflecting signs",
     "a single ice crystal on dark slate, macro, fine internal structure",
 ]
-
-
-def pilhas_reais(nomes) -> set[str]:
-    ind: dict[str, set[str]] = {}
-    for k in nomes:
-        m = BLOCO.match(k)
-        if m:
-            ind.setdefault(m.group("pilha"), set()).add(m.group("i"))
-    return {n for n, i in ind.items() if len(i) >= 2}
 
 
 def nomes_densos(sd_chaves) -> list[str]:

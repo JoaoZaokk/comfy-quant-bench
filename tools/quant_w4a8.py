@@ -17,78 +17,37 @@ correction silently dropped and decode wrong.
 
 Same safety rules as quant_w4a4.py: streaming writes, atomic replace, refuses to overwrite a
 source or an existing output, and refuses to run when normal ComfyUI would not pick the CUDA backend.
+
+Transmite desde 2026-09-29: ate ali este conversor quantizava o modelo inteiro num dict antes de
+escrever ("as formas saem do kernel"), o que exigia uma guarda de RAM propria -- medida em 10,777
+GiB acumulados contra 2,375 GiB pedidos pela heuristica de streaming. As formas sao analiticas
+(`_formats.AsymW4A8.tensors`); agora o pico e um tensor por vez.
 """
 
 from __future__ import annotations
 
 import argparse
 import importlib.metadata
-import json
-import os
-import re
-import shutil
-import struct
 import sys
 import time
 from pathlib import Path
 
-import psutil
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import _conversion as C  # noqa: E402
-
+import _formats as F  # noqa: E402
 from _native_probe import native_backend_ready  # noqa: E402
+from _profiles import (  # noqa: E402,F401  (re-exportados para scripts antigos)
+    HIGH_PRECISION_DTYPES,
+    PROFILE_PATTERNS,
+    detect_profile,
+    is_qwen_image21,
+    select_layers,
+)
 
-PROFILE_PATTERNS = {
-    # Derived from Lightricks' own ltx-2.5-...-comfy-int8-convrot checkpoint rather than guessed:
-    # this pattern selects exactly the 1440 Linears they quantized, with no false positives and no
-    # false negatives against their shipped `comfy_quant` markers. What they leave out is as
-    # informative as what they include -- 304 `to_gate_logits`, every adaLN/timestep embedder, and
-    # the patchify/proj_out pair stay in full precision, the same principle as this file's
-    # hunyuan_video_15 profile preserving `*_mod.linear`.
-    #
-    # Note they ship int8 weights, not int4. Converting the same layers to W4A8 is strictly more
-    # aggressive than what Lightricks considered safe, so A/B it before trusting the output.
-    "ltx_2_5": re.compile(
-        r"^(?:model\.diffusion_model\.)?"
-        r"(?:"
-        r"transformer_blocks\.\d+\."
-        r"(?:"
-        r"(?:audio_)?attn\d+\.(?:to_[qkv]|to_out\.\d+)"
-        r"|(?:audio_to_video|video_to_audio)_attn\.(?:to_[qkv]|to_out\.\d+)"
-        r"|(?:audio_)?ff\.net\.\d+(?:\.proj)?"
-        r")"
-        r"|(?:audio|video)_embeddings_connector\.transformer_\d+d_blocks\.\d+\."
-        r"(?:attn\d+\.(?:to_[qkv]|to_out\.\d+)|ff\.net\.\d+(?:\.proj)?)"
-        r")\.weight$"
-    ),
-    "hunyuan_video_15": re.compile(
-        r"^double_blocks\.\d+\.(?:(?:img|txt)_attn_(?:qkv|proj)|(?:img|txt)_mlp\.fc[12])\.weight$"
-    ),
-    # Qwen-Image-2.1 single-stream DiT. Derived from Comfy-Org's own int8-convrot and NidAll's mixed
-    # checkpoints (26/09): both quantize exactly these 6 Linears per block (192), and keep img_in,
-    # txt_in, modulation, the timestep embedder, norm_out and proj_out in BF16. Matches the fused
-    # Comfy-Org layout (img_mlp.gate_up) and the diffusers one (img_mlp.proj + img_mlp.gate_layer).
-    "qwen_image21": re.compile(
-        r"^transformer_blocks\.\d+\.(?:attn\.(?:to_[qkv]|to_out\.0)|img_mlp\.(?:gate_up|proj|gate_layer|out))\.weight$"
-    ),
-    "gemma": re.compile(
-        r"^model\.layers\.\d+\.(?:self_attn\.(?:q_proj|k_proj|v_proj|o_proj)|mlp\.(?:gate_proj|up_proj|down_proj))\.weight$"
-    ),
-    "qwen": re.compile(
-        r"^model\.layers\.\d+\.(?:self_attn\.(?:q_proj|k_proj|v_proj|o_proj)|mlp\.(?:gate_proj|up_proj|down_proj))\.weight$"
-    ),
-    # Qwen3-VL as a text encoder. Same decoder one segment deeper -- `model.language_model.layers.N`
-    # -- because a vision tower sits beside it, which is why the `qwen` pattern matches ZERO layers
-    # on this file.
-    "qwen3vl": re.compile(
-        r"^model\.language_model\.layers\.\d+\.(?:self_attn\.(?:q_proj|k_proj|v_proj|o_proj)|mlp\.(?:gate_proj|up_proj|down_proj))\.weight$"
-    ),
-}
-HIGH_PRECISION_DTYPES = {"BF16", "F16", "F32"}
-TORCH_DTYPES = {"BF16": torch.bfloat16, "F16": torch.float16, "F32": torch.float32}
+QUANTIZATION = "asym_w4a8_int8"
 
 
 def parse_args() -> argparse.Namespace:
@@ -101,15 +60,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-codebook", action="store_true", help="skip the Lloyd-Max codebook")
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
-
-
-def human_size(size: int) -> str:
-    value = float(size)
-    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
-        if value < 1024 or unit == "TiB":
-            return f"{value:.2f} {unit}"
-        value /= 1024
-    raise AssertionError
 
 
 def w4a8_probe_ops(args: argparse.Namespace) -> dict:
@@ -134,127 +84,8 @@ def w4a8_probe_ops(args: argparse.Namespace) -> dict:
     }
 
 
-def read_header(path: Path) -> tuple[dict, dict[str, str]]:
-    with path.open("rb") as handle:
-        header_size = struct.unpack("<Q", handle.read(8))[0]
-        raw = json.loads(handle.read(header_size))
-    metadata = dict(raw.pop("__metadata__", {}) or {})
-    header = {
-        name: {"dtype": i["dtype"], "shape": list(i["shape"]), "data_offsets": list(i["data_offsets"])}
-        for name, i in raw.items()
-    }
-    return header, metadata
-
-
-def is_qwen_image21(name_set: set[str]) -> bool:
-    """The same keys `comfy.model_detection` uses for image_model == "qwen_image21"."""
-    return ({"txt_in.text_norm.weight", "modulation.1.weight", "transformer_blocks.0.attn.norm_q.weight",
-             "img_in.weight", "proj_out.weight"} <= name_set
-            and bool({"transformer_blocks.0.img_mlp.gate_up.weight",
-                      "transformer_blocks.0.img_mlp.proj.weight"} & name_set))
-
-
-def detect_profile(path: Path, names: list[str]) -> str:
-    name_set = set(names)
-    # LTX-2.5 is the only architecture here with paired audio<->video cross-attention next to a
-    # separate embeddings connector stack, so those two keys identify it without the file name.
-    for prefix in ("", "model.diffusion_model."):
-        if {f"{prefix}transformer_blocks.0.audio_to_video_attn.to_q.weight",
-                f"{prefix}video_embeddings_connector.transformer_1d_blocks.0.attn1.to_q.weight"} <= name_set:
-            return "ltx_2_5"
-    if {"txt_in.individual_token_refiner.blocks.0.norm1.weight",
-            "double_blocks.0.img_attn_qkv.weight"} <= name_set:
-        return "hunyuan_video_15"
-    if is_qwen_image21(name_set):
-        return "qwen_image21"
-    lowered = path.name.lower()
-    if "qwen" in lowered and any(n.startswith("model.language_model.layers.") for n in names):
-        return "qwen3vl"
-    for profile in ("gemma", "qwen"):
-        if profile in lowered and any(n.startswith("model.layers.") for n in names):
-            return profile
-    raise ValueError("auto-detection found no supported profile; pass --profile explicitly")
-
-
 def selected_layers(header: dict, profile: str, group_size: int, convrot_groupsize: int) -> list[str]:
-    pattern = PROFILE_PATTERNS[profile]
-    out = []
-    for name, info in header.items():
-        shape = info["shape"]
-        if not (pattern.fullmatch(name) and info["dtype"] in HIGH_PRECISION_DTYPES and len(shape) == 2):
-            continue
-        k = shape[1]
-        # mirrors AsymW4A8Int8Layout.Params._validate_tensor_fields
-        if k % 16 or k % group_size or k % convrot_groupsize:
-            continue
-        if group_size < 4 or (16 % group_size and group_size % 16):
-            continue
-        out.append(name)
-    return out
-
-
-def read_tensor(handle, start: int, size: int, dtype: str, shape: list[int]) -> torch.Tensor:
-    handle.seek(start)
-    raw = bytearray(size)
-    view = memoryview(raw)
-    position = 0
-    while position < size:
-        count = handle.readinto(view[position:])
-        if not count:
-            raise EOFError(f"unexpected end of source, {size - position} bytes short")
-        position += count
-    return torch.frombuffer(raw, dtype=TORCH_DTYPES[dtype]).reshape(shape)
-
-
-def header_dtype(tensor: torch.Tensor) -> str:
-    """Safetensors header dtype name for `tensor`.
-
-    Both fp8 formats travel as raw U8 -- matching how comfy/ops.py reads weight_s_rel and
-    weight_codebook back (module docstring above: "fp8 stored as u8"). Before this fix only
-    weight_s_rel's float8_e4m3fn got that treatment in the write loop below; a float8_e5m2
-    tensor would have hit `SAFETENSORS_DTYPE[torch.float8_e5m2]` -> KeyError, the exact gap
-    as_bytes() existed to close and was never wired in to actually close (ticket 24).
-    """
-    if tensor.dtype in (torch.float8_e4m3fn, torch.float8_e5m2):
-        return "U8"
-    return SAFETENSORS_DTYPE[tensor.dtype]
-
-
-def as_bytes(tensor: torch.Tensor) -> memoryview:
-    """Raw byte view of `tensor`, ready for a file's .write().
-
-    torch.Tensor.numpy() raises TypeError for bfloat16 and for both float8 dtypes --
-    EXECUTED against this embedded torch (2026-08-21, python_embeded, CPU, no GPU touched):
-    `torch.zeros(4, dtype=torch.bfloat16).numpy()` raises "Got unsupported ScalarType
-    BFloat16", and float8_e5m2 fails the same way; viewing through int16 (bf16) or uint8
-    (fp8) first, as done below, makes numpy() succeed. Every other dtype this converter
-    writes (I8, U8, I16, F32, F16) already supports numpy() directly. Matches header_dtype()'s
-    labelling above: fp8 -> uint8 bytes, bfloat16 keeps its own header entry but travels as
-    int16 bytes.
-    """
-    tensor = tensor.detach().cpu().contiguous()
-    if tensor.dtype in (torch.float8_e4m3fn, torch.float8_e5m2):
-        tensor = tensor.view(torch.uint8)
-    elif tensor.dtype == torch.bfloat16:
-        tensor = tensor.view(torch.int16)
-    return memoryview(tensor.numpy()).cast("B")
-
-
-SAFETENSORS_DTYPE = {
-    torch.int8: "I8", torch.uint8: "U8", torch.int16: "I16",
-    torch.float32: "F32", torch.float16: "F16", torch.bfloat16: "BF16",
-}
-
-
-def copy_range(source_handle, output_handle, start: int, size: int) -> None:
-    source_handle.seek(start)
-    remaining = size
-    while remaining:
-        chunk = source_handle.read(min(16 * 1024**2, remaining))
-        if not chunk:
-            raise EOFError(f"unexpected end of source, {remaining} bytes short")
-        output_handle.write(chunk)
-        remaining -= len(chunk)
+    return select_layers(header, profile, F.AsymW4A8(group_size, convrot_groupsize).accepts)
 
 
 def main() -> int:
@@ -295,104 +126,44 @@ def main() -> int:
     import comfy_kitchen as ck
 
     started = time.perf_counter()
-    partial = conv.partial
+    fmt = F.AsymW4A8(args.group_size, args.convrot_groupsize, codebook=not args.no_codebook)
+    formats = {name: fmt for name in selected}
+    out_meta = F.quant_metadata(metadata, F.layer_configs(formats), QUANTIZATION)
 
-    # Pass one: quantize every selected layer, holding only the small scale tensors in memory.
-    selected_set = set(selected)
-    quantized: dict[str, dict] = {}
-    # Two-pass design: pass one fills `quantized` with every layer, pass two writes. The old
-    # `largest * 3 + 2 GiB` is the streaming estimate from quant_w4a4.py and understates this by
-    # the layer count -- measured at 2.375 GiB asked against 10.777 GiB accumulated.
-    from _ram_guard import w4a8_bytes
+    with conv.tensors() as fonte:
+        def peso(name: str) -> torch.Tensor:
+            # FP32 na entrada (26/09): com BF16 2,1% dos codigos saem diferentes dos da NidAll, que
+            # quantiza do FP32 (99,9998% iguais com FP32). Os dtypes de saida nao mudam.
+            return fonte[name].to(device="cuda", dtype=torch.float32)
 
-    accumulated = sum(w4a8_bytes(*header[n]["shape"], args.group_size,
-                                 codebook=not args.no_codebook) for n in selected)
-    conv.guard(source.stat().st_size, accumulated=accumulated, label="W4A8 conversion")
+        entradas = F.plan_model(header, formats, peso, ck)
+        conv.guard(conv.planned_size(entradas, out_meta),
+                   accumulated=F.streaming_peak(header, selected), label="W4A8 conversion")
 
-    with source.open("rb") as source_handle:
-        source_header_size = struct.unpack("<Q", source_handle.read(8))[0]
-        data_start = 8 + source_header_size
-        for index, name in enumerate(selected, 1):
-            info = header[name]
-            start, end = info["data_offsets"]
-            weight = read_tensor(source_handle, data_start + start, end - start,
-                                 info["dtype"], info["shape"]).to(device="cuda", dtype=torch.float32)
-            # FP32 na entrada (26/09): com BF16 2,1% dos codigos saem diferentes dos da NidAll, que quantiza do
-            # FP32 (99,9998% iguais com FP32). Os dtypes de saida nao mudam.
-            qdata, s_rel, s_channel, correction, codebook = ck.quantize_w4a8_int8_weight(
-                weight,
-                group_size=args.group_size,
-                convrot_groupsize=args.convrot_groupsize,
-                symmetric=True,
-                scale_dtype=torch.float8_e4m3fn,
-                codebook=not args.no_codebook,
-                codebook_tensor=None,
-                stochastic_rounding=0,
-            )
-            if correction is not None:
-                raise SystemExit("symmetric=True returned a correction tensor; ComfyUI would drop it")
-            quantized[name] = {
-                "qdata": qdata.cpu().contiguous(),
-                "s_rel": s_rel.cpu().contiguous(),
-                "s_channel": s_channel.cpu().contiguous(),
-                "codebook": None if codebook is None else codebook.cpu().contiguous(),
+        def progresso(indice: int, total: int, chave: str) -> None:
+            if chave in formats and (indice % 48 == 0 or indice == total):
+                print(f"[{indice}/{total}] quantized", flush=True)
+
+        def manifesto() -> dict:
+            return {
+                "source": str(source), "source_size": source.stat().st_size,
+                "output": str(output), "output_size": conv.output_size,
+                "architecture": profile, "quantization": QUANTIZATION,
+                "layout": "AsymW4A8Int8Layout",
+                "backend": backend["resolved"]["quantize_w4a8_int8_weight"],
+                "group_size": args.group_size, "convrot_groupsize": args.convrot_groupsize,
+                "symmetric": True, "codebook": not args.no_codebook,
+                "quantized_tensors": len(selected), "preserved_tensors": len(header) - len(selected),
+                "comfy_kitchen_version": importlib.metadata.version("comfy-kitchen"),
+                "torch_version": torch.__version__, "cuda_version": torch.version.cuda,
+                "gpu": torch.cuda.get_device_name(0),
+                "conversion_seconds": round(time.perf_counter() - started, 3),
             }
-            del weight, qdata, s_rel, s_channel
-            torch.cuda.empty_cache()
-            if index % 48 == 0 or index == len(selected):
-                print(f"[{index}/{len(selected)}] quantized", flush=True)
 
-    # Pass two: lay out the output header, then stream the file.
-    layers = {
-        name.removesuffix(".weight"): {
-            "format": "asym_w4a8_int8",
-            "group_size": args.group_size,
-            "convrot_groupsize": args.convrot_groupsize,
-        }
-        for name in selected
-    }
-    output_metadata = dict(metadata)
-    output_metadata["_quantization_metadata"] = json.dumps(
-        {"format_version": "1.0", "layers": layers}, separators=(",", ":"))
-    output_metadata["quantization"] = "asym_w4a8_int8"
-
-    # `plan_write` deriva dtype e forma do proprio tensor, exatamente como o codigo manual fazia
-    # com `header_dtype(tensor)` e `list(tensor.shape)`. A ordem das chaves e a mesma: peso,
-    # s_rel, s_channel, e o codebook so quando ele existe.
-    entradas = []
-    for name, info in header.items():
-        if name not in selected_set:
-            entradas.append(C.plan_copy(name, info))
-            continue
-        base = name.removesuffix(".weight")
-        entry = quantized[name]
-        entradas.append(C.plan_write(name, entry["qdata"]))
-        entradas.append(C.plan_write(f"{base}.weight_s_rel", entry["s_rel"]))
-        entradas.append(C.plan_write(f"{base}.weight_s_channel", entry["s_channel"]))
-        if entry["codebook"] is not None:
-            entradas.append(C.plan_write(f"{base}.weight_codebook", entry["codebook"]))
-
-    # Sem try/finally aqui: `commit()` ja tem o seu, e aninhar dois so daria duas chances de
-    # apagar o mesmo arquivo.
-    conv.commit(entradas, output_metadata)
+        conv.commit(entradas, out_meta, progress=progresso, sidecar=manifesto)
 
     elapsed = time.perf_counter() - started
-    manifest = {
-        "source": str(source), "source_size": source.stat().st_size,
-        "output": str(output), "output_size": output.stat().st_size,
-        "architecture": profile, "quantization": "asym_w4a8_int8",
-        "layout": "AsymW4A8Int8Layout",
-        "backend": backend["resolved"]["quantize_w4a8_int8_weight"],
-        "group_size": args.group_size, "convrot_groupsize": args.convrot_groupsize,
-        "symmetric": True, "codebook": not args.no_codebook,
-        "quantized_tensors": len(selected), "preserved_tensors": len(header) - len(selected),
-        "comfy_kitchen_version": importlib.metadata.version("comfy-kitchen"),
-        "torch_version": torch.__version__, "cuda_version": torch.version.cuda,
-        "gpu": torch.cuda.get_device_name(0),
-        "conversion_seconds": round(elapsed, 3),
-    }
-    sidecar.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    print(f"Wrote {output} ({human_size(output.stat().st_size)}) in {elapsed:.1f} s")
+    print(f"Wrote {output} ({C.human_size(output.stat().st_size)}) in {elapsed:.1f} s")
     print(f"Wrote {sidecar}")
     return 0
 

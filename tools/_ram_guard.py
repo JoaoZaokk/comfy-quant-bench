@@ -1,48 +1,34 @@
-"""How much RAM a two-pass converter really needs, instead of the streaming heuristic.
+"""Guardas de memoria dos conversores: RAM fisica disponivel E commit livre do Windows.
 
-`quant_w4a4.py` streams: it reads one tensor, quantizes it, writes it, and drops it. For that
-design `largest * 3 + 2 GiB` is a fair estimate of peak RAM, and it is correct there.
+Dois recursos diferentes, e a regra do projeto e conferir os dois antes de carga grande
+(AGENTS.md: "conferir commit livre: guardas de RAM/disco nao bastam"):
 
-Three other converters copied the line into a **two-pass** design that quantizes every selected
-layer into a dict first and only then writes the file. Those hold the entire quantized model in
-RAM at once, so the guard understates the requirement by the number of layers. Measured by the
-audit of 2026-08-18:
+  - RAM fisica disponivel (`psutil.virtual_memory().available`) diz se o trabalho cabe sem trocar
+    pagina. Faltando, a maquina para de responder.
+  - Commit livre (`CommitLimit - CommitTotal`, de `GetPerformanceInfo`) diz se o Windows ainda
+    aceita reservar memoria privada. Faltando, a alocacao FALHA mesmo com RAM fisica sobrando --
+    e o commit e consumido por reservas que nao aparecem como RAM usada (o leitor normal de um
+    safetensors pode comprometer 2x o arquivo, ver `.agent-reference/comfy/17-memoria-commit.md`).
 
-    quant_int8.py   asks 2.375 GiB, accumulates 19.144 GiB on LTX-2.5   (8.1x)
-    quant_w4a8.py   asks 2.375 GiB, accumulates 10.777 GiB              (4.5x)
-    quant_mixed.py  asks 2.250 GiB, accumulates  2.920 GiB on the *smallest* model here
-
-A guard that passes and then thrashes is worse than no guard: it converts a clear refusal into a
-machine that stops responding. Sizes here are computed from the header alone -- no tensor is
-read -- so calling this costs nothing.
+Historico. Este arquivo ja teve formulas por formato (`w4a8_bytes`, `int8_bytes`,
+`convrot_w4a4_bytes`) para conversores de DUAS passadas, que quantizavam o modelo inteiro num dict
+antes de escrever; a heuristica de streaming (`maior tensor x 3`) subestimava esses conversores
+por fatores medidos de 4,5x a 8,1x (auditoria de 2026-08-18). Desde 2026-09-29 todos transmitem
+(`_conversion.plan_lazy` + `_formats`): o pico e um tensor por vez, a heuristica de streaming
+volta a ser a correta para todos, e as formulas sairam junto com o acumulo que elas mediam.
 """
 
 from __future__ import annotations
 
+import ctypes
+import sys
+
 GIB = 1024 ** 3
-
-
-def convrot_w4a4_bytes(rows: int, cols: int) -> int:
-    """int8 container holding packed int4 [rows, cols//2] + f32 scale [rows]."""
-    return rows * (cols // 2) + rows * 4
-
-
-def w4a8_bytes(rows: int, cols: int, group_size: int = 16, codebook: bool = True) -> int:
-    """packed int4 + fp8 per-group scale + f32 per-channel scale + 16-entry codebook."""
-    return (rows * (cols // 2)
-            + rows * (cols // group_size)      # s_rel, fp8 => 1 byte per group
-            + rows * 4                          # s_channel, f32
-            + (16 * 4 if codebook else 0))
-
-
-def int8_bytes(rows: int, cols: int) -> int:
-    """int8 weight + f32 scale per row."""
-    return rows * cols + rows * 4
 
 
 def check(available_bytes: int, accumulated_bytes: int, headroom_gib: float = 2.0,
           label: str = "conversion") -> str | None:
-    """Return a refusal message, or None when there is room.
+    """Recusa (texto) ou None quando a RAM fisica disponivel cabe `accumulated_bytes` + folga.
 
     `headroom_gib` covers the one source tensor held during quantization plus interpreter
     overhead; it is deliberately generous because the failure mode on the other side is swapping,
@@ -51,8 +37,74 @@ def check(available_bytes: int, accumulated_bytes: int, headroom_gib: float = 2.
     need = accumulated_bytes + int(headroom_gib * GIB)
     if available_bytes >= need:
         return None
-    return (f"Insufficient RAM for {label}: this design accumulates "
-            f"{accumulated_bytes / GIB:.2f} GiB of quantized tensors before writing, and with "
+    return (f"Insufficient RAM for {label}: it holds "
+            f"{accumulated_bytes / GIB:.2f} GiB at its peak, and with "
             f"{headroom_gib:.1f} GiB of headroom needs {need / GIB:.2f} GiB, but only "
             f"{available_bytes / GIB:.2f} GiB is available. Close memory-heavy processes "
             "(vmmemWSL on this host is the usual one) and retry -- do not change the pagefile.")
+
+
+class _PerformanceInformation(ctypes.Structure):
+    # PERFORMANCE_INFORMATION (psapi.h). Os campos de pagina sao SIZE_T e contam PAGINAS.
+    _fields_ = [
+        ("cb", ctypes.c_uint32),
+        ("CommitTotal", ctypes.c_size_t),
+        ("CommitLimit", ctypes.c_size_t),
+        ("CommitPeak", ctypes.c_size_t),
+        ("PhysicalTotal", ctypes.c_size_t),
+        ("PhysicalAvailable", ctypes.c_size_t),
+        ("SystemCache", ctypes.c_size_t),
+        ("KernelTotal", ctypes.c_size_t),
+        ("KernelPaged", ctypes.c_size_t),
+        ("KernelNonpaged", ctypes.c_size_t),
+        ("PageSize", ctypes.c_size_t),
+        ("HandleCount", ctypes.c_uint32),
+        ("ProcessCount", ctypes.c_uint32),
+        ("ThreadCount", ctypes.c_uint32),
+    ]
+
+
+def commit_free_bytes() -> int | None:
+    """Commit livre do sistema em bytes (`CommitLimit - CommitTotal`), ou None fora do Windows.
+
+    None tambem quando a chamada falha: quem chama trata como "nao medido" e diz isso, nunca como
+    "sobra".
+    """
+    if sys.platform != "win32":
+        return None
+    info = _PerformanceInformation()
+    info.cb = ctypes.sizeof(info)
+    try:
+        ok = ctypes.windll.psapi.GetPerformanceInfo(ctypes.byref(info), info.cb)
+    except (AttributeError, OSError):
+        return None
+    if not ok:
+        return None
+    return (info.CommitLimit - info.CommitTotal) * info.PageSize
+
+
+def commit_gib() -> float | None:
+    """Commit livre em GiB, para relatorio. None fora do Windows ou se a chamada falhar."""
+    free = commit_free_bytes()
+    return None if free is None else free / GIB
+
+
+def check_commit(accumulated_bytes: int, headroom_gib: float = 2.0, label: str = "conversion",
+                 free_bytes: int | None = None) -> str | None:
+    """Recusa (texto) ou None quando o commit livre cabe `accumulated_bytes` + folga.
+
+    `free_bytes` existe para teste; em uso normal vem de `commit_free_bytes()`. Sem medida (fora
+    do Windows) devolve None -- a guarda de RAM fisica continua valendo sozinha nesse caso.
+    """
+    free = commit_free_bytes() if free_bytes is None else free_bytes
+    if free is None:
+        return None
+    need = accumulated_bytes + int(headroom_gib * GIB)
+    if free >= need:
+        return None
+    return (f"Insufficient commit for {label}: it reserves up to {accumulated_bytes / GIB:.2f} GiB "
+            f"of private memory, and with {headroom_gib:.1f} GiB of headroom needs "
+            f"{need / GIB:.2f} GiB of free commit, but only {free / GIB:.2f} GiB is free "
+            "(CommitLimit - CommitTotal). Physical RAM being free does not help here: the "
+            "allocation fails on commit, not on RAM. Close processes holding commit (vmmemWSL, "
+            "another ComfyUI) and retry -- do not change the pagefile.")
