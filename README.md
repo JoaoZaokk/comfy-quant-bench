@@ -35,12 +35,13 @@ not rescue it. The ConvRot paper reports 2.26x speedup on FLUX.1-dev; that did n
 The W4A4 converter is kept because the format is a useful fixture for kernel and loader work, and
 because a negative result with a reproduction is worth more than silence.
 
-## 2026-10-06: kernel optimization on the RTX 3090 — spend precision early, not everywhere
+## 2026-10-06: kernel optimization on the RTX 3090 — PSNR measured the wrong thing
 
-Qwen-Image-2.1, 1024², 25 steps, 72 graphs against BF16. Full INT8 ConvRot is **+7.2 dB over the p008 mixed
-checkpoint for +4.5 % time** at the same VRAM, and running INT8 for only the **first 5 steps, then W4A4**, matches p008
-fidelity in 23–27 % less time with two stock `KSamplerAdvanced` nodes. The trajectory diverges from BF16 in the first
-steps and the later ones do not repair it. Modules, phases, negatives and backlog:
+Qwen-Image-2.1, 1024², 25 steps. Running INT8 for the first 5 steps and W4A4 after matched the p008 mixed checkpoint in
+PSNR against BF16 for 23–27 % less time; in a blind review it was the **worst of four versions in 24 of 24 scenes**.
+PSNR tracks whether the composition stays the same, not whether the image is clean. What the eye sees is decided by
+which layers stay in 4 bits: plain W4A4 looks bad in 18 of 24 scenes, the p010 mix (68 W4A4 + 124 INT8 layers) in none,
+and full INT8 ConvRot looks like BF16 and, with SageAttention, runs as fast as p008. Modules, phases, negatives and backlog:
 [docs/kernel-optimization.md](docs/kernel-optimization.md).
 
 ## 2026-09-13: five more families, the soundtrack, and what a LoRA becomes in 4 bits
