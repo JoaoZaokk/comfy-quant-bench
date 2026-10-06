@@ -1,0 +1,97 @@
+diff --git a/comfy_kitchen/backends/cuda/__init__.py b/comfy_kitchen/backends/cuda/__init__.py
+index 76add7d..3961e51 100644
+--- a/comfy_kitchen/backends/cuda/__init__.py
++++ b/comfy_kitchen/backends/cuda/__init__.py
+@@ -158,6 +158,15 @@ except Exception as e:
+ from comfy_kitchen.backends._activations import (  # noqa: E402
+     apply_input_act as _apply_input_act,
+ )
++
++# Local patch (COMFY_PORTABLE, 2026-10-03): optional companion module with the SwiGLU prologue fused into the ConvRot
++# int4 activation quantizer -- quantize_int4_rowwise_convrot64 with silu(gate) * up computed in fp32 while loading
++# gate | up (source and build: COMFY_PORTABLE/tools/ck_swiglu). Without it, or after a torch upgrade breaks its ABI,
++# convrot_w4a4_linear(input_act="swiglu") applies the activation eagerly and quantizes as before.
++try:
++    from comfy_kitchen.backends.cuda import _swiglu_quant  # noqa: E402
++except Exception:  # noqa: BLE001
++    _swiglu_quant = None
+ from comfy_kitchen.backends._activations import (  # noqa: E402
+     apply_residual as _apply_residual,
+ )
+@@ -1261,6 +1270,22 @@ def dequantize_convrot_w4a4_weight(
+     return _rotate_weight(w_rot.float(), h, convrot_groupsize).to(output_dtype)
+ 
+ 
++def _convrot_w4a4_swiglu_fused(x, qweight, wscales, bias, convrot_groupsize, linear_dtype, input_act):
++    """``W4A4(silu(gate) * up)`` through the fused quantizer, or None when it does not cover the call."""
++    if input_act != "swiglu" or _swiglu_quant is None or linear_dtype != "int4" or convrot_groupsize != 256:
++        return None
++    k = x.shape[-1] // 2
++    if (x.dtype not in (torch.bfloat16, torch.float16) or not x.is_cuda or x.shape[-1] != qweight.shape[-1] * 4
++            or k % 256 != 0 or k > 16384):
++        return None
++    h2d = x.reshape(-1, x.shape[-1]).contiguous()
++    if not _cuda_device_supports_native_int4_mma(h2d):
++        return None
++    qact, x_scale = _swiglu_quant.swiglu_quantize_int4_rowwise_convrot64(h2d)
++    out = int4_linear(qact, qweight, x_scale, wscales, bias=bias, out_dtype=x.dtype)
++    return out[: h2d.shape[0]].reshape(*x.shape[:-1], qweight.shape[0])
++
++
+ def convrot_w4a4_linear(
+     x: torch.Tensor,
+     qweight: torch.Tensor,
+@@ -1269,12 +1294,22 @@ def convrot_w4a4_linear(
+     convrot_groupsize: int = 256,
+     quant_group_size: int = _INT4_GROUP_SIZE,
+     linear_dtype: str = "int4",
++    input_act: str | None = None,
+ ) -> torch.Tensor:
+-    """Compute ``x @ W.T + bias`` using ConvRot W4A4 signed INT4 MMA."""
++    """Compute ``act(x) @ W.T + bias`` using ConvRot W4A4 signed INT4 MMA.
++
++    ``input_act="swiglu"`` takes x as the ``[gate | up]`` pair and folds ``silu(gate) * up`` into the activation
++    quantizer when the companion module is present (otherwise it is applied eagerly first).
++    """
+     if linear_dtype not in {"int4", "int8"}:
+         raise ValueError(f"ConvRot W4A4 linear_dtype must be 'int4' or 'int8', got {linear_dtype!r}")
+     if quant_group_size != _INT4_GROUP_SIZE:
+         raise ValueError(f"int4 MMA kernel requires quant_group_size {_INT4_GROUP_SIZE}")
++    if input_act is not None:
++        out = _convrot_w4a4_swiglu_fused(x, qweight, wscales, bias, convrot_groupsize, linear_dtype, input_act)
++        if out is not None:
++            return out
++        x = _apply_input_act(x, input_act)
+     if x.shape[-1] != qweight.shape[-1] * 2:
+         raise ValueError(f"Input K={x.shape[-1]} does not match qweight K={qweight.shape[-1] * 2}")
+     if x.shape[-1] % convrot_groupsize != 0:
+diff --git a/comfy_kitchen/tensor/convrot_w4a4.py b/comfy_kitchen/tensor/convrot_w4a4.py
+index f67716d..c2502e0 100644
+--- a/comfy_kitchen/tensor/convrot_w4a4.py
++++ b/comfy_kitchen/tensor/convrot_w4a4.py
+@@ -85,8 +85,9 @@ def convrot_w4a4_linear(
+     convrot_groupsize: int = 256,
+     quant_group_size: int = _INT4_GROUP_SIZE,
+     linear_dtype: str = "int4",
++    input_act: str | None = None,
+ ) -> torch.Tensor:
+-    """Compute ``x @ W.T + bias`` using ConvRot W4A4 int4 MMA."""
++    """Compute ``act(x) @ W.T + bias`` using ConvRot W4A4 int4 MMA (``input_act``: see the CUDA backend)."""
+     if linear_dtype not in {"int4", "int8"}:
+         raise ValueError(f"ConvRot W4A4 linear_dtype must be 'int4' or 'int8', got {linear_dtype!r}")
+     impl = registry.get_implementation(
+@@ -101,6 +102,14 @@ def convrot_w4a4_linear(
+             "linear_dtype": linear_dtype,
+         },
+     )
++    if input_act is not None:
++        # Local patch (COMFY_PORTABLE, 2026-10-03): only the CUDA backend folds the activation into its quantizer.
++        if getattr(impl, "__module__", "") == "comfy_kitchen.backends.cuda":
++            return impl(x, qweight, wscales, bias=bias, convrot_groupsize=convrot_groupsize,
++                        quant_group_size=quant_group_size, linear_dtype=linear_dtype, input_act=input_act)
++        from comfy_kitchen.backends._activations import apply_input_act
++
++        x = apply_input_act(x, input_act)
+     return impl(
+         x,
+         qweight,

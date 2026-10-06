@@ -1,0 +1,196 @@
+diff --git a/comfy/ldm/qwen_image21/model.py b/comfy/ldm/qwen_image21/model.py
+index 013d2391..b2ea7d60 100644
+--- a/comfy/ldm/qwen_image21/model.py
++++ b/comfy/ldm/qwen_image21/model.py
+@@ -1,8 +1,52 @@
+ # https://github.com/huggingface/diffusers (Apache 2.0) Qwen-Image 2.1
++import os
++import time
+ import torch
+ import torch.nn as nn
+ import torch.nn.functional as F
+ 
++_PROFILE = os.environ.get("QWEN21_PROFILE")
++_PROFILE_PATH = os.environ.get("QWEN21_PROFILE_PATH", r"F:\COMFY_PORTABLE\.scratch\quantfunc_2026-10-01\perfil_qwen21.txt")
++_profile_ms = {}
++_profile_pending = []
++_profile_steps = 0
++
++
++def _prof_begin():
++    if not _PROFILE or not torch.cuda.is_available():
++        return None
++    start = torch.cuda.Event(enable_timing=True)
++    start.record()
++    return start
++
++
++def _prof_end(name, start):
++    global _profile_steps
++    if start is None:
++        return
++    end = torch.cuda.Event(enable_timing=True)
++    end.record()
++    _profile_pending.append((name, start, end))
++
++
++def _prof_flush(force=False):
++    global _profile_steps
++    if not _profile_pending:
++        return
++    torch.cuda.synchronize()
++    for name, start, end in _profile_pending:
++        _profile_ms[name] = _profile_ms.get(name, 0.0) + start.elapsed_time(end)
++    _profile_pending.clear()
++    _profile_steps += 1
++    if force or _profile_steps >= 25:
++        lines = [f"steps {_profile_steps}"]
++        for name, ms in sorted(_profile_ms.items(), key=lambda kv: -kv[1]):
++            lines.append(f"{name} {ms:.1f}")
++        with open(_PROFILE_PATH, "w", encoding="utf-8") as fh:
++            fh.write("\n".join(lines) + "\n")
++        _profile_ms.clear()
++        _profile_steps = 0
++
+ import comfy.model_management
+ import comfy.ops
+ import comfy.patcher_extension
+@@ -80,9 +124,15 @@ class Attention(nn.Module):
+     def forward(self, x, pe, attn_fn, prefix_len, transformer_options={}):
+         # (B, N, H, D) throughout: no transposes, the rope table is laid out to match
+         B, N, _ = x.shape
+-        q = self.to_q(x).view(B, N, self.heads, -1)
+-        k = self.to_k(x).view(B, N, self.heads, -1)
+-        v = self.to_v(x).view(B, N, self.heads, -1)
++        t0 = _prof_begin()
++        fused = comfy.ops.fused_convrot_qkv((self.to_q, self.to_k, self.to_v), x)
++        _prof_end("qkv", t0)
++        if fused is None:
++            q = self.to_q(x).view(B, N, self.heads, -1)
++            k = self.to_k(x).view(B, N, self.heads, -1)
++            v = self.to_v(x).view(B, N, self.heads, -1)
++        else:
++            q, k, v = (t.view(B, N, self.heads, -1) for t in fused.split(self.to_q.out_features, dim=-1))
+         patches = transformer_options.get("patches", {}).get("attn1_patch", [])
+         if comfy.model_management.in_training or patches:
+             q, k = self.norm_q(q), self.norm_k(k)
+@@ -102,7 +152,13 @@ class Attention(nn.Module):
+             q, k = comfy.quant_ops.ck.rms_rope(q, k, pe, q_scale, k_scale, self.norm_q.eps)
+             comfy.ops.uncast_bias_weight(self.norm_q, q_scale, None, q_stream)
+             comfy.ops.uncast_bias_weight(self.norm_k, k_scale, None, k_stream)
+-        return self.to_out[0](attn_fn(q, k, v, self.heads))
++        t0 = _prof_begin()
++        attended = attn_fn(q, k, v, self.heads)
++        _prof_end("sage", t0)
++        t0 = _prof_begin()
++        out = self.to_out[0](attended)
++        _prof_end("to_out", t0)
++        return out
+ 
+ 
+ def _split_rows(p):
+@@ -140,8 +196,24 @@ class QwenImage21TransformerBlock(nn.Module):
+ 
+     def forward(self, x, mod, pe, attn_fn, prefix_len, transformer_options={}):
+         scale1, gate1, scale2, gate2, zero = mod
+-        x = _gated_residual(x, self.attn(_modulated_norm(self.img_norm1, x, scale1, prefix_len, zero), pe, attn_fn, prefix_len, transformer_options), gate1, prefix_len)
+-        x = _gated_residual(x, self.img_mlp(_modulated_norm(self.img_norm2, x, scale2, prefix_len, zero)), gate2, prefix_len)
++        t0 = _prof_begin()
++        h = _modulated_norm(self.img_norm1, x, scale1, prefix_len, zero)
++        _prof_end("norm1", t0)
++        t0 = _prof_begin()
++        attn = self.attn(h, pe, attn_fn, prefix_len, transformer_options)
++        _prof_end("attn_block", t0)
++        t0 = _prof_begin()
++        x = _gated_residual(x, attn, gate1, prefix_len)
++        _prof_end("resid1", t0)
++        t0 = _prof_begin()
++        h = _modulated_norm(self.img_norm2, x, scale2, prefix_len, zero)
++        _prof_end("norm2", t0)
++        t0 = _prof_begin()
++        mlp = self.img_mlp(h)
++        _prof_end("mlp", t0)
++        t0 = _prof_begin()
++        x = _gated_residual(x, mlp, gate2, prefix_len)
++        _prof_end("resid2", t0)
+         if x.dtype == torch.float16:
+             x = x.clip(-65504, 65504)
+         return x
+@@ -300,6 +372,11 @@ class QwenImage21Transformer2DModel(nn.Module):
+         ).execute(x, timestep, context, ref_latents, image_slots, transformer_options, **kwargs)
+ 
+     def _forward(self, x, timesteps, context, ref_latents=None, image_slots=None, transformer_options={}, **kwargs):
++        if _PROFILE and torch.cuda.is_available():
++            torch.cuda.synchronize()
++            _wall = time.perf_counter()
++        else:
++            _wall = None
+         B, C, H, W = x.shape
+         dtype = x.dtype
+         ref_latents = list(ref_latents or [])
+@@ -350,4 +427,8 @@ class QwenImage21Transformer2DModel(nn.Module):
+ 
+         hidden_states = self.norm_out(hidden_states[:, prefix_len:], temb[:-1])
+         hidden_states = self.proj_out(hidden_states)
++        if _wall is not None:
++            torch.cuda.synchronize()
++            _profile_ms["forward_wall"] = _profile_ms.get("forward_wall", 0.0) + (time.perf_counter() - _wall) * 1000.0
++        _prof_flush()
+         return hidden_states.transpose(1, 2).reshape(B, self.out_channels, H, W)
+diff --git a/comfy/ops.py b/comfy/ops.py
+index 2feca299..2c798268 100644
+--- a/comfy/ops.py
++++ b/comfy/ops.py
+@@ -972,6 +972,52 @@ def _fp16_linear_wanted(x):
+             and x.dtype == torch.float16 and x.is_cuda)
+ 
+ 
++def fused_convrot_qkv(linears, x):
++    """One ConvRot activation quantize for linears that share ``x``.
++
++    Returns ``[..., sum of out_features]`` with the linears' outputs concatenated
++    on the last dim, or None when any linear is not a plain ConvRot W4A4 weight.
++    The activation rotation and its quantize read ``x`` once; each output row
++    stays an independent INT4 product, so the split matches three separate calls.
++    """
++    if comfy.model_management.in_training or not linears:
++        return None
++    held = []
++    try:
++        group = linear_dtype = quant_group = None
++        qdatas = []
++        scales = []
++        for linear in linears:
++            stored = getattr(linear, "weight", None)
++            if (not isinstance(stored, QuantizedTensor)
++                    or stored._layout_cls != "TensorCoreConvRotW4A4Layout"
++                    or getattr(stored._params, "transposed", False)
++                    or len(linear.weight_function) or len(linear.bias_function)
++                    or getattr(linear, "_full_precision_mm", False)
++                    or linear.bias is not None):
++                return None
++            weight, bias, stream = cast_bias_weight(
++                linear, input=None, dtype=linear.weight.dtype, device=x.device,
++                bias_dtype=x.dtype, offloadable=True, compute_dtype=x.dtype, want_requant=True)
++            held.append((linear, weight, bias, stream))
++            if bias is not None or not isinstance(weight, QuantizedTensor):
++                return None
++            params = weight._params
++            key = (params.convrot_groupsize, params.linear_dtype, params.quant_group_size)
++            if group is None:
++                group, linear_dtype, quant_group = key
++            elif key != (group, linear_dtype, quant_group):
++                return None
++            qdata, scale = weight.layout_cls.get_plain_tensors(weight)
++            qdatas.append(qdata)
++            scales.append(scale.reshape(-1))
++        return quant_ops.ck.convrot_w4a4_linear(
++            x, torch.cat(qdatas, 0), torch.cat(scales, 0), None, group, quant_group, linear_dtype)
++    finally:
++        for linear, weight, bias, stream in held:
++            uncast_bias_weight(linear, weight, bias, stream)
++
++
+ def linear_input_act(linear, x, input_act, act_weight=None, act_eps=0.0,
+                      residual=None, residual_scale=None):
+     """``linear(act(x))``, with ``act`` folded into an INT8 activation quantizer.

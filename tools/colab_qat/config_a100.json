@@ -1,6 +1,0 @@
-{
-  "dir": "/content/qat_run",
-  "args": ["--sementes", "1", "--otim", "adamw8bit-sr", "--max-passos", "14000", "--lote", "1",
-           "--log-cada", "50", "--holdout-cada", "1000", "--ckpt-min", "25",
-           "--push-hf", "JoaoZaokk/klein4b-qat-ckpt"]
-}

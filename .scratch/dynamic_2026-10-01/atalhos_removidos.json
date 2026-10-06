@@ -1,1 +1,0 @@
-{"Comfy.Keybinding.NewBindings": [{"commandId":"Comfy.Undo","combo":{"key":"z","ctrl":true,"alt":false,"shift":false}},{"commandId":"Comfy.Canvas.CopySelected","combo":{"key":"c","ctrl":true,"alt":false,"shift":false}},{"commandId":"Comfy.Canvas.PasteFromClipboard","combo":{"key":"v","ctrl":true,"alt":false,"shift":false}}]}

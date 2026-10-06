@@ -1,3 +1,0 @@
-saida.safetensors: 2 tensores do doador, 6 da base
-
---- stderr ---

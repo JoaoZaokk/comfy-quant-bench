@@ -35,13 +35,20 @@ not rescue it. The ConvRot paper reports 2.26x speedup on FLUX.1-dev; that did n
 The W4A4 converter is kept because the format is a useful fixture for kernel and loader work, and
 because a negative result with a reproduction is worth more than silence.
 
+## 2026-10-06: kernel optimization on the RTX 3090 — spend precision early, not everywhere
+
+Qwen-Image-2.1, 1024², 25 steps, 72 graphs against BF16. Full INT8 ConvRot is **+7.2 dB over the p008 mixed
+checkpoint for +4.5 % time** at the same VRAM, and running INT8 for only the **first 5 steps, then W4A4**, matches p008
+fidelity in 23–27 % less time with two stock `KSamplerAdvanced` nodes. The trajectory diverges from BF16 in the first
+steps and the later ones do not repair it. Modules, phases, negatives and backlog:
+[docs/kernel-optimization.md](docs/kernel-optimization.md).
+
 ## 2026-09-13: five more families, the soundtrack, and what a LoRA becomes in 4 bits
 
-*This repo is now the full bench, not a curated subset.* Everything below is measured on one RTX 3090
+*This repo holds the converters, nodes, patches and published results; the bench's working notes stay
+local.* Everything below is measured on one RTX 3090
 (with an RTX 3080 Ti as donor/offload), and every claim carries its evidence on the Hub repo it
-belongs to. The running log is [`W4A4_PROGRESS.md`](W4A4_PROGRESS.md); the rules this bench works by,
-with every correction it had to make to itself, are in [`CLAUDE.md`](CLAUDE.md); the criteria written
-*before* each measurement are in [`bench/criterio_*.md`](bench/).
+belongs to. The criteria written *before* each measurement are in [`bench/criterio_*.md`](bench/).
 
 **Four-bit weights survive everywhere measured; four-bit activations fail in three families of 2026
 models, three different ways.** Same 4-bit weights, only the activation path differs:

@@ -1,6 +1,0 @@
-bateria/r2048_bf16_p1_s42.json
-bateria/r2048_int8_p1_s42.json
-bateria/r2048_nosso_w4a8_p1_s42.json
-bateria/r2048_nosso_mixed_p010_p1_s42.json
-bateria/r2048_nosso_w4a4_p1_s42.json
-bateria/r2048_int4_p1_s42.json

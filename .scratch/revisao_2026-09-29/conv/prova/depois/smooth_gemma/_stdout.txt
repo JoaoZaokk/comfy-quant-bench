@@ -1,9 +1,0 @@
-Source: F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\fontes\gemma_sint_bf16.safetensors
-Layers: 2   quantized: 14   smoothed: 10   alpha: 0.5
-Output: F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\depois\smooth_gemma\saida.safetensors
-Backend: comfy_kitchen.backends.cuda.FAKE
-activation channel outlier ratio, mean over 4 norms: 2 -> 1.6
-Wrote F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\depois\smooth_gemma\saida.safetensors (634.51 KiB) in 0.0 s
-Wrote F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\depois\smooth_gemma\saida.quant.json
-
---- stderr ---

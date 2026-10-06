@@ -1,6 +1,0 @@
-Source: F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\antes\weight_only\ja_quantizado.safetensors
-Layers: {'int8_tensorwise': 1, 'convrot_w4a4': 1} -> W4A16+W8A16 (BF16 activations)
-Output: F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\antes\weight_only\ja_quantizado_a16.safetensors
-Wrote F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\antes\weight_only\ja_quantizado_a16.safetensors (0.0 MiB)
-
---- stderr ---

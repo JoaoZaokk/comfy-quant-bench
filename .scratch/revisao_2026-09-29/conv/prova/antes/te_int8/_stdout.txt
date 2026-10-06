@@ -1,9 +1,0 @@
-fonte: F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\fontes\gemma_sint_bf16.safetensors
-saida: F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\antes\te_int8\saida.safetensors
-formato: int8_tensorwise
-  model.embed_tokens.weight: [64, 256] BF16
-  model.embed_tokens.weight: {'rel_rmse': 0.007849851941308522, 'pior_linha_rel': 0.010037641040980816, 'gather_rel_rmse': 0.007864689454436302}
-gravado F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\antes\te_int8\saida.safetensors (2.27 MiB) em 1 s
-gravado F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\antes\te_int8\saida.quant.json
-
---- stderr ---

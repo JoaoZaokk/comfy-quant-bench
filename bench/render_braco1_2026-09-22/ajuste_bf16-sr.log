@@ -1,58 +1,0 @@
-W0922 21:12:47.717000 46516 Lib\site-packages\torch\utils\_pytree.py:630] <enum 'KernelPreference'> is an Enum subclass and is now natively supported by torch.compile as an opaque value type. Calling register_constant() on Enum subclasses is deprecated and will be an error in a future release.
-W0922 21:12:47.777000 46516 Lib\site-packages\torch\utils\_pytree.py:630] <enum 'ScaleCalculationMode'> is an Enum subclass and is now natively supported by torch.compile as an opaque value type. Calling register_constant() on Enum subclasses is deprecated and will be an error in a future release.
-Unable to import `torchao` Tensor objects. This may affect loading checkpoints serialized with `torchao`
---- professor: Flux2KleinPipeline do diffusers em P:\ComfyBench\originais\FLUX.2-klein-4B ---
-Loading pipeline components...:   0%|          | 0/5 [00:00<?, ?it/s]Loading pipeline components...:  20%|##        | 1/5 [00:00<00:02,  1.81it/s]Loading pipeline components...:  40%|####      | 2/5 [00:01<00:01,  1.91it/s]Loading pipeline components...:  60%|######    | 3/5 [00:01<00:00,  2.13it/s]
-Loading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s][A
-Loading checkpoint shards:  50%|#####     | 1/2 [00:01<00:01,  1.39s/it][A
-Loading checkpoint shards: 100%|##########| 2/2 [00:02<00:00,  1.12s/it][ALoading checkpoint shards: 100%|##########| 2/2 [00:02<00:00,  1.16s/it]
-Loading pipeline components...: 100%|##########| 5/5 [00:03<00:00,  1.12it/s]Loading pipeline components...: 100%|##########| 5/5 [00:03<00:00,  1.29it/s]
-Guidance scale 4.0 is ignored for step-wise distilled models.
-  0%|          | 0/8 [00:00<?, ?it/s] 12%|#2        | 1/8 [00:00<00:01,  4.52it/s] 25%|##5       | 2/8 [00:00<00:01,  4.92it/s] 38%|###7      | 3/8 [00:00<00:00,  5.07it/s] 50%|#####     | 4/8 [00:00<00:00,  5.12it/s] 62%|######2   | 5/8 [00:00<00:00,  5.14it/s] 75%|#######5  | 6/8 [00:01<00:00,  5.17it/s] 88%|########7 | 7/8 [00:01<00:00,  5.19it/s]100%|##########| 8/8 [00:01<00:00,  5.20it/s]100%|##########| 8/8 [00:01<00:00,  5.12it/s]
-    prompt 0 semente 1: 8 chamadas
-Guidance scale 4.0 is ignored for step-wise distilled models.
-  0%|          | 0/8 [00:00<?, ?it/s] 12%|#2        | 1/8 [00:00<00:01,  5.25it/s] 25%|##5       | 2/8 [00:00<00:01,  5.24it/s] 38%|###7      | 3/8 [00:00<00:00,  5.24it/s] 50%|#####     | 4/8 [00:00<00:00,  5.24it/s] 62%|######2   | 5/8 [00:00<00:00,  5.24it/s] 75%|#######5  | 6/8 [00:01<00:00,  5.22it/s] 88%|########7 | 7/8 [00:01<00:00,  5.24it/s]100%|##########| 8/8 [00:01<00:00,  5.24it/s]100%|##########| 8/8 [00:01<00:00,  5.24it/s]
-    prompt 0 semente 2: 8 chamadas
-Guidance scale 4.0 is ignored for step-wise distilled models.
-  0%|          | 0/8 [00:00<?, ?it/s] 12%|#2        | 1/8 [00:00<00:01,  5.26it/s] 25%|##5       | 2/8 [00:00<00:01,  5.26it/s] 38%|###7      | 3/8 [00:00<00:00,  5.25it/s] 50%|#####     | 4/8 [00:00<00:00,  5.25it/s] 62%|######2   | 5/8 [00:00<00:00,  5.26it/s] 75%|#######5  | 6/8 [00:01<00:00,  5.25it/s] 88%|########7 | 7/8 [00:01<00:00,  5.25it/s]100%|##########| 8/8 [00:01<00:00,  5.25it/s]100%|##########| 8/8 [00:01<00:00,  5.25it/s]
-    prompt 1 semente 1: 8 chamadas
-Guidance scale 4.0 is ignored for step-wise distilled models.
-  0%|          | 0/8 [00:00<?, ?it/s] 12%|#2        | 1/8 [00:00<00:01,  5.24it/s] 25%|##5       | 2/8 [00:00<00:01,  5.25it/s] 38%|###7      | 3/8 [00:00<00:00,  5.24it/s] 50%|#####     | 4/8 [00:00<00:00,  5.25it/s] 62%|######2   | 5/8 [00:00<00:00,  5.24it/s] 75%|#######5  | 6/8 [00:01<00:00,  5.24it/s] 88%|########7 | 7/8 [00:01<00:00,  5.25it/s]100%|##########| 8/8 [00:01<00:00,  5.24it/s]100%|##########| 8/8 [00:01<00:00,  5.24it/s]
-    prompt 1 semente 2: 8 chamadas
-Guidance scale 4.0 is ignored for step-wise distilled models.
-  0%|          | 0/8 [00:00<?, ?it/s] 12%|#2        | 1/8 [00:00<00:01,  5.26it/s] 25%|##5       | 2/8 [00:00<00:01,  5.25it/s] 38%|###7      | 3/8 [00:00<00:00,  5.25it/s] 50%|#####     | 4/8 [00:00<00:00,  5.25it/s] 62%|######2   | 5/8 [00:00<00:00,  5.24it/s] 75%|#######5  | 6/8 [00:01<00:00,  5.24it/s] 88%|########7 | 7/8 [00:01<00:00,  5.24it/s]100%|##########| 8/8 [00:01<00:00,  5.24it/s]100%|##########| 8/8 [00:01<00:00,  5.24it/s]
-    prompt 2 semente 1: 8 chamadas
-Guidance scale 4.0 is ignored for step-wise distilled models.
-  0%|          | 0/8 [00:00<?, ?it/s] 12%|#2        | 1/8 [00:00<00:01,  5.26it/s] 25%|##5       | 2/8 [00:00<00:01,  5.25it/s] 38%|###7      | 3/8 [00:00<00:00,  5.24it/s] 50%|#####     | 4/8 [00:00<00:00,  5.24it/s] 62%|######2   | 5/8 [00:00<00:00,  5.23it/s] 75%|#######5  | 6/8 [00:01<00:00,  5.24it/s] 88%|########7 | 7/8 [00:01<00:00,  5.24it/s]100%|##########| 8/8 [00:01<00:00,  5.24it/s]100%|##########| 8/8 [00:01<00:00,  5.24it/s]
-    prompt 2 semente 2: 8 chamadas
-Guidance scale 4.0 is ignored for step-wise distilled models.
-  0%|          | 0/8 [00:00<?, ?it/s] 12%|#2        | 1/8 [00:00<00:01,  5.23it/s] 25%|##5       | 2/8 [00:00<00:01,  5.22it/s] 38%|###7      | 3/8 [00:00<00:00,  5.22it/s] 50%|#####     | 4/8 [00:00<00:00,  5.22it/s] 62%|######2   | 5/8 [00:00<00:00,  5.21it/s] 75%|#######5  | 6/8 [00:01<00:00,  5.21it/s] 88%|########7 | 7/8 [00:01<00:00,  5.22it/s]100%|##########| 8/8 [00:01<00:00,  5.21it/s]100%|##########| 8/8 [00:01<00:00,  5.21it/s]
-    prompt 3 semente 1: 8 chamadas
-Guidance scale 4.0 is ignored for step-wise distilled models.
-  0%|          | 0/8 [00:00<?, ?it/s] 12%|#2        | 1/8 [00:00<00:01,  5.19it/s] 25%|##5       | 2/8 [00:00<00:01,  5.21it/s] 38%|###7      | 3/8 [00:00<00:00,  5.21it/s] 50%|#####     | 4/8 [00:00<00:00,  5.22it/s] 62%|######2   | 5/8 [00:00<00:00,  5.20it/s] 75%|#######5  | 6/8 [00:01<00:00,  5.21it/s] 88%|########7 | 7/8 [00:01<00:00,  5.21it/s]100%|##########| 8/8 [00:01<00:00,  5.21it/s]100%|##########| 8/8 [00:01<00:00,  5.21it/s]
-    prompt 3 semente 2: 8 chamadas
-  VRAM alocada depois de soltar o professor: 0.01 GiB
-  professor: 64 exemplos, 0.50 GiB de RAM retidos (alvo em torch.bfloat16)
-
---- aluno: klein4b_ternario_ingenuo.safetensors  modo ajuste ---
-  169 parametros; 9 treinaveis, 195,035,136 valores
-  mestre bf16-sr: torchao.optim.adam._AdamW, peso torch.bfloat16
-    epoca   1/30  perda 1.032861e+00
-    epoca   5/30  perda 4.036264e-01
-    epoca  10/30  perda 2.907112e-01
-    epoca  15/30  perda 2.486446e-01
-    epoca  20/30  perda 2.229561e-01
-    epoca  25/30  perda 2.148876e-01
-    epoca  30/30  perda 2.010538e-01
-  perda 1.032861e+00 -> 2.010538e-01
-  ELEMENTOS mudados (no bf16 gravado): 97.04% de 195,035,136
-  densos mudados: 9/9   maior desvio rel-L2 9.413e-02
-  escrito P:\ComfyBench\originais\klein4b_braco1s_bf16_sr.safetensors  7,751,109,744 B
-
-=== NAO COBERTO ===
-  Nenhuma imagem. Isto otimiza e mede PREVISAO em entradas casadas pelo pipeline.
-  64 exemplos para 195,035,136 parametros -- fortemente subdeterminado, e isso
-  limita o que um ganho aqui significa.
-  Nenhum tempo vale: corpo ternario desempacotado, sem kernel de 1,58 bit.
-  O pipeline do diffusers nao e o caminho do ComfyUI: o mesmo peso pode render diferente
-  la, e isso NAO foi conferido.

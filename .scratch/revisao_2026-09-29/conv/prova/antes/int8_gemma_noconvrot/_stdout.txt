@@ -1,9 +1,0 @@
-Source: F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\fontes\gemma_sint_bf16.safetensors
-Profile: gemma   convrot=False groupsize=256   device=cpu
-Selected Linear weights: 14
-Output: F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\antes\int8_gemma_noconvrot\saida.safetensors
-[14/14] quantized
-Wrote F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\antes\int8_gemma_noconvrot\saida.safetensors (1.18 MiB) in 0.0 min
-Wrote F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\antes\int8_gemma_noconvrot\saida.quant.json
-
---- stderr ---

@@ -1,8 +1,0 @@
-{
-  "dir": "/content/qat_run",
-  "inicio_hf": "JoaoZaokk/klein4b-qat-ckpt",
-  "inicio_arquivo_local": "/content/inicio/ckpt/ultimo.pt",
-  "args": ["--sementes", "1", "--otim", "adamw8bit-sr", "--max-passos", "6000", "--lote", "1",
-           "--log-cada", "50", "--holdout-cada", "1000", "--ckpt-min", "25",
-           "--push-hf", "JoaoZaokk/klein4b-qat-replay", "--hf-publico"]
-}

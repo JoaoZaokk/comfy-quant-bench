@@ -1,4 +1,0 @@
-# teste 26/09: BF16 do Qwen 2.1 em disco LOCAL (copia temporaria), para separar leitura por rede do crash do aimdo
-comfybench_local:
-    base_path: C:/ComfyBench_local
-    diffusion_models: diffusion_models

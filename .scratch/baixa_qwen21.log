@@ -1,4 +1,0 @@
-ok vae/qwen_image_2.1_vae_bf16.safetensors 675509688 B (confere) 63 s
-ok text_encoders/qwen3vl_8b_w4a8.safetensors 6312105364 B (confere) 603 s
-ok diffusion_models/qwen_image_2.1_int8_convrot.safetensors 7256783064 B (confere) 698 s
-FIM

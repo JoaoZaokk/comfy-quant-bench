@@ -1,6 +1,0 @@
-header (nomes/dtypes/formas/offsets) identico: True | metadata identico: True
-codigos int4 diferentes: 8186/1179648 = 0.694%
-escalas: erro relativo medio 2.52e-03, max 2.77e-03 (14 tensores)
-tensores preservados byte a byte iguais: True
-normas reescritas (lambda) byte a byte iguais: True
-sidecar smooth_gemma_bf16, chaves diferentes (fora output/seconds): ['quantizer_input']

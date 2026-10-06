@@ -1,0 +1,196 @@
+diff --git a/comfy/ldm/modules/attention.py b/comfy/ldm/modules/attention.py
+index 4d6cf85..ea63fbc 100644
+--- a/comfy/ldm/modules/attention.py
++++ b/comfy/ldm/modules/attention.py
+@@ -1,4 +1,5 @@
+ import math
++import os
+ import sys
+ import inspect
+ 
+@@ -23,10 +24,41 @@ if model_management.xformers_enabled():
+ 
+ SAGE_ATTENTION_IS_AVAILABLE = False
+ SAGE_ATTENTION_SUPPORTS_MASK = False
++# Local patch (2026-10-01): `sageattn` picks fp32 PV accumulation on SM80/86 and drops the smooth_k kwarg.
++# COMFY_SAGE_PV_ACCUM=fp16 (or fp16+fp32 / fp32 / fp16sv = fp16 with the kernel's V-mean subtraction) calls the SM80 kernel directly with that accumulator;
++# COMFY_SAGE_SMOOTH_K=0 turns K smoothing off. The fp16 accumulators get V scaled per column (see
++# _sage_pv_fp16_scaled). Measured on the 3090 at Qwen-Image-2.1 shapes (B=1 H=32 D=128 Q=4096 K=4608):
++# fp16 1.46x and fp16+fp32 1.21x faster than the default before the scaling, relative error 0.0119 vs 0.0115.
++SAGE_PV_ACCUM = os.environ.get("COMFY_SAGE_PV_ACCUM", "").strip()
++SAGE_SMOOTH_K = os.environ.get("COMFY_SAGE_SMOOTH_K", "1").strip() != "0"
++# COMFY_SAGE_QK_GRAN=per_thread (default, the kernel wrapper's own) | per_warp: granularity of the int8 Q/K scales. Measured
++# 2026-10-02 (fase 3): per_warp is ~3 % faster and 1.7x more accurate on Krea2 GQA heads (0.065 vs 0.111 vs SDPA fp32),
++# ~6 % less accurate on Qwen-Image-2.1 (0.0486 vs 0.0458); see .scratch/quantfunc_2026-10-01/otimizacao/attn_sm86_matrix_out.txt.
++SAGE_QK_GRAN = os.environ.get("COMFY_SAGE_QK_GRAN", "per_thread").strip() or "per_thread"
++if SAGE_QK_GRAN not in ("per_thread", "per_warp"):
++    logging.warning("COMFY_SAGE_QK_GRAN={!r} ignored: use per_thread or per_warp".format(SAGE_QK_GRAN))
++    SAGE_QK_GRAN = "per_thread"
++# COMFY_SAGE_HYBRID=<threshold> (experiment, 2026-10-02): heads whose keys are nearly one constant vector get exact SDPA,
++# the rest keep the Sage kernel. The int8 Q/K quantization is unreliable on those heads (see _sage_dominant_heads).
++SAGE_HYBRID = float(os.environ.get("COMFY_SAGE_HYBRID", "0") or 0)
++# Models may override SAGE_QK_GRAN/SAGE_SMOOTH_K for themselves through transformer_options["sage_attention"]
++# (BaseModel.sage_attention; Krea2 asks for per_warp + smooth_k). COMFY_SAGE_MODEL_POLICY=0 ignores those (A/B).
++SAGE_MODEL_POLICY = os.environ.get("COMFY_SAGE_MODEL_POLICY", "1").strip() != "0"
++_sageattn_pv_fp16_cuda = None
+ try:
+     from sageattention import sageattn
+     SAGE_ATTENTION_IS_AVAILABLE = True
+     SAGE_ATTENTION_SUPPORTS_MASK = "attn_mask" in inspect.signature(sageattn).parameters
++    if SAGE_PV_ACCUM:
++        if SAGE_PV_ACCUM not in ("fp16", "fp16+fp32", "fp32", "fp16sv"):
++            logging.warning("COMFY_SAGE_PV_ACCUM={!r} ignored: use fp16, fp16+fp32, fp32 or fp16sv".format(SAGE_PV_ACCUM))
++            SAGE_PV_ACCUM = ""
++        else:
++            try:
++                from sageattention import sageattn_qk_int8_pv_fp16_cuda as _sageattn_pv_fp16_cuda
++                logging.info("Sage attention PV accumulation {} (smooth_k={}) on SM80/86".format(SAGE_PV_ACCUM, SAGE_SMOOTH_K))
++            except ImportError:
++                logging.warning("COMFY_SAGE_PV_ACCUM set but sageattn_qk_int8_pv_fp16_cuda is not importable; using sageattn")
+ except ImportError as e:
+     if model_management.sage_attention_enabled():
+         if e.name == "sageattention":
+@@ -646,6 +678,75 @@ def _attention_comfy_kitchen_int8_containers(q, k, v, heads, mask=None, attn_pre
+ attention_comfy_kitchen_int8.container_function = _attention_comfy_kitchen_int8_containers
+ 
+ 
++@functools.lru_cache(maxsize=None)
++def _sage_sm8x(device):
++    # the direct SM80 kernel covers sm80/86/87; other archs keep sageattn's own dispatch
++    return device.type == "cuda" and torch.cuda.get_device_capability(device) in ((8, 0), (8, 6), (8, 7))
++
++
++def _sage_pv_fp16_scaled(q, k, v, tensor_layout, sm_scale, smooth_k=None, qk_gran=None):
++    # The fp16 P.V accumulators of the SM80 kernel overflow to inf (NaN after the softmax division: black images) when
++    # |V| is large and the attention is flat: "fp16+fp32" sums one K tile in fp16 before adding to fp32 (32 keys for
++    # head_dim 128 non-causal, 64 otherwise: blk_k in sageattention/core.py; measured inf above |V| ~ 2047 with P ~ 1),
++    # "fp16" sums the whole row. Seen on Krea2, Z-Image and Nunchaku Qwen-Image-Edit (2026-10-01/02). Scaling each
++    # (head, channel) column of V by a power of two so that |V| <= 1 bounds those sums by the tile size and by the key
++    # count; the scaling and the final rescale are exact, nothing synchronizes with the host, and the Sage error itself
++    # (int8 Q/K) is unchanged.
++    seq_dim = 2 if tensor_layout == "HND" else 1
++    scale = torch.exp2(torch.log2(torch.linalg.vector_norm(v, float("inf"), dim=seq_dim, keepdim=True).float().clamp_(min=1.0)).ceil_())
++    accum = SAGE_PV_ACCUM
++    smooth_v = False
++    if accum == "fp16sv":
++        # "fp16" plus the kernel's own V-mean subtraction (accum_f16_fuse_v_mean): the fp16 row sum then accumulates
++        # V - mean(V) instead of V, which removes the rounding error a DC component builds over thousands of keys
++        # (measured 2026-10-02: 0.11 -> 0.0015 relative error at 16k keys with V ~ 50 +- 20). |V - mean| <= 2 after the
++        # scaling, so the row sum is bounded by 2 * keys: fall back to fp16+fp32 above 32752 keys.
++        accum, smooth_v = "fp16", True
++        if k.shape[seq_dim] > 32752:
++            accum, smooth_v = "fp16+fp32", False
++    elif accum == "fp16" and k.shape[seq_dim] > 65504:
++        accum = "fp16+fp32"  # the full-row fp16 sum is bounded by the key count only
++    out = _sageattn_pv_fp16_cuda(q, k, v * torch.reciprocal(scale).to(v.dtype), tensor_layout=tensor_layout, is_causal=False,
++                                 sm_scale=sm_scale, pv_accum_dtype=accum,
++                                 smooth_k=SAGE_SMOOTH_K if smooth_k is None else smooth_k, smooth_v=smooth_v,
++                                 qk_quant_gran=SAGE_QK_GRAN if qk_gran is None else qk_gran)
++    head_dim = 1 if tensor_layout == "HND" else 2
++    if scale.shape[head_dim] != out.shape[head_dim]:  # GQA: each K/V head serves a run of consecutive Q heads
++        scale = scale.repeat_interleave(out.shape[head_dim] // scale.shape[head_dim], dim=head_dim)
++    return out.mul_(scale)
++
++
++def _sage_dominant_heads(k, tensor_layout):
++    # Heads where every key is almost the same vector (|K - mean K| < threshold * |mean K|) carry one dominant coordinate;
++    # the int8 quantization of Q/K there put the Sage kernels 10-90 % away from exact attention on Nunchaku Qwen-Image-Edit
++    # (4 of 24 heads, blocks 0 and 52) and Krea2 (1 of 12 K/V heads, block 5), measured 2026-10-02 against SDPA fp32.
++    seq_dim = 2 if tensor_layout == "HND" else 1
++    kf = (k[:, :, ::8] if tensor_layout == "HND" else k[:, ::8]).float()   # every 8th key: the structure is per head, not per key
++    km = kf.mean(dim=seq_dim, keepdim=True)
++    spread = (kf - km).norm(dim=-1).mean(dim=seq_dim)                    # (B, H): mean distance of a key from the mean key
++    return (spread < SAGE_HYBRID * km.norm(dim=-1).squeeze(seq_dim)).any(dim=0)   # (H,)
++
++
++def _sage_hybrid(q, k, v, tensor_layout, sm_scale, sage):
++    flags = _sage_dominant_heads(k, tensor_layout)
++    hd = 1 if tensor_layout == "HND" else 2
++    groups = q.shape[hd] // k.shape[hd]                                  # GQA: a K/V head serves `groups` consecutive Q heads
++    flags_q = flags.repeat_interleave(groups) if groups > 1 else flags
++    if not bool(flags.any()):                                             # one host sync per call
++        return sage(q, k, v)
++    keep_q, keep_k = (~flags_q).nonzero().flatten(), (~flags).nonzero().flatten()
++    exact_q, exact_k = flags_q.nonzero().flatten(), flags.nonzero().flatten()
++    out = torch.empty_like(q)
++    if keep_q.numel():
++        out.index_copy_(hd, keep_q, sage(q.index_select(hd, keep_q), k.index_select(hd, keep_k), v.index_select(hd, keep_k)))
++    qs, ks, vs = q.index_select(hd, exact_q), k.index_select(hd, exact_k), v.index_select(hd, exact_k)
++    if tensor_layout == "NHD":
++        qs, ks, vs = (t.transpose(1, 2) for t in (qs, ks, vs))
++    o = comfy.ops.scaled_dot_product_attention(qs, ks, vs, attn_mask=None, dropout_p=0.0, is_causal=False, scale=sm_scale, enable_gqa=groups > 1)
++    out.index_copy_(hd, exact_q, o.transpose(1, 2) if tensor_layout == "NHD" else o)
++    return out
++
++
+ @wrap_attn
+ def attention_sage(q, k, v, heads, mask=None, attn_precision=None, skip_reshape=False, skip_output_reshape=False, **kwargs):
+     if kwargs.get("low_precision_attention", True) is False or (mask is not None and not SAGE_ATTENTION_SUPPORTS_MASK):
+@@ -655,8 +756,7 @@ def attention_sage(q, k, v, heads, mask=None, attn_precision=None, skip_reshape=
+     if skip_reshape:
+         b, _, _, dim_head = q.shape
+         tensor_layout = "HND"
+-        if kwargs.get("enable_gqa", False):
+-            k, v = comfy.ops.repeat_kv_for_gqa(k, v, q.shape[-3], -3)
++        # SageAttention 2.2 takes fewer K/V heads than Q heads itself (GQA); the pytorch fallback below also does
+     else:
+         b, _, dim_head = q.shape
+         dim_head //= heads
+@@ -676,7 +776,20 @@ def attention_sage(q, k, v, heads, mask=None, attn_precision=None, skip_reshape=
+         sage_kwargs["attn_mask"] = mask
+ 
+     try:
+-        out = sageattn(q, k, v, **sage_kwargs)
++        if _sageattn_pv_fp16_cuda is not None and mask is None and _sage_sm8x(q.device):
++            smooth_k, qk_gran = SAGE_SMOOTH_K, SAGE_QK_GRAN
++            policy = (kwargs.get("transformer_options") or {}).get("sage_attention") if SAGE_MODEL_POLICY else None
++            if policy:
++                smooth_k, qk_gran = policy.get("smooth_k", smooth_k), policy.get("qk_quant_gran", qk_gran)
++
++            def sage(q, k, v):
++                if SAGE_PV_ACCUM == "fp32":
++                    return _sageattn_pv_fp16_cuda(q, k, v, tensor_layout=tensor_layout, is_causal=False, sm_scale=sage_kwargs["sm_scale"],
++                                                  pv_accum_dtype="fp32", smooth_k=smooth_k, qk_quant_gran=qk_gran)
++                return _sage_pv_fp16_scaled(q, k, v, tensor_layout, sage_kwargs["sm_scale"], smooth_k, qk_gran)
++            out = _sage_hybrid(q, k, v, tensor_layout, sage_kwargs["sm_scale"], sage) if SAGE_HYBRID > 0 else sage(q, k, v)
++        else:
++            out = sageattn(q, k, v, **sage_kwargs)
+     except Exception as e:
+         logging.error("Error running sage attention: {}, using pytorch attention instead.".format(e))
+         exception_fallback = True
+diff --git a/comfy/model_base.py b/comfy/model_base.py
+index 0bed59c..920ae68 100644
+--- a/comfy/model_base.py
++++ b/comfy/model_base.py
+@@ -166,6 +166,10 @@ def convert_tensor(extra, dtype, device):
+ 
+ 
+ class BaseModel(torch.nn.Module):
++    # Local patch (2026-10-03): per-family SageAttention settings (keys "qk_quant_gran", "smooth_k"), handed to
++    # attention_sage through transformer_options["sage_attention"]. None keeps the global COMFY_SAGE_* env defaults.
++    sage_attention = None
++
+     def __init__(self, model_config, model_type=ModelType.EPS, device=None, unet_model=UNetModel):
+         super().__init__()
+ 
+@@ -250,6 +254,8 @@ class BaseModel(torch.nn.Module):
+         transformer_options["prefetch_dynamic_vbars"] = (
+             self.current_patcher is not None and self.current_patcher.is_dynamic()
+         )
++        if self.sage_attention is not None:
++            transformer_options.setdefault("sage_attention", self.sage_attention)
+ 
+         model_output = self.diffusion_model(xc, t, context=context, control=control, transformer_options=transformer_options, **extra_conds)
+         if len(model_output) > 1 and not torch.is_tensor(model_output):
+@@ -2718,6 +2724,11 @@ class Ideogram4(BaseModel):
+         return out
+ 
+ class Krea2(BaseModel):
++    # Measured 2026-10-02/03 on the 3090: Krea2's GQA attention quantizes 2.4x more accurately with per-warp Q/K
++    # scales and K smoothing (0.065 vs 0.158 relative error to SDPA fp32 at the same speed), and the render lands
++    # 25.0 dB from SDPA against 22.1 dB with the launcher's global smooth_k=0 (.scratch/quantfunc_2026-10-01/otimizacao).
++    sage_attention = {"qk_quant_gran": "per_warp", "smooth_k": True}
++
+     def __init__(self, model_config, model_type=ModelType.FLUX, device=None):
+         super().__init__(model_config, model_type, device=device, unet_model=comfy.ldm.krea2.model.SingleStreamDiT)
+         self.memory_usage_factor_conds = ("ref_latents",)

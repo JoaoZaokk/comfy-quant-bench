@@ -1,3 +1,0 @@
-albumentations 2.0.8 has requirement albucore==0.0.24, but you have albucore 0.2.18.
-comfyui-nuvu 1.0.90 has requirement huggingface_hub[hf_transfer]<1.0,>=0.34.0, but you have huggingface-hub 1.33.0.
-groundingdino-py 0.4.0 has requirement supervision==0.6.0, but you have supervision 0.30.6.

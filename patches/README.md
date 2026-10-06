@@ -48,6 +48,8 @@ CRLF, e ele deixa de aplicar. O `.gitattributes` marca `*.patch -text` para o Gi
 | `comfyui_awq_w4a16_format.patch` | formato de quant `awq_w4a16` (layout AWQ do comfy-kitchen) |
 | `comfyui_text_encoder_quantized_math.patch` | text encoder quantizado roda com o matmul quantizado |
 | `comfyui_extra_paths_timeout.patch` | pula, na subida, a seção do `extra_model_paths.yaml` que não responde em 10 s (NAS ocupado) |
+| `comfyui_sage_pv_accum_env.patch` | `COMFY_SAGE_PV_ACCUM=fp16+fp32` (ou `fp16`/`fp32`) e `COMFY_SAGE_SMOOTH_K=0/1` escolhem o acumulador P·V e o K-smoothing do SageAttention em SM80/86 chamando o kernel direto; sem a variável nada muda. Os acumuladores fp16 transbordam (imagem preta) quando |V| é grande e a atenção plana: `fp16+fp32` soma 32 chaves em fp16 (inf acima de |V| ≈ 2047, medido), `fp16` soma a linha inteira. O patch escala cada coluna de V por uma potência de 2 (|V| ≤ 1, exato, sem sincronizar) e reescala a saída; `fp16` puro cai em `fp16+fp32` acima de 65 504 chaves. Também deixa de repetir K/V 4× para GQA no caminho Sage (o kernel aceita 12 cabeças de K/V para 48 de Q, saída idêntica). O launcher passa `fp16+fp32`. `COMFY_SAGE_SMOOTH_K=0` (o que o ComfyUI pede e o `sageattn` ignora — reportado em [thu-ml/SageAttention#404](https://github.com/thu-ml/SageAttention/issues/404)) é 15× mais exato no Nunchaku Qwen-Image-Edit e pior no Krea2; o launcher passa 0 desde 02/10 (pedido do dono). `COMFY_SAGE_HYBRID=0.1` (experimento, opt-in): cabeças de K quase constante vão para SDPA exato e o resto fica no Sage — Qwen Edit 30,5 → 33,5 dB e Krea2 25,5 → 26,9 dB do SDPA, +0 a +2 % de custo (`resultado_modelos.md` §12). Medido 2026-10-01/02 em Qwen 2.1, Krea2, Z-Image, LTX 2.5, H3 e Nunchaku (`.scratch/quantfunc_2026-10-01/otimizacao/`, `resultado_modelos.md` §7–8) |
+| `comfyui_krea2_fused_norm_gqa.patch` | Krea2: `RMSNorm + modulação` em um kernel `rms_adaln` do comfy-kitchen (peso da norma dobrado na escala), resíduo com gate em `addcmul`, e K/V sem `repeat_interleave` (GQA nativo). KSampler int8 8,1 → 7,5 s, W4A4 5,8 → 5,1 s, edição 24,5 → 23,4 s; muda a imagem tanto quanto trocar a precisão da atenção e mantém a distância ao SDPA (`resultado_modelos.md` §1.3). Aplicar/reverter também por `.scratch/quantfunc_2026-10-01/otimizacao/aplica_krea2_fusao.py` |
 
 ### comfy-kitchen 0.2.35
 A ordem importa: o `awq` vai por cima do `w4a8`.
@@ -56,6 +58,7 @@ A ordem importa: o `awq` vai por cima do `w4a8`.
 |---|---|
 | `comfy_kitchen_w4a8_dequant_fused.patch` | dequant fundido do W4A8 |
 | `comfy_kitchen_awq_w4a16_triton.patch` | dequant AWQ W4A16 no registro de ops (eager + Triton); testes em `tests/test_comfy_kitchen_awq.py` |
+| `comfy_kitchen_swiglu_w4a4_fused.patch` | `convrot_w4a4_linear(..., input_act="swiglu")`: SwiGLU fundido no quantizador ConvRot int4 pelo módulo companheiro `_swiglu_quant` (`tools/ck_swiglu`, mesmo kernel do ck carregando `silu(gate)*up`); sem o módulo aplica a ativação e quantiza como antes. Aplicar depois do `awq` |
 
 ### Custom nodes de terceiros
 | Patch | Clone | Mudança |
@@ -75,5 +78,21 @@ Os patches de nó guardam só o diff. Ao lado do arquivo alterado costuma haver 
 original, fora do Git.
 
 ### `arquivo/`
-Tentativas que não deram certo, guardadas como registro. Não aplicar. Exemplo:
-`comfyui-gguf_xpu_staged_copy.FALHOU.patch`.
+Tentativas que não deram certo, guardadas como registro. Não aplicar.
+
+| Patch | O que era |
+|---|---|
+| `comfyui-gguf_xpu_staged_copy.FALHOU.patch` | GGUF: cópia em estágios para XPU; falhou |
+| `comfyui_qwen21_fused_qkv_profile.SEM_GANHO.patch` | Qwen-Image-2.1: `fused_convrot_qkv` (uma quantização de ativação ConvRot para `to_q/k/v`) e perfil por `QWEN21_PROFILE`. Imagem idêntica, wall time igual; revertido em 2026-10-01 (`.scratch/quantfunc_2026-10-01/paper_investigacao.md`, §8–9). Reaplicar só para repetir o perfil |
+
+Adendo 03/10 (fase 4): `comfyui_sage_pv_accum_env.patch` passou a tocar também `comfy/model_base.py` — política por
+modelo (`BaseModel.sage_attention`, Krea2 = per_warp + smooth_k, `COMFY_SAGE_MODEL_POLICY=0` desliga) — e
+`comfyui_swiglu_triton_env.patch` ganhou o fold W4A4 SwiGLU em `linear_input_act` (`COMFY_W4A4_INPUT_ACT=0` desliga), que
+depende de `comfy_kitchen_swiglu_w4a4_fused.patch` e do módulo `_swiglu_quant` (`tools/ck_swiglu/build.bat --install`;
+rebuild após atualizar o torch). Testes: `patches/tests/test_comfyui_fase4_dispatch.py`. Medições em
+`.scratch/quantfunc_2026-10-01/otimizacao/resultado_fase4.md`.
+
+Adendo 02/10 (fase 2): `comfyui_sage_pv_accum_env.patch` ganhou o valor `COMFY_SAGE_PV_ACCUM=fp16sv` (acumulador fp16 com a
+subtração da média de V dentro do kernel sm80, `accum_f16_fuse_v_mean`, por cima da escala por coluna; cai em `fp16+fp32`
+acima de 32 752 chaves). Medido no kernel: iguala o fp32 onde o `fp16` puro errava 10–75× (componente contínua) e é 10–12 %
+mais rápido que o `fp16+fp32`; ponta a ponta em `.scratch/quantfunc_2026-10-01/otimizacao/resultado_modelos.md` §14.

@@ -1,9 +1,0 @@
-[project]
-name = "comfy-qwen21-nunchaku"
-description = "ComfyUI loader for Qwen-Image-2.1 SVDQuant INT4 checkpoints (qwen21-nunchaku-svdq-int4-v1) on ComfyUI's native Qwen-Image-2.1 model with Nunchaku kernels."
-version = "0.1.0"
-license = { file = "LICENSE" }
-dependencies = ["nunchaku"]
-
-[project.urls]
-Repository = "https://github.com/JoaoZaokk/comfy-qwen21-nunchaku"

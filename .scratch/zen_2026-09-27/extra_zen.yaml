@@ -1,4 +1,0 @@
-# So para o ComfyUI de teste do zen: a pasta de custom nodes isolada (o nó nao entra no ComfyUI principal).
-zen_test:
-  base_path: P:/ComfyBench/zen_test/
-  custom_nodes: custom_nodes

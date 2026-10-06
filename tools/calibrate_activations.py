@@ -249,9 +249,19 @@ class LayerStats:
     not all of it.
     """
 
-    def __init__(self, width: int, capacity: int, seed: int, device: torch.device):
+    def __init__(self, width: int, capacity: int, seed: int, device: torch.device,
+                 hessian: bool = False, hessian_topk: int = 0):
         self.reservoir = Reservoir(capacity, width, seed)
         self.channel_absmax = torch.zeros(width, dtype=torch.float32, device=device)
+        # --hessian: X^T X de TODAS as linhas vistas, fp32 na GPU (K=4096 -> 64 MiB, K=12288 -> 576 MiB
+        # por camada). E o que o GPTQ consome; o reservatorio de amostras fica de lado (--rows 0).
+        # Medido na fase 3 (gptq_fase3.py, holdout): o ganho do GPTQ ainda cresce de 8192 para 32768
+        # linhas, e guardar 32768 amostras custa 7,7 GB para 20 camadas -- acumular H nao custa linhas.
+        self.hessian = (torch.zeros(width, width, dtype=torch.float32, device=device)
+                        if hessian else None)
+        # --hessian-topk N: ao salvar, guarda so os N autovetores do topo de X^T X (base ResQ, fase 6), nao a matriz
+        # (33 GB para o Qwen-Image-2.1 inteiro contra ~100 MB). Autovetores de R^T H R = R^T . autovetores(H).
+        self.hessian_topk = hessian_topk
         self.crest_chunks = []
         self.calls = 0
         self.rows = 0
@@ -271,11 +281,21 @@ class LayerStats:
         rms = head.pow(2).mean(dim=1).sqrt().clamp(min=1e-12)
         self.crest_chunks.append(head.amax(dim=1) / rms)
 
-        self.reservoir.offer(flat, sigma)
+        if self.hessian is not None:
+            # bf16 x bf16 com acumulacao fp32: os produtos sao exatos em fp32, nada de TF32.
+            if flat.is_cuda and flat.dtype in (torch.bfloat16, torch.float16):
+                self.hessian.add_(torch.mm(flat.t(), flat, out_dtype=torch.float32))
+            else:
+                self.hessian.add_(flat.float().t() @ flat.float())
+
+        if self.reservoir.capacity:
+            self.reservoir.offer(flat, sigma)
 
     def finish(self) -> dict:
         crest = (torch.cat(self.crest_chunks).cpu() if self.crest_chunks
                  else torch.zeros(1))
+        if crest.numel() == 0:      # --crest-rows 0: chunks vazios
+            crest = torch.zeros(1)
         quantiles = torch.quantile(crest.float(), torch.tensor([0.5, 0.99]))
         sample_sigma = self.reservoir.sigma[:self.reservoir.filled].clone()
         return {
@@ -290,7 +310,18 @@ class LayerStats:
             "calls": self.calls,
             "rows": self.rows,
             "sampled_from": self.reservoir.seen,
+            **(self._hessian_out() if self.hessian is not None else {}),
         }
+
+
+    def _hessian_out(self) -> dict:
+        if not self.hessian_topk:
+            return {"hessian": self.hessian.cpu(), "hessian_rows": self.rows}
+        # eigh em CPU: na GPU o fp64 e lento e foi durante ele que a 3090 caiu em 04/10 (rede eletrica instavel)
+        evals, evecs = torch.linalg.eigh(self.hessian.cpu().double())
+        top = evals.argsort(descending=True)[:self.hessian_topk]
+        return {"hessian_topk_V": evecs[:, top].float().cpu(), "hessian_topk_eig": evals[top].float().cpu(),
+                "hessian_trace": float(self.hessian.diagonal().sum()), "hessian_rows": self.rows}
 
 
 def parse_args() -> argparse.Namespace:
@@ -315,11 +346,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--size", type=int, default=1024)
     parser.add_argument("--frames", type=int, default=1,
                         help="frames for a video model; ignored when the latent format is 2-D")
+    parser.add_argument("--layer-filter", default=None,
+                        help="regex extra sobre o nome da camada (re.search), aplicado depois do perfil: so essas "
+                             "camadas entram no reservatorio. Para capturas grandes (--rows alto) em poucas camadas.")
     parser.add_argument("--rows", type=int, default=128,
                         help="reservoir rows kept per layer")
     parser.add_argument("--crest-rows", type=int, default=64,
                         help="rows per call used for the crest-factor diagnostic")
     parser.add_argument("--attention", choices=["default", "sage"], default="default")
+    parser.add_argument("--hessian", action="store_true",
+                        help="acumula X^T X fp32 por camada (todas as linhas) para tools/gptq_w4a4.py; use com "
+                             "--layer-filter para caber na VRAM (K^2*4 bytes por camada) e --rows 0 --crest-rows 0")
+    parser.add_argument("--hessian-topk", type=int, default=0,
+                        help="com --hessian: salva so os N autovetores/autovalores do topo de X^T X (base ResQ), nao a matriz")
     return parser.parse_args()
 
 
@@ -430,10 +469,17 @@ def main() -> int:
     pattern = PROFILE_PATTERNS[args.profile]
     targets = {name: module for name, module in diffusion_model.named_modules()
                if isinstance(module, torch.nn.Linear) and pattern.match(name)}
+    if args.layer_filter:
+        import re
+        extra = re.compile(args.layer_filter)
+        targets = {name: module for name, module in targets.items() if extra.search(name)}
     if not targets:
         raise SystemExit(f"Profile {args.profile!r} matched no Linear in "
                          f"{type(diffusion_model).__name__}")
     print(f"hooking {len(targets)} Linear layers matching profile {args.profile!r}", flush=True)
+    if args.hessian:
+        hess_gib = sum(m.in_features ** 2 * 4 for m in targets.values()) / 2 ** 30
+        print(f"--hessian: {hess_gib:.2f} GiB de X^T X fp32 na GPU (e o mesmo em RAM ao salvar)", flush=True)
 
     stats: dict[str, LayerStats] = {}
     handles = []
@@ -472,7 +518,8 @@ def main() -> int:
                 # every run pick different rows while this comment claimed otherwise.
                 entry = LayerStats(x.shape[-1], args.rows,
                                    seed=zlib.crc32(name.encode("utf-8")),
-                                   device=x.device)
+                                   device=x.device, hessian=args.hessian,
+                                   hessian_topk=args.hessian_topk)
                 stats[name] = entry
             with torch.no_grad():
                 entry.observe(x.detach(), args.crest_rows, current_sigma[0])
@@ -554,6 +601,8 @@ def main() -> int:
         "scheduler": args.scheduler,
         "size": args.size,
         "rows": args.rows,
+        "hessian": bool(args.hessian),
+        "hessian_topk": int(args.hessian_topk),
         "runs": runs,
         "layers": len(payload),
         "never_ran": missing,

@@ -1,6 +1,0 @@
-3 tensores, 0.00 GiB de dados, de 5 no original
-  [0/3] 0.0 GiB  0 MiB/s
-escrito F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\depois\extrai\saida.safetensors (0.00 GiB) em 0 s
-NAO COBERTO: nao verifica hash contra a fonte (cada faixa e copiada crua, sem decodificar); nao carrega o resultado -- o loader do ComfyUI e quem diz se o arquivo serve.
-
---- stderr ---

@@ -1,0 +1,92 @@
+diff --git a/comfy/ldm/krea2/model.py b/comfy/ldm/krea2/model.py
+index 8001812d..f9d5893e 100644
+--- a/comfy/ldm/krea2/model.py
++++ b/comfy/ldm/krea2/model.py
+@@ -18,6 +18,7 @@ import comfy.ldm.common_dit
+ import comfy.utils
+ from comfy.ldm.flux.layers import EmbedND, timestep_embedding
+ from comfy.ldm.flux.math import apply_rope
++import comfy.quant_ops
+ from comfy.ldm.modules.attention import optimized_attention_masked
+ 
+ 
+@@ -35,6 +36,19 @@ class RMSNorm(nn.Module):
+         return F.rms_norm(x.float(), (x.shape[-1],), weight=weight, eps=self.eps).to(dtype)
+ 
+ 
++def _mod_scale(norm, scale):
++    # (1 + w)(1 + scale) - 1 in fp32: the RMSNorm's zero-centred weight folded into the modulation scale
++    w = comfy.model_management.cast_to(norm.scale, dtype=torch.float32, device=scale.device)
++    return ((1.0 + w) * (1.0 + scale.float()) - 1.0).to(scale.dtype)
++
++
++def _modulated_rms(norm, x, scale, shift):
++    # rmsnorm(x) * (1 + w) * (1 + scale) + shift in one fused kernel with one rounding; the eager path rounds three times
++    if comfy.model_management.in_training:
++        return (1 + scale) * norm(x) + shift
++    return comfy.quant_ops.ck.rms_adaln(x.contiguous(), _mod_scale(norm, scale), shift, norm.eps)
++
++
+ class QKNorm(nn.Module):
+     def __init__(self, dim: int, device=None, dtype=None, operations=None):
+         super().__init__()
+@@ -90,12 +104,9 @@ class Attention(nn.Module):
+ 
+         if freqs is not None:
+             q, k = apply_rope(q, k, freqs)
+-        if self.kvheads != self.heads:
+-            rep = self.heads // self.kvheads
+-            k = k.repeat_interleave(rep, dim=1)
+-            v = v.repeat_interleave(rep, dim=1)
++        # GQA: the attention backends take 12 K/V heads for 48 Q heads directly (SageAttention and SDPA); no 4x repeat
+         out = optimized_attention_masked(q, k, v, self.heads, mask=mask, skip_reshape=True,
+-                                         transformer_options=transformer_options)
++                                         enable_gqa=(self.kvheads != self.heads), transformer_options=transformer_options)
+ 
+         if "block_index" in transformer_options and "attn1_output_patch" in transformer_patches:
+             for p in transformer_patches["attn1_output_patch"]:
+@@ -190,9 +201,9 @@ class SingleStreamBlock(nn.Module):
+             postshift = postshift[:bs]
+             postgate = postgate[:bs]
+ 
+-            pre = self.prenorm(x)
+-            pre[:, :timestep_zero_index].mul_(1 + prescale).add_(preshift)
+-            pre[:, timestep_zero_index:].mul_(1 + ref_prescale).add_(ref_preshift)
++            # target rows modulated by t, reference rows by t = 0: the whole sequence in one fused call, then the reference rows redone
++            pre = _modulated_rms(self.prenorm, x, prescale, preshift)
++            pre[:, timestep_zero_index:] = _modulated_rms(self.prenorm, x[:, timestep_zero_index:], ref_prescale, ref_preshift)
+             attn = self.attn(pre, freqs, mask, transformer_options=transformer_options)
+             del pre
+             attn[:, :timestep_zero_index].mul_(pregate)
+@@ -200,9 +211,8 @@ class SingleStreamBlock(nn.Module):
+             x = x + attn
+             del attn
+ 
+-            post = self.postnorm(x)
+-            post[:, :timestep_zero_index].mul_(1 + postscale).add_(postshift)
+-            post[:, timestep_zero_index:].mul_(1 + ref_postscale).add_(ref_postshift)
++            post = _modulated_rms(self.postnorm, x, postscale, postshift)
++            post[:, timestep_zero_index:] = _modulated_rms(self.postnorm, x[:, timestep_zero_index:], ref_postscale, ref_postshift)
+             mlp = self.mlp(post)
+             del post
+             mlp[:, :timestep_zero_index].mul_(postgate)
+@@ -211,8 +221,8 @@ class SingleStreamBlock(nn.Module):
+             del mlp
+             return x
+ 
+-        x = x + pregate * self.attn((1 + prescale) * self.prenorm(x) + preshift, freqs, mask, transformer_options=transformer_options)
+-        x = x + postgate * self.mlp((1 + postscale) * self.postnorm(x) + postshift)
++        x = torch.addcmul(x, self.attn(_modulated_rms(self.prenorm, x, prescale, preshift), freqs, mask, transformer_options=transformer_options), pregate)
++        x = torch.addcmul(x, self.mlp(_modulated_rms(self.postnorm, x, postscale, postshift)), postgate)
+         return x
+ 
+ 
+@@ -225,7 +235,7 @@ class LastLayer(nn.Module):
+ 
+     def forward(self, x, tvec):
+         scale, shift = self.modulation(tvec)
+-        x = (1 + scale) * self.norm(x) + shift
++        x = _modulated_rms(self.norm, x, scale, shift)
+         return self.linear(x)
+ 
+ 

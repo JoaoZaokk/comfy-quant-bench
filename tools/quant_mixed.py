@@ -367,6 +367,10 @@ def parse_args() -> argparse.Namespace:
                         help="defaults to the profile recorded in the calibration")
     parser.add_argument("--promote-error", type=float, default=0.15,
                         help="W4A4 relative error above which a layer is promoted to W4A8")
+    parser.add_argument("--promote-format", choices=["w4a8", "int8"], default="w4a8",
+                        help="format of the promoted layers: asym_w4a8_int8 (default) or int8_tensorwise "
+                             "(ConvRot INT8: no per-call int4 decode, fused SwiGLU/residual; 2x the bytes). "
+                             "The promotion rule is the same (err_w4a4 > --promote-error, ranked by the W4A8 gain).")
     parser.add_argument("--keep-bf16-error", type=float, default=None,
                         help="W4A8 relative error above which a layer is left unquantized")
     parser.add_argument("--budget", type=float, default=1.0,
@@ -671,7 +675,7 @@ def decide(selected: list[str], by_layer: dict, *, uncalibrated: str, somente_w4
 
 def report(analysis: dict, decision: dict[str, str], uncalibrated: str) -> dict[str, int]:
     """As tabelas de decisao impressas antes de escrever. Devolve a contagem por formato."""
-    counts = {"convrot_w4a4": 0, "asym_w4a8_int8": 0, "bf16": 0}
+    counts = {"convrot_w4a4": 0, "asym_w4a8_int8": 0, "int8_tensorwise": 0, "bf16": 0}
     for fmt in decision.values():
         counts[fmt] += 1
     print(f"{'format':<20}{'layers':>8}")
@@ -798,6 +802,10 @@ def main() -> int:
     decision, notes = decide(selected, by_layer, uncalibrated=args.uncalibrated,
                              somente_w4a4=args.somente_w4a4, keep_bf16_error=args.keep_bf16_error,
                              promote_error=args.promote_error, budget=args.budget)
+    if args.promote_format == "int8":
+        # `decide()` continua pura e em termos de W4A8 (e o que a analise mede); a troca de formato das
+        # camadas promovidas e uma decisao de escrita, feita aqui, onde o formato e escolhido.
+        decision = {stem: ("int8_tensorwise" if fmt == "asym_w4a8_int8" else fmt) for stem, fmt in decision.items()}
     for line in notes:
         print(line)
     counts = report(analysis, decision, args.uncalibrated)
@@ -812,10 +820,11 @@ def main() -> int:
     w4a4 = F.ConvrotW4A4(args.convrot_groupsize)
     # measure_layer() always measures with codebook=True, so the written layers carry one too.
     w4a8 = F.AsymW4A8(args.group_size, args.convrot_groupsize, codebook=True)
-    formats = {name: (w4a4 if decision[name.removesuffix(".weight")] == "convrot_w4a4" else w4a8)
-               for name in quant_names}
-    out_meta = F.quant_metadata(metadata, F.layer_configs(formats),
-                                "mixed convrot_w4a4 / asym_w4a8_int8")
+    int8 = F.Int8Tensorwise(True, args.convrot_groupsize)
+    por_formato = {"convrot_w4a4": w4a4, "asym_w4a8_int8": w4a8, "int8_tensorwise": int8}
+    formats = {name: por_formato[decision[name.removesuffix(".weight")]] for name in quant_names}
+    rotulo = "mixed convrot_w4a4 / " + ("int8_tensorwise" if args.promote_format == "int8" else "asym_w4a8_int8")
+    out_meta = F.quant_metadata(metadata, F.layer_configs(formats), rotulo)
 
     started = time.perf_counter()
     feitas = {"n": 0}
@@ -849,9 +858,10 @@ def main() -> int:
                 "measure_dtype": str(MEASURE_DTYPE),
                 "output": str(output), "output_size": conv.output_size,
                 "architecture": profile,
-                "quantization": "mixed convrot_w4a4 / asym_w4a8_int8",
+                "quantization": rotulo,
                 "selection": {
                     "promote_error": args.promote_error,
+                    "promote_format": args.promote_format,
                     "keep_bf16_error": args.keep_bf16_error,
                     "budget": args.budget,
                     "uncalibrated": args.uncalibrated,

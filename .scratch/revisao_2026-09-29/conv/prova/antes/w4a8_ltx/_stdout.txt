@@ -1,9 +1,0 @@
-Source: F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\fontes\ltx_sint_bf16.safetensors
-Profile: ltx_2_5   group_size=16  convrot_groupsize=256
-Selected Linear weights: 30
-Output: F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\antes\w4a8_ltx\saida.safetensors
-[30/30] quantized
-Wrote F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\antes\w4a8_ltx\saida.safetensors (1.70 MiB) in 0.1 s
-Wrote F:\COMFY_PORTABLE\.scratch\revisao_2026-09-29\conv\prova\antes\w4a8_ltx\saida.quant.json
-
---- stderr ---

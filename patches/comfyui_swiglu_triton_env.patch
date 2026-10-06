@@ -1,0 +1,110 @@
+diff --git a/comfy/ops.py b/comfy/ops.py
+index 2feca29..1855b57 100644
+--- a/comfy/ops.py
++++ b/comfy/ops.py
+@@ -16,6 +16,7 @@
+     along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ """
+ 
++import os
+ import torch
+ import logging
+ import contextlib
+@@ -947,10 +948,43 @@ from .quant_ops import (
+ )
+ 
+ def _swiglu_eager(x):
++    if _SWIGLU_TRITON and x.is_cuda and x.dtype in (torch.bfloat16, torch.float16) and x.dim() >= 2 and x.shape[-1] % 2 == 0:
++        return _swiglu_triton(x)
+     gate, up = x.chunk(2, dim=-1)
+     return torch.nn.functional.silu(gate).mul_(up)
+ 
+ 
++# Local patch (2026-10-02, fase 3): COMFY_SWIGLU_TRITON=1 fuses silu(gate) * up into one Triton kernel for the eager path
++# (the INT8 kernel already fuses it; W4A4 ConvRot, bf16 and everything else materialize the intermediate twice).
++# Measured on the 3090 at Qwen-Image-2.1 1024² (4096 x 24576 bf16): 0.650 -> 0.386 ms per call, 32 calls per forward.
++_SWIGLU_TRITON = os.environ.get("COMFY_SWIGLU_TRITON", "").strip() == "1"
++_swiglu_kernel = None
++
++
++def _swiglu_triton(x):
++    global _swiglu_kernel
++    import triton
++    import triton.language as tl
++    if _swiglu_kernel is None:
++        @triton.jit
++        def _k(h_ptr, out_ptr, HALF, stride_h, stride_o, BLOCK: tl.constexpr):
++            row = tl.program_id(0)
++            offs = tl.program_id(1) * BLOCK + tl.arange(0, BLOCK)
++            mask = offs < HALF
++            g = tl.load(h_ptr + row * stride_h + offs, mask=mask, other=0.0).to(tl.float32)
++            u = tl.load(h_ptr + row * stride_h + HALF + offs, mask=mask, other=0.0).to(tl.float32)
++            tl.store(out_ptr + row * stride_o + offs, (g * tl.sigmoid(g) * u).to(out_ptr.dtype.element_ty), mask=mask)
++        _swiglu_kernel = _k
++    shape = x.shape
++    h = x.reshape(-1, shape[-1])
++    if h.stride(-1) != 1:
++        h = h.contiguous()
++    half = shape[-1] // 2
++    out = torch.empty(h.shape[0], half, device=x.device, dtype=x.dtype)
++    _swiglu_kernel[(h.shape[0], triton.cdiv(half, 2048))](h, out, half, h.stride(0), out.stride(0), BLOCK=2048, num_warps=8)
++    return out.reshape(*shape[:-1], half)
++
++
+ INPUT_ACT_EAGER = {
+     "gelu_tanh": lambda x: torch.nn.functional.gelu(x, approximate="tanh"),
+     "swiglu": _swiglu_eager,
+@@ -972,6 +1006,42 @@ def _fp16_linear_wanted(x):
+             and x.dtype == torch.float16 and x.is_cuda)
+ 
+ 
++# Local patch (2026-10-03, fase 4): COMFY_W4A4_INPUT_ACT=0 turns the W4A4 ConvRot fold below off (A/B, debugging).
++_W4A4_INPUT_ACT = os.environ.get("COMFY_W4A4_INPUT_ACT", "1").strip() != "0"
++
++
++def _convrot_w4a4_input_act(linear, x, input_act):
++    """W4A4 ConvRot twin of the INT8 fold in linear_input_act: comfy-kitchen gets ``[gate | up]`` and quantizes
++    silu(gate) * up itself (SwiGLU prologue fused into the ConvRot int4 quantizer, patches/comfy_kitchen_swiglu_w4a4_fused.patch),
++    so the bf16 intermediate is never written. Measured on the 3090 at Qwen-Image-2.1 1024² (h = 4096 x 24576):
++    0.98 -> 0.38 ms per img_mlp.out call, and closer to an fp32 intermediate than the bf16 one.
++
++    Mirrors the weight-only branch of the quantized Linear.forward and returns None wherever that branch would not
++    run (LoRA patches, full-precision matmul, forced casts, AWQ pre-scale, training), so the caller keeps the eager path.
++    """
++    weight = getattr(linear, "weight", None)
++    if (not _W4A4_INPUT_ACT or input_act != "swiglu" or getattr(linear, "quant_format", None) != "convrot_w4a4"
++            or not isinstance(weight, QuantizedTensor) or getattr(weight._params, "transposed", False)
++            or x.requires_grad or comfy.model_management.in_training
++            or getattr(linear, "_full_precision_mm", False) or getattr(linear, "comfy_force_cast_weights", False)
++            or getattr(linear, "pre_quant_scale", None) is not None
++            or len(getattr(linear, "weight_function", ())) or len(getattr(linear, "bias_function", ()))):
++        return None
++    run_every_op()
++    with CastBiasWeightContext(linear, input=None, dtype=weight.dtype, device=x.device, bias_dtype=x.dtype,
++                               offloadable=True, compute_dtype=x.dtype, want_requant=True) as (weight, bias):
++        if not isinstance(weight, QuantizedTensor):
++            return torch.nn.functional.linear(_eager_input_act(x, input_act), weight.to(x.dtype), bias)
++        params = weight._params
++        return quant_ops.ck.convrot_w4a4_linear(
++            x, weight._qdata, params.scale, bias,
++            convrot_groupsize=params.convrot_groupsize,
++            quant_group_size=params.quant_group_size,
++            linear_dtype=params.linear_dtype,
++            input_act=input_act,
++        )
++
++
+ def linear_input_act(linear, x, input_act, act_weight=None, act_eps=0.0,
+                      residual=None, residual_scale=None):
+     """``linear(act(x))``, with ``act`` folded into an INT8 activation quantizer.
+@@ -993,6 +1063,10 @@ def linear_input_act(linear, x, input_act, act_weight=None, act_eps=0.0,
+             return out
+         return torch.addcmul(residual, out, residual_scale)
+ 
++    out = _convrot_w4a4_input_act(linear, x, input_act)
++    if out is not None:
++        return _residual_out(out)
++
+     weight = linear.weight
+     full_precision_mm = getattr(linear, "_full_precision_mm", False)
+     if (comfy.model_management.in_training
