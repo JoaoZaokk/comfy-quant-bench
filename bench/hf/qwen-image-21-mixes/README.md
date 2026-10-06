@@ -1,7 +1,7 @@
 ---
 license: other
 license_name: qwen-research
-license_link: LICENSE_QWEN_RESEARCH.txt
+license_link: https://huggingface.co/Qwen/Qwen-Image-2.1/blob/main/LICENSE
 base_model: Qwen/Qwen-Image-2.1
 base_model_relation: quantized
 library_name: diffusion-single-file
