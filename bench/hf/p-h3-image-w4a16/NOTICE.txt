@@ -1,0 +1,10 @@
+MiniMax H3 is licensed under the MiniMax H3 Community License Agreement, Copyright © 2026 MiniMax. All Rights Reserved.
+
+p-h3-image_w4a16.safetensors is based on p-h3-image by Pruna AI (https://huggingface.co/PrunaAI/P-H3-Image-Comfy, file
+diffusion_models/p-h3-image_w4a8.safetensors, Copyright 2026 Pruna AI), itself based on MiniMax-H3 by MiniMax
+(https://huggingface.co/MiniMaxAI/MiniMax-H3), under the MiniMax H3 Community License Agreement, see LICENSE.
+
+Modification notice: this file was modified by JoaoZaokk. Only the per-layer quantization configuration inside the checkpoint
+was changed (every layer was set to keep its activations in 16 bits, `full_precision_matrix_mult`); the 4-bit weights are
+byte for byte those of Pruna AI's p-h3-image_w4a8. This file is not an official product of MiniMax or of Pruna AI and has not
+been endorsed by them.

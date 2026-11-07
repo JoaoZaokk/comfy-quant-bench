@@ -1,0 +1,5 @@
+This FLUX Model is licensed by Black Forest Labs Inc. under the FLUX Kommunity License. Copyright Black Forest Labs Inc. IN NO EVENT SHALL BLACK FOREST LABS INC. BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH USE OF THIS MODEL.
+
+Modification statement: the files in this repository are Derivatives of the FLUX.3 klein Model (`black-forest-labs/flux-3-image-klein-comfy`). JoaoZaokk modified the applicable FLUX Model by quantizing the weights of its transformer (FP8, NVFP4, W4A16, W4A4). These files are not an official product of Black Forest Labs Inc. and have not been endorsed or approved by it.
+
+Any rights to use these files are granted directly by Black Forest Labs Inc. to the recipient under the FLUX Kommunity License (see LICENSE.md). The files are provided "as is", without warranty of any kind, and the publisher accepts no liability for any claim, damages or other liability arising from their use.

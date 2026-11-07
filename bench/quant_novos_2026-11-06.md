@@ -60,10 +60,13 @@ O ganho do meu NVFP4 sobre o oficial vem, portanto, da escala dinâmica de ativa
 - OmniGen2: modelo antigo, abaixo do que foi anunciado; o encoder abliterated muda a conduta do condicionamento de forma visível e desigual entre prompts (causa não investigada).
 - P-H3-Image: aceitável, estilo não preferido.
 
-## Publicado
-- HF `JoaoZaokk/MOSS-Image-SFT-8steps-W4A16` e `JoaoZaokk/OmniGen2-W8A16-W4A16` (pesos, sidecar, cartão, folha de comparação). Cartões em `bench/hf/`.
-- FLUX.3 e P-H3 derivados NÃO publicados: licenças com condições de redistribuição (FLUX Kommunity License, não comercial, com aviso de atribuição e de modificação; MiniMax-H3) ainda por decidir.
+## Publicado (HF, conta JoaoZaokk; cartões em `bench/hf/`)
+- `MOSS-Image-SFT-8steps-FP8-NVFP4-W4A16` (Apache-2.0), `OmniGen2-W8A16-W4A16` (Apache-2.0).
+- `FLUX.3-klein-FP8-NVFP4-W4A16-W4A4` (FLUX Kommunity License, não comercial; LICENSE, NOTICE com aviso de atribuição e de modificação).
+- `P-H3-Image-W4A16` (MiniMax H3 Community License: direitos só fora de UE, Reino Unido, Coreia do Sul e EUA; LICENSE e NOTICE no repo).
+- `Qwen2.5-VL-3B-abliterated-fp16-ComfyUI` (Qwen Research License, não comercial; abliteração de huihui-ai, aqui só conversão para fp16).
 - Ferramentas: `tools/quant_fp.py` (fp8, nvfp4, w4a16, w4a4), `tools/quant_omnigen2.py` (W8A16, W4A16 de grupo 40), suporte a `.comfy_quant` inline em `tools/quant_weight_only.py`; testes `test_quant_fp.py` e `test_quant_omnigen2.py`.
+- Os rótulos `quantization` dos arquivos fp8, nvfp4 e w4a4 publicados foram corrigidos no cabeçalho (cópias; o tamanho do cabeçalho não muda, só o texto): antes diziam "só pesos".
 
 ## Critério escrito antes de medir
 Pedido: (1) OmniGen2: W4A16, INT8 e text encoder abliterated; (2) P-H3-Image: W4A16; (3) FLUX.3 klein: ver se W4A16 se aplica;
