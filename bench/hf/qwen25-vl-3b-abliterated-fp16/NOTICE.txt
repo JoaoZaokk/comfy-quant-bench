@@ -1,7 +1,0 @@
-Qwen is licensed under the Qwen RESEARCH LICENSE AGREEMENT, Copyright (c) Alibaba Cloud. All Rights Reserved.
-
-qwen_2.5_vl_fp16_abliterated.safetensors is based on Qwen2.5-VL-3B-Instruct by the Qwen team (Alibaba Cloud), abliterated by
-huihui-ai (https://huggingface.co/huihui-ai/Qwen2.5-VL-3B-Instruct-abliterated).
-
-Modification notice: JoaoZaokk changed this file by converting the weights from bf16 to fp16 and renaming nothing else; tensor names
-and shapes follow ComfyUI's qwen_2.5_vl_fp16.safetensors. A copy of the Qwen RESEARCH LICENSE AGREEMENT is in LICENSE.

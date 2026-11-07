@@ -9,10 +9,10 @@ RTX 3090 (sm86), ComfyUI v0.43.2 (OmniGen2) e v0.44.1 (P-H3, que o v0.43.2 ainda
 | fp16 (ref) | 1,42 | 16,8 GB | — | omnigen2_fp16 (7,9 GB) |
 | W8A16 (int8 por linha, só pesos) | 1,43 | 13,4 GB | 24,5 a 30,3 dB (SSIM 0,89 a 0,97) | omnigen2_fp16_w8a16 (4,3 GB) |
 | W4A16 (Q4_1 grupo 40, só pesos) | 1,77 (+25 %) | 12,0 GB | 16,1 a 24,2 dB (SSIM 0,55 a 0,91) | omnigen2_fp16_w4a16_g40 (2,9 GB) |
-| encoder abliterated (DiT fp16) | 1,44 | 16,8 GB | 12,0 a 19,0 dB (o condicionamento muda de propósito) | qwen_2.5_vl_fp16_abliterated (7,5 GB) |
+| encoder abliterated PRONTO do huihui-ai, só convertido para fp16 (não foi abliterado aqui; DiT fp16) | 1,44 | 16,8 GB | 12,0 a 19,0 dB (o condicionamento muda de propósito) | qwen_2.5_vl_fp16_abliterated (7,5 GB) |
 - K=2520 não aceita ConvRot-256, GEMM INT8 nem Q4_1 de grupo 32: INT8 só como W8A16 e W4A16 com grupo 40 (quantizador próprio, `quant_omnigen2.py`).
 - Bug achado: com escala/zero em bf16 a dequantização promove fp16×bf16 para fp32 e dá erro de dtype no linear; no fp16 as escalas têm de ser fp16.
-- Abliterated: 71 de 824 tensores diferem da fonte (`embed_tokens`, 35 `o_proj`, 35 `down_proj`), bf16→fp16 sem inf/nan.
+- Abliterated do huihui-ai (baixado pronto; nenhuma abliteração foi feita aqui; não publicado): 71 de 824 tensores diferem da fonte (`embed_tokens`, 35 `o_proj`, 35 `down_proj`), bf16→fp16 sem inf/nan.
 
 ## P-H3-Image (DiT, 8 passos sem CFG, text encoder e VAE int8_convrot, sem prompt upsampler)
 | braço | s/passo 4 MP | s/passo 8 MP | pico VRAM | PSNR vs int8 |
@@ -57,14 +57,13 @@ O ganho do meu NVFP4 sobre o oficial vem, portanto, da escala dinâmica de ativa
 ## Avaliação visual (um revisor, 6 imagens por braço; não é medição)
 - MOSS: INT8 e FP8 bons; W4A16 "muito bom", ao nível do INT8; uma imagem do W4A16 tem cabelo atravessando um chapéu, ausente no bf16 da mesma seed.
 - FLUX.3: o NVFP4 oficial (BFL, `input_scale` estático) tem aparência "artificial"; o NVFP4 de escala dinâmica de ativação (este trabalho) segue o estilo do bf16. W4A4 ConvRot: mãos e estrutura se desfazem (o mesmo que os demais W4A4), possivelmente só servindo para paisagens.
-- OmniGen2: modelo antigo, abaixo do que foi anunciado; o encoder abliterated muda a conduta do condicionamento de forma visível e desigual entre prompts (causa não investigada).
+- OmniGen2: modelo antigo, abaixo do que foi anunciado; o encoder abliterated pronto do huihui-ai muda a conduta do condicionamento de forma visível e desigual entre prompts (causa não investigada).
 - P-H3-Image: aceitável, estilo não preferido.
 
 ## Publicado (HF, conta JoaoZaokk; cartões em `bench/hf/`)
 - `MOSS-Image-SFT-8steps-FP8-NVFP4-W4A16` (Apache-2.0), `OmniGen2-W8A16-W4A16` (Apache-2.0).
 - `FLUX.3-klein-FP8-NVFP4-W4A16-W4A4` (FLUX Kommunity License, não comercial; LICENSE, NOTICE com aviso de atribuição e de modificação).
 - `P-H3-Image-W4A16` (MiniMax H3 Community License: direitos só fora de UE, Reino Unido, Coreia do Sul e EUA; LICENSE e NOTICE no repo).
-- `Qwen2.5-VL-3B-abliterated-fp16-ComfyUI` (Qwen Research License, não comercial; abliteração de huihui-ai, aqui só conversão para fp16).
 - Ferramentas: `tools/quant_fp.py` (fp8, nvfp4, w4a16, w4a4), `tools/quant_omnigen2.py` (W8A16, W4A16 de grupo 40), suporte a `.comfy_quant` inline em `tools/quant_weight_only.py`; testes `test_quant_fp.py` e `test_quant_omnigen2.py`.
 - Os rótulos `quantization` dos arquivos fp8, nvfp4 e w4a4 publicados foram corrigidos no cabeçalho (cópias; o tamanho do cabeçalho não muda, só o texto): antes diziam "só pesos".
 
