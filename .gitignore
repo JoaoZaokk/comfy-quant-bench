@@ -57,10 +57,12 @@
 !/tools/quality_battery.py
 !/tools/quant_audit.py
 !/tools/quant_awq_w4a16.py
+!/tools/quant_fp.py
 !/tools/quant_gguf.py
 !/tools/quant_int8.py
 !/tools/quant_misto_w4a8_int8.py
 !/tools/quant_mixed.py
+!/tools/quant_omnigen2.py
 !/tools/quant_te_residuos.py
 !/tools/quant_w4a4.py
 !/tools/quant_w4a4_smooth.py
@@ -75,8 +77,10 @@
 !/tools/test_formats_e2e.py
 !/tools/test_gpu_lock.py
 !/tools/test_native_probe.py
+!/tools/test_quant_fp.py
 !/tools/test_quant_mixed_provenance.py
 !/tools/test_quant_mixed_sigma.py
+!/tools/test_quant_omnigen2.py
 !/tools/test_smooth_guards.py
 !/tools/test_svdq_verify.py
 !/tools/test_svdq_write_contract.py
@@ -112,6 +116,7 @@ tools/*/build*/
 !/bench/criterio_hunyuan_misto.md
 !/bench/criterio_lora.md
 !/bench/criterio_ltx23.md
+!/bench/quant_novos_2026-11-06.md
 !/bench/hf/
 /bench/hf/*
 !/bench/hf/*/

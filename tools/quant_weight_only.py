@@ -11,7 +11,8 @@ layout) right before a plain compute-dtype matmul. Activations are never quantiz
 
 The tensors are copied byte for byte; only `_quantization_metadata` changes. The output goes beside
 the source as `<stem>_a16.safetensors` (+ `.quant.json`), written to `.partial` and renamed.
-Checkpoints that carry inline `.comfy_quant` tensors instead of the metadata are refused.
+Checkpoints whose per-layer config lives in inline `<layer>.comfy_quant` tensors (the Comfy-Org/PrunaAI files,
+e.g. P-H3-Image w4a8) are handled too: only those small U8 JSON tensors are rewritten, everything else is copied.
 """
 from __future__ import annotations
 
@@ -21,6 +22,8 @@ import sys
 import time
 from collections import Counter
 from pathlib import Path
+
+import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -40,13 +43,22 @@ def main() -> int:
     conv = C.Conversion(source, output, output.with_suffix(".quant.json"))
     conv.refuse_unsafe(allow_quantized_source=True)
     header, metadata = conv.header, conv.metadata
-    if any(name.endswith(".comfy_quant") for name in header):
-        raise SystemExit("Refusing: inline '.comfy_quant' layer configs are not handled, only _quantization_metadata")
-    if "_quantization_metadata" not in metadata:
-        raise SystemExit("Refusing: source has no _quantization_metadata, so it is not a quantized checkpoint")
-
-    quant = json.loads(metadata["_quantization_metadata"])
-    layers = quant["layers"]
+    inline = [name for name in header if name.endswith(".comfy_quant")]
+    if inline and "_quantization_metadata" in metadata:
+        raise SystemExit("Refusing: source has both inline '.comfy_quant' tensors and _quantization_metadata")
+    if inline:
+        layers = {}
+        with open(source, "rb") as handle:
+            for name in inline:
+                inicio, fim = header[name]["data_offsets"]
+                bruto = C.read_tensor(handle, conv.data_start + inicio, fim - inicio, header[name]["dtype"], header[name]["shape"])
+                layers[name[: -len(".comfy_quant")]] = json.loads(bytes(bruto.numpy().tobytes()))
+        quant = None
+    else:
+        if "_quantization_metadata" not in metadata:
+            raise SystemExit("Refusing: source has no _quantization_metadata, so it is not a quantized checkpoint")
+        quant = json.loads(metadata["_quantization_metadata"])
+        layers = quant["layers"]
     formatos = Counter(conf["format"] for conf in layers.values())
     desconhecidos = set(formatos) - set(NOMES)
     if desconhecidos:
@@ -62,9 +74,20 @@ def main() -> int:
     for conf in layers.values():
         conf["full_precision_matrix_mult"] = True
     novo = dict(metadata)
-    novo["_quantization_metadata"] = json.dumps(quant, separators=(",", ":"))
-    novo["quantization"] = f"{metadata.get('quantization', '')} weight-only ({execucao})".strip()
-    entradas = [C.plan_copy(name, info) for name, info in header.items()]
+    if inline:
+        entradas = []
+        for name, info in header.items():
+            if name in inline:
+                bytes_novos = json.dumps(layers[name[: -len(".comfy_quant")]], separators=(",", ":")).encode()
+                entradas.append(C.plan_write(name, torch.frombuffer(bytearray(bytes_novos), dtype=torch.uint8).clone()))
+            else:
+                entradas.append(C.plan_copy(name, info))
+        if novo.get("quantization") is not None:
+            novo["quantization"] = f"{novo['quantization']} weight-only ({execucao})".strip()
+    else:
+        novo["_quantization_metadata"] = json.dumps(quant, separators=(",", ":"))
+        novo["quantization"] = f"{metadata.get('quantization', '')} weight-only ({execucao})".strip()
+        entradas = [C.plan_copy(name, info) for name, info in header.items()]
     conv.guard(conv.planned_size(entradas, novo))
     conv.commit(entradas, novo, sidecar=lambda: {
         "source": str(source), "source_size": source.stat().st_size,
